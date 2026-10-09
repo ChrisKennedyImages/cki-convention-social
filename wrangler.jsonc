@@ -1,0 +1,23 @@
+// The eventcaliber.com Worker: site, booking API, availability and post images.
+// First time, from the repo root, signed in to the Cloudflare account that holds eventcaliber.com:
+//   npx wrangler r2 bucket create eventcaliber-media
+//   npx wrangler d1 create eventcaliber-booking        (copy the database_id it prints into d1_databases below)
+//   npx wrangler d1 execute eventcaliber-booking --remote --file worker/schema.sql
+//   npx wrangler secret put UPLOAD_TOKEN               (the same value as MEDIA_UPLOAD_TOKEN on the Mini)
+//   npx wrangler secret put NTFY_TOPIC                 (optional: a push on every quote request)
+//   bin/ccs site build && npx wrangler deploy
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "eventcaliber",
+  "main": "worker/index.js",
+  "compatibility_date": "2026-09-21",
+  "observability": { "enabled": true },
+  "assets": { "directory": "site/dist", "binding": "ASSETS", "not_found_handling": "404-page" },
+  "r2_buckets": [{ "binding": "MEDIA", "bucket_name": "eventcaliber-media" }],
+  "d1_databases": [{ "binding": "DB", "database_name": "eventcaliber-booking", "database_id": "SET_AFTER_d1_create" }],
+  "workers_dev": false,
+  "routes": [
+    { "pattern": "eventcaliber.com", "custom_domain": true },
+    { "pattern": "www.eventcaliber.com", "custom_domain": true }
+  ]
+}

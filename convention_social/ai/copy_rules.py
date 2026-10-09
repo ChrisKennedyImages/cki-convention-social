@@ -52,10 +52,11 @@ class Report:
         return {"ok": self.ok, "blocks": [{"rule": b.rule, "message": b.message} for b in self.blocks]}
 
 
-def check(text: str, *, official: bool = False) -> Report:
+def check(text: str, *, official: bool = False, allow_price: bool = False) -> Report:
+    """`allow_price` only for a private quote reply Chris wrote the price into himself; never for public copy."""
     report = Report()
     text = text or ""
-    m = PRICE.search(text)
+    m = None if allow_price else PRICE.search(text)
     if m:
         report.blocks.append(Block("price", f"mentions a price or discount ({m.group(0).strip()!r}); prices are never published"))
     if DASH.search(text):

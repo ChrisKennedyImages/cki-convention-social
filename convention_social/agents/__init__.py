@@ -13,6 +13,8 @@ AGENTS: dict[str, dict] = {
                   "job": "pick tomorrow's photo from cleared photos, draft captions and designs into the review queue"},
     "publisher": {"schedule": "every 10 min",          "module": "convention_social.agents.publisher",
                   "job": "schedule approved posts through Buffer, verify they were sent"},
+    "inbox":     {"schedule": "every 10 min",          "module": "convention_social.agents.inbox",
+                  "job": "pull quote requests from eventcaliber.com, draft replies, send the ones Chris approved, publish booked dates"},
     "watchdog":  {"schedule": "hourly; digest 07:30",  "module": "convention_social.agents.watchdog",
                   "job": "Drive sign-in, channels, failed posts, spend, missed runs; daily digest email"},
     "backup":    {"schedule": "nightly 02:30",         "module": "convention_social.agents.backup",

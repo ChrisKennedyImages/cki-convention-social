@@ -366,6 +366,90 @@ def create_app() -> FastAPI:
         conn.execute("DELETE FROM conventions WHERE id=?", (cid,))
         return RedirectResponse("/calendar", status_code=303)
 
+    # ------------------------------------------------------------------ booking
+    @app.get("/inquiries", response_class=HTMLResponse)
+    def inquiries(request: Request, user: str = Depends(require_user), conn=Depends(conn_dep), show: str = "open"):
+        where = "status NOT IN ('declined','spam','booked')" if show == "open" else "1=1"
+        rows = db.rows(conn, f"SELECT * FROM inquiries WHERE {where} ORDER BY id DESC LIMIT 200")
+        return render(request, "inquiries.html", rows=rows, show=show)
+
+    @app.get("/inquiries/{iid}", response_class=HTMLResponse)
+    def inquiry(iid: int, request: Request, user: str = Depends(require_user), conn=Depends(conn_dep), msg: str = ""):
+        from .. import offer
+        from ..ai import reply as reply_mod
+        row = db.one(conn, "SELECT * FROM inquiries WHERE id=?", (iid,))
+        if row is None:
+            raise HTTPException(404)
+        asked = offer.coverage_labels(json.loads(row["coverage"] or "[]"))
+        bookings = db.rows(conn, "SELECT * FROM bookings WHERE inquiry_id=? ORDER BY start_date", (iid,))
+        why = reply_mod.ready_to_send(row["reply_subject"] or "", row["reply_body"] or "") if row["reply_body"] else None
+        return render(request, "inquiry.html", row=row, asked=asked, bookings=bookings, msg=msg, why=why,
+                      footer=reply_mod.footer(), deposits=bool(config.getenv("PAYMENT_PROVIDER")))
+
+    @app.post("/inquiries/{iid}/reply")
+    def inquiry_reply(iid: int, user: str = Depends(require_user), conn=Depends(conn_dep), subject: str = Form(""),
+                      body: str = Form(""), deposit_link: str = Form("")):
+        row = db.one(conn, "SELECT reply_status FROM inquiries WHERE id=?", (iid,))
+        if row is None:
+            raise HTTPException(404)
+        if row["reply_status"] in ("sent",):
+            return RedirectResponse(f"/inquiries/{iid}?msg=already_sent", status_code=303)
+        conn.execute("UPDATE inquiries SET reply_subject=?, reply_body=?, reply_status='draft', deposit_link=?, updated_at=? WHERE id=?",
+                     (subject.strip(), body.replace("\r\n", "\n").strip(), deposit_link.strip() or None, db.utcnow(), iid))
+        return RedirectResponse(f"/inquiries/{iid}?msg=saved", status_code=303)
+
+    @app.post("/inquiries/{iid}/approve")
+    def inquiry_approve(iid: int, user: str = Depends(require_user), conn=Depends(conn_dep)):
+        from ..ai import reply as reply_mod
+        row = db.one(conn, "SELECT * FROM inquiries WHERE id=?", (iid,))
+        if row is None:
+            raise HTTPException(404)
+        if row["reply_status"] != "draft":
+            return RedirectResponse(f"/inquiries/{iid}", status_code=303)
+        if reply_mod.ready_to_send(row["reply_subject"] or "", row["reply_body"] or ""):
+            return RedirectResponse(f"/inquiries/{iid}?msg=not_ready", status_code=303)
+        conn.execute("UPDATE inquiries SET reply_status='approved', updated_at=? WHERE id=?", (db.utcnow(), iid))
+        return RedirectResponse(f"/inquiries/{iid}?msg=approved", status_code=303)
+
+    @app.post("/inquiries/{iid}/status")
+    def inquiry_status(iid: int, user: str = Depends(require_user), conn=Depends(conn_dep), status_: str = Form(..., alias="status")):
+        if status_ not in ("drafted", "replied", "quoted", "booked", "declined", "spam"):
+            raise HTTPException(400)
+        conn.execute("UPDATE inquiries SET status=?, updated_at=? WHERE id=?", (status_, db.utcnow(), iid))
+        return RedirectResponse(f"/inquiries/{iid}", status_code=303)
+
+    @app.get("/bookings", response_class=HTMLResponse)
+    def bookings(request: Request, user: str = Depends(require_user), conn=Depends(conn_dep)):
+        rows = db.rows(conn, "SELECT b.*, i.name AS who FROM bookings b LEFT JOIN inquiries i ON i.id=b.inquiry_id "
+                             "ORDER BY b.start_date")
+        return render(request, "bookings.html", rows=rows)
+
+    @app.post("/bookings/add")
+    def booking_add(user: str = Depends(require_user), conn=Depends(conn_dep), title: str = Form(...), start_date: str = Form(...),
+                    end_date: str = Form(""), status_: str = Form("booked", alias="status"), inquiry_id: str = Form("")):
+        from datetime import date as _date
+        try:
+            start = _date.fromisoformat(start_date)
+            end = _date.fromisoformat(end_date) if end_date else start
+        except ValueError:
+            raise HTTPException(400, "dates must be YYYY-MM-DD")
+        if end < start or status_ not in ("hold", "booked"):
+            raise HTTPException(400)
+        now = db.utcnow()
+        iid = int(inquiry_id) if inquiry_id.strip().isdigit() else None
+        db.insert(conn, "bookings", inquiry_id=iid, title=title.strip() or "Booking", start_date=start.isoformat(),
+                  end_date=end.isoformat(), status=status_, created_at=now, updated_at=now)
+        if iid and status_ == "booked":
+            conn.execute("UPDATE inquiries SET status='booked', updated_at=? WHERE id=?", (now, iid))
+        return RedirectResponse(f"/inquiries/{iid}" if iid else "/bookings", status_code=303)
+
+    @app.post("/bookings/{bid}/status")
+    def booking_status(bid: int, user: str = Depends(require_user), conn=Depends(conn_dep), status_: str = Form(..., alias="status")):
+        if status_ not in ("hold", "booked", "cancelled"):
+            raise HTTPException(400)
+        conn.execute("UPDATE bookings SET status=?, updated_at=? WHERE id=?", (status_, db.utcnow(), bid))
+        return RedirectResponse("/bookings", status_code=303)
+
     # ------------------------------------------------------------------ drive
     @app.get("/drive", response_class=HTMLResponse)
     def drive(request: Request, user: str = Depends(require_user), conn=Depends(conn_dep)):
@@ -436,6 +520,8 @@ def create_app() -> FastAPI:
             {"title": "Image hosting", "note": "Where Buffer fetches post images from.",
              "fields": [f("MEDIA_BASE_URL", "Image address"), f("MEDIA_UPLOAD_TOKEN", "Upload token", secret=True)]},
             {"title": "Phone alerts", "note": "This company's own ntfy topic.", "fields": [f("NTFY_TOPIC", "ntfy topic")]},
+            {"title": "Local sorting", "note": "Ollama on this Mini sorts the photo library for free. Leave blank to use the first vision model it has.",
+             "fields": [f("OLLAMA_MODEL", "Ollama model"), f("CLASSIFY_BACKEND", "Sorter", choices=["auto", "ollama", "claude"])]},
             {"title": "This dashboard", "note": "The address you open this dashboard at from your phone.",
              "fields": [f("DASHBOARD_PUBLIC_URL", "Dashboard address")]},
         ]

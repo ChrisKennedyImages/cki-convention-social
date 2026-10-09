@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block body %}
+<h1>Bookings</h1>
+<div class="card muted">Booked dates show on eventcaliber.com as unavailable, with no names. Holds stay private.</div>
+<form method="post" action="/bookings/add" class="card">
+  <label>Title (private)</label><input type="text" name="title" required>
+  <div class="row"><div style="flex:1"><label>From</label><input type="date" name="start_date" required></div>
+    <div style="flex:1"><label>To</label><input type="date" name="end_date"></div></div>
+  <label>As</label><select name="status"><option value="booked">Booked</option><option value="hold">Hold</option></select>
+  <div class="row" style="margin-top:12px"><button class="primary" type="submit">Add</button></div>
+</form>
+{% for b in rows %}
+<div class="card row"><strong>{{ b.title }}</strong><span class="muted">{{ b.start_date }}{% if b.end_date != b.start_date %} to {{ b.end_date }}{% endif %}{% if b.who %} · {{ b.who }}{% endif %}</span>
+  <span class="badge {{ 'ok' if b.status == 'booked' else ('draft' if b.status == 'hold' else 'blocked') }}">{{ b.status }}</span>
+  {% if b.status != 'cancelled' %}<form method="post" action="/bookings/{{ b.id }}/status" class="inline" style="margin-left:auto"><input type="hidden" name="status" value="cancelled"><button class="small danger" type="submit">Cancel</button></form>{% endif %}
+</div>
+{% endfor %}
+{% endblock %}
