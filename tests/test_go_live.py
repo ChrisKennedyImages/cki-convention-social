@@ -189,3 +189,28 @@ class GoLiveScript(IsolatedCase):
         self.assertIn("wrangler.live.jsonc", (REPO / ".gitignore").read_text())
         self.assertIn("bin/ccs site check --wait 600", self.text)
         self.assertIn("SET_AFTER_d1_create", (REPO / "wrangler.jsonc").read_text())
+
+
+class DaemonInstaller(IsolatedCase):
+    """scripts/install-daemons.sh on a re-run (the Mini, 2026-10-09): the always-on dashboard was
+    loaded again before it had stopped ("Bootstrap failed: 5: Input/output error"), then the status
+    list ended the script silently on the label launchd no longer knew."""
+
+    def setUp(self):
+        super().setUp()
+        self.text = (REPO / "scripts/install-daemons.sh").read_text()
+
+    def test_waits_for_each_service_to_stop_before_loading_it_again(self):
+        loop = self.text[self.text.index('launchctl bootout "system/$label"'):self.text.index("sleep 2\nsay \"system domain\"")]
+        self.assertLess(loop.index('launchctl print "system/$label" >/dev/null 2>&1 || break'),
+                        loop.index('launchctl bootstrap system "$dst"'))
+        self.assertIn("for attempt in 1 2 3", loop)
+        self.assertIn('failed+=("$label")', loop)
+
+    def test_the_status_list_never_ends_the_script_and_failures_do(self):
+        self.assertIn("awk -F' = ' '/^\\tstate = /{print $2}')\" || true", self.text)
+        self.assertIn('if (( ${#failed} )); then', self.text)
+        self.assertIn('  exit 1\nfi', self.text)
+        go = (REPO / "scripts/go-live.sh").read_text()
+        self.assertIn('sudo "$REPO/scripts/install-daemons.sh" || stop ', go)
+

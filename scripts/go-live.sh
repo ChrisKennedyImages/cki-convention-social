@@ -38,7 +38,7 @@ fi
 have DASHBOARD_PASSWORD_HASH || stop "no dashboard password was saved; run this again"
 
 say "installing the agents as system services (your Mac password)"
-sudo "$REPO/scripts/install-daemons.sh"
+sudo "$REPO/scripts/install-daemons.sh" || stop "not every service loaded (the lines just above say which); run this again"
 
 # ---------------------------------------------------------------- 2. Cloudflare
 say "2/4  Cloudflare"
