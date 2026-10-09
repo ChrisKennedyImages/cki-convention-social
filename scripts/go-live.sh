@@ -76,7 +76,7 @@ if "${WR[@]}" r2 bucket info eventcaliber-media >/dev/null 2>&1; then
   say "image bucket eventcaliber-media: already there"
 else
   say "creating the image bucket eventcaliber-media"
-  "${WR[@]}" r2 bucket create eventcaliber-media || stop "Cloudflare would not create the bucket. If R2 is not
+  "${WR[@]}" r2 bucket create eventcaliber-media --update-config=false || stop "Cloudflare would not create the bucket. If R2 is not
      turned on for this account yet: Cloudflare dashboard, R2 Object Storage, and follow its steps (it asks
      for a payment card even for the free allowance; that choice is yours). Then run this again."
 fi
@@ -91,16 +91,17 @@ print(next((r.get("uuid", "") for r in rows if r.get("name") == "eventcaliber-bo
 DB_ID="$(d1_id)"
 if [[ -z "$DB_ID" ]]; then
   say "creating the booking database eventcaliber-booking"
-  "${WR[@]}" d1 create eventcaliber-booking >/dev/null || stop "Cloudflare would not create the booking database"
+  "${WR[@]}" d1 create eventcaliber-booking --update-config=false || stop "Cloudflare would not create the booking database"
   DB_ID="$(d1_id)"
 fi
 [[ "$DB_ID" =~ '^[0-9a-f-]{36}$' ]] || stop "could not read the booking database's id from Cloudflare"
 say "booking database eventcaliber-booking: ready"
 
-# the deploy config: wrangler.jsonc with the real database id (wrangler.live.jsonc is not tracked)
-py '
+# the deploy config: the committed wrangler.jsonc with the real database id (wrangler.live.jsonc is not
+# tracked); read from git so an edit wrangler made to the working copy never reaches the deploy
+git show HEAD:wrangler.jsonc | py '
 import sys
-src = open("wrangler.jsonc").read()
+src = sys.stdin.read()
 assert src.count("SET_AFTER_d1_create") == 1, "wrangler.jsonc no longer has its placeholder"
 open("wrangler.live.jsonc", "w").write(src.replace("SET_AFTER_d1_create", sys.argv[1]))' "$DB_ID"
 LIVE=(-c wrangler.live.jsonc)

@@ -173,6 +173,16 @@ class GoLiveScript(IsolatedCase):
             if re.search(r"\b(print|echo|say|warn)\b.*\$\(value ", line):
                 self.fail(f"a secret could reach the screen: {line}")
 
+    def test_creating_storage_never_asks_to_edit_the_config(self):
+        """wrangler 4.149.0 asks "Would you like Wrangler to add it on your behalf?" after a create
+        unless told not to; on the Mini that question appeared mid-run (2026-10-09)."""
+        creates = [ln for ln in self.text.splitlines() if re.search(r'"\$\{WR\[@\]\}" (r2 bucket|d1) create ', ln)]
+        self.assertEqual(len(creates), 2)
+        for line in creates:
+            self.assertIn("--update-config=false", line)
+            self.assertNotIn(">/dev/null", line)          # any question wrangler still asks stays visible
+        self.assertIn("git show HEAD:wrangler.jsonc | py", self.text)
+
     def test_deploys_the_untracked_live_config_and_ends_on_the_live_check(self):
         self.assertIn('LIVE=(-c wrangler.live.jsonc)', self.text)
         self.assertIn('"${WR[@]}" deploy "${LIVE[@]}"', self.text)
