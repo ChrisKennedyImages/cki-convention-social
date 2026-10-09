@@ -14,6 +14,7 @@
   ccs drive report [--sheet N]    write the library report and a contact sheet of the best N
   ccs fonts                   download the brand typefaces into DATA_ROOT/fonts
   ccs samples                 render twelve sample posts and three brand boards from the best photos (for review)
+  ccs site build [--preview]  build eventcaliber.com into site/dist from postable photos (deploy: npx wrangler deploy)
 """
 from __future__ import annotations
 
@@ -241,6 +242,38 @@ def cmd_samples(_args) -> int:
     return 0
 
 
+def cmd_site(args) -> int:
+    import io
+    from PIL import Image
+    from .drive import oauth
+    from .drive.api import DriveReader
+    from .site import build
+    conn = db.connect()
+    try:
+        reader = DriveReader(oauth.access_token(conn), conn=conn, agent="cli")
+    except oauth.DriveAuthError as e:
+        print(str(e))
+        return 2
+    cache = config.get_config().data_root / "photos"
+    cache.mkdir(parents=True, exist_ok=True)
+
+    def fetch(row):
+        path = cache / f"{row['drive_id']}.img"
+        if not path.exists():
+            path.write_bytes(reader.download(row["drive_id"]))
+        return Image.open(io.BytesIO(path.read_bytes()))
+
+    photos = build.pick_photos(conn, fetch)
+    if not photos.hero and not args.preview:
+        print("no postable photos yet: clear folders on the Library page and let the final check run first")
+        return 2
+    out = build.build(conn, photos, preview=args.preview)
+    print(f"built {out} (hero {len(photos.hero)}, coverage {len(photos.coverage)}, venues {len(photos.venues)})"
+          f"{' PREVIEW' if args.preview else ''}")
+    conn.close()
+    return 0
+
+
 SERVICES_FOR_COPY = ("full event coverage", "backstage and green rooms", "breakouts", "evening events and dinners",
                      "portraits", "exhibition halls and vendors", "same day delivery of approved images")
 
@@ -264,6 +297,8 @@ def build_parser() -> argparse.ArgumentParser:
     dv.set_defaults(fn=cmd_drive)
     sub.add_parser("fonts").set_defaults(fn=cmd_fonts)
     sub.add_parser("samples").set_defaults(fn=cmd_samples)
+    st = sub.add_parser("site"); st.add_argument("what", choices=["build"]); st.add_argument("--preview", action="store_true")
+    st.set_defaults(fn=cmd_site)
     return p
 
 
