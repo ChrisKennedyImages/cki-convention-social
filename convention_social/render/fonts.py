@@ -26,6 +26,10 @@ FACES = {
     "Archivo-CondMedium.ttf": ("Archivo", "wdth,wght@75,500", ("500", "condensed")),
     "SpaceGrotesk-Bold.ttf": ("Space Grotesk", "wght@700", ("700", "normal")),
     "SpaceGrotesk-Medium.ttf": ("Space Grotesk", "wght@500", ("500", "normal")),
+    # the site and the Viewfinder mark (Chris, 2026-10-10: black, greys and white with a touch of cyan)
+    "Michroma-Regular.ttf": ("Michroma", "", ("400", "normal")),
+    "JetBrainsMono-Medium.ttf": ("JetBrains Mono", "wght@500", ("500", "normal")),
+    "InterTight-Light.ttf": ("Inter Tight", "wght@300", ("300", "normal")),
 }
 FALLBACKS = ("Inter-Bold.otf", "HelveticaNeue.ttc", "Helvetica.ttc", "DejaVuSans-Bold.ttf", "DejaVuSans.ttf")
 CSS = "https://fonts.googleapis.com/css2?family={family}:{axes}&display=swap"
@@ -78,10 +82,11 @@ def fetch(get=None) -> list[str]:
     for name, (family, axes, (weight, stretch)) in FACES.items():
         if (out / name).exists():
             continue
-        css = get(CSS.format(family=family.replace(" ", "+"), axes=axes), headers={"User-Agent": "Mozilla/4.0"}).text
+        url_css = CSS.format(family=family.replace(" ", "+"), axes=axes).replace(":&", "&")
+        css = get(url_css, headers={"User-Agent": "Mozilla/4.0"}).text
         url = None
         for block in css.split("@font-face")[1:]:
-            if f"font-weight: {weight};" in block and (f"font-stretch: {stretch};" in block or "font-stretch" not in block):
+            if (f"font-weight: {weight};" in block or "font-weight" not in block) and (f"font-stretch: {stretch};" in block or "font-stretch" not in block):
                 m = re.search(r"url\((https://[^)]+\.ttf)\)", block)
                 if m:
                     url = m.group(1)

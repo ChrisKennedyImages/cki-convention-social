@@ -48,7 +48,7 @@ class Site(IsolatedCase):
 
     def test_preview_is_stamped_and_hidden_from_search(self):
         home = (self.built(preview=True) / "index.html").read_text()
-        self.assertIn("PREVIEW, not live", home)
+        self.assertIn("Preview, not live", home)
         self.assertIn("noindex", home)
 
     def test_photos_carry_no_metadata(self):

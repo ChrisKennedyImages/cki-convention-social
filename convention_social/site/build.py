@@ -1,7 +1,9 @@
 """eventcaliber.com, built on the Mini into site/dist and served by the Worker.
 
-`build(conn, photo_source)` writes every page, the stylesheet, the mark and
-the photos. Photos on the site are public, so they pass the same gate as a
+`build(conn, photos)` writes every page, the stylesheet, the script, the mark
+and the photos. The look lives in site/theme.py (black, greys and white with
+one cyan, built like a camera viewfinder; Chris, 2026-10-10) and the logo in
+site/marks.py (BRAND_MARK, default viewfinder). Photos on the site are public, so they pass the same gate as a
 post: only postable photos (cleared, sorted, Claude's final check passed),
 saved fresh from pixels at web size so no EXIF or GPS travels. With
 `preview=True` it takes whatever photos it is handed (the stand-ins for Chris's
@@ -27,8 +29,9 @@ from .. import offer
 from ..ai import copy_rules
 from ..core import config, db
 from ..library import eligibility
-from ..render.brand import DIRECTIONS
 from ..render import fonts
+from ..render.meta import ImageMeta, save_jpeg
+from . import marks, theme
 
 DIST = config.REPO_ROOT / "site" / "dist"
 WIDTHS = (800, 1600)
@@ -36,7 +39,7 @@ WIDTHS = (800, 1600)
 
 @dataclass
 class SitePhotos:
-    hero: list = field(default_factory=list)       # [(image, alt)]
+    hero: list = field(default_factory=list)       # [(image, alt)] or [(image, alt, ImageMeta)]
     coverage: list = field(default_factory=list)
     venues: list = field(default_factory=list)
 
@@ -63,110 +66,24 @@ def pick_photos(conn: sqlite3.Connection, fetch: Callable[[dict], Image.Image]) 
     return out
 
 
-def save_web(im: Image.Image, out_dir: Path, stem: str) -> dict:
-    """JPEGs at each width, from pixels only (no metadata). Returns {width: filename}."""
+def save_web(im: Image.Image, out_dir: Path, stem: str, meta: Optional[ImageMeta] = None) -> dict:
+    """JPEGs at each width, from pixels only: no camera data or GPS, our SEO fields inside. {width: filename}."""
     im = ImageOps.exif_transpose(im).convert("RGB")
     made = {}
     for w in WIDTHS:
         copy = im.copy()
         copy.thumbnail((w, w * 2))
         name = f"{stem}-{w}.jpg"
-        copy.save(out_dir / name, format="JPEG", quality=82, optimize=True, progressive=True)
+        save_jpeg(copy, out_dir / name, meta, quality=82)
         made[w] = name
     return made
 
 
-def img_tag(files: dict, alt: str, sizes: str, cls: str = "") -> str:
+def img_tag(files: dict, alt: str, sizes: str, cls: str = "", eager: bool = False, extra: str = "") -> str:
     srcset = ", ".join(f"/assets/{n} {w}w" for w, n in sorted(files.items()))
+    load = 'loading="eager" fetchpriority="high"' if eager else 'loading="lazy"'
     return (f'<img class="{cls}" src="/assets/{files[max(files)]}" srcset="{srcset}" sizes="{sizes}" '
-            f'alt="{html.escape(alt)}" loading="lazy" decoding="async">')
-
-
-MARK_SVG = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" role="img" aria-label="{name}">
-<circle cx="60" cy="60" r="54" fill="none" stroke="#2F5BFF" stroke-width="8"/>
-<line x1="94" y1="26" x2="104" y2="16" stroke="#2F5BFF" stroke-width="8" stroke-linecap="round"/>
-<text x="60" y="76" text-anchor="middle" font-family="Space Grotesk, Arial, sans-serif" font-weight="700" font-size="46" fill="{fill}">{initials}</text>
-</svg>"""
-
-
-def css(b) -> str:
-    ink, paper, accent = ("#%02X%02X%02X" % c for c in (b.ink, b.paper, b.accent))
-    return f"""@font-face{{font-family:"Space Grotesk";src:url(/assets/fonts/SpaceGrotesk-Medium.ttf) format("truetype");font-weight:500;font-display:swap}}
-@font-face{{font-family:"Space Grotesk";src:url(/assets/fonts/SpaceGrotesk-Bold.ttf) format("truetype");font-weight:700;font-display:swap}}
-:root{{--ink:{ink};--paper:{paper};--accent:{accent};--line:rgba(233,236,242,.14);--muted:#A9AFBC}}
-*{{box-sizing:border-box}}html{{scroll-behavior:smooth}}
-body{{margin:0;background:var(--ink);color:var(--paper);font:500 18px/1.55 "Space Grotesk",system-ui,-apple-system,Helvetica,Arial,sans-serif}}
-a{{color:inherit}}img{{max-width:100%;display:block}}
-.wrap{{max-width:1180px;margin:0 auto;padding:0 24px}}
-header.top{{position:sticky;top:0;z-index:5;background:rgba(27,29,34,.92);backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}}
-header.top .wrap{{display:flex;align-items:center;gap:16px;height:68px}}
-.brand{{display:flex;align-items:center;gap:12px;text-decoration:none;font-weight:700;font-size:22px;letter-spacing:-.01em;white-space:nowrap}}
-.brand svg{{width:38px;height:38px}}
-nav.main{{margin-left:auto;display:flex;gap:22px;font-size:16px}}nav.main a{{text-decoration:none;opacity:.85}}nav.main a:hover{{opacity:1}}
-.btn{{display:inline-block;background:var(--accent);color:#fff;text-decoration:none;font-weight:700;padding:14px 24px;border-radius:999px;border:0;font:inherit;font-weight:700;cursor:pointer}}
-.btn.ghost{{background:transparent;border:1.5px solid var(--line)}}
-.kicker{{text-transform:uppercase;letter-spacing:.16em;font-size:13px;color:var(--accent);font-weight:700}}
-h1,h2,h3{{font-weight:700;letter-spacing:-.02em;line-height:1.05;margin:0}}
-h1{{font-size:clamp(40px,6.4vw,84px)}}h2{{font-size:clamp(30px,4vw,52px)}}h3{{font-size:22px}}
-.hero{{position:relative;min-height:min(88vh,860px);display:flex;align-items:flex-end;overflow:hidden}}
-.hero img.bg{{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}}
-.hero:after{{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(27,29,34,.05) 30%,rgba(27,29,34,.92) 92%)}}
-.hero .wrap{{position:relative;z-index:1;padding-bottom:72px}}
-.hero p{{max-width:640px;font-size:20px;color:var(--paper);opacity:.9;margin:20px 0 28px}}
-.ctas{{display:flex;gap:12px;flex-wrap:wrap}}
-section{{padding:96px 0;border-top:1px solid var(--line)}}
-.split{{display:grid;grid-template-columns:1fr 1.3fr;gap:56px;align-items:start}}
-ul.cover{{list-style:none;padding:0;margin:0;display:grid;grid-template-columns:1fr 1fr;gap:4px 28px}}
-ul.cover li{{padding:12px 0 12px 22px;border-bottom:1px solid var(--line);position:relative}}
-ul.cover li:before{{content:"";position:absolute;left:0;top:22px;width:10px;height:10px;background:var(--accent)}}
-.grid{{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:40px}}
-.grid img{{width:100%;aspect-ratio:4/5;object-fit:cover;border-radius:4px}}
-.steps{{display:grid;grid-template-columns:repeat(3,1fr);gap:28px;margin-top:40px}}
-.step{{border-top:2px solid var(--accent);padding-top:18px}}.step .n{{color:var(--accent);font-weight:700}}
-.venues{{display:grid;grid-template-columns:1.4fr 1fr;gap:10px;margin-top:40px}}
-.venues img{{width:100%;height:100%;object-fit:cover;border-radius:4px;aspect-ratio:3/2}}
-.muted{{color:var(--muted)}}
-.cta-band{{text-align:center}}.cta-band p{{max-width:620px;margin:16px auto 28px;color:var(--muted)}}
-footer{{border-top:1px solid var(--line);padding:40px 0;color:var(--muted);font-size:15px}}
-footer .wrap{{display:flex;gap:24px;flex-wrap:wrap;align-items:center}}
-form.book{{display:grid;grid-template-columns:1fr 1fr;gap:16px 20px;margin-top:32px}}
-form.book .full{{grid-column:1/-1}}
-form.book label{{display:block;font-size:14px;color:var(--muted);margin-bottom:6px}}
-form.book input,form.book select,form.book textarea{{width:100%;font:inherit;color:var(--paper);background:#23262D;border:1px solid var(--line);border-radius:10px;padding:12px 14px}}
-form.book textarea{{min-height:140px}}
-.checks{{display:grid;grid-template-columns:repeat(2,1fr);gap:8px 20px}}form.book .checks label{{display:flex;gap:10px;align-items:center;color:var(--paper);font-size:16px;margin:0}}
-form.book .checks input{{width:auto;flex:none;margin:0}}
-.hp{{position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden}}
-.err{{background:#3a1d22;border:1px solid #6b2b35;padding:12px 16px;border-radius:10px;margin-top:20px}}
-.cal{{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:28px;margin-top:36px}}
-.month h3{{margin-bottom:10px;font-size:18px}}.days{{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;font-size:14px;text-align:center}}
-.days span{{padding:8px 0;border-radius:6px;background:#23262D}}.days span.h{{background:none;color:var(--muted);font-size:12px}}
-.days span.x{{background:none}}.days span.b{{background:var(--accent);color:#fff;text-decoration:line-through}}
-.preview{{position:fixed;bottom:14px;right:14px;z-index:9;background:#FFD54A;color:#1B1D22;font-weight:700;padding:8px 14px;border-radius:999px;font-size:14px}}
-@media (max-width:820px){{.split,.venues{{grid-template-columns:1fr}}.grid{{grid-template-columns:1fr 1fr}}.steps{{grid-template-columns:1fr}}
-ul.cover{{grid-template-columns:1fr}}form.book{{grid-template-columns:1fr}}.checks{{grid-template-columns:1fr}}nav.main{{display:none}}
-section{{padding:64px 0}}.hero .wrap{{padding-bottom:48px}}
-header.top .btn{{padding:10px 16px;font-size:15px;margin-left:auto}}.brand{{font-size:19px}}.brand svg{{width:32px;height:32px}}}}
-"""
-
-
-def page(title: str, body: str, *, preview: bool, description: str, brand: str) -> str:
-    cfg = config.get_config()
-    mark = MARK_SVG.format(name=html.escape(brand), fill="#E9ECF2", initials="".join(w[0] for w in brand.split()[:2]).upper())
-    stamp = '<div class="preview">PREVIEW, not live</div>' if preview else ""
-    robots = '<meta name="robots" content="noindex">' if preview else ""
-    return f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1"><title>{html.escape(title)}</title>
-<meta name="description" content="{html.escape(description)}">{robots}
-<link rel="icon" href="/assets/mark.svg" type="image/svg+xml"><link rel="stylesheet" href="/assets/site.css">
-</head><body>
-<header class="top"><div class="wrap"><a class="brand" href="/">{mark}<span>{html.escape(brand.lower())}</span></a>
-<nav class="main"><a href="/#coverage">Coverage</a><a href="/#venues">Venues</a><a href="/availability/">Availability</a></nav>
-<a class="btn" href="/book/">Request a quote</a></div></header>
-{body}
-<footer><div class="wrap"><span>{html.escape(brand)}, a brand of {html.escape(cfg.legal_name)}</span>
-<a href="/privacy/">Privacy and photo removal</a><a href="mailto:{html.escape(contact_email())}">{html.escape(contact_email())}</a></div></footer>
-{stamp}</body></html>"""
+            f'alt="{html.escape(alt)}" {load} decoding="async"{extra}>')
 
 
 def contact_email() -> str:
@@ -178,19 +95,17 @@ def copy_text() -> dict:
     o = offer.load()
     return {
         "title": f"{o['company']}: {o['tagline']}",
-        "kicker": o["tagline"],
-        "h1": "Every room of your event, covered.",
-        "lede": ("Photography for fan conventions, conferences, galas and award dinners. "
-                 "Approved images go to your attendees, staff, speakers and presenters while the event is still on."),
-        "coverage_h": "From the green room to the last reception.",
+        "lede": ("Fan conventions, conferences, galas and award dinners, photographed room by room. "
+                 "Approved images reach your attendees, staff, speakers and presenters while the event is still on."),
         "coverage_p": "Tell us which rooms matter. Coverage is planned around your schedule, and every event is quoted on its own.",
+        "deliver_p": ("Approved images go to attendees, staff, speakers and presenters during the event, "
+                      "so they share them while the moment is still happening."),
         "steps": [("Tell us about your event", "Dates, venue, the rooms and moments that matter, and who needs images."),
                   ("Get a quote for your dates", "A clear quote for the coverage you need, nothing bundled you did not ask for."),
                   ("Images while it is still on", "Approved images reach your attendees, staff, speakers and presenters during the event.")],
-        "venues_h": "The building is part of the story.",
-        "venues_p": "Years of architectural work mean the venue gets shot as carefully as the people in it: exteriors, lobbies, halls and ballrooms.",
-        "band_h": "Planning an event?",
-        "band_p": "Send the dates and the details. A quote comes back for your event, with the coverage you asked for.",
+        "venues_p": ("Years of architectural work mean the venue gets shot as carefully as the people in it: "
+                     "exteriors, lobbies, halls and ballrooms."),
+        "cta_p": "Send the dates and the details. A quote comes back for your event, with the coverage you asked for.",
     }
 
 
@@ -201,104 +116,172 @@ def check_copy(texts) -> None:
             raise SiteCopyRefused(f"{t[:60]!r}: {r.blocks[0].message}")
 
 
-def build(conn: Optional[sqlite3.Connection], photos: SitePhotos, *, out: Path = DIST, preview: bool = False) -> Path:
-    b = DIRECTIONS["lens"]
+def _photo(entry):
+    """(image, alt) or (image, alt, meta) -> (image, alt, meta)."""
+    if len(entry) == 3:
+        return entry
+    im, alt = entry
+    return im, alt, ImageMeta(title=alt, description=alt, keywords=("event photography", "convention photography"))
+
+
+def _ticker(labels: list[str], rev: bool = False) -> str:
+    items = []
+    for i, label in enumerate(labels):
+        items.append(f'<span class="{"o" if i % 2 else ""}">{html.escape(label)}</span><span class="dot">&#9679;</span>')
+    run = "".join(items)
+    return f'<div class="ticker{" rev" if rev else ""}" aria-hidden="true"><div class="track">{run}{run}</div></div>'
+
+
+def home_body(t: dict, hero: str, frames: list[tuple[str, str]], stack: list[str], venues: list[tuple[str, str]],
+              peeks: list[str]) -> str:
+    e = html.escape
+    labels = [c["label"] for c in offer.load()["coverage"]]
+    rows = "".join(
+        f'<a href="/book/" data-img="{e(peeks[i % len(peeks)]) if peeks else ""}"><span class="mono g">{i + 1:02d}</span>'
+        f'<span class="t">{e(label if len(label) < 40 else label.split(" to ")[0])}</span><span class="mono">&#8599;</span></a>'
+        for i, label in enumerate(labels))
+    reel = "".join(f'<div class="frame"><div class="ph">{img}</div><div class="cap mono"><span>FR {i + 1:02d} / {len(frames):02d}</span>'
+                   f'<span>{e(cap)}</span></div></div>' for i, (img, cap) in enumerate(frames))
+    stack_html = "".join(f"<figure>{img}</figure>" for img in stack[:3])
+    venue_html = "".join(f'<figure>{img}<span class="mono">{e(label)}</span></figure>' for img, label in venues[:3])
+    steps = "".join(f'<div class="rv"><div class="n">{i:02d}</div><h3>{e(h)}</h3><p>{e(p)}</p></div>'
+                    for i, (h, p) in enumerate(t["steps"], start=1))
+    short = ["Backstage", "Green rooms", "Breakouts", "Main stage", "Evening events", "Dinners", "Portraits",
+             "Cosplay", "Exhibition halls", "Vendors", "Delivered on site"]
+    return f"""
+<section class="hero"><div class="img">{hero}</div>
+<div class="vf" aria-hidden="true"><i></i><i></i><i></i><i></i><span class="cross"></span><span class="focus"></span></div>
+<div class="hud tl mono"><span class="rec">Rec</span> <span id="tc">00:00:00:00</span></div>
+<div class="hud tr mono">ISO 3200 &nbsp; 1/250 &nbsp; F2.8 &nbsp; AWB</div>
+<div class="hud br mono">FR <span id="fr">0001</span></div>
+<div class="copy"><div class="kick mono c">Event and convention photography</div>
+<h1 class="mega"><span><em>Every</em></span><span class="o"><em>room,</em></span><span><em>covered<b>.</b></em></span></h1>
+<div class="row"><p class="lede">{e(t['lede'])}</p><a class="btn fill" href="/book/">Request a quote <span class="arr">&#8599;</span></a></div></div></section>
+{_ticker(short)}
+<section id="coverage" class="index"><div class="head rv"><div><div class="kick mono c">01 / Coverage</div>
+<h2>From the green room<br><span class="o">to the last</span> reception.</h2></div><p>{e(t['coverage_p'])}</p></div>
+<div class="list rv">{rows}</div><div class="peek" aria-hidden="true"><img alt=""></div></section>
+{f'<section id="work" class="reel"><div class="pin"><div class="bar"><div class="kick mono c" style="margin:0">02 / Work</div><span class="mono g">Scroll</span></div><div class="track">{reel}</div><div class="sprocket" style="margin-top:22px"></div></div></section>' if reel else ''}
+<section class="deliver"><div class="rv"><div class="kick mono c">On site delivery</div>
+<div class="lines"><div>Approved.</div><div>Delivered.</div><div>While it is still on.</div></div><p>{e(t['deliver_p'])}</p></div>
+{f'<div class="stack rv">{stack_html}<span class="stamp mono">Approved</span></div>' if stack_html else ''}</section>
+{f'<section id="venues" class="venues"><div class="head rv"><div><div class="kick mono c">03 / Venues</div><h2>The building is <span class="o">part of</span> the story.</h2></div><p>{e(t["venues_p"])}</p></div><div class="grid">{venue_html}</div></section>' if venue_html else ''}
+<section><div class="kick mono c rv">How it works</div><h2 class="rv">Three steps.</h2><div class="steps">{steps}</div></section>
+{_ticker(list(reversed(short)), rev=True)}
+<section class="cta"><div class="kick mono c" style="justify-content:center">Planning an event</div>
+<a class="huge" href="/book/">Request a quote</a><p>{e(t['cta_p'])}</p></section>"""
+
+
+def build(conn: Optional[sqlite3.Connection], photos: SitePhotos, *, out: Path = DIST, preview: bool = False,
+          head_extra: str = "") -> Path:
     o = offer.load()
-    brand = config.get_config().brand_name
+    cfg = config.get_config()
+    brand = cfg.brand_name
     t = copy_text()
     check_copy([v if isinstance(v, str) else " ".join(x for pair in v for x in pair) for v in t.values()] + offer.coverage_labels())
     if out.exists():
         shutil.rmtree(out)
     assets = out / "assets"
     (assets / "fonts").mkdir(parents=True)
-    for name in ("SpaceGrotesk-Medium.ttf", "SpaceGrotesk-Bold.ttf"):
+    for name in ("Michroma-Regular.ttf", "JetBrainsMono-Medium.ttf", "InterTight-Light.ttf", "InterTight-Regular.ttf",
+                 "InterTight-SemiBold.ttf"):
         src = fonts._find(name)
         if src:
             shutil.copyfile(src, assets / "fonts" / name)
-    (assets / "site.css").write_text(css(b))
-    (assets / "mark.svg").write_text(MARK_SVG.format(name=html.escape(brand), fill="#1B1D22",
-                                                     initials="".join(w[0] for w in brand.split()[:2]).upper()))
+    (assets / "site.css").write_text(theme.CSS)
+    (assets / "site.js").write_text(theme.JS)
+    mark_key = (config.getenv("BRAND_MARK") or "viewfinder").lower()
+    (assets / "mark.svg").write_text(marks.mark(mark_key, brand, light="#0A0A0B", size=64, word=False))
+    mark_svg = marks.mark(mark_key, brand, size=40)
     e = html.escape
-    hero = ""
+    hero, frames, stack, venues, peeks = "", [], [], [], []
     if photos.hero:
-        files = save_web(photos.hero[0][0], assets, "hero")
-        hero = img_tag(files, photos.hero[0][1], "100vw", "bg").replace('loading="lazy"', 'loading="eager" fetchpriority="high"')
-    grid = "".join(img_tag(save_web(im, assets, f"cover-{i}"), alt, "(max-width:820px) 50vw, 33vw") for i, (im, alt) in enumerate(photos.coverage))
-    venues = "".join(img_tag(save_web(im, assets, f"venue-{i}"), alt, "(max-width:820px) 100vw, 60vw") for i, (im, alt) in enumerate(photos.venues[:2]))
-    cover_list = "".join(f"<li>{e(label)}</li>" for label in offer.coverage_labels())
-    steps = "".join(f'<div class="step"><div class="n">0{i}</div><h3>{e(h)}</h3><p class="muted">{e(p)}</p></div>'
-                    for i, (h, p) in enumerate(t["steps"], start=1))
-    home = f"""<div class="hero">{hero}<div class="wrap"><div class="kicker">{e(t['kicker'])}</div><h1>{e(t['h1'])}</h1>
-<p>{e(t['lede'])}</p><div class="ctas"><a class="btn" href="/book/">Request a quote</a><a class="btn ghost" href="/availability/">See availability</a></div></div></div>
-<section id="coverage"><div class="wrap"><div class="split"><div><div class="kicker">Coverage</div><h2>{e(t['coverage_h'])}</h2>
-<p class="muted">{e(t['coverage_p'])}</p></div><ul class="cover">{cover_list}</ul></div>{f'<div class="grid">{grid}</div>' if grid else ''}</div></section>
-<section><div class="wrap"><div class="kicker">How it works</div><h2>Three steps.</h2><div class="steps">{steps}</div></div></section>
-{f'<section id="venues"><div class="wrap"><div class="kicker">Venues</div><h2>{e(t["venues_h"])}</h2><p class="muted" style="max-width:640px">{e(t["venues_p"])}</p><div class="venues">{venues}</div></div></section>' if venues else ''}
-<section class="cta-band"><div class="wrap"><h2>{e(t['band_h'])}</h2><p>{e(t['band_p'])}</p><a class="btn" href="/book/">Request a quote</a></div></section>"""
-    pages = {"index.html": (t["title"], home)}
-    checks = "".join(f'<label><input type="checkbox" name="coverage" value="{e(c["key"])}"> {e(c["label"])}</label>' for c in o["coverage"])
+        im, alt, m = _photo(photos.hero[0])
+        hero = img_tag(save_web(im, assets, "hero", m), alt, "100vw", eager=True)
+    for i, entry in enumerate(photos.coverage):
+        im, alt, m = _photo(entry)
+        files = save_web(im, assets, f"work-{i}", m)
+        tag = img_tag(files, alt, "(max-width:900px) 78vw, 34vw")
+        frames.append((tag, (m.title or alt)[:34]))
+        peeks.append(f"/assets/{files[min(files)]}")
+        if i < 3:
+            stack.append(tag)
+    for i, entry in enumerate(photos.venues):
+        im, alt, m = _photo(entry)
+        files = save_web(im, assets, f"venue-{i}", m)
+        venues.append((img_tag(files, alt, "(max-width:900px) 100vw, 60vw", extra=' data-speed="0.08"'),
+                       "Exterior" if i % 2 == 0 else "Interior"))
+    base = f"https://{cfg.brand_domain}"
+    pages = {"index.html": (t["title"], t["lede"], home_body(t, hero, frames, stack, venues, peeks))}
+    chips = "".join(f'<label><input type="checkbox" name="coverage" value="{e(c["key"])}"><span>{e(c["label"] if len(c["label"]) < 40 else "Approved images delivered on site")}</span></label>'
+                    for c in o["coverage"])
     site_key = config.getenv("TURNSTILE_SITE_KEY") or ""
     turnstile = (f'<div class="full"><div class="cf-turnstile" data-sitekey="{e(site_key)}" data-theme="dark"></div></div>'
                  '<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>') if site_key else ""
-    book = f"""<section style="border-top:0"><div class="wrap" style="max-width:860px"><div class="kicker">Request a quote</div>
-<h1 style="font-size:clamp(36px,5vw,60px)">Tell us about your event.</h1>
-<p class="muted">Every event is quoted on its own. The more you share, the more exact the quote.</p>
-<div id="err"></div>
-<form class="book" method="post" action="/api/quote">
-<div><label for="name">Your name</label><input id="name" name="name" required maxlength="120" autocomplete="name"></div>
-<div><label for="email">Email</label><input id="email" name="email" type="email" required maxlength="200" autocomplete="email"></div>
-<div><label for="phone">Phone (optional)</label><input id="phone" name="phone" maxlength="40" autocomplete="tel"></div>
-<div><label for="organization">Organization</label><input id="organization" name="organization" maxlength="160" autocomplete="organization"></div>
-<div class="full"><label for="event_name">Event name</label><input id="event_name" name="event_name" maxlength="200"></div>
-<div><label for="event_kind">Kind of event</label><select id="event_kind" name="event_kind"><option value="fan">Fan convention</option>
+    questions = "".join(f"<li>{e(q)}</li>" for q in (o.get("quote_questions") or [])[:4])
+    pages["book/index.html"] = ("Request a quote", "Tell us about your event and get a quote for your dates.", f"""
+<section class="page"><div class="kick mono c">Request a quote</div><h1>Tell us about<br><span class="o">your</span> event<b>.</b></h1>
+<div class="split2"><aside class="side"><div class="mono c">What helps the quote</div><ol>{questions}</ol>
+<p class="mono g" style="margin-top:22px">Every event is quoted on its own.</p></aside>
+<div><div id="err"></div><form class="book" method="post" action="/api/quote">
+<div class="f"><label class="mono" for="name">Your name</label><input id="name" name="name" required maxlength="120" autocomplete="name"></div>
+<div class="f"><label class="mono" for="email">Email</label><input id="email" name="email" type="email" required maxlength="200" autocomplete="email"></div>
+<div class="f"><label class="mono" for="phone">Phone, optional</label><input id="phone" name="phone" maxlength="40" autocomplete="tel"></div>
+<div class="f"><label class="mono" for="organization">Organization</label><input id="organization" name="organization" maxlength="160" autocomplete="organization"></div>
+<div class="f full"><label class="mono" for="event_name">Event name</label><input id="event_name" name="event_name" maxlength="200"></div>
+<div class="f"><label class="mono" for="event_kind">Kind of event</label><select id="event_kind" name="event_kind"><option value="fan">Fan convention</option>
 <option value="business">Conference or political event</option><option value="other">Gala, reception or something else</option></select></div>
-<div><label for="attendance">Expected attendance</label><input id="attendance" name="attendance" maxlength="40"></div>
-<div><label for="start_date">First day</label><input id="start_date" name="start_date" type="date"></div>
-<div><label for="end_date">Last day</label><input id="end_date" name="end_date" type="date"></div>
-<div><label for="venue">Venue</label><input id="venue" name="venue" maxlength="200"></div>
-<div><label for="city">City</label><input id="city" name="city" maxlength="120"></div>
-<div class="full"><label>What should be covered</label><div class="checks">{checks}</div></div>
-<div class="full"><label for="message">Anything else</label><textarea id="message" name="message" maxlength="4000"></textarea></div>
+<div class="f"><label class="mono" for="attendance">Expected attendance</label><input id="attendance" name="attendance" maxlength="40"></div>
+<div class="f"><label class="mono" for="start_date">First day</label><input id="start_date" name="start_date" type="date"></div>
+<div class="f"><label class="mono" for="end_date">Last day</label><input id="end_date" name="end_date" type="date"></div>
+<div class="f"><label class="mono" for="venue">Venue</label><input id="venue" name="venue" maxlength="200"></div>
+<div class="f"><label class="mono" for="city">City</label><input id="city" name="city" maxlength="120"></div>
+<div class="f full"><label class="mono">What should be covered</label><div class="chips">{chips}</div></div>
+<div class="f full"><label class="mono" for="message">Anything else</label><textarea id="message" name="message" maxlength="4000"></textarea></div>
 <div class="hp" aria-hidden="true"><label for="website">Leave this empty</label><input id="website" name="website" tabindex="-1" autocomplete="off"></div>
-{turnstile}<div class="full"><button class="btn" type="submit">Send the request</button>
-<p class="muted" style="font-size:14px">Used only to reply to you and put your quote together. <a href="/privacy/">Privacy</a>.</p></div>
-</form></div></section>
-<script>
-const p=new URLSearchParams(location.search).get("error");
-const m={{missing:"Please add your name and a working email.",busy:"A few requests just came from here. Please try again in an hour, or email us.",check:"The spam check did not pass. Please try again.",unreadable:"Something went wrong. Please try again."}};
-if(p){{document.getElementById("err").innerHTML='<div class="err">'+(m[p]||m.unreadable)+'</div>';}}
-</script>"""
-    pages["book/index.html"] = ("Request a quote", book)
-    pages["thanks/index.html"] = ("Thank you", """<section style="border-top:0;min-height:60vh"><div class="wrap" style="max-width:760px">
-<div class="kicker">Request received</div><h1 style="font-size:clamp(36px,5vw,60px)">Thank you.</h1>
-<p class="muted">Your request is in. A reply comes back to you by email.</p><p><a class="btn ghost" href="/">Back to the site</a></p></div></section>""")
-    pages["availability/index.html"] = ("Availability", """<section style="border-top:0"><div class="wrap"><div class="kicker">Availability</div>
-<h1 style="font-size:clamp(36px,5vw,60px)">Open dates.</h1><p class="muted">Dates marked in blue are booked. Every other date is open to request.</p>
-<div class="cal" id="cal"></div><p style="margin-top:36px"><a class="btn" href="/book/">Request a quote</a></p></div></section>
+{turnstile}<div class="full"><button class="btn fill" type="submit">Send the request <span class="arr">&#8599;</span></button>
+<p class="mono g" style="margin-top:16px">Used only to reply to you and put your quote together. <a href="/privacy/" class="c">Privacy</a>.</p></div>
+</form></div></div></section>
+<script>const q=new URLSearchParams(location.search).get("error");const m={{missing:"Please add your name and a working email.",busy:"A few requests just came from here. Please try again in an hour, or email us.",check:"The spam check did not pass. Please try again.",unreadable:"Something went wrong. Please try again."}};
+if(q)document.getElementById("err").innerHTML='<div class="err mono">'+(m[q]||m.unreadable)+'</div>';</script>""")
+    pages["thanks/index.html"] = ("Thank you", "Your request is in.", """<section class="page" style="min-height:70vh">
+<div class="kick mono c">Request received</div><h1>Thank<br><span class="o">you</span><b>.</b></h1>
+<p class="g" style="max-width:560px;margin-top:30px">Your request is in. A reply comes back to you by email.</p>
+<p style="margin-top:30px"><a class="btn" href="/">Back to the site <span class="arr">&#8599;</span></a></p></section>""")
+    pages["availability/index.html"] = ("Availability", "Booked dates are marked. Every other date is open to request.", """
+<section class="page"><div class="kick mono c">04 / Availability</div><h1>Open<br><span class="o">dates</span><b>.</b></h1>
+<div class="legend mono"><span><i class="b"></i>Booked</span><span><i></i>Open to request</span></div>
+<div class="cal" id="cal"></div><p style="margin-top:50px"><a class="btn fill" href="/book/">Request a quote <span class="arr">&#8599;</span></a></p></section>
 <script>
 const MONTHS=["January","February","March","April","May","June","July","August","September","October","November","December"];
-function draw(booked){const set=new Set(booked);const cal=document.getElementById("cal");const t=new Date();
-for(let k=0;k<6;k++){const first=new Date(t.getFullYear(),t.getMonth()+k,1);const y=first.getFullYear(),m=first.getMonth();
+function draw(booked){const set=new Set(booked),cal=document.getElementById("cal"),t=new Date(),today=t.toISOString().slice(0,10);
+for(let k=0;k<6;k++){const first=new Date(t.getFullYear(),t.getMonth()+k,1),y=first.getFullYear(),m=first.getMonth();
 let h='<div class="month"><h3>'+MONTHS[m]+' '+y+'</h3><div class="days">'+["S","M","T","W","T","F","S"].map(d=>'<span class="h">'+d+'</span>').join("");
 for(let i=0;i<first.getDay();i++)h+='<span class="x"></span>';const n=new Date(y,m+1,0).getDate();
-for(let d=1;d<=n;d++){const iso=y+"-"+String(m+1).padStart(2,"0")+"-"+String(d).padStart(2,"0");h+='<span class="'+(set.has(iso)?"b":"")+'" title="'+(set.has(iso)?"Booked":"Open")+'">'+d+'</span>';}
+for(let d=1;d<=n;d++){const iso=y+"-"+String(m+1).padStart(2,"0")+"-"+String(d).padStart(2,"0");
+h+='<span class="'+(set.has(iso)?"b":(iso===today?"t":""))+'" title="'+(set.has(iso)?"Booked":"Open")+'">'+d+'</span>';}
 cal.insertAdjacentHTML("beforeend",h+'</div></div>');}}
 fetch("/api/availability").then(r=>r.json()).then(j=>draw(j.booked||[])).catch(()=>draw([]));
 </script>""")
-    pages["privacy/index.html"] = ("Privacy and photo removal", f"""<section style="border-top:0"><div class="wrap" style="max-width:760px">
-<div class="kicker">Privacy</div><h1 style="font-size:clamp(34px,4.6vw,54px)">Privacy and photo removal.</h1>
-<h3 style="margin-top:36px">The quote form</h3><p class="muted">What you send through the form is used only to reply to you and to prepare your quote.
+    pages["privacy/index.html"] = ("Privacy and photo removal", "How quote requests are handled, and how to have a photo taken down.", f"""
+<section class="page"><div class="kick mono c">Privacy</div><h1>Privacy<b>.</b></h1><div class="prose">
+<h3>The quote form</h3><p>What you send through the form is used only to reply to you and to prepare your quote.
 It is never sold or shared. The website holds it only until it is collected, usually within minutes.</p>
-<h3 style="margin-top:28px">Photos of you</h3><p class="muted">If you appear in a photo shared by {e(brand)} and want it taken down, email
-<a href="mailto:{e(contact_email())}">{e(contact_email())}</a> with a link to it. It comes down, and it stays out of anything shared after that.</p>
-<h3 style="margin-top:28px">Who we are</h3><p class="muted">{e(brand)} is a brand of {e(config.get_config().legal_name)}.</p></div></section>""")
-    pages["404.html"] = ("Not found", """<section style="border-top:0;min-height:60vh"><div class="wrap"><h1>Not found.</h1>
-<p><a class="btn ghost" href="/">Back to the site</a></p></div></section>""")
-    for rel, (title, body) in pages.items():
+<h3>Photos of you</h3><p>If you appear in a photo shared by {e(brand)} and want it taken down, email
+<a class="c" href="mailto:{e(contact_email())}">{e(contact_email())}</a> with a link to it. It comes down, and it stays out of anything shared after that.</p>
+<h3>Who we are</h3><p>{e(brand)} is a brand of {e(cfg.legal_name)}.</p></div></section>""")
+    pages["404.html"] = ("Not found", "Not found.", """<section class="page" style="min-height:70vh"><div class="kick mono c">Out of frame</div>
+<h1>Not<br><span class="o">found</span><b>.</b></h1><p style="margin-top:30px"><a class="btn" href="/">Back to the site <span class="arr">&#8599;</span></a></p></section>""")
+    og = f"{base}/assets/hero-1600.jpg" if hero else ""
+    for rel, (title, desc, body) in pages.items():
+        check_copy([desc])
         dest = out / rel
         dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.write_text(page(title if rel == "index.html" else f"{title} | {brand}", body, preview=preview,
-                             description=t["lede"], brand=brand), encoding="utf-8")
+        path = "/" + rel.replace("index.html", "")
+        dest.write_text(theme.shell(title=e(title if rel == "index.html" else f"{title} | {brand}"), description=e(desc), body=body,
+                                    mark_svg=mark_svg, brand=e(brand), legal=e(cfg.legal_name), email=e(contact_email()),
+                                    preview=preview, canonical=base + path, jsonld=head_extra if rel == "index.html" else "",
+                                    og_image=og), encoding="utf-8")
     (out / "build.json").write_text(json.dumps({"preview": preview, "hero": len(photos.hero), "coverage": len(photos.coverage),
-                                                "venues": len(photos.venues)}))
+                                                "venues": len(photos.venues), "mark": mark_key}))
     return out
