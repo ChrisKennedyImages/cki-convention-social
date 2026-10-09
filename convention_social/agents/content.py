@@ -34,6 +34,7 @@ from ..ai import claude, copy_rules
 from ..core import config, db, runner
 from ..library import classify, eligibility
 from ..render import brand, posts
+from . import art_director
 from ..render import meta as image_meta
 
 try:                                    # HEIC originals from a phone
@@ -65,7 +66,8 @@ def recent_use(conn: sqlite3.Connection, days: int) -> tuple[set, set, set]:
     """(photo ids, event names, credited people) used by posts drafted inside the window and not rejected."""
     since = (datetime.now(timezone.utc) - timedelta(days=days)).replace(microsecond=0).isoformat()
     photos, events, people = set(), set(), set()
-    for r in db.rows(conn, "SELECT photo_ids, rule_report FROM content_queue WHERE status != 'rejected' AND created_at >= ?", (since,)):
+    for r in db.rows(conn, "SELECT photo_ids, rule_report FROM content_queue WHERE created_at >= ? AND "
+                           "(status != 'rejected' OR rule_report LIKE '%\"verdict\": \"reject\"%')", (since,)):
         photos.update(int(p) for p in json.loads(r["photo_ids"] or "[]"))
         meta = json.loads(r["rule_report"] or "{}")
         if meta.get("event"):
@@ -103,7 +105,7 @@ def kicker_for(row: dict) -> str:
 
 
 def draft_one(ctx: runner.Context, fetch: Callable[[dict], bytes], *, now: Optional[datetime] = None,
-              check_client=None, drafter=None) -> str:
+              check_client=None, drafter=None, art_client=None, _depth: int = 0) -> str:
     day = target_day(ctx.cfg, now)
     if already_drafted(ctx.conn, day):
         return f"a post for {day} is already drafted"
@@ -147,17 +149,35 @@ def draft_one(ctx: runner.Context, fetch: Callable[[dict], bytes], *, now: Optio
     out_dir = ctx.cfg.data_root / "renders" / "posts" / day.isoformat()
     text = posts.PostText(kicker=kicker_for(chosen), credit=chosen["credit"])
     seo = image_meta.for_photo(ctx.conn, chosen)
-    render_paths = {aspect: [str(posts.render("photo", [image], text, direction, aspect=aspect, meta=seo,
-                                              out=out_dir / f"{chosen['id']}-{aspect.replace(':', '')}.jpg"))]
-                    for aspect in ("4:5", "2:3")}
+
+    def render(focus):
+        return {aspect: [str(posts.render("photo", [image], text, direction, aspect=aspect, meta=seo, focus=focus,
+                                          out=out_dir / f"{chosen['id']}-{aspect.replace(':', '')}.jpg"))]
+                for aspect in ("4:5", "2:3")}
+
+    render_paths, art = art_director.direct(ctx.conn, render, dry_run=ctx.dry_run, client=art_client, agent=ctx.agent)
+    if art.get("verdict") == "reject":
+        # the photo does not hold up: it sits out like a used one, and the next run drafts another
+        now_r = db.utcnow()
+        db.insert(ctx.conn, "content_queue", kind="photo", photo_ids=json.dumps([chosen["id"]]), targets=json.dumps(list(TARGETS)),
+                  caption=json.dumps(draft.captions), render_paths=json.dumps(render_paths), status="rejected",
+                  last_error=f"Art director: {art.get('notes', '')}",
+                  rule_report=json.dumps({"for_day": "turned back", "art": art, "subject": chosen["subject"]}),
+                  created_at=now_r, updated_at=now_r)
+        note = f"art director turned back photo {chosen['id']}: {art.get('notes', '')}"
+        if _depth + 1 >= MAX_TRIES:
+            return f"{note}; no photo passed for {day} after {MAX_TRIES} tries"
+        return note + "; " + draft_one(ctx, fetch, now=now, check_client=check_client, drafter=drafter,
+                                       art_client=art_client, _depth=_depth + 1)
     meta = {"for_day": day.isoformat(), "subject": chosen["subject"], "event": chosen.get("convention_name") or "",
-            "people": chosen["credit"].split(), "model": draft.model, "rules": reports, "wanted": want}
+            "people": chosen["credit"].split(), "model": draft.model, "rules": reports, "wanted": want, "art": art}
     now_s = db.utcnow()
     qid = db.insert(ctx.conn, "content_queue", kind="photo", photo_ids=json.dumps([chosen["id"]]), targets=json.dumps(list(TARGETS)),
                     caption=json.dumps(draft.captions), render_paths=json.dumps(render_paths), rule_report=json.dumps(meta),
                     created_at=now_s, updated_at=now_s)
     return (f"{'DRY RUN ' if ctx.dry_run else ''}drafted post #{qid} for {day} ({kind_used}"
-            f"{', instead of ' + want if kind_used != want else ''}): photo {chosen['id']}, captions by {draft.model}")
+            f"{', instead of ' + want if kind_used != want else ''}): photo {chosen['id']}, captions by {draft.model}, "
+            f"art director: {art.get('verdict')}")
 
 
 def run(ctx: runner.Context, fetch: Optional[Callable[[dict], bytes]] = None) -> str:

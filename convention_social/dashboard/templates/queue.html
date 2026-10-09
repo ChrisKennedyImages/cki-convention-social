@@ -1,6 +1,8 @@
 {% extends "base.html" %}
 {% block body %}
 {% if auth_state != 'ok' %}<div class="msg bad">Google Drive is {{ 'not signed in yet' if auth_state == 'missing' else 'signed out (the sign-in expired)' }}. <a href="/drive">Drive page</a></div>{% endif %}
+{% if brief and brief.read %}<div class="card"><div class="muted">Morning brief, {{ brief.date }}</div><p style="margin:6px 0">{{ brief.read }}</p>
+{% for text, href in brief.needs %}<div class="row"><a href="{{ href }}">{{ text }}</a></div>{% endfor %}</div>{% endif %}
 <h1>Review queue</h1>
 {% if msg == 'rejected' %}<div class="msg">Post rejected.</div>{% endif %}
 <div class="row" style="margin-bottom:12px">
@@ -23,6 +25,7 @@
     {% elif it.ineligible %}<span class="rule block">a photo is not usable</span>
     {% else %}<span class="rule ok">rules pass</span>{% endif %}
     {% if it.last_error %}<span class="rule block">{{ it.last_error }}</span>{% endif %}
+    {% if it.art and it.art.verdict %}<span class="muted">Art director: {{ it.art.verdict }}{% if it.art.notes %}, {{ it.art.notes }}{% endif %}</span>{% endif %}
     <a class="btn primary" href="/queue/{{ it.id }}" style="margin-left:auto">Review</a>
   </div>
 </div>

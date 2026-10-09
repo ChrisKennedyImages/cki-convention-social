@@ -127,3 +127,64 @@ class Content(IsolatedCase):
         self.assertIn("nothing drafted", content.draft_one(self.ctx(), self.fetch, now=MONDAY_6AM))
         self.assertEqual(self.queue(), [])
         self.assertEqual(self.fetched, [])
+
+
+class ArtClient:
+    """The art director's eye: answers from a list, one per look."""
+    def __init__(self, answers):
+        self.answers = list(answers)
+        self.calls = 0
+        self.beta = self
+        self.messages = self
+
+    def create(self, **kw):
+        self.calls += 1
+        assert kw["model"] == "claude-opus-5-5" and kw["fallbacks"] == "default"
+        assert sum(1 for b in kw["messages"][0]["content"] if b["type"] == "image") == 2     # both aspects, side by side
+        a = self.answers.pop(0)
+        t = types.SimpleNamespace(type="text", text=json.dumps(a))
+        return types.SimpleNamespace(content=[t], stop_reason="end_turn", model=kw["model"],
+                                     usage=types.SimpleNamespace(input_tokens=2500, output_tokens=150))
+
+
+def say(verdict, x=0.5, y=0.42, notes="Fine."):
+    return {"verdict": verdict, "focus_x": x, "focus_y": y, "notes": notes}
+
+
+class ArtDirector(Content):
+    def live(self):
+        os.environ["AI_MONTHLY_CAP_USD"] = "5"
+        os.environ["AI_MODEL"] = "template"
+        config.reset()
+        return self.ctx(dry=False)
+
+    def test_redo_reworks_the_crop_then_passes(self):
+        art = ArtClient([say("redo", 0.3, 0.2, "The head is cut at the top."), say("pass", notes="Strong crop now.")])
+        content.draft_one(self.live(), self.fetch, now=MONDAY_6AM, check_client=FinalClient({}), art_client=art)
+        self.assertEqual(art.calls, 2)
+        meta = json.loads(self.queue()[0]["rule_report"])
+        self.assertTrue(meta["art"])
+        self.assertEqual((meta["art"]["verdict"], meta["art"]["rounds"], meta["art"]["focus"]), ("pass", 2, [0.3, 0.2]))
+        self.assertEqual(self.queue()[0]["status"], "draft")
+
+    def test_reject_turns_the_photo_back_and_the_next_one_is_drafted(self):
+        art = ArtClient([say("reject", notes="Soft focus on the face."), say("pass")])
+        line = content.draft_one(self.live(), self.fetch, now=MONDAY_6AM, check_client=FinalClient({}), art_client=art)
+        self.assertIn("turned back photo", line)
+        rows = self.queue()
+        self.assertEqual([r["status"] for r in rows], ["rejected", "draft"])
+        self.assertIn("Soft focus", rows[0]["last_error"])
+        self.assertEqual(json.loads(rows[1]["photo_ids"]), [self.ids["e2"]])      # the turned back post never aired, so its event is still fair
+        # the turned back photo sits out next time too
+        self.assertIn(self.ids["e1"], content.recent_use(self.conn, 30)[0])
+
+    def test_redo_stops_after_the_limit(self):
+        art = ArtClient([say("redo")] * 5)
+        content.draft_one(self.live(), self.fetch, now=MONDAY_6AM, check_client=FinalClient({}), art_client=art)
+        self.assertEqual(art.calls, 3)                                         # one look and two reworks
+        self.assertEqual(json.loads(self.queue()[0]["rule_report"])["art"]["verdict"], "redo")
+
+    def test_dry_run_is_not_reviewed_and_costs_nothing(self):
+        content.draft_one(self.ctx(), self.fetch, now=MONDAY_6AM)
+        self.assertEqual(json.loads(self.queue()[0]["rule_report"])["art"]["verdict"], "not reviewed")
+        self.assertEqual(db.one(self.conn, "SELECT COUNT(*) n FROM api_usage")["n"], 0)

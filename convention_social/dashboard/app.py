@@ -123,7 +123,11 @@ def queue_view(conn, row) -> dict:
     photo_ids = json.loads(row["photo_ids"] or "[]")
     photo_checks = [(pid, *eligibility.is_eligible(conn, int(pid))) for pid in photo_ids]
     renders = json.loads(row["render_paths"] or "{}")
-    return {**dict(row), "captions": captions, "targets": targets, "reports": reports, "official": official,
+    try:
+        art = json.loads(row["rule_report"] or "{}").get("art") or {}
+    except ValueError:
+        art = {}
+    return {**dict(row), "art": art, "captions": captions, "targets": targets, "reports": reports, "official": official,
             "blocked_networks": [n for n in targets if not reports[n].ok],
             "photo_checks": photo_checks, "ineligible": [c for c in photo_checks if not c[1]],
             "renders": {a: list(range(1, len(ps) + 1)) for a, ps in renders.items()}}
@@ -189,8 +193,12 @@ def create_app() -> FastAPI:
             where, params = "status IN ('draft','approved','scheduled','would_publish','failed')", ()
         rows = db.rows(conn, f"SELECT * FROM content_queue WHERE {where} ORDER BY id DESC LIMIT 100", params)
         auth_state = settings.get(conn, "drive.auth_state") or "missing"
+        try:
+            brief = json.loads(settings.get(conn, "chief.brief") or "{}")
+        except ValueError:
+            brief = {}
         return render(request, "queue.html", items=[queue_view(conn, r) for r in rows], show=show,
-                      auth_state=auth_state, msg=request.query_params.get("msg", ""))
+                      auth_state=auth_state, msg=request.query_params.get("msg", ""), brief=brief)
 
     @app.get("/queue/{qid}", response_class=HTMLResponse)
     def queue_detail(qid: int, request: Request, user: str = Depends(require_user), conn=Depends(conn_dep), msg: str = ""):

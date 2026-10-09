@@ -53,7 +53,10 @@ class WatchCase(AgentCase):
         kw.setdefault("client", None)
         kw.setdefault("probe", ok_probe)
         kw.setdefault("force_digest", False)
-        return watchdog.run(self.ctx, now=now, **kw)
+        from unittest import mock
+        # these tests pin the watchdog's own digest; with the Chief of staff built, the brief replaces it
+        with mock.patch.object(watchdog, "is_built", lambda name: name != "chief"):
+            return watchdog.run(self.ctx, now=now, **kw)
 
 
 class Drive(WatchCase):

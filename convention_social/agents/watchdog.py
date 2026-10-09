@@ -17,6 +17,7 @@ DATA_ROOT/outbox-dry instead.
 from __future__ import annotations
 
 import html
+import json
 import shutil
 import sys
 from datetime import datetime, timedelta, timezone
@@ -356,8 +357,10 @@ def run(ctx: runner.Context, *, now: Optional[datetime] = None, client: Optional
     sent = send_alerts(ctx, f, now)
     if error_ids:
         ctx.conn.execute(f"UPDATE errors SET notified_at=? WHERE id IN ({','.join('?' * len(error_ids))})", (db.utcnow(), *error_ids))
+    settings.set(ctx.conn, "watchdog.notes", json.dumps(f.notes[:20]))      # the chief's brief reads these
     digest = False
-    if digest_due(ctx, now, force_digest):
+    # the Chief of staff's morning brief replaces this digest once that agent exists
+    if digest_due(ctx, now, force_digest) and (force_digest or not is_built("chief")):
         digest = send_digest(ctx, f.notes, now)
     return f"alerts: {len(f.alerts)} found, {sent} sent; notes: {len(f.notes)}; digest: {'sent' if digest else 'not due'}"
 
