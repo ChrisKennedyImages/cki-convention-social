@@ -266,6 +266,24 @@ class Live(PublisherCase):
         self.assertEqual([h["service"] for h in history], ["instagram", "facebook", "pinterest"])
         self.assertEqual(history[0]["sent_at"], "2026-10-09T15:30:05Z")
 
+    def test_a_raw_photo_is_uploaded_without_any_metadata(self):
+        from PIL import Image
+        pid = add_photo(self.conn, self.root / "photos", seed=7)
+        with Image.open(db.one(self.conn, "SELECT local_path FROM photos WHERE id=?", (pid,))["local_path"]) as orig:
+            self.assertIn(0x8825, orig.getexif())          # the original really carries GPS
+        add_post(self.conn, [pid], ("facebook",))
+        ctx = make_ctx(self.conn, dry_run=False)
+        sent = []
+
+        def up(path, key):
+            sent.append(path)
+            return f"https://media.example/m/{key}"
+        self.publish(ctx, client=BufferClient("test-key", conn=self.conn, transport=FakeBuffer()), uploader=up)
+        self.assertEqual(len(sent), 1)
+        self.assertNotEqual(str(sent[0]), db.one(self.conn, "SELECT local_path FROM photos WHERE id=?", (pid,))["local_path"])
+        with Image.open(sent[0]) as im:
+            self.assertEqual(len(im.getexif()), 0)
+
     def test_buffer_error_marks_failed_with_buffers_reason(self):
         _, qid = self.rendered_post()
         ctx = make_ctx(self.conn, dry_run=False)

@@ -166,6 +166,16 @@ def door(ctx: runner.Context, row) -> Optional[tuple[str, str]]:
 
 # ------------------------------------------------------------------ media
 
+def clean_copy(ctx: runner.Context, src: Path, pid: int) -> Path:
+    """A JPEG re-encoded from the pixels only (orientation applied), with no metadata at all."""
+    from PIL import Image, ImageOps
+    dest = ctx.cfg.data_root / "renders" / "clean" / f"photo-{pid}.jpg"
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    with Image.open(src) as im:
+        ImageOps.exif_transpose(im).convert("RGB").save(dest, format="JPEG", quality=92, optimize=True)
+    return dest
+
+
 def photo_urls(ctx: runner.Context, row, *, live: bool, uploader=None) -> list[str]:
     urls = []
     for pid in photo_ids_of(row) or []:
@@ -179,11 +189,12 @@ def photo_urls(ctx: runner.Context, row, *, live: bool, uploader=None) -> list[s
         suffix = Path(local).suffix.lower() if local else ".jpg"
         if suffix not in POSTABLE_SUFFIXES:
             raise media.MediaError(f"photo {pid} is {suffix}, not a JPEG or PNG; it needs a rendered design")
-        key = media.photo_key(photo["drive_id"], photo["md5"], suffix)
+        key = media.photo_key(photo["drive_id"], photo["md5"], ".jpg")
         if live:
             if not local or not Path(local).exists():
                 raise media.MediaError(f"photo {pid} has no local copy to upload")
-            url = (uploader or media.upload)(Path(local), key)
+            # never the original file: a fresh copy from pixels, so no EXIF or GPS leaves the Mini
+            url = (uploader or media.upload)(clean_copy(ctx, Path(local), pid), key)
             ctx.conn.execute("UPDATE photos SET public_url=? WHERE id=?", (url, pid))
             urls.append(url)
         else:
