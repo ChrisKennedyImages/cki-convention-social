@@ -15,7 +15,8 @@ company's own Buffer account once he approves each post on the dashboard.
 | `convention_social/ai/` | Claude drafting (strict JSON), the monthly spend cap, the copy rules gate |
 | `convention_social/buffer/` | the Buffer GraphQL client, payloads, media hosting, rate budget, metrics |
 | `convention_social/render/` | post designs built around the photos |
-| `convention_social/agents/` | scanner, content (the daily draft), publisher, inbox (booking), watchdog, backup |
+| `convention_social/agents/` | scanner, content (the daily draft), publisher, inbox (booking), chief (the morning brief), art director, learner, seo, scout, outreach, watchdog, backup; `agents/__init__.py` lists each one's schedule and job |
+| `convention_social/seo/`, `convention_social/outreach/` | search text for photos and the site check; organizer emails with opt-out and do-not-contact |
 | `convention_social/booking/`, `worker/` | quote requests, replies, booked dates; the eventcaliber.com Worker |
 | `convention_social/site/` | the eventcaliber.com pages, built from postable photos |
 | `offer.json` | what the company offers, in Chris's words; never a price |

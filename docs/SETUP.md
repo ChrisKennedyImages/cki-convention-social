@@ -112,6 +112,17 @@ Optional spam check: a free Cloudflare Turnstile widget for the domain; its
 site key goes in `.env` as `TURNSTILE_SITE_KEY` and its secret into
 `npx wrangler secret put TURNSTILE_SECRET`.
 
+Organizer emails (the Outreach agent) need the opt-out table too. It is in
+`worker/schema.sql`, so the same `d1 execute` line above creates it; run it
+again after any update, it only adds what is missing. Every organizer email
+carries the postal address from `.env` (`BRAND_POSTAL_ADDRESS`), an opt-out link
+and a "reply STOP" line. A STOP reply lands in your inbox; add that address
+on the dashboard's Outreach page, under Do not contact.
+
+The Scout searches only where you tell it: set `SCOUT_REGION` in `.env` in
+plain words (for example "Washington DC, Baltimore and Northern Virginia").
+Empty means it does not search.
+
 ## 8b. Ollama on the Mini (already installed)
 
 The scanner uses the first vision model Ollama has. If it has none:
