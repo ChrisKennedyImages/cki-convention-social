@@ -31,3 +31,6 @@ __pycache__/
 
 # the built website (bin/ccs site build)
 site/dist/
+
+# the deploy config with the real D1 id, written by scripts/go-live.sh on the Mini
+wrangler.live.jsonc

@@ -207,7 +207,14 @@ if(par.length&&!reduce){addEventListener('scroll',move,{passive:true});move()}
 
 
 def shell(*, title: str, description: str, body: str, mark_svg: str, brand: str, legal: str, email: str,
-          preview: bool, canonical: str, jsonld: str = "", og_image: str = "") -> str:
+          preview: bool, canonical: str, jsonld: str = "", og_image: str = "",
+          sections: tuple = ("work", "venues")) -> str:
+    """`sections`: the photo sections the home page has; the menu links only to those (a site built
+    before any photo is cleared has neither)."""
+    links = [("/#coverage", "01", "Coverage"), ("/#work", "02", "Work"), ("/#venues", "03", "Venues"),
+             ("/availability/", "04", "Availability")]
+    nav = "".join(f'<a href="{h}"><b>{n}</b> {label}</a>' for h, n, label in links
+                  if not h.startswith("/#") or h[2:] == "coverage" or h[2:] in sections)
     stamp = '<div class="preview mono">Preview, not live</div>' if preview else ""
     robots = '<meta name="robots" content="noindex,nofollow">' if preview else ""
     og = f'<meta property="og:image" content="{og_image}">' if og_image else ""
@@ -219,7 +226,7 @@ def shell(*, title: str, description: str, body: str, mark_svg: str, brand: str,
 <link rel="stylesheet" href="/assets/site.css"><script>document.documentElement.classList.add("js")</script>{jsonld}
 </head><body><div class="grain" aria-hidden="true"></div><div class="cursor" aria-hidden="true"></div>
 <header class="top"><a class="logo" href="/" aria-label="{brand} home">{mark_svg}</a>
-<nav class="mono"><a href="/#coverage"><b>01</b> Coverage</a><a href="/#work"><b>02</b> Work</a><a href="/#venues"><b>03</b> Venues</a><a href="/availability/"><b>04</b> Availability</a></nav>
+<nav class="mono">{nav}</nav>
 <a class="btn" href="/book/">Request a quote <span class="arr">&#8599;</span></a></header>
 <main>{body}</main>
 <footer><div class="big" aria-hidden="true">{brand}</div><div class="row mono"><span>{brand}, a brand of {legal}</span>
