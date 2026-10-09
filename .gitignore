@@ -1,0 +1,30 @@
+# Secrets: never commit
+.env
+.env.*
+!.env.example
+client_secret*.json
+*token*.json
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+
+# macOS / editors
+.DS_Store
+.vscode/
+.idea/
+
+# Runtime data lives in CCS_DATA_ROOT, outside the repo
+*.log
+/tmp/
+/out/
+
+# local preview config
+.claude/
+
+# wrangler files
+.wrangler
+.dev.vars*
+!.dev.vars.example

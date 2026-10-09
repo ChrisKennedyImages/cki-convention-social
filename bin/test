@@ -1,0 +1,16 @@
+#!/bin/zsh
+# Run the suite against a throwaway HOME and data root so no test can touch
+# the real ~/cki-convention-social-data, any real mailbox or Drive. Exit
+# non-zero on any failure, error or skip.
+set -u
+HERE="${0:A:h}"
+cd "$HERE/.."
+export HOME="$(mktemp -d)"
+export CCS_DATA_ROOT="$HOME/data"
+export CCS_ENV_FILE="$HOME/nonexistent.env"
+unset ANTHROPIC_API_KEY BUFFER_API_KEY SMTP_PASSWORD R2_KEY R2_SECRET MEDIA_UPLOAD_TOKEN GOOGLE_OAUTH_CLIENT_SECRET 2>/dev/null
+out="$(.venv/bin/python -B -m unittest discover -s tests -t . "$@" 2>&1)"
+code=$?
+echo "$out" | tail -n 6
+if echo "$out" | grep -q -E "skipped=[1-9]"; then echo "SKIPS ARE FAILURES"; exit 1; fi
+exit $code

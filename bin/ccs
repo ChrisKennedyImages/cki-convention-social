@@ -1,0 +1,5 @@
+#!/bin/zsh
+# Operator CLI. Uses the repo's own venv; never the system python.
+set -e
+HERE="${0:A:h}"
+exec "$HERE/../.venv/bin/python" -m convention_social.cli "$@"

@@ -1,0 +1,23 @@
+name: tests
+# Every push to main and every pull request runs the whole suite. A failure, an error or a skip fails the run.
+on:
+  push:
+    branches: [main]
+  pull_request:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: python -m pip install -r requirements.txt
+      - name: run the suite against a throwaway home
+        run: |
+          export HOME="$(mktemp -d)"
+          export CCS_DATA_ROOT="$HOME/data"
+          export CCS_ENV_FILE="$HOME/nonexistent.env"
+          python -B -m unittest discover -s tests -t . 2>&1 | tee out.txt
+          test "${PIPESTATUS[0]}" -eq 0
+          ! grep -q -E "skipped=[1-9]" out.txt
