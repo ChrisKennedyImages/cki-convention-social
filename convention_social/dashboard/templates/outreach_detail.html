@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block body %}
+{% set notes = {'saved': ('Saved.', ''), 'approved': ('Approved. It goes out on the next outreach run (daily at 09:00).', ''),
+                'not_ready': ('Not approved: fix what is listed below first.', 'bad'), 'locked': ('This note can no longer be changed.', 'bad'),
+                'follow_up': ('Follow-up drafted. Edit it, then approve it.', ''), 'no_follow_up': ('No follow-up: ' ~ (follow_up_why or 'not allowed for this note'), 'bad')} %}
+{% if msg in notes %}<div class="msg {{ notes[msg][1] }}">{{ notes[msg][0] }}</div>{% endif %}
+<h1>{{ row.event_name }} <span class="badge">{{ row.status.replace('_',' ') }}</span>{% if row.kind == 'follow_up' %} <span class="badge">follow-up</span>{% endif %}</h1>
+<div class="card">
+  <table>
+    <tr><th>To</th><td>{{ row.email }}{% if row.organizer %} · {{ row.organizer }}{% endif %}</td></tr>
+    <tr><th>Event</th><td>{{ row.event_name }} ({{ row.event_kind }})</td></tr>
+    <tr><th>Dates</th><td>{{ dates or 'not known' }}</td></tr>
+    <tr><th>Where</th><td>{{ row.venue or '' }}{% if row.city %}{% if row.venue %}, {% endif %}{{ row.city }}{% endif %}</td></tr>
+    {% if row.website %}<tr><th>Website</th><td><a href="{{ row.website }}" rel="noopener noreferrer" target="_blank">{{ row.website }}</a></td></tr>{% endif %}
+    {% if scout and scout.email_source_url %}<tr><th>Address from</th><td><a href="{{ scout.email_source_url }}" rel="noopener noreferrer" target="_blank">{{ scout.email_source_url }}</a></td></tr>{% endif %}
+    {% if sources %}<tr><th>Sources</th><td>{% for s in sources %}<a href="{{ s }}" rel="noopener noreferrer" target="_blank">{{ loop.index }}</a> {% endfor %}</td></tr>{% endif %}
+    {% if row.parent_id %}<tr><th>Follows</th><td><a href="/outreach/{{ row.parent_id }}">the first note</a></td></tr>{% endif %}
+    {% if row.sent_at %}<tr><th>Sent</th><td>{{ row.sent_at[:16].replace('T',' ') }} UTC</td></tr>{% endif %}
+    <tr><th>Drafted by</th><td>{{ row.model or 'not drafted yet' }}</td></tr>
+  </table>
+  {% if row.notes %}<div class="muted" style="margin-top:8px">{{ row.notes }}</div>{% endif %}
+</div>
+{% if problems %}
+<div class="card">
+  {% for p in problems %}<div class="rule {{ 'ok' if p.code == 'follow_up_wait' else 'block' }}">{{ p.message }}</div>{% endfor %}
+</div>
+{% endif %}
+{% if row.status == 'queued' %}
+<div class="card muted">Waiting for the next outreach run to draft it.</div>
+{% endif %}
+<form method="post" action="/outreach/{{ row.id }}/save" class="card">
+  <h2>The note</h2>
+  <label>Subject</label><input type="text" name="subject" value="{{ row.subject or '' }}" {{ '' if editable else 'readonly' }}>
+  <label>Message</label>
+  <textarea name="body" style="min-height:300px" {{ '' if editable else 'readonly' }}>{{ row.body or '' }}</textarea>
+  <div class="muted" style="white-space:pre-wrap;margin-top:6px">Added below every note:
+
+{{ footer }}</div>
+  <div class="muted" style="margin-top:6px">Headers: List-Unsubscribe {{ built.headers['List-Unsubscribe'] }}; List-Unsubscribe-Post {{ built.headers['List-Unsubscribe-Post'] }}</div>
+  {% if editable %}<div class="row" style="margin-top:12px"><button type="submit">Save</button>{% if row.status == 'approved' %}<span class="muted">Saving sends it back to draft; approve it again after.</span>{% endif %}</div>{% endif %}
+</form>
+<div class="row">
+  {% if approvable %}
+  <form method="post" action="/outreach/{{ row.id }}/approve" class="inline"><button class="ok" type="submit" {{ 'disabled' if blocking else '' }}>{{ 'Approve and send for real' if row.status == 'would_send' else 'Approve' }}</button></form>
+  {% endif %}
+  {% if editable %}
+  <form method="post" action="/outreach/{{ row.id }}/reject" class="inline"><button class="danger" type="submit">Reject</button></form>
+  {% endif %}
+  {% if row.kind == 'first' and row.status == 'sent' %}
+    {% if follow_up %}<a class="btn" href="/outreach/{{ follow_up.id }}">The follow-up ({{ follow_up.status.replace('_',' ') }})</a>
+    {% elif follow_up_why %}<span class="muted">{{ follow_up_why }}</span>
+    {% else %}<form method="post" action="/outreach/{{ row.id }}/followup" class="inline"><button type="submit">Draft the one follow-up</button></form>{% endif %}
+  {% endif %}
+</div>
+{% endblock %}

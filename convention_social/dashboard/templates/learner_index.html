@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}Learner | {{ brand }}{% endblock %}
+{% block body %}
+<h1>Learner</h1>
+<div class="card">
+  <div class="row"><strong>What it does</strong>
+    <span class="badge {{ 'dry' if dry_run else 'live' }}" style="margin-left:auto">{{ 'dry run: suggests only' if dry_run else 'LIVE: applies' }}</span></div>
+  <div class="muted">Every night it reads how the posts did and nudges the posting times and the photo picker toward what works.
+    A time moves at most an hour a week and stays between 7:00 am and 10:00 pm. It never changes one post a day,
+    the building day, approvals, clearance or any spending cap.</div>
+</div>
+
+<h2>Latest note</h2>
+<div class="card">
+  {% if suggestion.status %}<div class="row" style="margin-bottom:6px"><span class="badge {{ 'ok' if suggestion.applied else 'dry' }}">{{ suggestion.status }}</span>
+    <span class="muted">{{ (suggestion.at or '')[:16].replace('T',' ') }} UTC, from {{ suggestion.posts or 0 }} posts</span></div>{% endif %}
+  <div>{{ note or 'The learner has not run yet.' }}</div>
+</div>
+
+<h2>Posting times</h2>
+<div class="card">
+<table>
+  <tr><th>Network</th><th>Starting time</th><th>In use now</th><th>Suggested</th></tr>
+  {% for n in networks %}
+  <tr><td><strong>{{ n.network|capitalize }}</strong></td><td>{{ n.start }}</td><td>{{ n.in_use }}</td>
+      <td>{{ n.suggested or 'nothing yet' }}{% if n.posts %}<div class="muted">{{ n.posts }} posts{% if n.best_hour is not none %}, best hour {{ n.best_hour }}:00{% endif %}</div>{% endif %}</td></tr>
+  {% endfor %}
+</table>
+</div>
+
+<h2>Photo weights</h2>
+<div class="card">
+{% if not weights %}<div class="muted">None yet. A kind of photo needs 5 posts with numbers before it is weighed. Everything counts the same until then (1.0).</div>
+{% else %}
+<table>
+  <tr><th>Kind</th><th>Value</th><th>In use</th><th>Suggested</th></tr>
+  {% for w in weights %}
+  <tr><td>{{ w.field }}</td><td>{{ w.value }}</td>
+      <td>{{ '%.2f'|format(w.applied) if w.applied is not none else '1.00' }}</td>
+      <td>{{ '%.2f'|format(w.suggested) if w.suggested is not none else '1.00' }}</td></tr>
+  {% endfor %}
+</table>
+<div class="muted" style="margin-top:6px">Between 0.5 and 1.5. The picker multiplies a photo's quality by its weight; it never skips a rule.</div>
+{% endif %}
+</div>
+
+<h2>History</h2>
+{% if not history %}<div class="card muted">No runs yet.</div>{% endif %}
+{% for h in history %}
+<div class="card">
+  <div class="row"><span class="badge {{ 'ok' if h.applied else 'dry' }}">{{ h.status }}</span>
+    <span class="muted">{{ h.created_at[:16].replace('T',' ') }} UTC, {{ h.posts_seen }} posts</span></div>
+  <div>{{ h.note }}</div>
+</div>
+{% endfor %}
+{% endblock %}

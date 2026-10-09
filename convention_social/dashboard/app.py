@@ -566,6 +566,9 @@ def create_app() -> FastAPI:
         config.write_env({"DASHBOARD_PASSWORD_HASH": auth.hash_password(password)})
         return RedirectResponse("/keys?msg=password+changed", status_code=303)
 
+    from . import learner_seo_routes, scout_outreach_routes
+    learner_seo_routes.register(app, require_user, conn_dep, render)
+    scout_outreach_routes.register(app, require_user, conn_dep, render)
     return app
 
 

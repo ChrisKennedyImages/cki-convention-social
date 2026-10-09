@@ -33,7 +33,9 @@ from . import pacing
 
 # how long after its cadence an agent may be silent before we call it missed
 MAX_GAP = {"scanner": timedelta(hours=3), "content": timedelta(hours=30), "publisher": timedelta(hours=1),
-           "watchdog": timedelta(hours=2), "backup": timedelta(hours=36)}
+           "watchdog": timedelta(hours=2), "backup": timedelta(hours=36),
+           "learner": timedelta(hours=30), "seo": timedelta(days=8),
+           "scout": timedelta(days=8), "outreach": timedelta(hours=30)}
 STUCK_AFTER = timedelta(hours=6)       # a scheduled post this long past its time without being sent
 SUPPRESS = timedelta(hours=6)
 DISK_MIN_FREE = 10 * 1024 ** 3

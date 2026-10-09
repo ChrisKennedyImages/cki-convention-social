@@ -34,7 +34,7 @@ from ..ai import claude, copy_rules
 from ..core import config, db, runner
 from ..library import classify, eligibility
 from ..render import brand, posts
-from . import art_director
+from . import art_director, learner
 from ..render import meta as image_meta
 
 try:                                    # HEIC originals from a phone
@@ -94,6 +94,8 @@ def candidates(conn: sqlite3.Connection, subject: str) -> list[dict]:
         if any(c.lower() in used_people for c in credit.split()):
             continue
         out.append({**dict(r), "credit": credit})
+    # what the learner found works, inside the founder's bounds; a stable sort, so ties keep quality order
+    out.sort(key=lambda r: (r.get("quality") or 0) * learner.weight_for(conn, r.get("shot_type"), r.get("event_kind")), reverse=True)
     return out
 
 

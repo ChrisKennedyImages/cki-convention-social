@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block body %}
+{% set notes = {'queued': ('Added. The next outreach run drafts it for you.', ''), 'rejected': ('Rejected.', ''),
+                'blocked': ('That address is on the do-not-contact list.', 'bad'), 'exists': ('There is already a note to that address for that event.', 'bad'),
+                'bad_prospect': ('An event name and a valid email address are needed.', 'bad')} %}
+{% if msg in notes %}<div class="msg {{ notes[msg][1] }}">{{ notes[msg][0] }}</div>{% endif %}
+<h1>Outreach</h1>
+<div class="card muted">Notes to event organizers. Nothing leaves until you press Approve, and every email carries your postal address, a one-click opt-out link and a reply STOP line.
+  <a href="/outreach/donotcontact">Do not contact</a></div>
+{% if not cfg_ok.sender or not cfg_ok.address %}
+<div class="card">
+  {% if not cfg_ok.sender %}<div class="rule block">Mail sent from is not set to an address on {{ cfg_ok.domain }}: nothing can be approved or sent. Set BRAND_FROM_EMAIL on the <a href="/keys">Keys</a> page.</div>{% endif %}
+  {% if not cfg_ok.address %}<div class="rule block">No postal address: nothing can be approved or sent. Set BRAND_POSTAL_ADDRESS on the <a href="/keys">Keys</a> page.</div>{% endif %}
+</div>
+{% endif %}
+{% for title, rows, empty in [('Drafts', drafts, 'No drafts. The outreach agent drafts up to ' ~ daily_drafts ~ ' a day from scout finds that have an organizer email, and from prospects you add below.'),
+                              ('Approved, waiting to send', approved, 'None.'), ('Sent', sent, 'None yet.'), ('Rejected and opted out', closed, 'None.')] %}
+<h2>{{ title }}</h2>
+{% if not rows %}<div class="card muted">{{ empty }}</div>{% endif %}
+{% for r in rows %}
+<a href="/outreach/{{ r.id }}" style="text-decoration:none;color:inherit"><div class="card">
+  <div class="row"><strong>{{ r.event_name }}</strong>
+    <span class="badge {{ 'draft' if r.status in ('queued','draft') else ('ok' if r.status in ('approved','sent') else ('would_publish' if r.status == 'would_send' else 'blocked')) }}">{{ r.status.replace('_',' ') }}</span>
+    {% if r.kind == 'follow_up' %}<span class="badge">follow-up</span>{% endif %}</div>
+  <div class="muted">{{ r.email }}{% if r.organizer %} · {{ r.organizer }}{% endif %}{% if r.start_date %} · {{ r.start_date }}{% endif %}{% if r.sent_at %} · sent {{ r.sent_at[:10] }}{% endif %}</div>
+  {% if r.notes %}<div class="muted">{{ r.notes }}</div>{% endif %}
+</div></a>
+{% endfor %}
+{% endfor %}
+<form method="post" action="/outreach/add" class="card">
+  <h2>Add a prospect by hand</h2>
+  <div class="muted">Only an address the organizer made public for this kind of contact. It is drafted on the next outreach run.</div>
+  <label>Event name</label><input type="text" name="event_name" required>
+  <label>Organizer email</label><input type="text" name="email" required>
+  <label>Organizer (person or company)</label><input type="text" name="organizer">
+  <label>Kind</label><select name="kind"><option value="fan">Fan convention</option><option value="business">Business or political conference</option><option value="other" selected>Other</option></select>
+  <div class="row"><div style="flex:1"><label>Starts</label><input type="date" name="start_date"></div>
+    <div style="flex:1"><label>Ends</label><input type="date" name="end_date"></div></div>
+  <label>City</label><input type="text" name="city">
+  <label>Venue</label><input type="text" name="venue">
+  <label>Event website</label><input type="url" name="website">
+  <div class="row" style="margin-top:12px"><button class="primary" type="submit">Add</button></div>
+</form>
+{% endblock %}

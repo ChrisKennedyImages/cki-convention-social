@@ -50,6 +50,19 @@ class Chief(IsolatedCase):
         self.assertEqual(chief.run(self.ctx(), now=BRIEF_UTC), "brief not due")
         self.assertEqual(db.one(self.conn, "SELECT COUNT(*) n FROM api_usage")["n"], 0)
 
+    def test_counts_outreach_drafts_and_scout_finds(self):
+        """The brief reads the tables migration 0040 really makes: outreach and scout_events."""
+        now = db.utcnow()
+        db.insert(self.conn, "outreach", event_key="expo|2027-03-05", event_name="Expo", email="o@example.org",
+                  status="draft", token="a" * 32, created_at=now, updated_at=now)
+        db.insert(self.conn, "scout_events", dedup_key="expo|2027-03-05", name_key="expo", name="Expo",
+                  sources='["https://example.org/expo"]', found_at=now, updated_at=now)
+        chief.run(self.ctx(), now=BRIEF_UTC)
+        needs = dict(json.loads(settings.get(self.conn, chief.BRIEF_KEY))["needs"])
+        self.assertTrue(needs)
+        self.assertEqual(needs.get("1 organizer email(s) drafted for your Approve."), "/outreach")
+        self.assertEqual(needs.get("1 upcoming event(s) the scout found for you to look at."), "/scout")
+
     def test_not_before_the_hour(self):
         self.assertEqual(chief.run(self.ctx(), now=datetime(2026, 10, 12, 9, 0, tzinfo=timezone.utc)), "brief not due")
 

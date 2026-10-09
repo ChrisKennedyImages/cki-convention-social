@@ -11,6 +11,7 @@ from convention_social import offer
 from convention_social.core import db
 from convention_social.site import build
 from convention_social.render import meta
+from convention_social.seo import site_check
 from tests._base import IsolatedCase
 from tests._photos import jpeg_bytes
 
@@ -50,6 +51,35 @@ class Site(IsolatedCase):
         home = (self.built(preview=True) / "index.html").read_text()
         self.assertIn("Preview, not live", home)
         self.assertIn("noindex", home)
+
+    def test_search_files_and_structured_data(self):
+        out = self.built()
+        robots = (out / "robots.txt").read_text()
+        self.assertIn("Sitemap: https://eventcaliber.com/sitemap.xml", robots)
+        self.assertNotIn("Disallow: /\n", robots)
+        sitemap = (out / "sitemap.xml").read_text()
+        locs = re.findall(r"<loc>([^<]+)</loc>", sitemap)
+        self.assertEqual(locs, ["https://eventcaliber.com/", "https://eventcaliber.com/book/",
+                                "https://eventcaliber.com/availability/", "https://eventcaliber.com/privacy/"])
+        images = re.findall(r"<image:loc>([^<]+)</image:loc>", sitemap)
+        self.assertEqual(len(images), 5)                          # hero, 3 coverage, 1 venue
+        for loc in images:
+            self.assertTrue((out / loc.replace("https://eventcaliber.com/", "")).exists(), loc)
+        home = (out / "index.html").read_text()
+        blocks = [json.loads(b) for b in re.findall(r'<script type="application/ld\+json">(.*?)</script>', home, flags=re.S)]
+        self.assertTrue(blocks)
+        self.assertEqual([b["@type"] for b in blocks], ["ProfessionalService"] + ["ImageObject"] * 5)
+        self.assertEqual(blocks[0]["legalName"], "CKI, LLC")
+        self.assertNotIn("address", blocks[0])
+        self.assertNotIn("ld+json", (out / "book/index.html").read_text())
+        # the SEO agent's weekly check reads these same two files on the live site
+        self.assertEqual(site_check.check_sitemap(200, sitemap)["problems"], [])
+        self.assertEqual(site_check.check_robots(200, robots)["problems"], [])
+
+    def test_preview_is_never_crawled(self):
+        robots = (self.built(preview=True) / "robots.txt").read_text()
+        self.assertEqual(robots, "User-agent: *\nDisallow: /\n")
+        self.assertIn("blocks the whole site (Disallow: /)", site_check.check_robots(200, robots)["problems"])
 
     def test_photos_carry_no_metadata(self):
         out = self.built()

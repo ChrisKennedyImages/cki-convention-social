@@ -3,17 +3,19 @@ import assert from "node:assert/strict";
 import worker from "../worker/index.js";
 
 class FakeD1 {
-  constructor() { this.quotes = []; this.days = new Set(); }
+  constructor() { this.quotes = []; this.days = new Set(); this.unsubs = []; }
   prepare(sql) {
     const db = this;
     let args = [];
     const stmt = {
       bind(...a) { args = a; return stmt; },
       async first() {
+        if (sql.includes("FROM unsubscribes")) return { n: db.unsubs.filter((u) => u.ip === args[0] && u.received_at > args[1]).length };
         if (sql.includes("COUNT(*)")) return { n: db.quotes.filter((q) => q.ip === args[0] && q.received_at > args[1]).length };
         return null;
       },
       async all() {
+        if (sql.includes("FROM unsubscribes")) return { results: [...db.unsubs] };
         if (sql.includes("FROM quote_requests")) return { results: [...db.quotes] };
         if (sql.includes("FROM booked_days")) return { results: [...db.days].filter((d) => d >= args[0]).sort().map((day) => ({ day })) };
         return { results: [] };
@@ -23,6 +25,9 @@ class FakeD1 {
         else if (sql.startsWith("DELETE FROM quote_requests")) db.quotes = db.quotes.filter((q) => q.id !== args[0]);
         else if (sql.startsWith("DELETE FROM booked_days")) db.days.clear();
         else if (sql.startsWith("INSERT OR IGNORE INTO booked_days")) db.days.add(args[0]);
+        else if (sql.startsWith("INSERT OR IGNORE INTO unsubscribes")) {
+          if (!db.unsubs.some((u) => u.token === args[0])) db.unsubs.push({ token: args[0], received_at: args[1], ip: args[2] });
+        } else if (sql.startsWith("DELETE FROM unsubscribes")) db.unsubs = db.unsubs.filter((u) => u.token !== args[0]);
         return {};
       },
     };
@@ -91,4 +96,43 @@ r = await worker.fetch(new Request(`${base}/`), env);
 ok((await r.text()) === "site", "everything else is the site");
 r = await worker.fetch(new Request(`${base}/api/nothing`), env);
 ok(r.status === 404, "unknown api 404");
+// opt-outs from outreach emails: a page with one button, a one-click POST, the token stored, never the address
+const tokA = "a".repeat(32), tokB = "b".repeat(32), tokC = "c".repeat(32);
+const unsub = (path, init = {}) => worker.fetch(new Request(`${base}${path}`, { ...init,
+  headers: { "cf-connecting-ip": "5.6.7.8", ...(init.headers || {}) } }), env);
+r = await unsub(`/unsubscribe?t=${tokA}`);
+let page = await r.text();
+ok(r.status === 200 && page.includes('action="/api/unsubscribe"') && page.includes(tokA), "opt-out page has the confirm button");
+ok(env.DB.unsubs.length === 0, "opening the page stores nothing");
+r = await unsub("/unsubscribe?t=not-a-token");
+ok(r.status === 400, "a broken opt-out link is refused");
+r = await unsub("/api/unsubscribe", { method: "POST", body: form({ t: tokA }) });
+ok(r.status === 200 && (await r.text()).includes("unsubscribed") && env.DB.unsubs.length === 1, "the button stores the token");
+r = await unsub("/api/unsubscribe", { method: "POST", body: form({ t: tokA }) });
+ok(env.DB.unsubs.length === 1, "the same token twice is stored once");
+r = await unsub(`/unsubscribe?t=${tokB}`, { method: "POST", body: "List-Unsubscribe=One-Click",
+  headers: { "content-type": "application/x-www-form-urlencoded" } });
+ok(r.status === 200 && env.DB.unsubs.some((u) => u.token === tokB), "one-click opt-out from a mail client is stored");
+r = await unsub("/api/unsubscribe", { method: "POST", body: JSON.stringify({ t: tokC }),
+  headers: { "content-type": "application/json", accept: "application/json" } });
+ok(r.status === 200 && (await r.json()).ok === true, "JSON opt-out answers JSON");
+r = await unsub("/api/unsubscribe", { method: "POST", body: form({ t: "x@example.org" }) });
+ok(r.status === 400 && env.DB.unsubs.length === 3, "an address instead of a token is refused");
+r = await unsub("/api/unsubscribe");
+ok(r.status === 405, "GET on the store is not allowed");
+for (let i = 0; i < 25; i++) {
+  await worker.fetch(new Request(`${base}/api/unsubscribe`, { method: "POST", body: form({ t: i.toString(16).padStart(32, "d") }),
+    headers: { "cf-connecting-ip": "9.9.9.9" } }), env);
+}
+ok(env.DB.unsubs.filter((u) => u.ip === "9.9.9.9").length === 20, "rate limit: twenty opt-outs an hour per address");
+r = await worker.fetch(new Request(`${base}/api/unsubscribes`), env);
+ok(r.status === 403, "pulling opt-outs needs the token");
+r = await worker.fetch(new Request(`${base}/api/unsubscribes`, { headers: { authorization: "Bearer tok" } }), env);
+const outs = (await r.json()).unsubscribes;
+ok(outs.length === 23 && outs.every((u) => /^[a-f0-9]{32}$/.test(u.token) && !("ip" in u)), "the Mini pulls tokens only");
+r = await worker.fetch(new Request(`${base}/api/unsubscribes/ack`, { method: "POST", headers: { authorization: "Bearer tok" },
+  body: JSON.stringify({ tokens: [tokA, tokB, "junk"] }) }), env);
+ok((await r.json()).deleted === 2 && env.DB.unsubs.length === 21, "acked opt-outs deleted");
+r = await worker.fetch(new Request(`${base}/api/unsubscribes/ack`, { method: "POST", body: JSON.stringify({ tokens: [tokC] }) }), env);
+ok(r.status === 403 && env.DB.unsubs.length === 21, "ack needs the token");
 console.log(`worker: ${checks} checks passed`);

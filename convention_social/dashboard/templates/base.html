@@ -49,7 +49,7 @@ form.inline{display:inline}
 <header>
   <span class="brand">{{ brand }}</span>
   <nav>
-    {% for href, label in [('/', 'Queue'), ('/inquiries', 'Requests'), ('/bookings', 'Bookings'), ('/library', 'Library'), ('/calendar', 'Calendar'), ('/donotuse', 'Do not use'), ('/drive', 'Drive'), ('/agents', 'Agents'), ('/keys', 'Keys')] %}
+    {% for href, label in [('/', 'Queue'), ('/inquiries', 'Requests'), ('/bookings', 'Bookings'), ('/outreach', 'Outreach'), ('/scout', 'Scout'), ('/library', 'Library'), ('/calendar', 'Calendar'), ('/donotuse', 'Do not use'), ('/drive', 'Drive'), ('/seo', 'Search'), ('/learner', 'Learner'), ('/agents', 'Agents'), ('/keys', 'Keys')] %}
     <a href="{{ href }}" class="{{ 'on' if (request.url.path == href or (href != '/' and request.url.path.startswith(href))) else '' }}">{{ label }}</a>
     {% endfor %}
   </nav>

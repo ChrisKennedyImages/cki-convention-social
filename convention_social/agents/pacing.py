@@ -21,6 +21,7 @@ from typing import Optional
 from zoneinfo import ZoneInfo
 
 from ..core import config, db
+from . import learner
 
 DEFAULT_TIMES: dict[str, tuple[time, time]] = {      # network: (weekdays, weekends)
     "instagram": (time(11, 30), time(10, 0)),
@@ -142,7 +143,7 @@ def next_slot(conn, network: str, now: Optional[datetime] = None, cfg: Optional[
         day = local_now.date() + timedelta(days=i)
         if day in taken:
             continue
-        slot = datetime.combine(day, time_for(network, day), tz)
+        slot = datetime.combine(day, learner.post_time_for(conn, network, time_for(network, day), day), tz)
         if slot > local_now + LEAD:
             return slot
     return None

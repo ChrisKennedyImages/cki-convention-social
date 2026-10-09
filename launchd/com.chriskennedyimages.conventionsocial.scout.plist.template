@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.chriskennedyimages.conventionsocial.scout</string>
+  <key>UserName</key><string>__USER__</string>
+  <key>GroupName</key><string>staff</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>__PYTHON__</string>
+    <string>-m</string>
+    <string>convention_social.agents.scout</string>
+  </array>
+  <key>WorkingDirectory</key><string>__REPO__</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>HOME</key><string>__HOME__</string>
+    <key>PATH</key><string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <key>CCS_DATA_ROOT</key><string>__DATA__</string>
+    <key>PYTHONUNBUFFERED</key><string>1</string>
+  </dict>
+  <key>StartCalendarInterval</key><dict><key>Weekday</key><integer>0</integer><key>Hour</key><integer>7</integer><key>Minute</key><integer>0</integer></dict>
+  <key>RunAtLoad</key><false/>
+  <key>StandardOutPath</key><string>__DATA__/logs/scout.launchd.log</string>
+  <key>StandardErrorPath</key><string>__DATA__/logs/scout.launchd.log</string>
+  <key>ProcessType</key><string>Background</string>
+  <key>Nice</key><integer>5</integer>
+</dict>
+</plist>

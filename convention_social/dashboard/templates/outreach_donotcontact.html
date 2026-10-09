@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block body %}
+{% set notes = {'added': ('Added. Every open note to that address is closed.', ''), 'removed': ('Removed.', ''),
+                'bad_email': ('That is not a valid email address.', 'bad')} %}
+{% if msg in notes %}<div class="msg {{ notes[msg][1] }}">{{ notes[msg][0] }}</div>{% endif %}
+<h1>Do not contact</h1>
+<div class="card muted">No outreach email is drafted for or sent to these addresses. Opt-out links add themselves on the next outreach run;
+  add anyone who replies STOP, or asks not to hear from you, here.</div>
+<form method="post" action="/outreach/donotcontact/add" class="card">
+  <label>Email address</label><input type="text" name="email" required>
+  <label>Why</label><select name="source"><option value="reply">Replied STOP or asked not to be contacted</option><option value="bounce">The address bounced</option><option value="manual">Other</option></select>
+  <label>Note (optional)</label><input type="text" name="reason">
+  <div class="row" style="margin-top:12px"><button class="primary" type="submit">Add</button></div>
+</form>
+{% if not rows %}<div class="card muted">Nobody yet.</div>{% endif %}
+{% for r in rows %}
+<div class="card row"><strong>{{ r.email }}</strong><span class="badge">{{ r.source }}</span><span class="muted">{{ r.reason or '' }} · {{ r.added_at[:10] }}</span>
+  <form method="post" action="/outreach/donotcontact/{{ r.id }}/remove" class="inline" style="margin-left:auto"><button class="small" type="submit">Remove</button></form></div>
+{% endfor %}
+<div class="row"><a class="btn" href="/outreach">Back to outreach</a></div>
+{% endblock %}

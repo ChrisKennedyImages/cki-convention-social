@@ -28,6 +28,7 @@ from PIL import Image, ImageOps
 from .. import offer
 from ..ai import copy_rules
 from ..core import config, db
+from ..seo import markup
 from ..library import eligibility
 from ..render import fonts
 from ..render.meta import ImageMeta, save_jpeg
@@ -195,12 +196,16 @@ def build(conn: Optional[sqlite3.Connection], photos: SitePhotos, *, out: Path =
     mark_svg = marks.mark(mark_key, brand, size=40)
     e = html.escape
     hero, frames, stack, venues, peeks = "", [], [], [], []
+    shown: list[tuple[str, str, ImageMeta]] = []          # (published path, alt, meta) for the sitemap and JSON-LD
     if photos.hero:
         im, alt, m = _photo(photos.hero[0])
-        hero = img_tag(save_web(im, assets, "hero", m), alt, "100vw", eager=True)
+        files = save_web(im, assets, "hero", m)
+        hero = img_tag(files, alt, "100vw", eager=True)
+        shown.append((f"/assets/{files[max(files)]}", alt, m))
     for i, entry in enumerate(photos.coverage):
         im, alt, m = _photo(entry)
         files = save_web(im, assets, f"work-{i}", m)
+        shown.append((f"/assets/{files[max(files)]}", alt, m))
         tag = img_tag(files, alt, "(max-width:900px) 78vw, 34vw")
         frames.append((tag, (m.title or alt)[:34]))
         peeks.append(f"/assets/{files[min(files)]}")
@@ -209,6 +214,7 @@ def build(conn: Optional[sqlite3.Connection], photos: SitePhotos, *, out: Path =
     for i, entry in enumerate(photos.venues):
         im, alt, m = _photo(entry)
         files = save_web(im, assets, f"venue-{i}", m)
+        shown.append((f"/assets/{files[max(files)]}", alt, m))
         venues.append((img_tag(files, alt, "(max-width:900px) 100vw, 60vw", extra=' data-speed="0.08"'),
                        "Exterior" if i % 2 == 0 else "Interior"))
     base = f"https://{cfg.brand_domain}"
@@ -273,6 +279,11 @@ It is never sold or shared. The website holds it only until it is collected, usu
     pages["404.html"] = ("Not found", "Not found.", """<section class="page" style="min-height:70vh"><div class="kick mono c">Out of frame</div>
 <h1>Not<br><span class="o">found</span><b>.</b></h1><p style="margin-top:30px"><a class="btn" href="/">Back to the site <span class="arr">&#8599;</span></a></p></section>""")
     og = f"{base}/assets/hero-1600.jpg" if hero else ""
+    if not head_extra:
+        blocks = [markup.jsonld_business(brand, cfg.legal_name, base + "/", contact_email(), t["lede"])]
+        blocks += [markup.jsonld_image(markup.absolute(base, loc), brand, cfg.legal_name, m.credit or brand)
+                   for loc, _, m in shown]
+        head_extra = "".join(markup.jsonld_script(b) for b in blocks)
     for rel, (title, desc, body) in pages.items():
         check_copy([desc])
         dest = out / rel
@@ -282,6 +293,11 @@ It is never sold or shared. The website holds it only until it is collected, usu
                                     mark_svg=mark_svg, brand=e(brand), legal=e(cfg.legal_name), email=e(contact_email()),
                                     preview=preview, canonical=base + path, jsonld=head_extra if rel == "index.html" else "",
                                     og_image=og), encoding="utf-8")
+    # a preview is never crawled; the live site lists its public pages and every photo on them
+    (out / "robots.txt").write_text("User-agent: *\nDisallow: /\n" if preview else markup.robots_txt(base))
+    (out / "sitemap.xml").write_text(markup.sitemap_xml(
+        base, ["/", "/book/", "/availability/", "/privacy/"],
+        {"/": [{"loc": loc, "title": m.title or alt, "caption": m.description or alt} for loc, alt, m in shown]}))
     (out / "build.json").write_text(json.dumps({"preview": preview, "hero": len(photos.hero), "coverage": len(photos.coverage),
                                                 "venues": len(photos.venues), "mark": mark_key}))
     return out

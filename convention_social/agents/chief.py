@@ -61,7 +61,7 @@ def gather(ctx: runner.Context, now: datetime) -> dict:
     req = _count(conn, "SELECT COUNT(*) FROM inquiries WHERE status IN ('new','drafted') AND reply_status IN ('none','draft')")
     if req:
         needs.append((f"{req} quote request(s) waiting for your reply.", "/inquiries"))
-    outreach = _count(conn, "SELECT COUNT(*) FROM outreach_messages WHERE status='draft'")
+    outreach = _count(conn, "SELECT COUNT(*) FROM outreach WHERE status='draft'")
     if outreach:
         needs.append((f"{outreach} organizer email(s) drafted for your Approve.", "/outreach"))
     scout = _count(conn, "SELECT COUNT(*) FROM scout_events WHERE status='new'")

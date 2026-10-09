@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block body %}
+{% set notes = {'added': ('On the calendar, with attending and official unticked.', ''), 'dismissed': ('Dismissed.', ''),
+                'already': ('That one is already on the calendar.', '')} %}
+{% if msg in notes %}<div class="msg {{ notes[msg][1] }}">{{ notes[msg][0] }}</div>{% endif %}
+<h1>Scout</h1>
+<div class="card muted">
+  {% if region %}Every Sunday the scout searches <strong>{{ region }}</strong> for conventions and conferences in the next {{ months }} months.
+  Only events a source backs are kept; an organizer email shows only when it is printed on the event's own site.
+  {% else %}<span class="rule block">No region set.</span> Add SCOUT_REGION (for example Washington DC, Maryland, Virginia) on the <a href="/keys">Keys</a> page; until then the scout searches nothing.{% endif %}
+  {% if last %}<br>Last run: {{ last.started_at[:16].replace('T',' ') }} UTC, {{ last.summary or '' }}{% endif %}
+</div>
+<div class="row" style="margin-bottom:12px">
+  {% for s, label in [('new', 'New'), ('added', 'On the calendar'), ('dismissed', 'Dismissed'), ('all', 'All')] %}
+  <a class="btn {{ 'primary' if show == s else '' }}" href="/scout?show={{ s }}">{{ label }}{% if s != 'all' %} ({{ counts.get(s, 0) }}){% endif %}</a>
+  {% endfor %}
+</div>
+{% if not items %}<div class="card muted">Nothing here.</div>{% endif %}
+{% for e in items %}
+<div class="card">
+  <div class="row"><strong>{{ e.name }}</strong><span class="badge">{{ e.kind }}</span>
+    <span class="badge {{ 'draft' if e.status == 'new' else ('ok' if e.status == 'added' else 'blocked') }}">{{ e.status }}</span></div>
+  <div class="muted">{{ e.dates or 'dates not found' }}{% if e.city %} · {{ e.city }}{% endif %}{% if e.venue %} · {{ e.venue }}{% endif %}</div>
+  {% if e.website %}<div><a href="{{ e.website }}" rel="noopener noreferrer" target="_blank">{{ e.website }}</a></div>{% endif %}
+  {% if e.organizer or e.organizer_email %}<div class="muted">Organizer: {{ e.organizer or '' }}{% if e.organizer_email %} · {{ e.organizer_email }} (from <a href="{{ e.email_source_url }}" rel="noopener noreferrer" target="_blank">their site</a>){% endif %}</div>{% endif %}
+  <div class="muted">Sources:{% for s in e.source_list %} <a href="{{ s }}" rel="noopener noreferrer" target="_blank">{{ loop.index }}</a>{% endfor %}</div>
+  <div class="row" style="margin-top:8px">
+    {% if e.status != 'added' %}<form method="post" action="/scout/{{ e.id }}/add" class="inline"><button class="primary small" type="submit">Add to calendar</button></form>{% endif %}
+    {% if e.status == 'new' %}<form method="post" action="/scout/{{ e.id }}/dismiss" class="inline"><button class="small" type="submit">Dismiss</button></form>{% endif %}
+    {% if e.status == 'added' and e.convention_id %}<a class="btn small" href="/calendar?edit={{ e.convention_id }}">Open on the calendar</a>{% endif %}
+  </div>
+</div>
+{% endfor %}
+{% endblock %}
