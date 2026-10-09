@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block body %}
+<h1>Do not use</h1>
+<div class="card muted">Takedown requests and anything you never want posted. Honoured everywhere, including posts already approved.</div>
+<form method="post" action="/donotuse/add" class="card">
+  <label>What</label>
+  <select name="kind"><option value="photo">A photo (Drive link)</option><option value="folder">A folder (Drive link)</option>
+    <option value="person">A person (name as in the credits sheet)</option><option value="handle">A handle (e.g. @name)</option></select>
+  <label>Link, name or handle</label><input type="text" name="value" required>
+  <label>Why (optional)</label><input type="text" name="reason">
+  <div class="row" style="margin-top:12px"><button class="primary" type="submit">Add</button></div>
+</form>
+{% for r in rows %}
+<div class="card row"><span class="badge">{{ r.kind }}</span><strong>{{ r.value }}</strong><span class="muted">{{ r.reason or '' }}</span>
+  <form method="post" action="/donotuse/{{ r.id }}/remove" class="inline" style="margin-left:auto"><button class="small" type="submit">Remove</button></form></div>
+{% endfor %}
+{% endblock %}

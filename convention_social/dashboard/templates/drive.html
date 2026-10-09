@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block body %}
+<h1>Google Drive</h1>
+<div class="card">
+  <div class="row"><strong>Sign-in</strong><span class="badge {{ 'ok' if state == 'ok' else 'blocked' }}">{{ {'ok':'signed in, read only','expired':'expired','missing':'not signed in'}.get(state, state) }}</span></div>
+  <div class="muted">{{ detail }}</div>
+  {% if state != 'ok' %}<p>To sign in, run <code>bin/ccs drive login</code> on the Mini and follow the link it prints.</p>{% endif %}
+</div>
+<div class="card">
+  <strong>{{ summary.convention_photos }} convention photos found</strong>
+  <div class="muted">{{ summary.total_images }} postable photos in Drive, {{ summary.skipped_raw }} RAW files skipped, {{ summary.vision_checked }} looked at closely, last full scan {{ summary.inventory_at }}</div>
+  {% if report_name %}<p><a class="btn" href="/drive/report/{{ report_name }}">Open the latest report</a></p>{% endif %}
+</div>
+{% if unmatched %}<div class="card"><strong>Credits sheet rows that match no photo or folder</strong><div class="muted">{{ unmatched }}</div></div>{% endif %}
+{% endblock %}

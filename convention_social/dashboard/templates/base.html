@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}{{ brand }}{% endblock %}</title>
+<style>
+:root{--ink:#17171a;--bg:#f4f4f2;--card:#fff;--line:#e2e1dc;--accent:#1f4fd1;--ok:#2e7d32;--warn:#a85d00;--bad:#c62828;--muted:#66666b}
+*{box-sizing:border-box}
+body{margin:0;font:16px/1.45 -apple-system,BlinkMacSystemFont,"Helvetica Neue",Arial,sans-serif;color:var(--ink);background:var(--bg)}
+header{position:sticky;top:0;background:var(--ink);color:#fff;padding:8px 12px;display:flex;gap:8px;align-items:center;z-index:2}
+header .brand{font-weight:700;white-space:nowrap}
+nav{display:flex;gap:2px;overflow-x:auto;white-space:nowrap;margin-left:auto;scrollbar-width:none}
+nav::-webkit-scrollbar{display:none}
+nav a{color:#fff;text-decoration:none;padding:8px 9px;border-radius:8px;font-size:14px}
+nav a.on{background:rgba(255,255,255,.18)}
+main{padding:14px;max-width:880px;margin:0 auto}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin:0 0 14px}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
+.grid img,.thumbs img{width:100%;border-radius:8px;border:1px solid var(--line);display:block}
+.thumbs{display:flex;gap:8px;overflow-x:auto}.thumbs img{height:180px;width:auto;flex:none}
+.badge{display:inline-block;padding:2px 9px;border-radius:999px;font-size:13px;font-weight:600;background:#eee}
+.badge.draft,.badge.not_cleared,.badge.dry{background:#fff3e0;color:var(--warn)}
+.badge.approved,.badge.scheduled,.badge.cleared,.badge.ok{background:#e8f5e9;color:var(--ok)}
+.badge.published{background:#e3f2fd;color:#1565c0}
+.badge.failed,.badge.rejected,.badge.excluded,.badge.blocked,.badge.live{background:#ffebee;color:var(--bad)}
+.badge.would_publish{background:#ede7f6;color:#5e35b1}
+.rule.block{color:var(--bad)}.rule.ok{color:var(--ok)}
+textarea,input[type=text],input[type=password],input[type=date],input[type=datetime-local],input[type=url],select{width:100%;font:inherit;padding:10px;border:1px solid var(--line);border-radius:8px;background:#fff}
+textarea{min-height:120px}
+label{display:block;font-size:14px;color:var(--muted);margin:10px 0 4px}
+button,.btn{font:inherit;font-weight:600;padding:12px 16px;border-radius:10px;border:0;cursor:pointer;background:#e7e6e1;color:var(--ink);text-decoration:none;display:inline-block;min-height:44px}
+button.primary,.btn.primary{background:var(--accent);color:#fff}
+button.danger{background:#fbe9e7;color:var(--bad)}
+button.ok{background:var(--ok);color:#fff}
+button.small{min-height:0;padding:6px 10px;font-size:14px}
+.muted{color:var(--muted);font-size:14px}
+.msg{padding:10px 14px;border-radius:10px;background:#e8f5e9;color:var(--ok);margin-bottom:12px}
+.msg.bad{background:#ffebee;color:var(--bad)}
+table{width:100%;border-collapse:collapse;font-size:15px}
+td,th{padding:8px 6px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+h1{font-size:22px;margin:4px 0 12px}h2{font-size:18px;margin:0 0 8px}
+.caption{white-space:pre-wrap;background:#fafaf8;border:1px solid var(--line);border-radius:8px;padding:10px;font-size:15px}
+form.inline{display:inline}
+</style>
+</head>
+<body>
+<header>
+  <span class="brand">{{ brand }}</span>
+  <nav>
+    {% for href, label in [('/', 'Queue'), ('/library', 'Library'), ('/calendar', 'Calendar'), ('/donotuse', 'Do not use'), ('/drive', 'Drive'), ('/agents', 'Agents'), ('/keys', 'Keys')] %}
+    <a href="{{ href }}" class="{{ 'on' if (request.url.path == href or (href != '/' and request.url.path.startswith(href))) else '' }}">{{ label }}</a>
+    {% endfor %}
+  </nav>
+  {% if request.cookies.get('ccs_session') %}<form method="post" action="/logout" class="inline"><button type="submit" class="small" style="background:transparent;color:#bbb">out</button></form>{% endif %}
+</header>
+<main>
+{% block body %}{% endblock %}
+</main>
+</body>
+</html>
