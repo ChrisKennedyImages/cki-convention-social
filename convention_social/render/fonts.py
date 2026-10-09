@@ -30,6 +30,7 @@ FACES = {
     "Michroma-Regular.ttf": ("Michroma", "", ("400", "normal")),
     "JetBrainsMono-Medium.ttf": ("JetBrains Mono", "wght@500", ("500", "normal")),
     "InterTight-Light.ttf": ("Inter Tight", "wght@300", ("300", "normal")),
+    "Unbounded-ExtraBold.ttf": ("Unbounded", "wght@800", ("800", "normal")),     # the Aperture logo's wordmark
 }
 FALLBACKS = ("Inter-Bold.otf", "HelveticaNeue.ttc", "Helvetica.ttc", "DejaVuSans-Bold.ttf", "DejaVuSans.ttf")
 CSS = "https://fonts.googleapis.com/css2?family={family}:{axes}&display=swap"

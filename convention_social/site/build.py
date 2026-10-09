@@ -3,7 +3,7 @@
 `build(conn, photos)` writes every page, the stylesheet, the script, the mark
 and the photos. The look lives in site/theme.py (black, greys and white with
 one cyan, built like a camera viewfinder; Chris, 2026-10-10) and the logo in
-site/marks.py (BRAND_MARK, default viewfinder). Photos on the site are public, so they pass the same gate as a
+site/marks.py (Aperture, Chris's choice; BRAND_MARK). Photos on the site are public, so they pass the same gate as a
 post: only postable photos (cleared, sorted, Claude's final check passed),
 saved fresh from pixels at web size so no EXIF or GPS travels. With
 `preview=True` it takes whatever photos it is handed (the stand-ins for Chris's
@@ -184,13 +184,13 @@ def build(conn: Optional[sqlite3.Connection], photos: SitePhotos, *, out: Path =
     assets = out / "assets"
     (assets / "fonts").mkdir(parents=True)
     for name in ("Michroma-Regular.ttf", "JetBrainsMono-Medium.ttf", "InterTight-Light.ttf", "InterTight-Regular.ttf",
-                 "InterTight-SemiBold.ttf"):
+                 "InterTight-SemiBold.ttf", "Unbounded-ExtraBold.ttf"):
         src = fonts._find(name)
         if src:
             shutil.copyfile(src, assets / "fonts" / name)
     (assets / "site.css").write_text(theme.CSS)
     (assets / "site.js").write_text(theme.JS)
-    mark_key = (config.getenv("BRAND_MARK") or "viewfinder").lower()
+    mark_key = (config.getenv("BRAND_MARK") or "aperture").lower()       # Chris chose Aperture, 2026-10-10
     (assets / "mark.svg").write_text(marks.mark(mark_key, brand, light="#0A0A0B", size=64, word=False))
     mark_svg = marks.mark(mark_key, brand, size=40)
     e = html.escape

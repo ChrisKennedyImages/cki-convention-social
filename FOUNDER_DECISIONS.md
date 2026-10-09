@@ -71,8 +71,11 @@ only when Chris says so.
 
 - **Look:** not Lens. Black, white and greys with a touch of cyan. The first
   site was "not at all dynamic or edgy": rebuilt as a camera viewfinder
-  (`site/theme.py`). Logo: four options shown; Viewfinder recommended and in
-  use until Chris picks (`BRAND_MARK`, `BRAND_DIRECTION`).
+  (`site/theme.py`).
+- **Logo: Aperture** (Chris, 2026-10-10). A C cut like an open aperture ring
+  with a cyan point of light inside it; EVENT in white over CALIBER in grey,
+  in Unbounded (`site/marks.py`, `render/brand.py`; `BRAND_MARK=aperture`,
+  `BRAND_DIRECTION=aperture`).
 - **Image metadata for search:** yes, our own words only (title,
   description, keywords, creator, copyright CKI, LLC, credit); never the
   camera's data or GPS (`render/meta.py`).

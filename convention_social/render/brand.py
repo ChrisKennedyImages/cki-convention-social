@@ -44,7 +44,10 @@ DIRECTIONS = {
     "marquee": Direction("marquee", "Marquee", ink=(11, 11, 13), paper=(246, 245, 241), accent=(255, 77, 28), on_accent=(11, 11, 13),
                          display="Archivo-XCondBlack.ttf", display_upper=True, body="Archivo-CondMedium.ttf",
                          body_bold="Archivo-XCondBlack.ttf", tracking=0.12),
-    # Chris, 2026-10-10: black, greys and white with a touch of cyan; the Viewfinder mark
+    # Chris, 2026-10-10: black, greys and white with a touch of cyan, and the Aperture logo
+    "aperture": Direction("aperture", "Aperture", ink=(10, 10, 11), paper=(243, 243, 241), accent=(0, 225, 255),
+                          on_accent=(10, 10, 11), display="Michroma-Regular.ttf", display_upper=True,
+                          body="InterTight-Regular.ttf", body_bold="JetBrainsMono-Medium.ttf", tracking=0.16),
     "viewfinder": Direction("viewfinder", "Viewfinder", ink=(10, 10, 11), paper=(243, 243, 241), accent=(0, 225, 255),
                             on_accent=(10, 10, 11), display="Michroma-Regular.ttf", display_upper=True,
                             body="InterTight-Regular.ttf", body_bold="JetBrainsMono-Medium.ttf", tracking=0.16),
@@ -56,7 +59,7 @@ TAGLINE = "Event and convention photography"
 
 
 def current() -> Direction | None:
-    key = (config.getenv("BRAND_DIRECTION") or "viewfinder").strip().lower()   # Chris, 2026-10-10: mono with a touch of cyan
+    key = (config.getenv("BRAND_DIRECTION") or "aperture").strip().lower()   # Chris, 2026-10-10: the Aperture logo
     return DIRECTIONS.get(key)
 
 
@@ -73,6 +76,42 @@ def tracked(d: ImageDraw.ImageDraw, xy, text: str, f, fill, tracking: float) -> 
 def tracked_width(d, text: str, f, tracking: float) -> float:
     size = getattr(f, "size", 12)
     return sum(d.textlength(c, font=f) for c in text) + tracking * size * max(0, len(text) - 1)
+
+
+GREY = (140, 140, 147)
+
+
+def _aperture(img: Image.Image, direction: Direction, x: int, y: int, height: int, fg, name: str,
+              with_tagline: bool) -> tuple[int, int]:
+    """The Aperture logo (site/marks.py draws the same in SVG): a C cut like an open aperture ring,
+    a short grey blade at its upper tip, a cyan point of light inside; EVENT over CALIBER in Unbounded."""
+    k = (height * 1.6) / 144.0                       # the SVG mark spans 144 units (ring radius 62, stroke 20)
+    ss = 4                                           # drawn large and scaled down for clean curves
+    size = int(152 * k * ss)
+    layer = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    d = ImageDraw.Draw(layer)
+    cx, cy, r, w = 76 * k * ss, 76 * k * ss, 72 * k * ss, max(1, int(20 * k * ss))
+    box = [cx - r, cy - r, cx + r, cy + r]
+    d.arc(box, start=50.8, end=309.2, fill=fg, width=w)
+    d.arc(box, start=307.0, end=326.4, fill=GREY, width=w)
+    dot = 13 * k * ss
+    dx, dy = cx - 6.8 * k * ss, cy
+    d.ellipse([dx - dot, dy - dot, dx + dot, dy + dot], fill=direction.accent)
+    layer = layer.resize((max(1, size // ss), max(1, size // ss)), Image.LANCZOS)
+    img.paste(layer, (x, y), layer)
+    first, _, rest = name.upper().partition(" ")
+    f = fonts.face("Unbounded-ExtraBold.ttf", max(10, int(40 * k)))
+    dd = ImageDraw.Draw(img)
+    tx = x + int(146 * k)
+    tracked(dd, (tx, y + int(36 * k)), first, f, fg, 0.05)
+    tracked(dd, (tx, y + int(88 * k)), rest or first, f, GREY, 0.05)
+    w_px = int(tx - x + max(tracked_width(dd, first, f, 0.05), tracked_width(dd, rest or first, f, 0.05)))
+    h_px = int(152 * k)
+    if with_tagline:
+        tf = fonts.face(direction.body_bold, max(10, int(height * 0.34)))
+        tracked(dd, (x, y + h_px + int(height * 0.4)), TAGLINE.upper(), tf, fg, direction.tracking)
+        h_px += int(height * 0.9)
+    return w_px, h_px
 
 
 def draw_mark(img: Image.Image, direction: Direction, x: int, y: int, height: int, *, on_dark: bool = True,
@@ -93,6 +132,8 @@ def draw_mark(img: Image.Image, direction: Direction, x: int, y: int, height: in
             tracked(d, (x, rule_y + int(height * 0.3)), TAGLINE.upper(), tf, fg, direction.tracking)
             h += int(height * 0.8)
         return w, h
+    if direction.key == "aperture":
+        return _aperture(img, direction, x, y, height, fg, name, with_tagline)
     if direction.key == "viewfinder":
         # four corner brackets with a cyan focus point, then EVENT in grey over CALIBER (site/marks.py draws the same)
         s = int(height * 1.6)

@@ -1,4 +1,4 @@
-"""The four logo options as SVG (Chris picks one; BRAND_MARK, default viewfinder).
+"""The logo as SVG. Chris chose Aperture (2026-10-10); Viewfinder stays as the alternative (BRAND_MARK).
 
 Each is drawn for a dark ground; `fill` swaps the light parts for a light ground.
 The wordmark text uses the site's own Michroma / Big Shoulders / Syne / Unbounded faces.
@@ -28,7 +28,7 @@ def _aperture(name: str, light: str, size: int, word: bool) -> str:
             f'<path d="M150 52 A62 62 0 0 1 162 66" fill="none" stroke="{GREY}" stroke-width="20"/><circle cx="104" cy="100" r="13" fill="{CYAN}"/>')
     first, _, rest = name.upper().partition(" ")
     if not word:
-        return f'<svg viewBox="20 20 170 160" width="{size}" height="{size}" role="img" aria-label="{escape(name)}">{ring}</svg>'
+        return f'<svg viewBox="25.8 15 170 170" width="{size}" height="{size}" role="img" aria-label="{escape(name)}">{ring}</svg>'
     return (f'<svg viewBox="0 0 560 200" height="{size}" role="img" aria-label="{escape(name)}">{ring}'
             f'<text x="220" y="94" font-family="Unbounded" font-size="40" fill="{light}" letter-spacing="2">{escape(first)}</text>'
             f'<text x="220" y="146" font-family="Unbounded" font-size="40" fill="{GREY}" letter-spacing="2">{escape(rest or first)}</text></svg>')
@@ -38,4 +38,4 @@ MARKS = {"viewfinder": _viewfinder, "aperture": _aperture}
 
 
 def mark(key: str, name: str, *, light: str = "#F3F3F1", size: int = 40, word: bool = True) -> str:
-    return MARKS.get(key, _viewfinder)(name, light, size, word)
+    return MARKS.get(key, _aperture)(name, light, size, word)

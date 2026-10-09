@@ -92,7 +92,7 @@ def samples(conn: sqlite3.Connection, picks: Sequence[dict], fetch_photo: Callab
     if not photos:
         raise ValueError("no photos to build samples from")
     cards = []
-    chosen = current() or DIRECTIONS["viewfinder"]
+    chosen = current() or DIRECTIONS["aperture"]
     for di in range(3):
         key, b = f"{chosen.key}-{di + 1}", chosen
         made = []

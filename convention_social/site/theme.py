@@ -11,6 +11,7 @@ CSS = r"""
 @font-face{font-family:"Inter Tight";src:url(/assets/fonts/InterTight-Light.ttf) format("truetype");font-weight:300;font-display:swap}
 @font-face{font-family:"Inter Tight";src:url(/assets/fonts/InterTight-Regular.ttf) format("truetype");font-weight:400;font-display:swap}
 @font-face{font-family:"Inter Tight";src:url(/assets/fonts/InterTight-SemiBold.ttf) format("truetype");font-weight:600;font-display:swap}
+@font-face{font-family:"Unbounded";src:url(/assets/fonts/Unbounded-ExtraBold.ttf) format("truetype");font-weight:800;font-display:swap}
 @font-face{font-family:"JetBrains Mono";src:url(/assets/fonts/JetBrainsMono-Medium.ttf) format("truetype");font-weight:500;font-display:swap}
 :root{color-scheme:dark;--k:#0A0A0B;--g1:#121214;--g2:#1C1C20;--g3:#2C2C31;--g4:#8C8C93;--g5:#C8C8CD;--w:#F3F3F1;--c:#00E1FF;
 --display:"Michroma","Arial Black",sans-serif;--body:"Inter Tight",system-ui,-apple-system,Helvetica,Arial,sans-serif;--mono:"JetBrains Mono",ui-monospace,Menlo,monospace;
@@ -32,7 +33,7 @@ a{color:inherit;text-decoration:none}img{display:block;max-width:100%}
 /* header */
 .top{position:fixed;inset:0 0 auto;z-index:50;display:flex;align-items:center;gap:28px;padding:18px var(--pad);transition:background .3s,padding .3s}
 .top.solid{background:rgba(10,10,11,.86);backdrop-filter:blur(10px);padding-top:12px;padding-bottom:12px;border-bottom:1px solid var(--g3)}
-.top .logo svg{height:38px;width:auto}
+.top .logo svg{height:46px;width:auto}
 .top nav{margin-left:auto;display:flex;gap:26px}.top nav a{color:var(--g5)}.top nav a:hover{color:var(--w)}
 .top nav a b{color:var(--c);font-weight:500}
 .btn{display:inline-flex;align-items:center;gap:12px;border:1px solid var(--w);padding:15px 22px;font:500 12px var(--mono);letter-spacing:.16em;text-transform:uppercase;transition:background .25s,color .25s,border-color .25s;background:transparent;color:var(--w)}
