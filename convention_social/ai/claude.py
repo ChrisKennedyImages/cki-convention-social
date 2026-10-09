@@ -78,6 +78,7 @@ class PostFacts:
     services: tuple[str, ...] = ()
     shot_type: str = ""
     quote_link: str = ""
+    subject: str = "event"               # event | architecture
 
 
 @dataclass
@@ -125,6 +126,9 @@ def user_text(facts: PostFacts) -> str:
         f"Official photographer for this event: {'yes' if facts.official else 'no'}",
         f"Credit: {facts.credit or 'none, identify no one'}",
         f"Shot type: {facts.shot_type or 'unknown'}",
+        ("Subject: a building or venue from the photographer's architecture work. Say what the building shows, never name "
+         "the owner, the address or the client, and connect it to how carefully events in buildings like it get covered."
+         if facts.subject == "architecture" else "Subject: event photography"),
         f"Services: {'; '.join(facts.services) or 'event photography'}",
         f"Quote link: {facts.quote_link or 'none'}",
         "Write one caption per network: instagram (short, up to five hashtags at the end), "
