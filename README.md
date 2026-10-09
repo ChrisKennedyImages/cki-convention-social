@@ -1,6 +1,6 @@
 # cki-convention-social
 
-The marketing suite for Event Caliber (CKI, LLC), a convention and event
+The marketing suite for Event Caliber (eventcaliber.com), a brand of CKI, LLC, a convention and event
 photography company. It finds Chris's convention photos in his Google Drive
 (read only), lets him clear which ones may be used, drafts one post a day with
 captions and designs built around his photos, and publishes through the
@@ -15,7 +15,10 @@ company's own Buffer account once he approves each post on the dashboard.
 | `convention_social/ai/` | Claude drafting (strict JSON), the monthly spend cap, the copy rules gate |
 | `convention_social/buffer/` | the Buffer GraphQL client, payloads, media hosting, rate budget, metrics |
 | `convention_social/render/` | post designs built around the photos |
-| `convention_social/agents/` | one module per agent |
+| `convention_social/agents/` | scanner, content (the daily draft), publisher, inbox (booking), watchdog, backup |
+| `convention_social/booking/`, `worker/` | quote requests, replies, booked dates; the eventcaliber.com Worker |
+| `convention_social/site/` | the eventcaliber.com pages, built from postable photos |
+| `offer.json` | what the company offers, in Chris's words; never a price |
 | `convention_social/dashboard/` | the review UI: login, queue with Approve/Reject, clearance, keys, agents |
 | `bin/ccs`, `bin/test` | the command line and the test runner |
 

@@ -51,14 +51,24 @@ and you get a phone push and an email within the hour.
 4. Paste the sheet's link into Keys (Credits sheet). The suite reads it
    every hour and never edits it.
 
-## 4. The domain and its mailbox (decision needed, money)
+## 4. Mail on eventcaliber.com
 
-- Buy the domain at any registrar. Put its name in Keys (Website domain).
-- Mail from that domain needs a mailbox that allows SMTP sending with an
-  app password. Options, each with its own monthly cost: Google Workspace,
-  Fastmail, or a sending service paired with Cloudflare Email Routing.
-  Chris chooses; the suite needs the server, the login and an app password
-  (Keys, Mail) plus a postal address for the footer of every email.
+Chris chose (2026-10-09): Cloudflare forwards incoming mail, a sending
+service sends outgoing mail.
+
+1. Cloudflare dashboard, eventcaliber.com, Email, Email Routing: enable it,
+   add a custom address `hello@eventcaliber.com`, destination your own inbox
+   (verify the link Cloudflare emails you). Free.
+2. A sending service with SMTP for the domain (Resend, Postmark or Mailgun
+   are common; check each one's current free allowance, that is money).
+   Add the domain there; it shows DNS records (SPF, DKIM, a return path).
+   Add each one in Cloudflare DNS exactly as shown, then let the service
+   verify the domain.
+3. Keys (Mail): the service's SMTP server, login and password (its API key
+   is usually the password). Keys (Company): Mail sent from
+   `hello@eventcaliber.com`, and a postal address for the footer.
+4. Prove it: approve one reply to a test request you send yourself, with the
+   inbox agent switched live. It must land in your inbox, not spam.
 
 ## 5. Buffer: the one publisher
 
@@ -81,12 +91,32 @@ and you get a phone push and an email within the hour.
 1. Install the ntfy app. Subscribe to a new topic with a long random name.
 2. Put the same name in Keys (Phone alerts).
 
-## 8. Image hosting for Buffer
+## 8. eventcaliber.com itself: the Worker
 
-Buffer fetches each post image by link. A Cloudflare R2 bucket for this
-company, served from the new domain by the worker in `worker/`
-(`wrangler.jsonc.example` names what to fill). The upload token goes in Keys
-(Image hosting). Set up after the domain exists.
+One Cloudflare Worker serves the website, takes quote requests, publishes
+the booked dates and hosts post images for Buffer. `wrangler.jsonc` lists
+every step at the top; in short, on the Mini, signed in to the Cloudflare
+account that holds eventcaliber.com (`npx wrangler login`, you click Allow):
+
+```bash
+npx wrangler r2 bucket create eventcaliber-media
+npx wrangler d1 create eventcaliber-booking      # paste the id into wrangler.jsonc
+npx wrangler d1 execute eventcaliber-booking --remote --file worker/schema.sql
+npx wrangler secret put UPLOAD_TOKEN             # a long random value; the same one goes in Keys (Image hosting)
+npx wrangler secret put NTFY_TOPIC               # optional: a push on every quote request
+bin/ccs site build && npx wrangler deploy        # only after you approved the site preview
+```
+
+Keys (Image hosting): `https://eventcaliber.com/m` and the same token.
+Optional spam check: a free Cloudflare Turnstile widget for the domain; its
+site key goes in `.env` as `TURNSTILE_SITE_KEY` and its secret into
+`npx wrangler secret put TURNSTILE_SECRET`.
+
+## 8b. Ollama on the Mini (already installed)
+
+The scanner uses the first vision model Ollama has. If it has none:
+`ollama pull qwen2.5vl:7b` (or name another in Keys, Local sorting). Ollama
+keeps its own port; nothing in this suite changes it.
 
 ## 9. The Mini
 
