@@ -20,7 +20,7 @@ from PIL import Image, ImageDraw
 
 from ..core import config
 from . import fonts, posts
-from .brand import DIRECTIONS, TAGLINE, Direction, draw_mark, tracked
+from .brand import DIRECTIONS, TAGLINE, Direction, current, draw_mark, tracked
 
 
 def _hex(c) -> str:
@@ -84,14 +84,17 @@ SAMPLE_COPY = {
 def samples(conn: sqlite3.Connection, picks: Sequence[dict], fetch_photo: Callable[[dict], Image.Image], *,
             out_dir: Optional[Path] = None, captions: Optional[Callable[[dict, str], dict]] = None,
             event: str = "", when: str = "", site: str = "", note: str = "") -> Path:
-    """`picks` are photo rows (dicts with at least id, convention_name, taken_at). Renders 4 formats x 3 directions."""
+    """`picks` are photo rows (dicts with at least id, convention_name, taken_at). Twelve posts in the chosen
+    direction (four formats, three rounds of different photos) and its brand board."""
     out_dir = out_dir or config.get_config().data_root / "renders" / f"samples-{datetime.now():%Y%m%d-%H%M}"
     out_dir.mkdir(parents=True, exist_ok=True)
     photos = [fetch_photo(p) for p in picks[:6]]
     if not photos:
         raise ValueError("no photos to build samples from")
     cards = []
-    for di, (key, b) in enumerate(DIRECTIONS.items()):
+    chosen = current() or DIRECTIONS["viewfinder"]
+    for di in range(3):
+        key, b = f"{chosen.key}-{di + 1}", chosen
         made = []
         lead = picks[di % len(picks)]
         kicker = " ".join(x for x in ((lead.get("convention_name") or ""), (lead.get("taken_at") or "")[:4]) if x)
@@ -108,19 +111,20 @@ def samples(conn: sqlite3.Connection, picks: Sequence[dict], fetch_photo: Callab
             cap = captions(lead, fmt) if captions else {}
             made.append(path)
             cards.append({"direction": b.label, "format": fmt, "file": path.name, "captions": cap})
-        brand_board(b, made, out_dir / f"board-{key}.jpg", note=note)
+        if di == 0:
+            brand_board(b, made, out_dir / f"board-{chosen.key}.jpg", note=note)
     e = html.escape
     items = "".join(
         f'<figure><img src="{e(c["file"])}"><figcaption><b>{e(c["direction"])}</b>, {e(c["format"])}'
         + "".join(f'<p><i>{e(n)}</i><br>{e(t)}</p>' for n, t in c["captions"].items()) + "</figcaption></figure>"
         for c in cards)
-    boards = "".join(f'<p><img src="board-{k}.jpg" style="max-width:100%"></p>' for k in DIRECTIONS)
+    boards = f'<p><img src="board-{chosen.key}.jpg" style="max-width:100%"></p>'
     (out_dir / "index.html").write_text(f"""<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Sample posts</title><style>body{{font:15px/1.5 -apple-system,Helvetica,Arial;margin:24px;color:#1c1c1e}}
 .g{{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:20px}}figure{{margin:0}}img{{width:100%;border-radius:6px}}
 p{{white-space:pre-wrap;font-size:14px}}</style>
-<h1>{e(config.get_config().brand_name)}: three directions, twelve sample posts</h1>
-<p>For review only. Pick a direction, or mix: say which mark, which colours, which type.</p>{"<p><b>" + e(note) + "</b></p>" if note else ""}{boards}<div class="g">{items}</div>""",
+<h1>{e(config.get_config().brand_name)}: twelve sample posts</h1>
+<p>For review only. Nothing here is cleared, queued or posted.</p>{"<p><b>" + e(note) + "</b></p>" if note else ""}{boards}<div class="g">{items}</div>""",
                                            encoding="utf-8")
     (out_dir / "samples.json").write_text(json.dumps(cards, indent=2))
     return out_dir

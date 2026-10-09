@@ -30,7 +30,8 @@ class Render(IsolatedCase):
                         self.assertEqual(im.size, posts.SIZES[aspect])
                         self.assertEqual(meta.is_clean(out), [], "a post must carry no camera data, GPS included")
                     made += 1
-        self.assertEqual(made, 3 * 4 * 2)
+        self.assertEqual(made, len(brand.DIRECTIONS) * 4 * 2)
+        self.assertIn("viewfinder", brand.DIRECTIONS)
 
     def test_source_gps_never_travels(self):
         src = photo()
@@ -73,7 +74,7 @@ class Render(IsolatedCase):
                             captions=lambda r, f: {"instagram": "A moment at Katsucon."} if f == "photo" else {})
         files = sorted(p.name for p in out.glob("*.jpg"))
         self.assertEqual(len([f for f in files if not f.startswith("board-")]), 12)
-        self.assertEqual(len([f for f in files if f.startswith("board-")]), 3)
+        self.assertEqual([f for f in files if f.startswith("board-")], ["board-viewfinder.jpg"])
         cards = json.loads((out / "samples.json").read_text())
         self.assertEqual(len(cards), 12)
         self.assertIn("A moment at Katsucon.", (out / "index.html").read_text())
