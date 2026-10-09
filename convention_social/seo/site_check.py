@@ -158,12 +158,11 @@ def _flag(value) -> Optional[int]:
     return None if value is None else int(bool(value))
 
 
-def run_check(conn: sqlite3.Connection, cfg: Optional[config.Config] = None, *, transport: Optional[Transport] = None,
-              run_id: Optional[int] = None, agent: str = "seo") -> dict:
-    """GET every page once, store a row each, and an errors row for each page that fails."""
+def check_all(cfg: Optional[config.Config] = None, *, transport: Optional[Transport] = None) -> list[dict]:
+    """GET every page once and judge it; writes nothing (`ccs site check` retries this while a new
+    domain comes up). Each result: path, url, status, ok, problems and the per-check flags."""
     cfg = cfg or config.get_config()
     transport = transport or requests_transport
-    checked_at = db.utcnow()
     results = []
     for path in PATHS:
         url = base_url(cfg) + path
@@ -183,12 +182,22 @@ def run_check(conn: sqlite3.Connection, cfg: Optional[config.Config] = None, *, 
         if reach:
             r["problems"] = [reach] + [p for p in r["problems"] if not p.startswith("answered")]
             r["ok"] = False
-        db.insert(conn, "site_checks", run_id=run_id, checked_at=checked_at, path=path, url=url, status_code=status,
-                  ok=int(r["ok"]), title_ok=_flag(r["title_ok"]), description_ok=_flag(r["description_ok"]),
-                  h1_ok=_flag(r["h1_ok"]), alt_ok=_flag(r["alt_ok"]), problems=json.dumps(r["problems"]))
-        if not r["ok"]:
-            runner.record_error(conn, agent, "site_check", f"{url}: {'; '.join(r['problems'])}")
         results.append({"path": path, "url": url, "status": status, **r})
+    return results
+
+
+def run_check(conn: sqlite3.Connection, cfg: Optional[config.Config] = None, *, transport: Optional[Transport] = None,
+              run_id: Optional[int] = None, agent: str = "seo") -> dict:
+    """GET every page once, store a row each, and an errors row for each page that fails."""
+    checked_at = db.utcnow()
+    results = check_all(cfg, transport=transport)
+    for r in results:
+        db.insert(conn, "site_checks", run_id=run_id, checked_at=checked_at, path=r["path"], url=r["url"],
+                  status_code=r["status"], ok=int(r["ok"]), title_ok=_flag(r["title_ok"]),
+                  description_ok=_flag(r["description_ok"]), h1_ok=_flag(r["h1_ok"]), alt_ok=_flag(r["alt_ok"]),
+                  problems=json.dumps(r["problems"]))
+        if not r["ok"]:
+            runner.record_error(conn, agent, "site_check", f"{r['url']}: {'; '.join(r['problems'])}")
     return {"checked": len(results), "failed": sum(1 for r in results if not r["ok"]), "results": results,
             "checked_at": checked_at}
 

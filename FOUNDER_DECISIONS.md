@@ -83,6 +83,15 @@ only when Chris says so.
   director, each in dry run until switched on; anything that sends or posts
   still waits for Chris's Approve.
 
+## 2026-10-09: going live
+
+- "Merge and make sure live." The first milestone is merged into `main`. The
+  site goes live before any photo is cleared: it is built without photos and
+  the menu shows only the sections that exist; photos join on the next build
+  once folders are cleared and the final check passes (`bin/ccs site build`).
+- Going live is one command on the Mini, `scripts/go-live.sh`; it ends with
+  `LIVE` only when every page and the booking API pass from the outside.
+
 ## Standing rules from the brief
 
 - Nothing publishes without Chris's Approve on the dashboard, until he says

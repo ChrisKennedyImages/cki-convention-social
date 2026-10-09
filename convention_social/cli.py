@@ -6,7 +6,7 @@
   ccs dry-run <agent> on|off  flip an agent's dry-run flag (default is on)
   ccs settings [--set K V]    list or set a raw setting
   ccs run <agent> [--dry-run|--live]   run one agent once (flag overrides the setting)
-  ccs hash-password           read a password from the terminal, print the hash for .env
+  ccs hash-password [--save]  read a password from the terminal; print the hash for .env, or save it there
   ccs dashboard               serve the review dashboard on 127.0.0.1:DASHBOARD_PORT
   ccs launchd status          which launchd services of this suite are loaded
   ccs drive login [--wait N]  sign in to Google Drive as Chris, read only
@@ -14,7 +14,8 @@
   ccs drive report [--sheet N]    write the library report and a contact sheet of the best N
   ccs fonts                   download the brand typefaces into DATA_ROOT/fonts
   ccs samples                 render twelve sample posts and three brand boards from the best photos (for review)
-  ccs site build [--preview]  build eventcaliber.com into site/dist from postable photos (deploy: npx wrangler deploy)
+  ccs site build [--preview]  build eventcaliber.com into site/dist from postable photos (none yet: no photos)
+  ccs site check [--wait S]   check the live site and its booking API from this machine (scripts/go-live.sh runs it)
 """
 from __future__ import annotations
 
@@ -110,11 +111,18 @@ def cmd_run(args) -> int:
     return runner.run(args.agent, module.run, force_dry_run=force)
 
 
-def cmd_hash_password(_args) -> int:
+def cmd_hash_password(args) -> int:
     pw = getpass.getpass("dashboard password: ")
     if len(pw) < 8:
         print("use at least 8 characters")
         return 2
+    if getattr(args, "save", False):
+        if getpass.getpass("same password again: ") != pw:
+            print("the two did not match; nothing saved")
+            return 2
+        config.write_env({"DASHBOARD_PASSWORD_HASH": auth.hash_password(pw)})
+        print("saved to .env (only the hash; the password itself is not stored)")
+        return 0
     print(f"DASHBOARD_PASSWORD_HASH={auth.hash_password(pw)}")
     return 0
 
@@ -243,6 +251,8 @@ def cmd_samples(_args) -> int:
 
 
 def cmd_site(args) -> int:
+    if args.what == "check":
+        return cmd_site_check(args)
     import io
     from PIL import Image
     from .drive import oauth
@@ -252,8 +262,8 @@ def cmd_site(args) -> int:
     try:
         reader = DriveReader(oauth.access_token(conn), conn=conn, agent="cli")
     except oauth.DriveAuthError as e:
-        print(str(e))
-        return 2
+        print(f"{e} Building without photos.")
+        reader = None
     cache = config.get_config().data_root / "photos"
     cache.mkdir(parents=True, exist_ok=True)
 
@@ -263,10 +273,11 @@ def cmd_site(args) -> int:
             path.write_bytes(reader.download(row["drive_id"]))
         return Image.open(io.BytesIO(path.read_bytes()))
 
-    photos = build.pick_photos(conn, fetch)
-    if not photos.hero and not args.preview:
-        print("no postable photos yet: clear folders on the Library page and let the final check run first")
-        return 2
+    # Chris, 2026-10-09: the site goes live before any photo is cleared; photos join on the next build
+    photos = build.pick_photos(conn, fetch) if reader else build.SitePhotos()
+    if not photos.hero:
+        print("no postable photos yet, so the site is built without photos; they join on the next build "
+              "once folders are cleared on the Library page and the final check has passed")
     out = build.build(conn, photos, preview=args.preview)
     print(f"built {out} (hero {len(photos.hero)}, coverage {len(photos.coverage)}, venues {len(photos.venues)})"
           f"{' PREVIEW' if args.preview else ''}")
@@ -278,6 +289,38 @@ SERVICES_FOR_COPY = ("full event coverage", "backstage and green rooms", "breako
                      "portraits", "exhibition halls and vendors", "same day delivery of approved images")
 
 
+def cmd_site_check(args) -> int:
+    """The live site, from the outside: every page, the sitemap and robots.txt, then the booking API
+    with the Mini's token. With --wait it retries until everything passes or the time runs out (a new
+    custom domain can take a few minutes to get its certificate). Writes nothing."""
+    import time as _time
+    from .booking import remote
+    from .seo import site_check
+    deadline = _time.monotonic() + max(0.0, args.wait)
+    while True:
+        results = site_check.check_all()
+        api_ok, api_note = True, ""
+        site = remote.SiteAPI.from_config()
+        if site is None:
+            api_ok, api_note = False, "no MEDIA_UPLOAD_TOKEN on this machine"
+        else:
+            try:
+                waiting = len(site.pull())
+                api_note = f"the Mini's token is accepted ({waiting} quote request(s) waiting)"
+            except Exception as e:  # noqa: BLE001  any failure is a failed check, said plainly
+                api_ok, api_note = False, f"the Mini could not read quote requests ({type(e).__name__}: {e})"
+        ok = api_ok and all(r["ok"] for r in results)
+        if ok or _time.monotonic() >= deadline:
+            break
+        print("not all passing yet; trying again in 20 seconds")
+        _time.sleep(20)
+    for r in results:
+        print(f"{'PASS' if r['ok'] else 'FAIL'}  {r['url']}" + ("" if r["ok"] else f"  ({'; '.join(r['problems'])})"))
+    print(f"{'PASS' if api_ok else 'FAIL'}  booking API: {api_note}")
+    print("LIVE: every check passed" if ok else "NOT LIVE YET: see the FAIL lines above")
+    return 0 if ok else 1
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="ccs", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -287,7 +330,8 @@ def build_parser() -> argparse.ArgumentParser:
     d = sub.add_parser("dry-run"); d.add_argument("agent"); d.add_argument("state", choices=["on", "off"]); d.set_defaults(fn=cmd_dry_run)
     s = sub.add_parser("settings"); s.add_argument("--set", nargs=2, metavar=("KEY", "VALUE")); s.set_defaults(fn=cmd_settings)
     r = sub.add_parser("run"); r.add_argument("agent"); r.add_argument("--dry-run", action="store_true"); r.add_argument("--live", action="store_true"); r.set_defaults(fn=cmd_run)
-    sub.add_parser("hash-password").set_defaults(fn=cmd_hash_password)
+    hp = sub.add_parser("hash-password"); hp.add_argument("--save", action="store_true", help="write the hash into .env")
+    hp.set_defaults(fn=cmd_hash_password)
     sub.add_parser("dashboard").set_defaults(fn=cmd_dashboard)
     l = sub.add_parser("launchd"); l.add_argument("what", choices=["status"]); l.set_defaults(fn=cmd_launchd)
     dv = sub.add_parser("drive"); dv.add_argument("what", choices=["login", "scan", "report"])
@@ -297,7 +341,8 @@ def build_parser() -> argparse.ArgumentParser:
     dv.set_defaults(fn=cmd_drive)
     sub.add_parser("fonts").set_defaults(fn=cmd_fonts)
     sub.add_parser("samples").set_defaults(fn=cmd_samples)
-    st = sub.add_parser("site"); st.add_argument("what", choices=["build"]); st.add_argument("--preview", action="store_true")
+    st = sub.add_parser("site"); st.add_argument("what", choices=["build", "check"]); st.add_argument("--preview", action="store_true")
+    st.add_argument("--wait", type=float, default=0, help="check: keep retrying this many seconds until everything passes")
     st.set_defaults(fn=cmd_site)
     return p
 

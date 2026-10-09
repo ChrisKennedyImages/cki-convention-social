@@ -94,27 +94,27 @@ service sends outgoing mail.
 ## 8. eventcaliber.com itself: the Worker
 
 One Cloudflare Worker serves the website, takes quote requests, publishes
-the booked dates and hosts post images for Buffer. `wrangler.jsonc` lists
-every step at the top; in short, on the Mini, signed in to the Cloudflare
-account that holds eventcaliber.com (`npx wrangler login`, you click Allow):
+the booked dates and hosts post images for Buffer. You do not type the
+Cloudflare steps: `scripts/go-live.sh` on the Mini (section 9) signs in to
+Cloudflare (a browser opens; use the account that holds eventcaliber.com and
+click Allow), creates the image bucket and the booking database, builds and
+deploys the site, gives the site and the Mini the same upload token without
+showing it, and checks every page from the outside. Run it again any time to
+redeploy, for instance once photos are cleared.
 
-```bash
-npx wrangler r2 bucket create eventcaliber-media
-npx wrangler d1 create eventcaliber-booking      # paste the id into wrangler.jsonc
-npx wrangler d1 execute eventcaliber-booking --remote --file worker/schema.sql
-npx wrangler secret put UPLOAD_TOKEN             # a long random value; the same one goes in Keys (Image hosting)
-npx wrangler secret put NTFY_TOPIC               # optional: a push on every quote request
-bin/ccs site build && npx wrangler deploy        # only after you approved the site preview
-```
+Two things only you can do in the Cloudflare dashboard, and the script tells
+you when it needs them: turning on R2 (it asks for a card even for the free
+allowance) and, if the domain still has old website records, deleting the old
+A, AAAA or CNAME records for eventcaliber.com and www (keep MX and TXT; they
+carry the mail).
 
-Keys (Image hosting): `https://eventcaliber.com/m` and the same token.
 Optional spam check: a free Cloudflare Turnstile widget for the domain; its
 site key goes in `.env` as `TURNSTILE_SITE_KEY` and its secret into
-`npx wrangler secret put TURNSTILE_SECRET`.
+`npx wrangler secret put TURNSTILE_SECRET -c wrangler.live.jsonc`.
 
 Organizer emails (the Outreach agent) need the opt-out table too. It is in
-`worker/schema.sql`, so the same `d1 execute` line above creates it; run it
-again after any update, it only adds what is missing. Every organizer email
+`worker/schema.sql`, which the go-live script applies on every run; it only
+adds what is missing. Every organizer email
 carries the postal address from `.env` (`BRAND_POSTAL_ADDRESS`), an opt-out link
 and a "reply STOP" line. A STOP reply lands in your inbox; add that address
 on the dashboard's Outreach page, under Do not contact.
@@ -134,11 +134,15 @@ keeps its own port; nothing in this suite changes it.
 ```bash
 git clone git@github.com:ChrisKennedyImages/cki-convention-social.git ~/Projects/cki-convention-social
 cd ~/Projects/cki-convention-social
-scripts/setup.sh                 # venv, packages, data folder, fonts, the database
-bin/ccs hash-password            # paste the printed line into .env
-sudo scripts/install-daemons.sh  # the agents as system LaunchDaemons (you type the password)
-bin/ccs status
+scripts/go-live.sh
 ```
+
+It asks, the first time only, for your Mac password (installing the agents
+as system services), a dashboard password of your choosing, and the
+Cloudflare sign-in. It ends with `LIVE` when the site and the dashboard both
+pass, or `STOP` with the reason. Later, after `git pull`, run it again: it
+skips what is done and refreshes the rest. It needs Python 3.13 and Node
+(`brew install python@3.13 node`); it says so if either is missing.
 
 The dashboard listens on 127.0.0.1:4610. From your phone, reach it over
 Tailscale: `tailscale serve --bg 4610` on the Mini, then open the address it

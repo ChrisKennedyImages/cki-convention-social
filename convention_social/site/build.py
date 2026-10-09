@@ -279,6 +279,7 @@ It is never sold or shared. The website holds it only until it is collected, usu
     pages["404.html"] = ("Not found", "Not found.", """<section class="page" style="min-height:70vh"><div class="kick mono c">Out of frame</div>
 <h1>Not<br><span class="o">found</span><b>.</b></h1><p style="margin-top:30px"><a class="btn" href="/">Back to the site <span class="arr">&#8599;</span></a></p></section>""")
     og = f"{base}/assets/hero-1600.jpg" if hero else ""
+    sections = tuple(name for name, there in (("work", frames), ("venues", venues)) if there)
     if not head_extra:
         blocks = [markup.jsonld_business(brand, cfg.legal_name, base + "/", contact_email(), t["lede"])]
         blocks += [markup.jsonld_image(markup.absolute(base, loc), brand, cfg.legal_name, m.credit or brand)
@@ -292,7 +293,7 @@ It is never sold or shared. The website holds it only until it is collected, usu
         dest.write_text(theme.shell(title=e(title if rel == "index.html" else f"{title} | {brand}"), description=e(desc), body=body,
                                     mark_svg=mark_svg, brand=e(brand), legal=e(cfg.legal_name), email=e(contact_email()),
                                     preview=preview, canonical=base + path, jsonld=head_extra if rel == "index.html" else "",
-                                    og_image=og), encoding="utf-8")
+                                    og_image=og, sections=sections), encoding="utf-8")
     # a preview is never crawled; the live site lists its public pages and every photo on them
     (out / "robots.txt").write_text("User-agent: *\nDisallow: /\n" if preview else markup.robots_txt(base))
     (out / "sitemap.xml").write_text(markup.sitemap_xml(
