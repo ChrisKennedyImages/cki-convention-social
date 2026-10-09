@@ -296,7 +296,7 @@ def create_app() -> FastAPI:
         photos = db.rows(conn, "SELECT p.*, c.shot_type, c.quality, c.possible_minor, c.summary, c.method FROM photos p "
                                "LEFT JOIN classifications c ON c.photo_id=p.id WHERE p.folder_id=? AND p.trashed=0 "
                                "ORDER BY COALESCE(c.quality,0) DESC, p.taken_at LIMIT 300", (fid,))
-        items = [{**dict(p), "eligible": eligibility.is_eligible(conn, p["id"])} for p in photos]
+        items = [{**dict(p), "eligible": eligibility.is_candidate(conn, p["id"])} for p in photos]
         return render(request, "folder.html", folder=f, items=items)
 
     @app.post("/library/photo/{pid}/clearance")

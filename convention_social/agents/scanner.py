@@ -2,12 +2,12 @@
 
 Each run (hourly): sign in (read only), then the full inventory the first
 time and once a week, the Changes API otherwise; the free folder pass on any
-new photo; the vision pass on up to CLASSIFY_PER_RUN photos under the spend
-cap; the credits sheet when CREDITS_SHEET_ID is set. A dead sign-in is
+new photo; the sort pass (Ollama on the Mini, free, else Claude under the
+spend cap) on up to CLASSIFY_PER_RUN photos; the credits sheet when CREDITS_SHEET_ID is set. A dead sign-in is
 recorded for the watchdog and ends the run cleanly.
 
 The scanner only reads. Dry run changes nothing about that; it only skips
-the paid vision pass.
+the paid Claude sort; the free Ollama sort runs either way.
 """
 from __future__ import annotations
 
@@ -43,9 +43,10 @@ def run(ctx: runner.Context, reader: DriveReader | None = None) -> str:
     stats = scan.full_inventory(ctx.conn, reader) if full else scan.incremental(ctx.conn, reader)
     sorted_free = classify.folder_pass(ctx.conn)
     vision = classify.PassStats(stopped="dry run")
-    if not ctx.dry_run:
-        limit = int(config.getenv("CLASSIFY_PER_RUN", "200") or 200)
-        vision = classify.vision_pass(ctx.conn, reader.thumbnail, limit=limit, log=ctx.log)
+    sorter = classify.pick_sorter(ctx.conn, agent=ctx.agent)
+    if sorter is not None and (not ctx.dry_run or not sorter.paid()):   # the free local sort runs even in dry run
+        limit = int(config.getenv("CLASSIFY_PER_RUN", "500" if not sorter.paid() else "200") or 200)
+        vision = classify.sort_pass(ctx.conn, reader.thumbnail, limit=limit, sorter=sorter, log=ctx.log)
     sheet = config.getenv("CREDITS_SHEET_ID", "")
     credit_note = "credits: no sheet set"
     if sheet:

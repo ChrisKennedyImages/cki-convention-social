@@ -1,0 +1,23 @@
+// Copy to wrangler.jsonc in the repo root and replace the two REPLACE_WITH values with this
+// company's own bucket and domain (never another company's). Then, from the repo root:
+//   wrangler r2 bucket create <the bucket name>
+//   wrangler secret put UPLOAD_TOKEN        (the same value as MEDIA_UPLOAD_TOKEN in the Keychain or .env)
+//   wrangler deploy
+// MEDIA_BASE_URL in .env is then https://<the domain>/m
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "convention-social-media",
+  "main": "worker/index.js",
+  "compatibility_date": "2026-09-21",
+  "observability": {
+    "enabled": true
+  },
+  "r2_buckets": [
+    { "binding": "MEDIA", "bucket_name": "REPLACE_WITH_THIS_COMPANYS_BUCKET" }
+  ],
+  "workers_dev": false,
+  // only /m/* on the domain: the website itself is served by something else
+  "routes": [
+    { "pattern": "REPLACE_WITH_THIS_COMPANYS_DOMAIN/m/*", "zone_name": "REPLACE_WITH_THIS_COMPANYS_DOMAIN" }
+  ]
+}

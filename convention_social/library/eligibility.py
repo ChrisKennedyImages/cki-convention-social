@@ -1,6 +1,14 @@
 """May this photo ever be posted? One function answers, and it fails closed.
 
-A photo is eligible only when ALL of these hold:
+Two answers, both failing closed:
+
+  is_candidate()  may the daily picker consider it? (rules 1 to 6, with the
+                  sorter's minor and details answer, Ollama or Claude)
+  is_eligible()   may it be POSTED? A candidate that also passed Claude's final
+                  check (final_checks: possible_minor 0, no personal details).
+                  The dashboard's Approve and the publisher's door ask this one.
+
+A photo is a candidate only when ALL of these hold:
   1. it is still in Drive (not trashed) and is a postable image;
   2. Chris cleared it: the photo itself is 'cleared', or it is 'inherit' and
      the nearest folder above it with a decision is 'cleared' (an 'excluded'
@@ -72,7 +80,7 @@ def blocked_by_list(conn: sqlite3.Connection, photo: sqlite3.Row) -> str | None:
     return None
 
 
-def is_eligible(conn: sqlite3.Connection, photo_id: int) -> tuple[bool, str]:
+def is_candidate(conn: sqlite3.Connection, photo_id: int) -> tuple[bool, str]:
     photo = db.one(conn, "SELECT * FROM photos WHERE id=?", (photo_id,))
     if photo is None:
         return False, "photo not in the library"
@@ -99,6 +107,24 @@ def is_eligible(conn: sqlite3.Connection, photo_id: int) -> tuple[bool, str]:
         return False, "personal details check unreadable"
     if details:
         return False, "shows personal details: " + ", ".join(map(str, details))
+    return True, "ok"
+
+
+def is_eligible(conn: sqlite3.Connection, photo_id: int) -> tuple[bool, str]:
+    ok, why = is_candidate(conn, photo_id)
+    if not ok:
+        return ok, why
+    fc = db.one(conn, "SELECT possible_minor, personal_details FROM final_checks WHERE photo_id=?", (photo_id,))
+    if fc is None:
+        return False, "not given the final check yet"
+    if fc["possible_minor"] != 0:
+        return False, "the final check says someone may be under 18"
+    try:
+        details = json.loads(fc["personal_details"] or "[]")
+    except ValueError:
+        return False, "final check unreadable"
+    if details:
+        return False, "the final check found personal details: " + ", ".join(map(str, details))
     return True, "ok"
 
 

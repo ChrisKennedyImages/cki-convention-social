@@ -49,12 +49,17 @@ def summary(conn: sqlite3.Connection) -> dict:
         by_event[r["convention_name"] or "(event not named)"][_year(r)] += 1
     stats = json.loads(settings.get(conn, "drive.inventory_stats") or "{}")
     total = db.one(conn, "SELECT COUNT(*) n FROM photos WHERE trashed=0")["n"]
-    vision = db.one(conn, "SELECT COUNT(*) n FROM classifications WHERE method='vision'")["n"]
-    vision_yes = db.one(conn, "SELECT COUNT(*) n FROM classifications WHERE method='vision' AND is_convention=1")["n"]
+    vision = db.one(conn, "SELECT COUNT(*) n FROM classifications WHERE method IN ('vision','ollama')")["n"]
+    vision_yes = db.one(conn, "SELECT COUNT(*) n FROM classifications WHERE method IN ('vision','ollama') AND is_convention=1")["n"]
     minors = db.one(conn, "SELECT COUNT(*) n FROM classifications WHERE possible_minor=1")["n"]
+    buildings = db.rows(conn, "SELECT p.taken_at, p.modified_time, c.view FROM photos p JOIN classifications c ON c.photo_id=p.id "
+                              "WHERE p.trashed=0 AND c.subject='architecture'")
+    by_year_b: Counter = Counter(_year(b) for b in buildings)
     return {"total_images": total, "convention_photos": len(rows), "vision_checked": vision,
             "vision_convention": vision_yes, "possible_minors": minors,
             "skipped_raw": stats.get("skipped_raw", 0), "folders": stats.get("folders", 0),
+            "building_photos": len(buildings), "buildings_by_year": dict(sorted(by_year_b.items())),
+            "building_exteriors": sum(1 for b in buildings if b["view"] == "exterior"),
             "inventory_at": settings.get(conn, "drive.inventory_at") or "never",
             "by_event": {k: dict(sorted(v.items())) for k, v in sorted(by_event.items(), key=lambda kv: -sum(kv[1].values()))}}
 
@@ -62,7 +67,7 @@ def summary(conn: sqlite3.Connection) -> dict:
 def best(conn: sqlite3.Connection, n: int = 30) -> list[sqlite3.Row]:
     """The strongest convention frames, at most PER_EVENT_CAP per event, never a possible minor."""
     rows = [r for r in convention_rows(conn)
-            if r["method"] == "vision" and r["possible_minor"] == 0 and (r["personal_details"] or "[]") == "[]"
+            if r["method"] in ("vision", "ollama") and r["possible_minor"] == 0 and (r["personal_details"] or "[]") == "[]"
             and r["thumbnail_link"]]
     rows.sort(key=lambda r: (-(r["quality"] or 0), -(min(r["people_count"] or 0, 3)), -(r["width"] or 0)))
     picked, per = [], Counter()
@@ -137,7 +142,9 @@ th{{background:#f4f4f5}}.big{{font-size:28px;font-weight:700}}</style>
 <li>{s['skipped_raw']} RAW camera files skipped</li>
 <li>{s['vision_checked']} looked at closely so far, {s['vision_convention']} of them convention work</li>
 <li>{s['possible_minors']} set aside because someone may be under 18</li></ul>
-<h2>By event and year</h2><table><tr><th>Event</th>{head}<th>Total</th></tr>{body}</table>
+<p class="big">{s['building_photos']} building photos found</p>
+<p>{s['building_exteriors']} exteriors. By year: {e(', '.join(f'{y}: {n}' for y, n in s['buildings_by_year'].items()) or 'none yet')}</p>
+<h2>Event photos by event and year</h2><table><tr><th>Event</th>{head}<th>Total</th></tr>{body}</table>
 <h2>Folders with convention work</h2><p>Nothing is used until you clear a folder on the dashboard.</p>
 <table><tr><th>Folder</th><th>Convention photos</th><th>All photos</th><th>Cleared?</th></tr>{frows}</table>
 {sheet_html}"""

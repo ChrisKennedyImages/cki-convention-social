@@ -7,7 +7,7 @@
   <div class="card" style="padding:8px;margin:0">
     <img src="/media/thumb/{{ p.id }}" loading="lazy" alt="">
     <div class="muted" style="margin-top:6px">{{ (p.shot_type or '').replace('_',' ') }}{% if p.quality %} q{{ p.quality }}{% endif %}</div>
-    <span class="badge {{ 'ok' if p.eligible[0] else 'blocked' }}">{{ 'usable' if p.eligible[0] else p.eligible[1] }}</span>
+    <span class="badge {{ 'ok' if p.eligible[0] else 'blocked' }}">{{ 'ready to pick' if p.eligible[0] else p.eligible[1] }}</span>
     <form method="post" action="/library/photo/{{ p.id }}/clearance" style="margin-top:6px">
       <input type="hidden" name="back" value="/library/folder/{{ folder.drive_id }}">
       {% if p.clearance == 'blocked' %}<input type="hidden" name="state" value="inherit"><button class="small" type="submit">Unblock</button>

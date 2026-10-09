@@ -8,7 +8,8 @@ Blocks:
   price       any money amount, rate or discount (prices are never published)
   dash        an en or em dash, or a spaced hyphen used as a dash
   affiliation "official photographer", "official partner", "sponsored by",
-              "affiliated with" and the like, unless the event is confirmed official
+              "affiliated with", "trusted by", "clients include" and the like,
+              unless the event is confirmed official (none are, 2026-10-09)
   promise     a claim the suite cannot stand behind ("guaranteed", "#1", "best in")
 """
 from __future__ import annotations
@@ -26,7 +27,8 @@ PRICE = re.compile(
 DASH = re.compile(r"[‐-―−]|\s-{1,2}\s")
 AFFILIATION = re.compile(
     r"\bofficial\s+(?:photographer|photography|partner|sponsor|media|vendor)"
-    r"|\bsponsored\s+by\b|\baffiliated\s+with\b|\bin\s+partnership\s+with\b|\bpartnered\s+with\b|\bendorsed\s+by\b",
+    r"|\bsponsored\s+by\b|\baffiliated\s+with\b|\bin\s+partnership\s+with\b|\bpartnered\s+with\b|\bendorsed\s+by\b"
+    r"|\btrusted\s+by\b|\bclients\s+include\b|\bas\s+seen\s+(?:at|in|on)\b|\bhired\s+by\b",
     re.IGNORECASE,
 )
 PROMISE = re.compile(r"\bguarantee(?:d|s)?\b|#1\b|\bnumber one\b|\bbest in\b|\baward[- ]winning\b", re.IGNORECASE)

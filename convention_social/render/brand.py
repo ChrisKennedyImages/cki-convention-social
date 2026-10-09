@@ -1,7 +1,6 @@
 """Brand directions: type, colour and the mark, as data plus one drawing function each.
 
-Chris picks one (BRAND_DIRECTION in .env); until he does, renders say
-"direction not chosen" in the review sheet and nothing is wired. Every
+Chris chose Lens on 2026-10-09 (BRAND_DIRECTION, default lens). Every
 direction draws the company name from config, so a rename is one setting.
 
   press    editorial: a high-contrast serif wordmark, brass rule, navy and bone.
@@ -51,7 +50,7 @@ TAGLINE = "Event and convention photography"
 
 
 def current() -> Direction | None:
-    key = (config.getenv("BRAND_DIRECTION") or "").strip().lower()
+    key = (config.getenv("BRAND_DIRECTION") or "lens").strip().lower()   # Chris chose Lens, 2026-10-09
     return DIRECTIONS.get(key)
 
 

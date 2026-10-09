@@ -37,8 +37,12 @@ class Dashboard(IsolatedCase):
         d.image("p1", "a.jpg", "fcon")
         scan.full_inventory(self.conn, DriveReader("t", conn=self.conn, transport=d))
         classify.folder_pass(self.conn)
-        self.conn.execute("UPDATE classifications SET method='vision', possible_minor=0, personal_details='[]'")
+        self.conn.execute("UPDATE classifications SET method='ollama', subject='event', possible_minor=0, personal_details='[]'")
         return db.one(self.conn, "SELECT id FROM photos")["id"]
+
+    def final_check(self, pid, minor=0):
+        db.insert(self.conn, "final_checks", photo_id=pid, possible_minor=minor, personal_details="[]",
+                  model="claude-opus-5-5", checked_at=db.utcnow())
 
     def draft(self, caption="Green room before the keynote. Request a quote for your event.", photo_ids=(), convention_id=None):
         now = db.utcnow()
@@ -78,7 +82,7 @@ class Dashboard(IsolatedCase):
         pid = self.seed_library()
         c.post("/library/folder/fcon/clearance", data={"state": "cleared"})
         self.assertEqual(db.one(self.conn, "SELECT clearance FROM drive_folders WHERE drive_id='fcon'")["clearance"], "cleared")
-        self.assertIn("usable", c.get("/library/folder/fcon").text)
+        self.assertIn("ready to pick", c.get("/library/folder/fcon").text)
         c.post(f"/library/photo/{pid}/clearance", data={"state": "blocked"})
         self.assertIn("Chris blocked this photo", c.get("/library/folder/fcon").text)
         self.assertEqual(c.post("/library/folder/fcon/clearance", data={"state": "weird"}).status_code, 400)
@@ -92,6 +96,9 @@ class Dashboard(IsolatedCase):
         q2 = self.draft(photo_ids=[pid])
         self.assertIn("msg=ineligible", c.post(f"/queue/{q2}/approve", follow_redirects=False).headers["location"])
         c.post("/library/folder/fcon/clearance", data={"state": "cleared"})
+        # cleared and sorted, but Claude has not given it the final check: still refused
+        self.assertIn("msg=ineligible", c.post(f"/queue/{q2}/approve", follow_redirects=False).headers["location"])
+        self.final_check(pid)
         self.assertIn("msg=approved", c.post(f"/queue/{q2}/approve", follow_redirects=False).headers["location"])
         self.assertEqual(db.one(self.conn, "SELECT status FROM content_queue WHERE id=?", (q2,))["status"], "approved")
 
@@ -109,8 +116,10 @@ class Dashboard(IsolatedCase):
         c = self.signed_in()
         pid = self.seed_library()
         c.post("/library/folder/fcon/clearance", data={"state": "cleared"})
+        self.final_check(pid)
         q = self.draft(photo_ids=[pid])
         c.post(f"/queue/{q}/approve")
+        self.assertEqual(db.one(self.conn, "SELECT status FROM content_queue WHERE id=?", (q,))["status"], "approved")
         c.post("/donotuse/add", data={"kind": "photo", "value": "https://drive.google.com/file/d/p1/view"})
         self.assertEqual(db.one(self.conn, "SELECT value FROM do_not_use")["value"], "p1")
         row = db.one(self.conn, "SELECT status, last_error FROM content_queue WHERE id=?", (q,))

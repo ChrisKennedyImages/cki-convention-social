@@ -9,6 +9,7 @@ from convention_social.core import config, db, runner, settings
 from convention_social.drive import oauth, scan
 from convention_social.drive.api import DriveReader
 from convention_social.library import classify, credits, eligibility, heuristics, report
+from convention_social.library.classify import ollama_model as real_ollama_model
 from tests._base import IsolatedCase
 from tests.fake_drive import FakeDrive
 
@@ -89,8 +90,9 @@ class FakeClaude:
                                      usage=types.SimpleNamespace(input_tokens=900, output_tokens=120))
 
 
-ADULTS = {"is_convention": True, "event_kind": "fan", "event_name_seen": "Katsucon", "shot_type": "cosplay_portrait",
-          "quality": 5, "people_count": 1, "possible_minor": False, "personal_details": [], "summary": "A cosplayer."}
+ADULTS = {"subject": "event", "event_kind": "fan", "event_name_seen": "Katsucon", "shot_type": "cosplay_portrait",
+          "view": "interior", "quality": 5, "people_count": 1, "possible_minor": False, "personal_details": [],
+          "summary": "A cosplayer."}
 
 
 class Eligibility(IsolatedCase):
@@ -111,6 +113,10 @@ class Eligibility(IsolatedCase):
         c = classify.VisionClassifier(self.conn, client=FakeClaude(answer))
         return classify.vision_pass(self.conn, self.reader.thumbnail, classifier=c)
 
+    def final(self, drive_id, minor=0, details="[]"):
+        db.insert(self.conn, "final_checks", photo_id=self.pid(drive_id), possible_minor=minor, personal_details=details,
+                  model="claude-opus-5-5", checked_at=db.utcnow())
+
     def test_nothing_eligible_by_default(self):
         self.vision()
         ids = [r["id"] for r in db.rows(self.conn, "SELECT id FROM photos")]
@@ -118,15 +124,27 @@ class Eligibility(IsolatedCase):
         self.assertEqual(eligibility.eligible_photo_ids(self.conn, ids), [])
         self.assertEqual(eligibility.is_eligible(self.conn, self.pid("p1")), (False, "not cleared yet"))
 
-    def test_cleared_parent_folder_and_minor_check(self):
+    def test_cleared_parent_folder_minor_check_and_final_check(self):
         self.conn.execute("UPDATE drive_folders SET clearance='cleared' WHERE drive_id='fcon'")
         # cleared, but not checked for minors yet: still no
-        self.assertEqual(eligibility.is_eligible(self.conn, self.pid("p1")), (False, "not checked for minors yet"))
+        self.assertEqual(eligibility.is_candidate(self.conn, self.pid("p1")), (False, "not checked for minors yet"))
         self.vision()
+        self.assertEqual(eligibility.is_candidate(self.conn, self.pid("p1")), (True, "ok"))
+        # a candidate is not postable until Claude's final check passes
+        self.assertEqual(eligibility.is_eligible(self.conn, self.pid("p1")), (False, "not given the final check yet"))
+        self.final("p1")
         self.assertEqual(eligibility.is_eligible(self.conn, self.pid("p1")), (True, "ok"))
         # a nearer excluded folder wins over a cleared parent
         self.conn.execute("UPDATE drive_folders SET clearance='excluded' WHERE drive_id='fcos'")
         self.assertEqual(eligibility.is_eligible(self.conn, self.pid("p1"))[0], False)
+
+    def test_final_check_minor_or_details_blocks(self):
+        self.conn.execute("UPDATE drive_folders SET clearance='cleared' WHERE drive_id='fcon'")
+        self.vision()
+        self.final("p1", minor=1)
+        self.assertEqual(eligibility.is_eligible(self.conn, self.pid("p1")), (False, "the final check says someone may be under 18"))
+        self.final("p2", details='["house_number"]')
+        self.assertIn("house_number", eligibility.is_eligible(self.conn, self.pid("p2"))[1])
 
     def test_possible_minor_never_eligible(self):
         self.conn.execute("UPDATE drive_folders SET clearance='cleared' WHERE drive_id='fcon'")
@@ -144,6 +162,7 @@ class Eligibility(IsolatedCase):
         self.conn.execute("UPDATE drive_folders SET clearance='cleared' WHERE drive_id='fcon'")
         self.vision()
         pid = self.pid("p1")
+        self.final("p1")
         self.assertTrue(eligibility.is_eligible(self.conn, pid)[0])
         self.drive.sheet_csv = ("Photo or folder,Name,Handle,Consent,Notes\n"
                                 "https://drive.google.com/file/d/p1/view?usp=sharing,Ann,@ann_cos,yes,met at the con\n"
@@ -182,6 +201,8 @@ class Classification(IsolatedCase):
         self.assertEqual(rows["p1"]["event_kind"], "fan")
         self.assertEqual(rows["p3"]["event_kind"], "business")
         self.assertEqual(rows["p4"]["is_convention"], 0)
+        self.assertEqual(rows["p4"]["subject"], "other")
+        self.assertEqual(rows["p1"]["subject"], "event")
         self.assertIsNone(rows["p1"]["possible_minor"])
         self.assertEqual(rows["p2"]["orientation"], "portrait")
 
@@ -209,10 +230,11 @@ class Classification(IsolatedCase):
         self.assertEqual((st.done, st.failed), (0, 3))
         self.assertEqual(db.one(self.conn, "SELECT COUNT(*) n FROM classifications WHERE possible_minor IS NOT NULL")["n"], 0)
 
-    def test_no_key_means_no_vision(self):
+    def test_no_ollama_and_no_key_means_no_sort(self):
         classify.folder_pass(self.conn)
-        st = classify.vision_pass(self.conn, self.reader.thumbnail)
-        self.assertEqual(st.stopped, "no ANTHROPIC_API_KEY")
+        st = classify.sort_pass(self.conn, self.reader.thumbnail)
+        self.assertIn("no sorter", st.stopped)
+        self.assertEqual(st.done, 0)
 
 
 class Heuristics(IsolatedCase):
@@ -294,3 +316,101 @@ class OAuthState(IsolatedCase):
                                                 "scopes": ["https://www.googleapis.com/auth/drive"]}, private=True)
         with self.assertRaises(oauth.DriveAuthError):
             oauth.access_token(db.connect())
+
+
+class Ollama(IsolatedCase):
+    def setUp(self):
+        super().setUp()
+        self.conn = db.connect()
+        d = library()
+        d.folder("farch", "Hilton Lobby Interiors 2017")
+        d.image("a1", "lobby.jpg", "farch")
+        self.reader = DriveReader("tok", conn=self.conn, transport=d)
+        scan.full_inventory(self.conn, self.reader)
+        classify.folder_pass(self.conn)
+
+    def tearDown(self):
+        self.conn.close()
+        super().tearDown()
+
+    def test_model_detection(self):
+        class R:
+            def __init__(self, data):
+                self.data = data
+
+            def json(self):
+                return self.data
+        tags = {"models": [{"name": "llama3.1:8b"}, {"name": "qwen2.5vl:7b"}, {"name": "llava:13b"}]}
+        self.assertEqual(real_ollama_model(lambda url, **kw: R(tags)), "qwen2.5vl:7b")
+        self.assertIsNone(real_ollama_model(lambda url, **kw: R({"models": [{"name": "llama3.1:8b"}]})))
+
+        def down(url, **kw):
+            raise ConnectionError("refused")
+        self.assertIsNone(real_ollama_model(down))
+        os.environ["OLLAMA_MODEL"] = "llava:13b"
+        config.reset()
+        self.assertEqual(real_ollama_model(down), "llava:13b")
+
+    def test_ollama_sorts_for_free_including_buildings(self):
+        seen = []
+
+        def post(url, json=None, **kw):
+            seen.append((url, json))
+            assert json["format"]["required"]
+            assert json["messages"][1]["images"]
+            answer = dict(ADULTS)
+            if "architecture" in json["messages"][1]["content"]:
+                answer.update(subject="architecture", shot_type="building_interior", people_count=0, view="interior")
+            return types.SimpleNamespace(status_code=200, json=lambda: {"message": {"content": __import__("json").dumps(answer)}})
+        st = classify.sort_pass(self.conn, self.reader.thumbnail, sorter=classify.OllamaSorter("qwen2.5vl:7b", post=post))
+        self.assertEqual(st.done, 4)                  # three event photos and the lobby; the wedding is never sent
+        self.assertTrue(seen[0][0].endswith("/api/chat"))
+        self.assertEqual(db.one(self.conn, "SELECT COUNT(*) n FROM api_usage WHERE provider='anthropic'")["n"], 0)
+        row = db.one(self.conn, "SELECT c.* FROM classifications c JOIN photos p ON p.id=c.photo_id WHERE p.drive_id='a1'")
+        self.assertEqual((row["method"], row["subject"], row["view"], row["is_convention"]), ("ollama", "architecture", "interior", 0))
+
+    def test_bad_local_answer_leaves_photo_unchecked(self):
+        post = lambda url, **kw: types.SimpleNamespace(status_code=200, json=lambda: {"message": {"content": '{"subject": "event"}'}})
+        st = classify.sort_pass(self.conn, self.reader.thumbnail, sorter=classify.OllamaSorter("m", post=post))
+        self.assertEqual(st.done, 0)
+        self.assertEqual(db.one(self.conn, "SELECT COUNT(*) n FROM classifications WHERE possible_minor IS NOT NULL")["n"], 0)
+
+
+class FinalCheck(IsolatedCase):
+    def test_final_check_writes_and_bills(self):
+        conn = db.connect()
+        now = db.utcnow()
+        conn.execute("INSERT INTO photos (drive_id, name, first_seen_at, last_seen_at) VALUES ('x','x.jpg',?,?)", (now, now))
+        pid = db.one(conn, "SELECT id FROM photos")["id"]
+        os.environ["AI_MONTHLY_CAP_USD"] = "5"
+        config.reset()
+        calls = []
+
+        class Beta:
+            def __init__(self, answer, stop="end_turn"):
+                self.answer, self.stop = answer, stop
+                self.beta = self
+                self.messages = self
+
+            def create(self, **kw):
+                calls.append(kw)
+                block = types.SimpleNamespace(type="text", text=__import__("json").dumps(self.answer))
+                return types.SimpleNamespace(content=[block], stop_reason=self.stop, model=kw["model"],
+                                             usage=types.SimpleNamespace(input_tokens=1500, output_tokens=200))
+        from tests.fake_drive import thumb_bytes
+        data = classify.final_check(conn, pid, thumb_bytes(), client=Beta({"possible_minor": False, "personal_details": [], "summary": "ok"}))
+        self.assertEqual(data["possible_minor"], False)
+        self.assertEqual(calls[0]["model"], "claude-opus-5-5")
+        self.assertEqual(calls[0]["fallbacks"], "default")
+        fc = db.one(conn, "SELECT * FROM final_checks WHERE photo_id=?", (pid,))
+        self.assertEqual((fc["possible_minor"], fc["personal_details"]), (0, "[]"))
+        self.assertGreater(db.one(conn, "SELECT SUM(cost_usd) c FROM api_usage")["c"], 0)
+        # a refusal writes nothing new and returns None
+        self.assertIsNone(classify.final_check(conn, pid, thumb_bytes(), client=Beta({}, stop="refusal")))
+        # at the cap, no call at all
+        os.environ["AI_MONTHLY_CAP_USD"] = "0"
+        config.reset()
+        n = len(calls)
+        self.assertIsNone(classify.final_check(conn, pid, thumb_bytes(), client=Beta({})))
+        self.assertEqual(len(calls), n)
+        conn.close()

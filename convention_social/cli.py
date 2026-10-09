@@ -161,8 +161,8 @@ def cmd_drive(args) -> int:
             print(scanner.run(ctx, reader=reader))
             if args.classify:
                 from .library import classify
-                st = classify.vision_pass(conn, reader.thumbnail, limit=args.classify, log=ctx.log)
-                print(f"vision: {st.done} done, {st.failed} failed {st.stopped}")
+                st = classify.sort_pass(conn, reader.thumbnail, limit=args.classify, log=ctx.log)
+                print(f"sorted by {st.sorter or 'nothing'}: {st.done} done, {st.failed} failed {st.stopped}")
             return 0
         if args.what == "report":
             from .library import report
@@ -259,7 +259,7 @@ def build_parser() -> argparse.ArgumentParser:
     l = sub.add_parser("launchd"); l.add_argument("what", choices=["status"]); l.set_defaults(fn=cmd_launchd)
     dv = sub.add_parser("drive"); dv.add_argument("what", choices=["login", "scan", "report"])
     dv.add_argument("--wait", type=float, default=0, help="login: seconds to wait for the browser to return here")
-    dv.add_argument("--classify", type=int, default=0, help="scan: sort this many photos with Claude (paid, under the cap)")
+    dv.add_argument("--classify", type=int, default=0, help="scan: sort this many photos (Ollama free; Claude under the cap)")
     dv.add_argument("--sheet", type=int, default=30, help="report: photos on the contact sheet (0 for none)")
     dv.set_defaults(fn=cmd_drive)
     sub.add_parser("fonts").set_defaults(fn=cmd_fonts)
