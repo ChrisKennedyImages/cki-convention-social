@@ -10,6 +10,7 @@ from PIL import Image
 from convention_social import offer
 from convention_social.core import db
 from convention_social.site import build
+from convention_social.render import meta
 from tests._base import IsolatedCase
 from tests._photos import jpeg_bytes
 
@@ -55,8 +56,7 @@ class Site(IsolatedCase):
         jpgs = list((out / "assets").glob("*.jpg"))
         self.assertEqual(len(jpgs), 10)                          # 5 photos at 2 widths
         for p in jpgs:
-            with Image.open(p) as i:
-                self.assertEqual(len(i.getexif()), 0)
+            self.assertEqual(meta.is_clean(p), [])
 
     def test_only_postable_photos_are_picked(self):
         conn = db.connect()

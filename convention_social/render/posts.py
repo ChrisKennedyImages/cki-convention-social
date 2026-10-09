@@ -23,6 +23,7 @@ from PIL import Image, ImageDraw, ImageOps
 from ..ai import copy_rules
 from . import fonts
 from .brand import Direction, draw_mark, tracked, tracked_width
+from .meta import ImageMeta, save_jpeg
 
 SIZES = {"4:5": (1080, 1350), "2:3": (1000, 1500), "1:1": (1080, 1080)}
 FORMATS = ("photo", "appearance", "services", "delivery")
@@ -112,17 +113,15 @@ def _check_copy(text: PostText, official: bool) -> None:
 
 
 def render(fmt: str, photos: Sequence, text: PostText, direction: Direction, *, aspect: str = "4:5",
-           out: Path, official: bool = False, focus=(0.5, 0.42)) -> Path:
+           out: Path, official: bool = False, focus=(0.5, 0.42), meta: Optional["ImageMeta"] = None) -> Path:
     if fmt not in FORMATS:
         raise ValueError(f"unknown format {fmt}")
     _check_copy(text, official)
     w, h = SIZES[aspect]
     img = {"photo": _photo, "appearance": _appearance, "services": _services, "delivery": _delivery}[fmt](
         [open_photo(p) for p in photos], text, direction, w, h, focus)
-    out.parent.mkdir(parents=True, exist_ok=True)
-    # saved fresh from pixels: no EXIF, no GPS, nothing from the original file travels with the post
-    img.convert("RGB").save(out, format="JPEG", quality=92, optimize=True, progressive=True)
-    return out
+    # saved fresh from pixels: no camera data, no GPS; only our own descriptive fields (render/meta.py)
+    return save_jpeg(img, out, meta, quality=92)
 
 
 # --------------------------------------------------------------------------- formats

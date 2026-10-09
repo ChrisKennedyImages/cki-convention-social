@@ -167,12 +167,13 @@ def door(ctx: runner.Context, row) -> Optional[tuple[str, str]]:
 # ------------------------------------------------------------------ media
 
 def clean_copy(ctx: runner.Context, src: Path, pid: int) -> Path:
-    """A JPEG re-encoded from the pixels only (orientation applied), with no metadata at all."""
+    """A JPEG re-encoded from the pixels only (orientation applied): no camera data, no GPS,
+    only the company's creator and copyright fields (render/meta.py)."""
     from PIL import Image, ImageOps
+    from ..render.meta import save_jpeg
     dest = ctx.cfg.data_root / "renders" / "clean" / f"photo-{pid}.jpg"
-    dest.parent.mkdir(parents=True, exist_ok=True)
     with Image.open(src) as im:
-        ImageOps.exif_transpose(im).convert("RGB").save(dest, format="JPEG", quality=92, optimize=True)
+        save_jpeg(ImageOps.exif_transpose(im), dest, quality=92)
     return dest
 
 

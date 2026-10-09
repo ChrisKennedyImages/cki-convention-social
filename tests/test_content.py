@@ -5,11 +5,13 @@ import json
 import os
 import types
 from datetime import datetime, timezone
+from pathlib import Path
 
 from PIL import Image
 
 from convention_social.agents import content
 from convention_social.core import config, db, runner
+from convention_social.render import meta
 from tests._base import IsolatedCase
 from tests._photos import jpeg_bytes
 
@@ -76,8 +78,8 @@ class Content(IsolatedCase):
         renders = json.loads(row["render_paths"])
         self.assertEqual(sorted(renders), ["2:3", "4:5"])
         for paths in renders.values():
-            with Image.open(paths[0]) as im:
-                self.assertEqual(len(im.getexif()), 0)
+            self.assertEqual(meta.is_clean(Path(paths[0])), [])
+            self.assertIn(b"at Katsucon", Path(paths[0]).read_bytes())          # our SEO title travels in the file
         self.assertEqual(db.one(self.conn, "SELECT COUNT(*) n FROM api_usage WHERE provider='anthropic'")["n"], 0)
         from convention_social.library import eligibility
         self.assertEqual(eligibility.is_eligible(self.conn, self.ids["e1"]), (False, "not given the final check yet"))

@@ -34,6 +34,7 @@ from ..ai import claude, copy_rules
 from ..core import config, db, runner
 from ..library import classify, eligibility
 from ..render import brand, posts
+from ..render import meta as image_meta
 
 try:                                    # HEIC originals from a phone
     import pillow_heif
@@ -145,7 +146,8 @@ def draft_one(ctx: runner.Context, fetch: Callable[[dict], bytes], *, now: Optio
     direction = brand.current() or brand.DIRECTIONS["lens"]
     out_dir = ctx.cfg.data_root / "renders" / "posts" / day.isoformat()
     text = posts.PostText(kicker=kicker_for(chosen), credit=chosen["credit"])
-    render_paths = {aspect: [str(posts.render("photo", [image], text, direction, aspect=aspect,
+    seo = image_meta.for_photo(ctx.conn, chosen)
+    render_paths = {aspect: [str(posts.render("photo", [image], text, direction, aspect=aspect, meta=seo,
                                               out=out_dir / f"{chosen['id']}-{aspect.replace(':', '')}.jpg"))]
                     for aspect in ("4:5", "2:3")}
     meta = {"for_day": day.isoformat(), "subject": chosen["subject"], "event": chosen.get("convention_name") or "",

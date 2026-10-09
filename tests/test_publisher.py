@@ -281,8 +281,9 @@ class Live(PublisherCase):
         self.publish(ctx, client=BufferClient("test-key", conn=self.conn, transport=FakeBuffer()), uploader=up)
         self.assertEqual(len(sent), 1)
         self.assertNotEqual(str(sent[0]), db.one(self.conn, "SELECT local_path FROM photos WHERE id=?", (pid,))["local_path"])
-        with Image.open(sent[0]) as im:
-            self.assertEqual(len(im.getexif()), 0)
+        from convention_social.render import meta
+        self.assertEqual(meta.is_clean(sent[0]), [])
+        self.assertIn(b"CKI, LLC", sent[0].read_bytes())
 
     def test_buffer_error_marks_failed_with_buffers_reason(self):
         _, qid = self.rendered_post()

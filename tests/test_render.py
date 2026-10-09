@@ -7,7 +7,7 @@ import json
 from PIL import Image
 
 from convention_social.core import db
-from convention_social.render import board, brand, posts
+from convention_social.render import meta, board, brand, posts
 from tests._base import IsolatedCase
 from tests._photos import jpeg_bytes
 
@@ -28,7 +28,7 @@ class Render(IsolatedCase):
                     posts.render(fmt, [photo(i) for i in range(4)], text, b, aspect=aspect, out=out)
                     with Image.open(out) as im:
                         self.assertEqual(im.size, posts.SIZES[aspect])
-                        self.assertEqual(len(im.getexif()), 0, "a post must carry no EXIF, GPS included")
+                        self.assertEqual(meta.is_clean(out), [], "a post must carry no camera data, GPS included")
                     made += 1
         self.assertEqual(made, 3 * 4 * 2)
 
@@ -38,6 +38,22 @@ class Render(IsolatedCase):
         out = posts.render("photo", [src], posts.PostText(kicker="x"), brand.DIRECTIONS["lens"], out=self.root / "p.jpg")
         with Image.open(out) as im:
             self.assertNotIn(0x8825, im.getexif())
+        self.assertEqual(meta.is_clean(out), [])
+
+    def test_seo_fields_go_in_and_camera_data_stays_out(self):
+        src_path = self.root / "src.jpg"
+        src_path.write_bytes(jpeg_bytes())
+        self.assertIn("gps", meta.is_clean(src_path))               # the checker sees a real original's GPS
+        out = posts.render("photo", [photo()], posts.PostText(kicker="Katsucon 2025"), brand.DIRECTIONS["lens"],
+                           out=self.root / "seo.jpg",
+                           meta=meta.ImageMeta(title="Cosplay portrait at Katsucon 2025", description="A cosplayer in the main hall.",
+                                               keywords=("cosplay", "convention photography"), credit="Cosplay: @ann_cos"))
+        raw = out.read_bytes()
+        self.assertTrue(raw)
+        for needle in (b"Cosplay portrait at Katsucon 2025", b"convention photography", b"@ann_cos", b"Event Caliber", b"CKI, LLC",
+                       b"eventcaliber.com/privacy/"):
+            self.assertIn(needle, raw)
+        self.assertEqual(meta.is_clean(out), [])
 
     def test_bad_copy_is_refused(self):
         b = brand.DIRECTIONS["press"]
