@@ -1,0 +1,29 @@
+{
+  "_about": "What Event Caliber offers. Chris owns this file. No prices here, ever: every event is quoted on its own.",
+  "company": "Event Caliber",
+  "legal_name": "CKI, LLC",
+  "tagline": "Event and convention photography",
+  "event_kinds": ["Fan conventions: comic, anime, gaming and cosplay", "Business and political conferences", "Galas, receptions and award dinners"],
+  "coverage": [
+    {"key": "backstage", "label": "Backstage"},
+    {"key": "green_room", "label": "Green rooms"},
+    {"key": "breakouts", "label": "Breakouts and panels"},
+    {"key": "stage", "label": "Main stage and keynotes"},
+    {"key": "evening_events", "label": "Before, during and evening events"},
+    {"key": "dinners", "label": "Dinners and receptions"},
+    {"key": "portraits", "label": "Portraits"},
+    {"key": "headshots", "label": "Headshots"},
+    {"key": "cosplay", "label": "Cosplay portraits"},
+    {"key": "exhibition_hall", "label": "Exhibition halls"},
+    {"key": "vendors", "label": "Vendors and booths"},
+    {"key": "on_site_delivery", "label": "Approved images delivered on site to attendees, staff, speakers and presenters"}
+  ],
+  "quote_questions": [
+    "Which days and hours you need covered",
+    "Roughly how many attendees",
+    "Which rooms or parts of the event matter most",
+    "Who should receive images during the event, and how fast",
+    "Where the images will be used"
+  ],
+  "call_to_action": "Request a quote"
+}

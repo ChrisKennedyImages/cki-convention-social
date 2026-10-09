@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block body %}
+<h1>Library</h1>
+<div class="card muted">Nothing is used until you clear it. Clearing a folder clears the folders inside it, unless you exclude one. Photos where someone may be under 18 are never used, whatever you clear.</div>
+<div class="row" style="margin-bottom:12px">
+  <a class="btn" href="/library?show=events">Event folders</a><a class="btn" href="/library?show=cleared">Cleared</a><a class="btn" href="/library?show=all">All folders</a>
+</div>
+{% if not folders %}<div class="card muted">No folders yet. The scanner fills this in once Google Drive is signed in.</div>{% endif %}
+{% for f in folders %}
+<div class="card">
+  <div class="row"><a href="/library/folder/{{ f.drive_id }}"><strong>{{ f.name }}</strong></a>
+    <span class="badge {{ f.clearance }}">{{ f.clearance.replace('_',' ') }}</span></div>
+  <div class="muted">{{ f.path or '' }}</div>
+  <div class="muted">{{ f.conv or 0 }} look like event photos, {{ f.image_count }} photos in all{% if f.minors %}, {{ f.minors }} set aside (may be under 18){% endif %}</div>
+  <div class="row" style="margin-top:8px">
+    {% for state, label, cls in [('cleared', 'Clear', 'ok'), ('excluded', 'Exclude', 'danger'), ('not_cleared', 'Undecided', '')] if state != f.clearance %}
+    <form method="post" action="/library/folder/{{ f.drive_id }}/clearance" class="inline"><input type="hidden" name="state" value="{{ state }}"><input type="hidden" name="back" value="/library?show={{ show }}"><button class="small {{ cls }}" type="submit">{{ label }}</button></form>
+    {% endfor %}
+  </div>
+</div>
+{% endfor %}
+{% endblock %}

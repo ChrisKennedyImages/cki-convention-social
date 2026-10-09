@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block body %}
+<h1>Keys</h1>
+{% if msg %}<div class="msg">{{ msg }}</div>{% endif %}
+<div class="card muted">Paste a key and save. Blank fields keep what is there. Saved secrets are never shown again, only whether they are set. Everything lands in the <code>.env</code> file on this machine.</div>
+<form method="post" action="/keys">
+{% for group in groups %}
+<div class="card"><strong>{{ group.title }}</strong><div class="muted">{{ group.note }}</div>
+  {% for f in group.fields %}
+  <label><span class="row"><span>{{ f.label }}</span>{% if f.secret %}<span class="badge {{ 'ok' if f.set else 'failed' }}">{{ 'set' if f.set else 'missing' }}</span>{% endif %}</span>
+    {% if f.choices %}<select name="{{ f.name }}">{% for c in f.choices %}<option value="{{ c }}" {{ 'selected' if c == f.value else '' }}>{{ c }}</option>{% endfor %}</select>
+    {% elif f.secret %}<input type="password" name="{{ f.name }}" autocomplete="off" placeholder="{{ 'leave blank to keep' if f.set else 'paste here' }}">
+    {% else %}<input type="text" name="{{ f.name }}" value="{{ f.value }}" autocomplete="off">{% endif %}
+  </label>
+  {% endfor %}
+</div>
+{% endfor %}
+<button class="ok" type="submit">Save keys</button>
+</form>
+<h2 style="margin-top:20px">Dashboard password</h2>
+<form method="post" action="/keys/password" class="card">
+  <label>New password (8 or more characters)</label><input type="password" name="password" autocomplete="new-password">
+  <label>Again</label><input type="password" name="confirm" autocomplete="new-password">
+  <button type="submit" style="margin-top:10px">Change password</button>
+</form>
+{% endblock %}

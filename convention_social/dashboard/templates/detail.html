@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block body %}
+{% set notes = {'saved': ('Saved.', ''), 'approved': ('Approved. It goes out at its time.', ''), 'requeued': ('Back in drafts.', ''),
+                'blocked': ('Not approved: a caption breaks a rule. Fix it and save first.', 'bad'),
+                'ineligible': ('Not approved: a photo in it can no longer be used.', 'bad'),
+                'notargets': ('Not approved: pick at least one place to post.', 'bad')} %}
+{% if msg in notes %}<div class="msg {{ notes[msg][1] }}">{{ notes[msg][0] }}</div>{% endif %}
+<h1>{{ item.kind|capitalize }} post #{{ item.id }} <span class="badge {{ item.status }}">{{ item.status.replace('_',' ') }}</span></h1>
+{% if item.last_error %}<div class="msg bad">{{ item.last_error }}</div>{% endif %}
+{% if item.art and item.art.verdict %}<div class="card"><strong>Art director</strong> <span class="badge {{ 'ok' if item.art.verdict == 'pass' else 'draft' }}">{{ item.art.verdict }}</span>
+<div class="muted">{{ item.art.notes or '' }}{% if item.art.rounds %} ({{ item.art.rounds }} look{{ 's' if item.art.rounds != 1 else '' }}){% endif %}</div></div>{% endif %}
+{% if item.renders %}<div class="card"><div class="thumbs">{% for aspect, idx in item.renders.items() %}{% for i in idx %}<img src="/media/render/{{ item.id }}/{{ aspect.replace(':','x') }}/{{ i }}" alt="{{ aspect }}">{% endfor %}{% endfor %}</div></div>{% endif %}
+{% if item.photo_checks %}<div class="card"><h2>Photos</h2>{% for pid, ok, why in item.photo_checks %}
+  <div class="row"><img src="/media/thumb/{{ pid }}" style="height:70px;border-radius:6px" alt=""><span class="badge {{ 'ok' if ok else 'blocked' }}">{{ 'usable' if ok else why }}</span></div>{% endfor %}</div>{% endif %}
+<form method="post" action="/queue/{{ item.id }}/save" class="card">
+  {% for n in networks %}
+  <label class="row"><input type="checkbox" name="target_{{ n }}" {{ 'checked' if n in item.targets else '' }}> {{ n|capitalize }}
+    {% if item.reports[n].ok %}<span class="rule ok">passes</span>{% else %}<span class="rule block">{{ item.reports[n].blocks[0].message }}</span>{% endif %}</label>
+  <textarea name="caption_{{ n }}">{{ item.captions.get(n, '') }}</textarea>
+  {% endfor %}
+  <label>Post time (leave blank for the next open slot)</label>
+  <input type="datetime-local" name="scheduled_for" value="{{ item.scheduled_for or '' }}">
+  <div class="row" style="margin-top:12px"><button type="submit">Save</button></div>
+</form>
+<div class="row">
+  {% if item.status == 'draft' %}
+  <form method="post" action="/queue/{{ item.id }}/approve" class="inline"><button class="ok" type="submit">Approve</button></form>
+  <form method="post" action="/queue/{{ item.id }}/reject" class="inline"><button class="danger" type="submit">Reject</button></form>
+  {% elif item.status in ('would_publish', 'failed') %}
+  <form method="post" action="/queue/{{ item.id }}/requeue" class="inline"><button type="submit">Back to drafts</button></form>
+  {% endif %}
+</div>
+{% if item.payload %}<details class="card"><summary>Exact payload {{ '(dry run, not sent)' if item.dry_run else '' }}</summary><pre style="white-space:pre-wrap;font-size:12px">{{ item.payload }}</pre></details>{% endif %}
+{% endblock %}

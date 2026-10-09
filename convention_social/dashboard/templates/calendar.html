@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block body %}
+<h1>Calendar</h1>
+<div class="card muted">Events you will be at drive the "we will be there" and booking posts. Tick official only when you are the event's hired photographer; without it, no post ever says so.</div>
+<form method="post" action="/calendar/save" class="card">
+  <input type="hidden" name="id" value="{{ current.id if current else '' }}">
+  <label>Event name</label><input type="text" name="name" value="{{ current.name if current else '' }}" required>
+  <label>Kind</label><select name="kind">{% for k, l in [('fan','Fan convention'),('business','Business or political conference'),('unknown','Not sure')] %}<option value="{{ k }}" {{ 'selected' if current and current.kind == k else '' }}>{{ l }}</option>{% endfor %}</select>
+  <div class="row"><div style="flex:1"><label>Starts</label><input type="date" name="start_date" value="{{ current.start_date if current and current.start_date else '' }}"></div>
+    <div style="flex:1"><label>Ends</label><input type="date" name="end_date" value="{{ current.end_date if current and current.end_date else '' }}"></div></div>
+  <label>City</label><input type="text" name="city" value="{{ current.city if current and current.city else '' }}">
+  <label>Venue</label><input type="text" name="venue" value="{{ current.venue if current and current.venue else '' }}">
+  <label>Event website</label><input type="url" name="url" value="{{ current.url if current and current.url else '' }}">
+  <label class="row"><input type="checkbox" name="attending" {{ 'checked' if current and current.attending else '' }}> I will be there</label>
+  <label class="row"><input type="checkbox" name="official" {{ 'checked' if current and current.official else '' }}> I am the official photographer (confirmed)</label>
+  <label>Notes</label><input type="text" name="notes" value="{{ current.notes if current and current.notes else '' }}">
+  <div class="row" style="margin-top:12px"><button class="primary" type="submit">Save</button></div>
+</form>
+{% for r in rows %}
+<div class="card row">
+  <strong>{{ r.name }}</strong><span class="muted">{{ r.start_date or 'no date' }}{% if r.city %}, {{ r.city }}{% endif %}</span>
+  {% if r.attending %}<span class="badge ok">attending</span>{% endif %}{% if r.official %}<span class="badge approved">official</span>{% endif %}
+  <a class="btn small" href="/calendar?edit={{ r.id }}" style="margin-left:auto">Edit</a>
+  <form method="post" action="/calendar/{{ r.id }}/delete" class="inline"><button class="small danger" type="submit">Delete</button></form>
+</div>
+{% endfor %}
+{% endblock %}

@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block body %}
+{% set notes = {'saved': ('Saved.', ''), 'approved': ('Approved. It goes out within ten minutes.', ''), 'already_sent': ('That reply was already sent.', 'bad'),
+                'not_ready': ('Not approved yet: ' ~ (why or 'fix the reply first'), 'bad')} %}
+{% if msg in notes %}<div class="msg {{ notes[msg][1] }}">{{ notes[msg][0] }}</div>{% endif %}
+<h1>{{ row.event_name or 'Quote request' }} <span class="badge">{{ row.status }}</span></h1>
+<div class="card">
+  <table>
+    <tr><th>From</th><td>{{ row.name }}{% if row.organization %}, {{ row.organization }}{% endif %}<br><a href="mailto:{{ row.email }}">{{ row.email }}</a>{% if row.phone %} · {{ row.phone }}{% endif %}</td></tr>
+    <tr><th>Event</th><td>{{ row.event_name or '' }} ({{ row.event_kind or 'kind not said' }})</td></tr>
+    <tr><th>Dates</th><td>{{ row.start_date or '?' }}{% if row.end_date and row.end_date != row.start_date %} to {{ row.end_date }}{% endif %}</td></tr>
+    <tr><th>Where</th><td>{{ row.venue or '' }}{% if row.city %}, {{ row.city }}{% endif %}</td></tr>
+    <tr><th>Attendance</th><td>{{ row.attendance or '' }}</td></tr>
+    <tr><th>Asked for</th><td>{{ asked|join('; ') or 'not said' }}</td></tr>
+    <tr><th>Message</th><td style="white-space:pre-wrap">{{ row.message or '' }}</td></tr>
+  </table>
+</div>
+<form method="post" action="/inquiries/{{ row.id }}/reply" class="card">
+  <h2>Reply <span class="badge">{{ row.reply_status.replace('_',' ') }}</span></h2>
+  {% if row.notes %}<div class="muted">{{ row.notes }}</div>{% endif %}
+  <label>Subject</label><input type="text" name="subject" value="{{ row.reply_subject or '' }}">
+  <label>Message (write your price into the quote line yourself, or delete that line)</label>
+  <textarea name="body" style="min-height:320px">{{ row.reply_body or '' }}</textarea>
+  <div class="muted" style="white-space:pre-wrap;margin-top:6px">Added below every reply:
+--
+{{ footer }}</div>
+  {% if deposits %}<label>Deposit link</label><input type="text" name="deposit_link" value="{{ row.deposit_link or '' }}">
+  {% else %}<div class="muted" style="margin-top:8px">Deposit links are off: no payment service yet.</div>{% endif %}
+  <div class="row" style="margin-top:12px">{% if row.reply_status != 'sent' %}<button type="submit">Save</button>{% endif %}</div>
+</form>
+<div class="row">
+  {% if row.reply_status == 'draft' %}
+  <form method="post" action="/inquiries/{{ row.id }}/approve" class="inline"><button class="ok" type="submit" {{ 'disabled' if why else '' }}>Approve and send</button></form>
+  {% if why %}<span class="rule block">{{ why }}</span>{% endif %}
+  {% endif %}
+  {% for st, label in [('quoted', 'Mark quoted'), ('declined', 'Declined'), ('spam', 'Spam')] %}
+  <form method="post" action="/inquiries/{{ row.id }}/status" class="inline"><input type="hidden" name="status" value="{{ st }}"><button class="small" type="submit">{{ label }}</button></form>
+  {% endfor %}
+</div>
+<form method="post" action="/bookings/add" class="card" style="margin-top:14px">
+  <h2>Book the dates</h2>
+  <input type="hidden" name="inquiry_id" value="{{ row.id }}">
+  <label>Title (private)</label><input type="text" name="title" value="{{ row.event_name or row.name }}">
+  <div class="row"><div style="flex:1"><label>From</label><input type="date" name="start_date" value="{{ row.start_date or '' }}" required></div>
+    <div style="flex:1"><label>To</label><input type="date" name="end_date" value="{{ row.end_date or '' }}"></div></div>
+  <label>As</label><select name="status"><option value="booked">Booked (shows as unavailable on the site)</option><option value="hold">Hold (private)</option></select>
+  <div class="row" style="margin-top:12px"><button class="primary" type="submit">Add</button></div>
+  {% for b in bookings %}<div class="muted">{{ b.start_date }} to {{ b.end_date }}: {{ b.status }}</div>{% endfor %}
+</form>
+{% endblock %}

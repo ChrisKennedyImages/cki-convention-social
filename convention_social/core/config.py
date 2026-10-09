@@ -146,7 +146,7 @@ def load_config() -> Config:
     data_root = Path(getenv("CCS_DATA_ROOT", str(DEFAULT_DATA_ROOT))).expanduser()
     return Config(
         brand_name=getenv("BRAND_NAME", "Event Caliber"),
-        brand_domain=getenv("BRAND_DOMAIN", ""),
+        brand_domain=getenv("BRAND_DOMAIN", "eventcaliber.com"),
         brand_from_email=getenv("BRAND_FROM_EMAIL", ""),
         brand_postal_address=getenv("BRAND_POSTAL_ADDRESS", ""),
         legal_name=getenv("LEGAL_NAME", "CKI, LLC"),

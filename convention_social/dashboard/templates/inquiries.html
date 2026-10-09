@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block body %}
+<h1>Quote requests</h1>
+<div class="row" style="margin-bottom:12px"><a class="btn" href="/inquiries?show=open">Open</a><a class="btn" href="/inquiries?show=all">All</a></div>
+{% if not rows %}<div class="card muted">None yet. Requests from the form on eventcaliber.com land here within ten minutes, and your phone gets a push the moment one arrives.</div>{% endif %}
+{% for r in rows %}
+<a href="/inquiries/{{ r.id }}" style="text-decoration:none;color:inherit"><div class="card">
+  <div class="row"><strong>{{ r.event_name or 'An event' }}</strong><span class="badge {{ 'draft' if r.status in ('new','drafted') else ('ok' if r.status in ('booked','quoted','replied') else 'blocked') }}">{{ r.status }}</span>
+    {% if r.reply_status not in ('none',) %}<span class="badge">reply {{ r.reply_status.replace('_',' ') }}</span>{% endif %}</div>
+  <div class="muted">{{ r.name }}{% if r.organization %}, {{ r.organization }}{% endif %} · {{ r.start_date or 'no date' }}{% if r.city %} · {{ r.city }}{% endif %} · received {{ r.received_at[:10] }}</div>
+</div></a>
+{% endfor %}
+{% endblock %}

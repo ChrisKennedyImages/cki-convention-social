@@ -12,7 +12,12 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
       - run: python -m pip install -r requirements.txt
+      - name: the eventcaliber.com Worker
+        run: node tests/worker_test.mjs
       - name: run the suite against a throwaway home
         run: |
           export HOME="$(mktemp -d)"

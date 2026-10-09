@@ -38,6 +38,51 @@ only when Chris says so.
   states a price; the call to action is a quote request
   (`ai/copy_rules.py`, rule `price`).
 
+## 2026-10-09: second round
+
+- **Official photographer:** none. Chris is not any event's official
+  photographer, and there are no booked jobs yet: the company is starting
+  back up after four years of caring for his mother. No copy may say or
+  hint at an official role, a client list or past bookings that do not
+  exist (`ai/copy_rules.py`; the calendar's official box stays unticked).
+- **Umbrella:** everything runs under CKI, LLC. Event Caliber is its brand.
+- **Domain:** eventcaliber.com, on Cloudflare (`BRAND_DOMAIN`).
+- **Brand direction:** Lens (ring monogram, cobalt on graphite, Space
+  Grotesk) (`BRAND_DIRECTION=lens`, `render/brand.py`).
+- **Booking, built now:** a quote request form on eventcaliber.com that
+  lands on the dashboard and on his phone; a drafted reply he edits and
+  approves before it sends (he writes any price himself; the drafter never
+  does); a public availability calendar that shows booked dates only, with
+  no client or event names. The deposit link is built but OFF: no payment
+  service yet.
+- **Mail:** Cloudflare Email Routing forwards mail for the domain to his
+  inbox; a sending service with SMTP sends from the domain.
+- **Photo sorting:** Ollama on the Mini sorts the whole library (free). Claude
+  looks again only at a photo picked for a post, as the final check for
+  minors and personal details. A photo is postable only after that Claude
+  check passes (`library/eligibility.py`).
+- **Architecture photos:** his exterior and some interior architecture work
+  can be used as full building and venue shots: in the daily feed one day a
+  week, in the website portfolio, and behind promo graphics. Clearance is
+  still per folder, by Chris; readable house numbers and street signs keep a
+  photo out.
+
+## 2026-10-10: third round
+
+- **Look:** not Lens. Black, white and greys with a touch of cyan. The first
+  site was "not at all dynamic or edgy": rebuilt as a camera viewfinder
+  (`site/theme.py`).
+- **Logo: Aperture** (Chris, 2026-10-10). A C cut like an open aperture ring
+  with a cyan point of light inside it; EVENT in white over CALIBER in grey,
+  in Unbounded (`site/marks.py`, `render/brand.py`; `BRAND_MARK=aperture`,
+  `BRAND_DIRECTION=aperture`).
+- **Image metadata for search:** yes, our own words only (title,
+  description, keywords, creator, copyright CKI, LLC, credit); never the
+  camera's data or GPS (`render/meta.py`).
+- **The crew grows:** Learner, Outreach, SEO, Scout, Chief of staff and Art
+  director, each in dry run until switched on; anything that sends or posts
+  still waits for Chris's Approve.
+
 ## Standing rules from the brief
 
 - Nothing publishes without Chris's Approve on the dashboard, until he says

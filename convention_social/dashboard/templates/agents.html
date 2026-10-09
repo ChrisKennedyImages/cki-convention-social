@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block body %}
+<h1>Agents</h1>
+<div class="card"><strong>AI spend this month:</strong> ${{ '%.2f'|format(ai_mtd) }} of ${{ '%.2f'|format(ai_cap) }}</div>
+{% for a in agents %}
+<div class="card">
+  <div class="row"><strong>{{ a.name }}</strong>
+    {% if not a.built %}<span class="badge">not built yet</span>{% endif %}
+    {% if a.dry_run is not none %}<span class="badge {{ 'dry' if a.dry_run else 'live' }}">{{ 'dry run' if a.dry_run else 'LIVE' }}</span>{% endif %}
+    <span class="muted" style="margin-left:auto">{{ a.meta.schedule }}</span></div>
+  <div class="muted">{{ a.meta.job }}</div>
+  <div class="muted">last run: {% if a.last %}{{ a.last.started_at[:16].replace('T',' ') }} UTC, {{ 'ok' if a.last.ok == 1 else ('failed' if a.last.ok == 0 else 'running') }}, {{ a.last.summary or '' }}{% else %}never{% endif %}</div>
+  {% if a.dry_run is not none %}
+  <form method="post" action="/agents/{{ a.name }}/dry-run" class="row" style="margin-top:8px">
+    {% if a.dry_run %}<input type="hidden" name="state" value="off"><button class="danger" type="submit">Switch {{ a.name }} to LIVE</button>
+    {% else %}<input type="hidden" name="state" value="on"><button class="ok" type="submit">Back to dry run</button>{% endif %}
+  </form>
+  {% endif %}
+</div>
+{% endfor %}
+<h2>Open errors</h2>
+{% if not errors %}<div class="card muted">None.</div>{% endif %}
+{% for e in errors %}
+<div class="card"><div class="row"><strong>{{ e.agent }}</strong><span class="badge failed">{{ e.kind }}</span><span class="muted">{{ e.ts[:16].replace('T',' ') }}</span>
+  <form method="post" action="/errors/{{ e.id }}/ack" class="inline" style="margin-left:auto"><button class="small" type="submit">Dismiss</button></form></div>
+  <div>{{ e.message }}</div></div>
+{% endfor %}
+{% endblock %}

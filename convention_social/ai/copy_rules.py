@@ -8,7 +8,8 @@ Blocks:
   price       any money amount, rate or discount (prices are never published)
   dash        an en or em dash, or a spaced hyphen used as a dash
   affiliation "official photographer", "official partner", "sponsored by",
-              "affiliated with" and the like, unless the event is confirmed official
+              "affiliated with", "trusted by", "clients include" and the like,
+              unless the event is confirmed official (none are, 2026-10-09)
   promise     a claim the suite cannot stand behind ("guaranteed", "#1", "best in")
 """
 from __future__ import annotations
@@ -26,7 +27,8 @@ PRICE = re.compile(
 DASH = re.compile(r"[‐-―−]|\s-{1,2}\s")
 AFFILIATION = re.compile(
     r"\bofficial\s+(?:photographer|photography|partner|sponsor|media|vendor)"
-    r"|\bsponsored\s+by\b|\baffiliated\s+with\b|\bin\s+partnership\s+with\b|\bpartnered\s+with\b|\bendorsed\s+by\b",
+    r"|\bsponsored\s+by\b|\baffiliated\s+with\b|\bin\s+partnership\s+with\b|\bpartnered\s+with\b|\bendorsed\s+by\b"
+    r"|\btrusted\s+by\b|\bclients\s+include\b|\bas\s+seen\s+(?:at|in|on)\b|\bhired\s+by\b",
     re.IGNORECASE,
 )
 PROMISE = re.compile(r"\bguarantee(?:d|s)?\b|#1\b|\bnumber one\b|\bbest in\b|\baward[- ]winning\b", re.IGNORECASE)
@@ -50,10 +52,11 @@ class Report:
         return {"ok": self.ok, "blocks": [{"rule": b.rule, "message": b.message} for b in self.blocks]}
 
 
-def check(text: str, *, official: bool = False) -> Report:
+def check(text: str, *, official: bool = False, allow_price: bool = False) -> Report:
+    """`allow_price` only for a private quote reply Chris wrote the price into himself; never for public copy."""
     report = Report()
     text = text or ""
-    m = PRICE.search(text)
+    m = None if allow_price else PRICE.search(text)
     if m:
         report.blocks.append(Block("price", f"mentions a price or discount ({m.group(0).strip()!r}); prices are never published"))
     if DASH.search(text):

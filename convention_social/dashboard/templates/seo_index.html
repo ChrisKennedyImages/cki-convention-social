@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}Search | {{ brand }}{% endblock %}
+{% block body %}
+{% set notes = {'saved': ('Saved. The agent will not rewrite this photo now.', ''),
+                'refused': ('Not saved: ' ~ why, 'bad')} %}
+{% if msg in notes %}<div class="msg {{ notes[msg][1] }}">{{ notes[msg][0] }}</div>{% endif %}
+<h1>Search</h1>
+<div class="card">
+  <div class="row"><strong>Site check</strong>
+    <span class="badge {{ 'dry' if dry_run else 'live' }}" style="margin-left:auto">{{ 'dry run' if dry_run else 'LIVE' }}</span></div>
+  {% if not check %}<div class="muted">No check yet. It runs on Mondays at 5:00 am when the SEO agent is live.</div>
+  {% else %}
+  <div class="muted" style="margin-bottom:6px">{{ check[0].checked_at[:16].replace('T',' ') }} UTC</div>
+  <table>
+    <tr><th>Page</th><th>Answer</th><th></th></tr>
+    {% for c in check %}
+    <tr><td><a href="{{ c.url }}">{{ c.path }}</a></td><td>{{ c.status_code or 'none' }}</td>
+        <td>{% if c.ok %}<span class="badge ok">ok</span>{% else %}<span class="badge failed">{{ c.problems|join('; ') }}</span>{% endif %}</td></tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+</div>
+
+<h2>Photo text ({{ rows|length }})</h2>
+<div class="card muted">Alt text is read aloud to people who cannot see the photo, and search engines read it too. Keep it literal and under {{ alt_max + 1 }} characters.
+  No names except a credited @handle, no addresses, no prices, no dashes.</div>
+{% if not rows %}<div class="card muted">Nothing yet. The SEO agent writes text for every postable photo and every photo in the queue.</div>{% endif %}
+{% for r in rows %}
+<div class="card" id="p{{ r.photo_id }}">
+  <div class="row">
+    <img src="/media/thumb/{{ r.photo_id }}" loading="lazy" alt="" style="width:96px;border-radius:8px;border:1px solid var(--line)">
+    <div style="flex:1;min-width:180px">
+      <strong>{{ r.title }}</strong>
+      <div class="muted">{{ r.slug }}</div>
+      <div class="muted">{{ (r.subject or '') }}{% if r.shot_type %}, {{ r.shot_type.replace('_',' ') }}{% endif %}.
+        {% if r.edited_at %}<span class="badge ok">edited by you</span>{% else %}written by {{ r.model }}{% endif %}</div>
+    </div>
+  </div>
+  <form method="post" action="/seo/{{ r.photo_id }}">
+    <label>Alt text</label><input type="text" name="alt" value="{{ r.alt }}" maxlength="{{ alt_max }}" required>
+    <label>Title</label><input type="text" name="title" value="{{ r.title }}" maxlength="70">
+    <label>Description</label><input type="text" name="description" value="{{ r.description }}" maxlength="200">
+    <div class="muted" style="margin-top:6px">{{ r.keywords|join(', ') }}</div>
+    <div class="row" style="margin-top:8px"><button class="primary small" type="submit">Save</button></div>
+  </form>
+</div>
+{% endfor %}
+{% endblock %}
