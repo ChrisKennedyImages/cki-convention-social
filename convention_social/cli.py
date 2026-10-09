@@ -9,6 +9,9 @@
   ccs hash-password           read a password from the terminal, print the hash for .env
   ccs dashboard               serve the review dashboard on 127.0.0.1:DASHBOARD_PORT
   ccs launchd status          which launchd services of this suite are loaded
+  ccs drive login [--wait N]  sign in to Google Drive as Chris, read only
+  ccs drive scan [--classify N]   inventory the library now; optionally sort N photos with Claude
+  ccs drive report [--sheet N]    write the library report and a contact sheet of the best N
 """
 from __future__ import annotations
 
@@ -138,6 +141,43 @@ def cmd_launchd(_args) -> int:
     return 0
 
 
+def cmd_drive(args) -> int:
+    from .drive import oauth
+    from .drive.api import DriveReader
+    conn = db.connect()
+    try:
+        if args.what == "login":
+            oauth.login(conn, wait_seconds=args.wait)
+            return 0
+        token = oauth.access_token(conn)
+        reader = DriveReader(token, conn=conn, agent="cli")
+        if args.what == "scan":
+            from .agents import scanner
+            from .core import logs, runner
+            ctx = runner.Context(agent="scanner", conn=conn, log=logs.get_logger("scanner"), cfg=config.get_config(),
+                                 dry_run=True, run_id=0)
+            print(scanner.run(ctx, reader=reader))
+            if args.classify:
+                from .library import classify
+                st = classify.vision_pass(conn, reader.thumbnail, limit=args.classify, log=ctx.log)
+                print(f"vision: {st.done} done, {st.failed} failed {st.stopped}")
+            return 0
+        if args.what == "report":
+            from .library import report
+            sheet = report.write_contact_sheet(conn, reader.thumbnail, n=args.sheet) if args.sheet else None
+            out = report.write_report(conn, sheet=sheet)
+            print(f"report: {out}")
+            if sheet:
+                print(f"contact sheet: {sheet}")
+            return 0
+    except oauth.DriveAuthError as e:
+        print(str(e))
+        return 2
+    finally:
+        conn.close()
+    return 2
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="ccs", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -150,6 +190,11 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("hash-password").set_defaults(fn=cmd_hash_password)
     sub.add_parser("dashboard").set_defaults(fn=cmd_dashboard)
     l = sub.add_parser("launchd"); l.add_argument("what", choices=["status"]); l.set_defaults(fn=cmd_launchd)
+    dv = sub.add_parser("drive"); dv.add_argument("what", choices=["login", "scan", "report"])
+    dv.add_argument("--wait", type=float, default=0, help="login: seconds to wait for the browser to return here")
+    dv.add_argument("--classify", type=int, default=0, help="scan: sort this many photos with Claude (paid, under the cap)")
+    dv.add_argument("--sheet", type=int, default=30, help="report: photos on the contact sheet (0 for none)")
+    dv.set_defaults(fn=cmd_drive)
     return p
 
 
