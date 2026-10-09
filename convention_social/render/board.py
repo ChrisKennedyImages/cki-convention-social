@@ -53,7 +53,11 @@ def brand_board(direction: Direction, format_paths: Sequence[Path], out: Path, *
     tx = m + 1180
     d.text((tx, y), "Headlines", font=fonts.face("InterTight-Regular.ttf", 26), fill=(110, 110, 115))
     sample = "Every room, covered."
-    d.text((tx, y + 36), sample.upper() if direction.display_upper else sample, font=fonts.face(direction.display, 76), fill=direction.ink)
+    sample = sample.upper() if direction.display_upper else sample
+    size = 76
+    while size > 30 and d.textlength(sample, font=fonts.face(direction.display, size)) > W - tx - m:
+        size -= 4
+    d.text((tx, y + 36), sample, font=fonts.face(direction.display, size), fill=direction.ink)
     d.text((tx, y + 150), "Body and labels", font=fonts.face("InterTight-Regular.ttf", 26), fill=(110, 110, 115))
     tracked(d, (tx, y + 190), TAGLINE.upper(), fonts.face(direction.body_bold, 28), direction.ink, direction.tracking)
     # formats

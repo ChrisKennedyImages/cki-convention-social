@@ -67,6 +67,19 @@ only when Chris says so.
   still per folder, by Chris; readable house numbers and street signs keep a
   photo out.
 
+## 2026-10-10: third round
+
+- **Look:** not Lens. Black, white and greys with a touch of cyan. The first
+  site was "not at all dynamic or edgy": rebuilt as a camera viewfinder
+  (`site/theme.py`). Logo: four options shown; Viewfinder recommended and in
+  use until Chris picks (`BRAND_MARK`, `BRAND_DIRECTION`).
+- **Image metadata for search:** yes, our own words only (title,
+  description, keywords, creator, copyright CKI, LLC, credit); never the
+  camera's data or GPS (`render/meta.py`).
+- **The crew grows:** Learner, Outreach, SEO, Scout, Chief of staff and Art
+  director, each in dry run until switched on; anything that sends or posts
+  still waits for Chris's Approve.
+
 ## Standing rules from the brief
 
 - Nothing publishes without Chris's Approve on the dashboard, until he says

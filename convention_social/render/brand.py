@@ -1,6 +1,8 @@
 """Brand directions: type, colour and the mark, as data plus one drawing function each.
 
-Chris chose Lens on 2026-10-09 (BRAND_DIRECTION, default lens). Every
+Chris chose Lens on 2026-10-09, then on 2026-10-10 asked for black, greys and
+white with a touch of cyan: the Viewfinder direction (BRAND_DIRECTION, default
+viewfinder). The others stay for reference. Every
 direction draws the company name from config, so a rename is one setting.
 
   press    editorial: a high-contrast serif wordmark, brass rule, navy and bone.
@@ -42,6 +44,10 @@ DIRECTIONS = {
     "marquee": Direction("marquee", "Marquee", ink=(11, 11, 13), paper=(246, 245, 241), accent=(255, 77, 28), on_accent=(11, 11, 13),
                          display="Archivo-XCondBlack.ttf", display_upper=True, body="Archivo-CondMedium.ttf",
                          body_bold="Archivo-XCondBlack.ttf", tracking=0.12),
+    # Chris, 2026-10-10: black, greys and white with a touch of cyan; the Viewfinder mark
+    "viewfinder": Direction("viewfinder", "Viewfinder", ink=(10, 10, 11), paper=(243, 243, 241), accent=(0, 225, 255),
+                            on_accent=(10, 10, 11), display="Michroma-Regular.ttf", display_upper=True,
+                            body="InterTight-Regular.ttf", body_bold="JetBrainsMono-Medium.ttf", tracking=0.16),
     "lens": Direction("lens", "Lens", ink=(27, 29, 34), paper=(233, 236, 242), accent=(47, 91, 255), on_accent=(255, 255, 255),
                       display="SpaceGrotesk-Bold.ttf", display_upper=False, body="SpaceGrotesk-Medium.ttf",
                       body_bold="SpaceGrotesk-Bold.ttf", tracking=0.14),
@@ -50,7 +56,7 @@ TAGLINE = "Event and convention photography"
 
 
 def current() -> Direction | None:
-    key = (config.getenv("BRAND_DIRECTION") or "lens").strip().lower()   # Chris chose Lens, 2026-10-09
+    key = (config.getenv("BRAND_DIRECTION") or "viewfinder").strip().lower()   # Chris, 2026-10-10: mono with a touch of cyan
     return DIRECTIONS.get(key)
 
 
@@ -86,6 +92,29 @@ def draw_mark(img: Image.Image, direction: Direction, x: int, y: int, height: in
             tf = fonts.face(direction.body_bold, max(10, int(height * 0.34)))
             tracked(d, (x, rule_y + int(height * 0.3)), TAGLINE.upper(), tf, fg, direction.tracking)
             h += int(height * 0.8)
+        return w, h
+    if direction.key == "viewfinder":
+        # four corner brackets with a cyan focus point, then EVENT in grey over CALIBER (site/marks.py draws the same)
+        s = int(height * 1.6)
+        lw = max(2, height // 12)
+        arm = int(s * 0.2)
+        for cx, cy, sx, sy in ((x, y, 1, 1), (x + s, y, -1, 1), (x, y + s, 1, -1), (x + s, y + s, -1, -1)):
+            d.line([(cx, cy), (cx + sx * arm, cy)], fill=fg, width=lw)
+            d.line([(cx, cy), (cx, cy + sy * arm)], fill=fg, width=lw)
+        r = max(3, int(s * 0.055))
+        fx, fy = x + int(s * 0.64), y + int(s * 0.36)
+        d.ellipse([fx - r, fy - r, fx + r, fy + r], fill=direction.accent)
+        first, _, rest = name.upper().partition(" ")
+        f = fonts.face(direction.display, max(10, int(height * 0.5)))
+        tx = x + s + int(height * 0.5)
+        tracked(d, (tx, y + int(height * 0.2)), first, f, (140, 140, 147), 0.22)
+        tracked(d, (tx, y + int(height * 0.88)), rest or first, f, fg, 0.22)
+        w = int(tx - x + max(tracked_width(d, first, f, 0.22), tracked_width(d, rest or first, f, 0.22)))
+        h = s
+        if with_tagline:
+            tf = fonts.face(direction.body_bold, max(10, int(height * 0.34)))
+            tracked(d, (x, y + s + int(height * 0.5)), TAGLINE.upper(), tf, fg, direction.tracking)
+            h += int(height * 0.9)
         return w, h
     if direction.key == "marquee":
         f = fonts.face(direction.display, int(height * 1.35))
