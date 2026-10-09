@@ -12,6 +12,8 @@
   ccs drive login [--wait N]  sign in to Google Drive as Chris, read only
   ccs drive scan [--classify N]   inventory the library now; optionally sort N photos with Claude
   ccs drive report [--sheet N]    write the library report and a contact sheet of the best N
+  ccs fonts                   download the brand typefaces into DATA_ROOT/fonts
+  ccs samples                 render twelve sample posts and three brand boards from the best photos (for review)
 """
 from __future__ import annotations
 
@@ -178,6 +180,71 @@ def cmd_drive(args) -> int:
     return 2
 
 
+def cmd_fonts(_args) -> int:
+    from .render import fonts
+    got = fonts.fetch()
+    print(f"fetched: {', '.join(got) if got else 'nothing new'} into {fonts.font_dir()}")
+    return 0
+
+
+def cmd_samples(_args) -> int:
+    import io
+    from PIL import Image
+    from .ai import claude
+    from .drive import oauth
+    from .drive.api import DriveReader
+    from .library import eligibility, report
+    from .render import board
+    try:
+        import pillow_heif
+        pillow_heif.register_heif_opener()
+    except ImportError:
+        pass
+    conn = db.connect()
+    try:
+        reader = DriveReader(oauth.access_token(conn), conn=conn, agent="cli")
+    except oauth.DriveAuthError as e:
+        print(str(e))
+        return 2
+    picks = [dict(r) for r in report.best(conn, 6)]
+    if not picks:
+        print("no sorted convention photos yet; run `ccs drive scan --classify 300` first")
+        return 2
+    cache = config.get_config().data_root / "photos"
+    cache.mkdir(parents=True, exist_ok=True)
+
+    def fetch(row):
+        path = cache / f"{row['drive_id']}.img"
+        if not path.exists():
+            path.write_bytes(reader.download(row["drive_id"]))
+        return Image.open(io.BytesIO(path.read_bytes()))
+
+    for p in picks:
+        p["credit"] = eligibility.credit_line(conn, p["id"])
+    drafter = claude.get_drafter(conn, agent="cli")
+    cfg = config.get_config()
+
+    def captions(row, fmt):
+        if fmt != "photo":
+            return {}
+        facts = claude.PostFacts(brand_name=cfg.brand_name, event_name=row.get("convention_name") or "",
+                                 event_kind=row.get("event_kind") or "unknown", credit=row.get("credit", ""),
+                                 shot_type=row.get("shot_type") or "", services=tuple(SERVICES_FOR_COPY))
+        return drafter.draft(facts, cache / f"{row['drive_id']}.img").captions
+
+    nxt = db.one(conn, "SELECT * FROM conventions WHERE attending=1 AND COALESCE(end_date, start_date) >= date('now') ORDER BY start_date LIMIT 1")
+    when = ", ".join(x for x in ((nxt["start_date"] if nxt else ""), (nxt["city"] if nxt else "")) if x)
+    out = board.samples(conn, picks, fetch, captions=captions, event=nxt["name"] if nxt else "", when=when,
+                        site=cfg.brand_domain)
+    print(f"samples: {out / 'index.html'}")
+    conn.close()
+    return 0
+
+
+SERVICES_FOR_COPY = ("full event coverage", "backstage and green rooms", "breakouts", "evening events and dinners",
+                     "portraits", "exhibition halls and vendors", "same day delivery of approved images")
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="ccs", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -195,6 +262,8 @@ def build_parser() -> argparse.ArgumentParser:
     dv.add_argument("--classify", type=int, default=0, help="scan: sort this many photos with Claude (paid, under the cap)")
     dv.add_argument("--sheet", type=int, default=30, help="report: photos on the contact sheet (0 for none)")
     dv.set_defaults(fn=cmd_drive)
+    sub.add_parser("fonts").set_defaults(fn=cmd_fonts)
+    sub.add_parser("samples").set_defaults(fn=cmd_samples)
     return p
 
 
