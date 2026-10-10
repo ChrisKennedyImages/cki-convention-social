@@ -8,7 +8,8 @@ counted in api_usage (provider 'drive').
 from __future__ import annotations
 
 import sqlite3
-from typing import Callable, Iterator, Optional
+import time
+from typing import Callable, Iterator, Optional, Union
 
 from ..core import db
 
@@ -16,12 +17,18 @@ API = "https://www.googleapis.com/drive/v3"
 FOLDER_MIME = "application/vnd.google-apps.folder"
 PAGE_SIZE = 1000
 TIMEOUT = 60
+TOKEN_MAX_AGE = 300        # how long a token is reused before the provider is asked again
 
 FILE_FIELDS = ("id,name,mimeType,md5Checksum,size,parents,modifiedTime,description,trashed,"
                "thumbnailLink,hasThumbnail,driveId,"
                "imageMediaMetadata(width,height,rotation,time,cameraMake,cameraModel)")
 
 Transport = Callable[[str, dict, dict, bool], object]   # (url, params, headers, stream) -> response
+
+
+def unauthorized(error: object) -> bool:
+    """True when Drive answered 401: the access token has expired or been revoked."""
+    return getattr(getattr(error, "response", None), "status_code", None) == 401
 
 
 def requests_get(url: str, params: dict, headers: dict, stream: bool = False):
@@ -36,19 +43,57 @@ class NoThumbnail(RuntimeError):
 
 
 class DriveReader:
-    def __init__(self, token: str, *, conn: Optional[sqlite3.Connection] = None, agent: str = "scanner",
-                 transport: Optional[Transport] = None):
-        self.token = token
+    def __init__(self, token: Union[str, Callable[[], str]], *, conn: Optional[sqlite3.Connection] = None,
+                 agent: str = "scanner", transport: Optional[Transport] = None):
+        """`token` is a bearer string, or a callable that returns a currently valid one.
+
+        Pass the callable for any pass that can outlive an access token. Google's last about an
+        hour, and a reader built from a fixed string keeps sending the same dead one: on
+        2026-10-10 a sort pass managed 42 photos, then every one of the remaining 208 failed 401
+        within twenty four seconds of the token's expiry. The hourly scanner had it worse, since
+        CLASSIFY_PER_RUN of 500 photos is about four hours of local sorting.
+
+        `oauth.access_token` refreshes whenever the stored credentials have expired, so the
+        callable is asked again every TOKEN_MAX_AGE seconds, and immediately on any 401.
+        """
+        self._token_source = token
+        self._token: Optional[str] = token if isinstance(token, str) else None
+        self._token_at = 0.0
         self.conn = conn
         self.agent = agent
         self.transport = transport or requests_get
 
-    def get(self, path: str, params: Optional[dict] = None, *, stream: bool = False, absolute: bool = False):
+    @property
+    def token(self) -> str:
+        if not callable(self._token_source):
+            return self._token_source
+        if self._token is None or (time.monotonic() - self._token_at) > TOKEN_MAX_AGE:
+            self._token = self._token_source()
+            self._token_at = time.monotonic()
+        return self._token
+
+    def _drop_token(self) -> bool:
+        """Forget the cached token so the next read asks the provider. False when there is none."""
+        if not callable(self._token_source):
+            return False
+        self._token, self._token_at = None, 0.0
+        return True
+
+    def _send(self, url: str, params: dict, stream: bool, detail: str):
         if self.conn is not None:
             db.insert(self.conn, "api_usage", ts=db.utcnow(), provider="drive", agent=self.agent, units=1,
-                      unit_kind="request", cost_usd=0.0, detail=path[:120])
+                      unit_kind="request", cost_usd=0.0, detail=detail[:120])
+        return self.transport(url, dict(params), {"Authorization": "Bearer " + self.token}, stream)
+
+    def get(self, path: str, params: Optional[dict] = None, *, stream: bool = False, absolute: bool = False):
         url = path if absolute else API + path
-        return self.transport(url, dict(params or {}), {"Authorization": "Bearer " + self.token}, stream)
+        params = dict(params or {})
+        try:
+            return self._send(url, params, stream, path)
+        except Exception as e:  # noqa: BLE001 — only a 401 is handled; everything else is re-raised
+            if not (unauthorized(e) and self._drop_token()):
+                raise
+            return self._send(url, params, stream, path)   # counted again: it is a second request
 
     def _pages(self, path: str, params: dict, key: str) -> Iterator[dict]:
         page = None

@@ -262,6 +262,78 @@ class Heuristics(IsolatedCase):
         self.assertIsNone(heuristics.guess("My Drive/Misc").is_event)
 
 
+class TokenLifetime(IsolatedCase):
+    """A Google access token lasts about an hour. On 2026-10-10 a sort pass built a reader from
+    one fixed string: 42 photos sorted, then all 208 remaining failed 401 within twenty four
+    seconds of the token expiring. A pass must outlive its token."""
+
+    def _unauthorized(self):
+        class Resp:
+            status_code = 401
+        err = RuntimeError("401 Client Error: Unauthorized")
+        err.response = Resp()
+        return err
+
+    def test_a_fixed_string_is_still_accepted(self):
+        d = library()
+        reader = DriveReader("tok", conn=db.connect(), transport=d)
+        self.assertEqual(reader.token, "tok")
+        self.assertEqual(reader.root_id(), d.root)
+
+    def test_the_provider_is_asked_again_and_a_401_is_retried(self):
+        d = library()
+        handed = []
+
+        def provider():
+            handed.append(f"tok{len(handed)}")
+            return handed[-1]
+
+        seen, fail_once = [], {"done": False}
+
+        def transport(url, params, headers, stream=False):
+            seen.append(headers["Authorization"])
+            if not fail_once["done"]:
+                fail_once["done"] = True
+                raise self._unauthorized()
+            return d(url, params, headers, stream)
+
+        reader = DriveReader(provider, conn=db.connect(), transport=transport)
+        got = reader.root_id()                      # 401 on the first try, then a fresh token
+        self.assertEqual(got, d.root)
+        self.assertEqual(seen, ["Bearer tok0", "Bearer tok1"])
+        self.assertEqual(len(handed), 2, "a 401 must force the provider to be asked again")
+
+    def test_a_long_pass_survives_the_token_expiring(self):
+        d = library()
+        conn = db.connect()
+        alive = {"token": "first"}
+
+        def transport(url, params, headers, stream=False):
+            if headers["Authorization"] != f"Bearer {alive['token']}":
+                raise self._unauthorized()          # Drive rejects anything but the live token
+            return d(url, params, headers, stream)
+
+        reader = DriveReader(lambda: alive["token"], conn=conn, transport=transport)
+        scan.full_inventory(conn, reader)
+        classify.folder_pass(conn)
+        alive["token"] = "rotated"                  # the token expires part way through the pass
+        st = classify.sort_pass(conn, reader.thumbnail_for, sorter=classify.OllamaSorter("m", post=_ollama_ok))
+        self.assertEqual(st.failed, 0, "the pass must pick up the new token, not die on 401s")
+        self.assertGreater(st.done, 0)
+
+    def test_a_non_401_error_is_not_retried(self):
+        calls = []
+
+        def transport(url, params, headers, stream=False):
+            calls.append(url)
+            raise RuntimeError("connection reset")
+
+        reader = DriveReader(lambda: "tok", conn=db.connect(), transport=transport)
+        with self.assertRaises(RuntimeError):
+            reader.root_id()
+        self.assertEqual(len(calls), 1, "only a 401 is worth a second attempt")
+
+
 class SortQueue(IsolatedCase):
     """A bounded sort pass must cover the library, not bury itself in the newest folder.
     On 2026-10-10 the next 400 photos came from five 2022-and-later events while the 6,065
