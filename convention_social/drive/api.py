@@ -31,6 +31,10 @@ def requests_get(url: str, params: dict, headers: dict, stream: bool = False):
     return r
 
 
+class NoThumbnail(RuntimeError):
+    """Drive offers no preview for this photo, so it cannot be sorted or put on a sheet."""
+
+
 class DriveReader:
     def __init__(self, token: str, *, conn: Optional[sqlite3.Connection] = None, agent: str = "scanner",
                  transport: Optional[Transport] = None):
@@ -100,6 +104,22 @@ class DriveReader:
         import re
         url = re.sub(r"=s\d+$", f"=s{size}", link) if re.search(r"=s\d+$", link) else link
         return self.get(url, {}, absolute=True).content
+
+    def thumbnail_for(self, file_id: str, size: int = 512) -> bytes:
+        """A small preview of one photo, with its link resolved fresh.
+
+        Drive's thumbnailLink is a signed URL that stops working about an hour after Drive
+        issues it. A link stored during the inventory is therefore already dead by the time a
+        slow sort pass reaches it, and every fetch returns 403 at once (2026-10-10: 158 photos
+        sorted, the remaining 342 failed inside forty seconds). Asking for the current link
+        costs one extra GET per photo and is the only thing that makes a long pass possible.
+        The original file is never touched.
+        """
+        got = self.get(f"/files/{file_id}", {"fields": "thumbnailLink", "supportsAllDrives": "true"}).json()
+        link = got.get("thumbnailLink")
+        if not link:
+            raise NoThumbnail(f"{file_id} has no thumbnail in Drive")
+        return self.thumbnail(link, size)
 
     def export_csv(self, file_id: str) -> str:
         """A Google Sheet's first tab as CSV (files.export, a read)."""

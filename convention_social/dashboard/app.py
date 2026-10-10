@@ -266,7 +266,7 @@ def create_app() -> FastAPI:
             from ..drive import oauth
             from ..drive.api import DriveReader
             try:
-                data = DriveReader(oauth.access_token(conn), conn=conn, agent="dashboard").thumbnail(row["thumbnail_link"], 400)
+                data = DriveReader(oauth.access_token(conn), conn=conn, agent="dashboard").thumbnail_for(row["drive_id"], 400)
             except Exception:  # noqa: BLE001 — not signed in, network: no picture, not a crash
                 raise HTTPException(404)
             path.parent.mkdir(parents=True, exist_ok=True)

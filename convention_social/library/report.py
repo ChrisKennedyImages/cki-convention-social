@@ -98,7 +98,7 @@ def write_contact_sheet(conn: sqlite3.Connection, fetch_thumb: Callable[[str], b
         x = pad + (i % cols) * (cell_w + pad)
         y = 120 + (i // cols) * (cell_h + label_h + pad)
         try:
-            with Image.open(io.BytesIO(fetch_thumb(r["thumbnail_link"]))) as im:
+            with Image.open(io.BytesIO(fetch_thumb(r["drive_id"]))) as im:
                 im = ImageOps.exif_transpose(im).convert("RGB")
                 im = ImageOps.contain(im, (cell_w, cell_h))
                 sheet.paste(im, (x + (cell_w - im.width) // 2, y + (cell_h - im.height) // 2))

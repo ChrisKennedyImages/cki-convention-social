@@ -276,7 +276,7 @@ def sort_pass(conn: sqlite3.Connection, fetch_thumb: Callable[[str], bytes], *, 
         hint = (f"Folder suggests: {photo['folder_subject'] or 'nothing'}, "
                 f"{photo['folder_event'] or 'no event name'} ({photo['folder_kind'] or 'unknown'}).")
         try:
-            data = sorter.classify(fetch_thumb(photo["thumbnail_link"]), hint)
+            data = sorter.classify(fetch_thumb(photo["drive_id"]), hint)
         except Exception as e:  # noqa: BLE001 — one bad photo never stops the pass
             stats.failed += 1
             if log:

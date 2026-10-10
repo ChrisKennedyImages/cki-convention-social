@@ -46,7 +46,7 @@ def run(ctx: runner.Context, reader: DriveReader | None = None) -> str:
     sorter = classify.pick_sorter(ctx.conn, agent=ctx.agent)
     if sorter is not None and (not ctx.dry_run or not sorter.paid()):   # the free local sort runs even in dry run
         limit = int(config.getenv("CLASSIFY_PER_RUN", "500" if not sorter.paid() else "200") or 200)
-        vision = classify.sort_pass(ctx.conn, reader.thumbnail, limit=limit, sorter=sorter, log=ctx.log)
+        vision = classify.sort_pass(ctx.conn, reader.thumbnail_for, limit=limit, sorter=sorter, log=ctx.log)
     sheet = config.getenv("CREDITS_SHEET_ID", "")
     credit_note = "credits: no sheet set"
     if sheet:
