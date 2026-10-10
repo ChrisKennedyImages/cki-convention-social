@@ -262,6 +262,45 @@ class Heuristics(IsolatedCase):
         self.assertIsNone(heuristics.guess("My Drive/Misc").is_event)
 
 
+class SortQueue(IsolatedCase):
+    """A bounded sort pass must cover the library, not bury itself in the newest folder.
+    On 2026-10-10 the next 400 photos came from five 2022-and-later events while the 6,065
+    photo CPAC 2016/2017 archive waited behind 52,000 others."""
+
+    def _library(self):
+        d = FakeDrive()
+        d.folder("fbig", "CPAC Texas 2022 Premium")
+        d.folder("fold", "CPAC 2016 Photos")
+        for i in range(8):                     # a big, recent event
+            d.image(f"big{i}", f"B{i}.jpg", "fbig", time="2022:03:02 10:00:00")
+        for i in range(3):                     # an older, smaller one
+            d.image(f"old{i}", f"O{i}.jpg", "fold", time="2016:03:02 10:00:00")
+        conn = db.connect()
+        reader = DriveReader("tok", conn=conn, transport=d)
+        scan.full_inventory(conn, reader)
+        classify.folder_pass(conn)
+        return conn
+
+    def test_a_bounded_queue_reaches_both_events(self):
+        conn = self._library()
+        picked = classify.queue(conn, 4)
+        events = {r["folder_event"] for r in picked}
+        self.assertIn("CPAC", " ".join(sorted(e or "" for e in events)))
+        self.assertEqual(len(events), 2, f"a 4 photo pass saw only {events}")
+
+    def test_newest_within_an_event_still_comes_first(self):
+        conn = self._library()
+        first_per_event = {}
+        for r in classify.queue(conn, 2):
+            first_per_event[r["folder_event"]] = r["rank_in_event"]
+        self.assertTrue(all(v == 1 for v in first_per_event.values()),
+                        "the first photo taken from each event must be its newest")
+
+    def test_the_whole_queue_still_returns_every_photo(self):
+        conn = self._library()
+        self.assertEqual(len(classify.queue(conn, 100)), 11)
+
+
 def _ollama_ok(url, json=None, **kw):
     """A local sorter that always answers well, so a test can isolate the thumbnail fetch."""
     return types.SimpleNamespace(status_code=200,

@@ -118,15 +118,29 @@ def folder_pass(conn: sqlite3.Connection) -> int:
 
 
 def queue(conn: sqlite3.Connection, limit: int) -> list[sqlite3.Row]:
-    """Photos waiting for the sort pass: cleared first, then event and building folders, newest first."""
+    """Photos waiting for the sort pass: cleared folders first, then a round robin across
+    events, newest first inside each.
+
+    Strict newest-first ordering meant a bounded pass only ever saw the newest folders. On
+    2026-10-10 the next 400 photos came from five events, all 2022 or later, while the 6,065
+    photo CPAC 2016 and 2017 archive sat behind 52,000 others. A contact sheet of the best
+    frames cannot come from a pool that narrow: report.PER_EVENT_CAP allows four per event,
+    so five events can never yield thirty picks. Taking the newest from every event, then the
+    second newest from every event, reaches the same photos in the end and gives a
+    representative sample at any cut-off.
+    """
     return db.rows(conn, """
-        SELECT p.*, c.convention_name AS folder_event, c.event_kind AS folder_kind, c.subject AS folder_subject,
-               (p.clearance = 'cleared' OR EXISTS (SELECT 1 FROM drive_folders f WHERE f.drive_id = p.folder_id AND f.clearance='cleared')) AS cleared_hint
-        FROM photos p JOIN classifications c ON c.photo_id = p.id
-        WHERE p.trashed = 0 AND c.method = 'folder' AND p.thumbnail_link IS NOT NULL
-          AND (c.subject IN ('event', 'architecture') OR p.clearance = 'cleared'
-               OR EXISTS (SELECT 1 FROM drive_folders f WHERE f.drive_id = p.folder_id AND f.clearance = 'cleared'))
-        ORDER BY cleared_hint DESC, COALESCE(p.taken_at, p.modified_time) DESC
+        SELECT * FROM (
+            SELECT p.*, c.convention_name AS folder_event, c.event_kind AS folder_kind, c.subject AS folder_subject,
+                   (p.clearance = 'cleared' OR EXISTS (SELECT 1 FROM drive_folders f WHERE f.drive_id = p.folder_id AND f.clearance='cleared')) AS cleared_hint,
+                   ROW_NUMBER() OVER (PARTITION BY COALESCE(NULLIF(c.convention_name, ''), p.folder_id)
+                                      ORDER BY COALESCE(p.taken_at, p.modified_time) DESC) AS rank_in_event
+            FROM photos p JOIN classifications c ON c.photo_id = p.id
+            WHERE p.trashed = 0 AND c.method = 'folder' AND p.thumbnail_link IS NOT NULL
+              AND (c.subject IN ('event', 'architecture') OR p.clearance = 'cleared'
+                   OR EXISTS (SELECT 1 FROM drive_folders f WHERE f.drive_id = p.folder_id AND f.clearance = 'cleared'))
+        )
+        ORDER BY cleared_hint DESC, rank_in_event ASC, COALESCE(taken_at, modified_time) DESC
         LIMIT ?""", (limit,))
 
 
