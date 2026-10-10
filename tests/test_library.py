@@ -261,6 +261,30 @@ class Heuristics(IsolatedCase):
         self.assertEqual(heuristics.guess("My Drive/Katsucon 2025/Cosplay").event_kind, "fan")
         self.assertIsNone(heuristics.guess("My Drive/Misc").is_event)
 
+    def test_a_private_occasion_is_never_convention_work(self):
+        """A wedding has a reception, a dinner, toasts and awards, so the business vocabulary
+        matches nearly every wedding folder. Honouring the wedding word only when nothing else
+        matched put 50 of Chris's clients' wedding photos into the convention pool and six onto
+        the contact sheet of 2026-10-10."""
+        for path in ("My Drive/Weddings on the water /receptions",
+                     "My Drive/Rural Weddings/reception",
+                     "My Drive/Smith Wedding 2021/Reception and dinner",
+                     "My Drive/Jones engagement/awards banquet",
+                     "My Drive/Ava birthday/gala"):
+            g = heuristics.guess(path)
+            self.assertIs(g.is_event, False, f"{path} must not read as convention work")
+            self.assertEqual(g.subject, "other", f"{path} must not be portfolio architecture either")
+
+    def test_a_file_state_word_never_beats_a_real_event(self):
+        """"low-res", "preview" and "raw" describe the file, not the subject: 1,379 photos sit in
+        "all files low-res for ACU preview", which is ACU's convention work."""
+        for path in ("My Drive/all files low-res for ACU preview",
+                     "My Drive/CPAC 2017 unedited",
+                     "My Drive/Mercy - Comms & family CPAC Texas"):
+            self.assertIs(heuristics.guess(path).is_event, True, f"{path} is still event work")
+        # with no event to beat, they still rule a folder out
+        self.assertIs(heuristics.guess("My Drive/screenshots").is_event, False)
+
 
 class TokenLifetime(IsolatedCase):
     """A Google access token lasts about an hour. On 2026-10-10 a sort pass built a reader from
@@ -377,6 +401,35 @@ def _ollama_ok(url, json=None, **kw):
     """A local sorter that always answers well, so a test can isolate the thumbnail fetch."""
     return types.SimpleNamespace(status_code=200,
                                  json=lambda: {"message": {"content": __import__("json").dumps(ADULTS)}})
+
+
+class EventNameSeen(IsolatedCase):
+    """A local model asked for "an event name readable on signage, empty if none" answers with
+    the word: 44 rows said "false", 8 said "none". Stored as the event name, they titled contact
+    sheet cells "false 2022" and each counted as its own event against report.PER_EVENT_CAP."""
+
+    def test_junk_answers_are_not_event_names(self):
+        for junk in ("false", "False", "none", "None", "unknown", "n/a", "null", "", "   ", None):
+            self.assertIsNone(classify.event_name_seen(junk), f"{junk!r} is not an event name")
+
+    def test_a_real_name_survives_and_is_trimmed(self):
+        self.assertEqual(classify.event_name_seen("  CPAC 2021  "), "CPAC 2021")
+        self.assertEqual(classify.event_name_seen("Katsucon"), "Katsucon")
+
+    def test_a_junk_answer_leaves_the_folder_name_alone(self):
+        conn = db.connect()
+        drive = library()
+        reader = DriveReader("tok", conn=conn, transport=drive)
+        scan.full_inventory(conn, reader)
+        classify.folder_pass(conn)
+        before = db.one(conn, "SELECT c.convention_name n FROM classifications c "
+                              "JOIN photos p ON p.id=c.photo_id WHERE p.drive_id='p1'")["n"]
+        self.assertTrue(before, "the folder pass should have named this one")
+        photo = db.one(conn, "SELECT * FROM photos WHERE drive_id='p1'")
+        classify.save_sort(conn, photo, {**ADULTS, "event_name_seen": "false"}, "ollama", "m")
+        after = db.one(conn, "SELECT c.convention_name n FROM classifications c "
+                             "JOIN photos p ON p.id=c.photo_id WHERE p.drive_id='p1'")["n"]
+        self.assertEqual(after, before, "junk must not overwrite the name the folder gave")
 
 
 class ThumbnailLinks(IsolatedCase):

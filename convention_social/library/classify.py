@@ -256,16 +256,31 @@ def pick_sorter(conn: sqlite3.Connection, *, agent: str = "scanner"):
     return None
 
 
+NO_NAME = {"", "none", "null", "n/a", "na", "unknown", "false", "true", "nothing", "no name", "not visible"}
+
+
+def event_name_seen(value) -> Optional[str]:
+    """The event name the model actually read off signage, or None.
+
+    A local model asked for "an event name readable on signage, empty if none" answers with the
+    word rather than an empty string: 44 rows said "false", 8 said "none". Those were stored as
+    the event name, so the contact sheet of 2026-10-10 had cells titled "false 2022", and
+    report.best counted each junk string as its own event, defeating the per event cap.
+    """
+    name = str(value or "").strip()
+    return None if name.lower() in NO_NAME else name
+
+
 def save_sort(conn: sqlite3.Connection, photo: sqlite3.Row, data: dict, method: str, model: str) -> None:
     q = data.get("quality")
     subject = data.get("subject") if data.get("subject") in ("event", "architecture", "other") else None
     view = data.get("view") if data.get("view") in ("exterior", "interior") else None
     conn.execute(
         "UPDATE classifications SET method=?, is_convention=?, subject=?, view=?, "
-        "convention_name=COALESCE(NULLIF(?, ''), convention_name), "
+        "convention_name=COALESCE(?, convention_name), "
         "event_kind=CASE WHEN ?='unknown' THEN event_kind ELSE ? END, shot_type=?, quality=?, people_count=?, personal_details=?, "
         "possible_minor=?, summary=?, model=?, classified_at=? WHERE photo_id=?",
-        (method, int(subject == "event"), subject, view, (data.get("event_name_seen") or "").strip(),
+        (method, int(subject == "event"), subject, view, event_name_seen(data.get("event_name_seen")),
          data.get("event_kind"), data.get("event_kind"), data.get("shot_type"),
          max(1, min(5, int(q))) if isinstance(q, int) else None, int(data.get("people_count") or 0),
          json.dumps(data.get("personal_details") or []), 1 if data.get("possible_minor", True) else 0,

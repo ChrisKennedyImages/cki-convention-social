@@ -23,8 +23,16 @@ BUSINESS_WORDS = ("cpac", "conference", "summit", "convention", "expo", "trade s
 ARCH_WORDS = ("architecture", "architectural", "exterior", "exteriors", "interior", "interiors", "building", "facade",
               "real estate", "realestate", "apartment", "apartments", "listing", "home tour", "hotel", "lobby", "ballroom",
               "convention center", "venue", "office", "tower", "condo", "property", "properties", "commercial")
-NOT_EVENT_WORDS = ("wedding", "bride", "groom", "engagement", "birthday", "bday", "prom", "homecoming", "baby",
-                   "newborn", "family", "maternity", "logo", "invoice", "receipt", "screenshot", "scan",
+# A private client's own occasion. These always win, however much the path also sounds like
+# business work: a wedding has a reception, a dinner, toasts and awards, so the business
+# vocabulary below matches almost every wedding folder. Honouring these only when nothing else
+# matched put 50 of Chris's clients' wedding photos into the convention pool, six of them onto
+# the contact sheet of 2026-10-10. Never convention work, whatever else the path says.
+PRIVATE_WORDS = ("wedding", "bride", "groom", "engagement", "birthday", "bday", "prom", "homecoming",
+                 "baby", "newborn", "maternity", "quinceanera", "bar mitzvah", "bat mitzvah")
+# Weaker signals: they describe the file or the folder's state, not its subject, so a real event
+# name beats them. "all files low-res for ACU preview" is still ACU's convention work.
+NOT_EVENT_WORDS = ("family", "logo", "invoice", "receipt", "screenshot", "scan",
                    "unedited", "raw", "low-res", "low res", "preview", "video")
 YEAR = re.compile(r"\b(19[89]\d|20[0-4]\d)\b")
 TIDY = re.compile(r"[\s_\-]+")
@@ -48,8 +56,10 @@ def guess(path: str, taken_at: Optional[str] = None) -> FolderGuess:
     low = " " + " ".join(leafs).lower() + " "
     kind = "fan" if _has(low, FAN_WORDS) else ("business" if _has(low, BUSINESS_WORDS) else "unknown")
     arch = _has(low, ARCH_WORDS)
-    if _has(low, NOT_EVENT_WORDS) and kind == "unknown":
-        is_event: Optional[bool] = False
+    if _has(low, PRIVATE_WORDS):
+        is_event: Optional[bool] = False          # a private occasion, whatever else the path says
+    elif _has(low, NOT_EVENT_WORDS) and kind == "unknown":
+        is_event = False
     elif kind != "unknown":
         is_event = True
     elif arch:
@@ -58,8 +68,10 @@ def guess(path: str, taken_at: Optional[str] = None) -> FolderGuess:
         is_event = None
     # a building folder that names no event is architecture work (a "venue" or "ballroom" folder that
     # also names an event stays event work)
-    if arch and kind == "unknown":
-        subject: Optional[str] = "architecture"
+    if is_event is False and _has(low, PRIVATE_WORDS):
+        subject: Optional[str] = "other"          # not convention work and not portfolio architecture
+    elif arch and kind == "unknown":
+        subject = "architecture"
     elif is_event:
         subject = "event"
     elif is_event is False:
