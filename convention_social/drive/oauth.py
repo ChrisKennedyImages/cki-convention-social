@@ -144,6 +144,16 @@ def _catch_redirect(timeout: float) -> Optional[str]:
     return got.get("url")
 
 
+def return_address(pasted: str) -> str:
+    """The pasted return page as a full address. Safari on the phone copies it without "http://"
+    (2026-10-10), so a bare 127.0.0.1 / localhost address gets it back; anything else is left as is
+    and still has to pass the loopback check."""
+    text = (pasted or "").strip().strip('"\'<>').strip()
+    if text.startswith(("127.0.0.1", "localhost")):
+        text = "http://" + text
+    return text
+
+
 def login(conn: Optional[sqlite3.Connection] = None, *, prompt=input, out=print, wait_seconds: float = 0) -> None:
     """Interactive sign-in. Prints the link; takes the redirect from the local
     listener (when wait_seconds > 0) or from a pasted address."""
@@ -159,8 +169,8 @@ def login(conn: Optional[sqlite3.Connection] = None, *, prompt=input, out=print,
         t.join(wait_seconds + 1)
         redirected = holder.get("url")
     if not redirected:
-        redirected = prompt("After approving, the browser lands on a page that may not load. "
-                            "Paste that page's full address here: ").strip()
+        redirected = return_address(prompt("After approving, the browser lands on a page that may not load. "
+                                           "Paste that page's full address here: "))
     if urlparse(redirected).hostname not in ("127.0.0.1", "localhost"):
         raise DriveAuthError("that address is not the sign-in return page")
     os.environ.setdefault("OAUTHLIB_INSECURE_TRANSPORT", "1")  # the loopback redirect is plain http by design
