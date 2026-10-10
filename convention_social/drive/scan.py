@@ -140,13 +140,17 @@ def full_inventory(conn: sqlite3.Connection, reader: DriveReader) -> ScanStats:
         stats.notes.append(f"shared drives not listed: {type(e).__name__}")
     folders = {f["id"]: f for f in reader.folders()}
     paths = resolve_paths(folders, roots)
+    # the whole listing is read from Drive BEFORE the transaction opens: walking a large library inside
+    # it held SQLite's write lock for the whole walk, so every other agent and the dashboard got
+    # "database is locked", and a network error late in the walk threw the pass away (the Mini, 2026-10-10)
+    images = list(reader.images())
     now = db.utcnow()
     conn.execute("BEGIN")
     try:
         for fid, f in folders.items():
             upsert_folder(conn, f, paths.get(fid), now)
             stats.folders += 1
-        for f in reader.images():
+        for f in images:
             reason = skip_reason(f)
             if reason == "raw":
                 stats.skipped_raw += 1

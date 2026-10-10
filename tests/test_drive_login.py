@@ -45,3 +45,41 @@ class PasteBack(IsolatedCase):
         for pasted in ("example.org/?code=4/abc", "https://evil.example/?code=4/abc", "", "127.0.0.1.evil.example/?code=1"):
             with self.subTest(pasted=pasted), self.assertRaises(oauth.DriveAuthError):
                 self.login(pasted)
+
+
+class ScanLock(IsolatedCase):
+    """`bin/ccs drive scan` takes the scanner's own lock, so it never runs beside the hourly agent."""
+
+    def test_manual_scan_waits_for_the_hourly_scanner(self):
+        import io
+        from contextlib import redirect_stdout
+        from convention_social import cli
+        from convention_social.agents import scanner
+        from convention_social.core import runner
+        held = runner.Lock("scanner")
+        self.assertTrue(held.acquire())
+        out = io.StringIO()
+        try:
+            with mock.patch.object(oauth, "access_token", return_value="tok"), \
+                 mock.patch.object(scanner, "run", side_effect=AssertionError("must not scan beside the hourly agent")), \
+                 redirect_stdout(out):
+                code = cli.main(["drive", "scan"])
+        finally:
+            held.release()
+        self.assertEqual(code, 2)
+        self.assertIn("already running", out.getvalue())
+
+    def test_manual_scan_runs_and_frees_the_lock(self):
+        import io
+        from contextlib import redirect_stdout
+        from convention_social import cli
+        from convention_social.agents import scanner
+        from convention_social.core import runner
+        with mock.patch.object(oauth, "access_token", return_value="tok"), \
+             mock.patch.object(scanner, "run", return_value="scanned") as ran, \
+             redirect_stdout(io.StringIO()):
+            self.assertEqual(cli.main(["drive", "scan"]), 0)
+        ran.assert_called_once()
+        lock = runner.Lock("scanner")
+        self.assertTrue(lock.acquire())
+        lock.release()
