@@ -1,6 +1,6 @@
 """The scout's research: one Claude call with Anthropic's web search, then checks that keep only what a source shows.
 
-Claude (claude-opus-5-5, SCOUT_MODEL overrides) searches with the server-side
+Claude (claude-opus-5, SCOUT_MODEL overrides) searches with the server-side
 web_search tool (it runs on Anthropic's side; up to SEARCH_TOOL["max_uses"]
 searches a run) and ends its answer with a fenced JSON block of events. That
 block is parsed defensively; only if it cannot be read does a second call,
@@ -35,7 +35,7 @@ from ..ai.claude import FALLBACK_BETA
 from ..core import config, db
 from . import keys
 
-DEFAULT_MODEL = "claude-opus-5-5"
+DEFAULT_MODEL = "claude-opus-5"
 SEARCH_TOOL = {"type": "web_search_20260209", "name": "web_search", "max_uses": 8}
 WEB_SEARCH_USD = 0.01            # USD 10 per 1,000 searches
 MAX_CONTINUATIONS = 3            # pause_turn resumes before giving up on a run

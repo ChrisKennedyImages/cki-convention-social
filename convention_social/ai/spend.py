@@ -1,7 +1,7 @@
 """The one till for Anthropic spend: record every call, know month-to-date, stop at the cap.
 
 Rates are USD per million tokens (input, output), matched by longest model
-prefix (Anthropic price table, read 2026-10-09). Unknown models are counted with cost 0 so the count stays honest even
+prefix (Anthropic price table, read 2026-10-10). Unknown models are counted with cost 0 so the count stays honest even
 when the price is unknown; the watchdog flags any zero-cost Anthropic row.
 """
 from __future__ import annotations
@@ -12,13 +12,14 @@ from datetime import datetime, timezone
 from ..core import config, db
 
 RATES = {
+    # Longest matching prefix wins, so a family prefix covers every dated member of it:
+    # "claude-haiku-4" prices claude-haiku-4-5, "claude-opus-4" prices 4.6, 4.7 and 4.8.
+    # Only models that exist are listed. An unknown model costs 0, which the watchdog
+    # flags: better a loud zero than a quiet guess at the wrong price.
     "claude-fable-5": (10.00, 50.00),
-    "claude-opus-5-5": (4.00, 20.00),
-    "claude-sonnet-5-5": (2.00, 10.00),
-    "claude-haiku-5-5": (0.10, 0.50),
+    "claude-mythos-5": (10.00, 50.00),
     "claude-opus-5": (5.00, 25.00),
     "claude-sonnet-5": (2.00, 10.00),
-    "claude-haiku-5": (1.00, 5.00),
     "claude-opus-4": (5.00, 25.00),
     "claude-sonnet-4": (3.00, 15.00),
     "claude-haiku-4": (1.00, 5.00),

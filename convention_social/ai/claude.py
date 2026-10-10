@@ -5,7 +5,7 @@ whether the company was the official photographer, the credit Chris
 recorded, the services) and returns strict JSON through output_config. The
 prompt states the rules, but ai/copy_rules.py is the gate, not the prompt.
 
-Model: claude-opus-5-5 (override with AI_MODEL), effort set explicitly, the
+Model: claude-opus-5 (override with AI_MODEL), effort set explicitly, the
 server-side refusal fallback on. Every call is metered through ai/spend.py
 at the model that actually answered, and no call is made once the monthly
 cap is reached. With no ANTHROPIC_API_KEY, or AI_MODEL=template,
@@ -28,7 +28,7 @@ from PIL import Image, ImageOps
 from ..core import config, secrets
 from . import spend
 
-DEFAULT_MODEL = "claude-opus-5-5"
+DEFAULT_MODEL = "claude-opus-5"
 DEFAULT_EFFORT = "medium"
 FALLBACK_BETA = "server-side-fallback-2026-07-01"
 MAX_IMAGE_EDGE = 1024

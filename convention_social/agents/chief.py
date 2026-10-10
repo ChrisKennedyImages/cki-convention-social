@@ -32,7 +32,7 @@ from . import watchdog
 
 SENT_KEY = "chief.brief_sent_on"
 BRIEF_KEY = "chief.brief"
-MODEL = "claude-opus-5-5"
+MODEL = "claude-opus-5"
 
 
 def _count(conn, sql: str, params=()) -> int:

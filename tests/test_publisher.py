@@ -219,7 +219,7 @@ class RealEligibility(AgentCase):
         db.insert(self.conn, "classifications", photo_id=self.pid, method="vision", possible_minor=0,
                   personal_details="[]", classified_at=now)
         db.insert(self.conn, "final_checks", photo_id=self.pid, possible_minor=0, personal_details="[]",
-                  model="claude-opus-5-5", checked_at=now)
+                  model="claude-opus-5", checked_at=now)
 
     def test_not_cleared_goes_back_and_cleared_goes_through(self):
         held = add_post(self.conn, [self.pid], ("facebook",))

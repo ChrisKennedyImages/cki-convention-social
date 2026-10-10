@@ -10,9 +10,9 @@
    could be a minor. Order: photos Chris already cleared, then event and
    architecture folders, newest first. Results are cached.
    The sorter is Ollama on the Mini when it has a vision model (free; Chris
-   2026-10-09), otherwise Claude (claude-haiku-5-5, CLASSIFY_MODEL) under the
+   2026-10-09), otherwise Claude (claude-haiku-4-5, CLASSIFY_MODEL) under the
    monthly spend cap.
-3. final_check(): Claude (claude-opus-5-5) looks once more at the one photo
+3. final_check(): Claude (claude-opus-5) looks once more at the one photo
    picked for a post, for minors and personal details. Only a passing final
    check makes a photo postable (eligibility.py). A local model's "no minor"
    is a sorting hint, never the last word.
@@ -34,8 +34,8 @@ from ..ai import spend
 from ..core import config, db, secrets
 from . import heuristics
 
-DEFAULT_MODEL = "claude-haiku-5-5"
-FINAL_MODEL = "claude-opus-5-5"
+DEFAULT_MODEL = "claude-haiku-4-5"
+FINAL_MODEL = "claude-opus-5"
 FALLBACK_BETA = "server-side-fallback-2026-07-01"
 OLLAMA_URL = "http://127.0.0.1:11434"
 VISION_HINTS = ("llava", "vision", "-vl", "vl:", "qwen2.5vl", "qwen3-vl", "gemma3", "minicpm-v", "moondream", "bakllava", "granite3.2-vision", "mistral-small3")

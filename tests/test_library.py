@@ -98,7 +98,7 @@ class FakeClaude:
 
     def create(self, **kw):
         self.calls += 1
-        assert kw["model"] == "claude-haiku-5-5"
+        assert kw["model"] == "claude-haiku-4-5"
         assert kw["output_config"]["format"]["type"] == "json_schema"
         block = types.SimpleNamespace(type="text", text=json.dumps(self.answer))
         return types.SimpleNamespace(content=[block], stop_reason=self.stop, model=kw["model"],
@@ -130,7 +130,7 @@ class Eligibility(IsolatedCase):
 
     def final(self, drive_id, minor=0, details="[]"):
         db.insert(self.conn, "final_checks", photo_id=self.pid(drive_id), possible_minor=minor, personal_details=details,
-                  model="claude-opus-5-5", checked_at=db.utcnow())
+                  model="claude-opus-5", checked_at=db.utcnow())
 
     def test_nothing_eligible_by_default(self):
         self.vision()
@@ -499,7 +499,7 @@ class FinalCheck(IsolatedCase):
         from tests.fake_drive import thumb_bytes
         data = classify.final_check(conn, pid, thumb_bytes(), client=Beta({"possible_minor": False, "personal_details": [], "summary": "ok"}))
         self.assertEqual(data["possible_minor"], False)
-        self.assertEqual(calls[0]["model"], "claude-opus-5-5")
+        self.assertEqual(calls[0]["model"], "claude-opus-5")
         self.assertEqual(calls[0]["fallbacks"], "default")
         fc = db.one(conn, "SELECT * FROM final_checks WHERE photo_id=?", (pid,))
         self.assertEqual((fc["possible_minor"], fc["personal_details"]), (0, "[]"))

@@ -20,7 +20,7 @@ from tests._base import IsolatedCase
 NS = types.SimpleNamespace
 
 
-def resp(content, stop="end_turn", searches=0, model="claude-opus-5-5"):
+def resp(content, stop="end_turn", searches=0, model="claude-opus-5"):
     return NS(content=content, stop_reason=stop, model=model,
               usage=NS(input_tokens=2000, output_tokens=800, server_tool_use=NS(web_search_requests=searches)))
 
@@ -114,7 +114,7 @@ class Gates(ScoutCase):
     def test_cap_reached_no_call(self):
         os.environ["AI_MONTHLY_CAP_USD"] = "1"
         config.reset()
-        spend.record(self.conn, "content", "claude-opus-5-5", 1_000_000, 0)
+        spend.record(self.conn, "content", "claude-opus-5", 1_000_000, 0)
         fake = FakeClaude()
         self.assertIn("cap reached", scout.run(self.ctx(), client=fake))
         self.assertEqual(fake.calls, [])
@@ -157,7 +157,7 @@ class Research(ScoutCase):
         scout.run(self.ctx(), client=fake)
         self.assertEqual(len(fake.calls), 1)
         kw = fake.calls[0]
-        self.assertEqual(kw["model"], "claude-opus-5-5")
+        self.assertEqual(kw["model"], "claude-opus-5")
         self.assertEqual(kw["betas"], ["server-side-fallback-2026-07-01"])
         self.assertEqual(kw["fallbacks"], "default")
         self.assertEqual(kw["thinking"], {"type": "adaptive"})
@@ -191,7 +191,7 @@ class Research(ScoutCase):
         rows = db.rows(self.conn, "SELECT * FROM api_usage ORDER BY id")
         self.assertEqual(len(rows), 2)
         self.assertEqual(rows[0]["unit_kind"], "tokens")
-        self.assertIn("claude-opus-5-5", rows[0]["detail"])
+        self.assertIn("claude-opus-5", rows[0]["detail"])
         self.assertGreater(rows[0]["cost_usd"], 0)
         self.assertEqual((rows[1]["unit_kind"], rows[1]["units"]), ("web_searches", 3))
         self.assertAlmostEqual(rows[1]["cost_usd"], 0.03)

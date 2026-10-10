@@ -3,7 +3,7 @@
 The draft never names a price: prices are quoted per event by Chris. Where
 the price belongs it leaves QUOTE_MARK, and the dashboard refuses to send
 while the mark is still in the text, so a reply cannot go out half written.
-Claude (claude-opus-5-5) when a key is set and the cap allows; otherwise a
+Claude (claude-opus-5) when a key is set and the cap allows; otherwise a
 plain template from the offer file.
 """
 from __future__ import annotations
@@ -19,7 +19,7 @@ from . import copy_rules, spend
 from .claude import FALLBACK_BETA, tidy
 
 QUOTE_MARK = "[[QUOTE: write the price and what it covers here, or delete this line]]"
-DEFAULT_MODEL = "claude-opus-5-5"
+DEFAULT_MODEL = "claude-opus-5"
 
 SYSTEM = """You draft a reply email from a photographer to someone who asked for a quote for event photography. Write in his voice: warm, plain, short sentences, commas and periods, never a dash, no exclamation marks in a row, no hype.
 Rules:
