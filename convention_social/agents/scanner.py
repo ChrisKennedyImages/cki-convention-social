@@ -34,11 +34,11 @@ def needs_full(conn) -> bool:
 def run(ctx: runner.Context, reader: DriveReader | None = None) -> str:
     if reader is None:
         try:
-            token = oauth.access_token(ctx.conn)
+            oauth.access_token(ctx.conn)   # fail the run now if the sign-in is dead, not photo by photo
         except oauth.DriveAuthError as e:
             runner.record_error_once(ctx.conn, ctx.agent, "drive_auth", str(e))
             return f"not signed in: {e}"
-        reader = DriveReader(token, conn=ctx.conn, agent=ctx.agent)
+        reader = DriveReader(lambda: oauth.access_token(ctx.conn), conn=ctx.conn, agent=ctx.agent)
     full = needs_full(ctx.conn)
     stats = scan.full_inventory(ctx.conn, reader) if full else scan.incremental(ctx.conn, reader)
     sorted_free = classify.folder_pass(ctx.conn)

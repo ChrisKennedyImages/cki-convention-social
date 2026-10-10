@@ -160,8 +160,8 @@ def cmd_drive(args) -> int:
         if args.what == "login":
             oauth.login(conn, wait_seconds=args.wait)
             return 0
-        token = oauth.access_token(conn)
-        reader = DriveReader(token, conn=conn, agent="cli")
+        oauth.access_token(conn)        # fail now, with a clear message, if the sign-in is dead
+        reader = DriveReader(lambda: oauth.access_token(conn), conn=conn, agent="cli")
         if args.what == "scan":
             from .agents import scanner
             from .core import logs, runner
@@ -218,7 +218,7 @@ def cmd_samples(_args) -> int:
         pass
     conn = db.connect()
     try:
-        reader = DriveReader(oauth.access_token(conn), conn=conn, agent="cli")
+        reader = DriveReader(lambda: oauth.access_token(conn), conn=conn, agent="cli")
     except oauth.DriveAuthError as e:
         print(str(e))
         return 2
@@ -267,7 +267,8 @@ def cmd_site(args) -> int:
     from .site import build
     conn = db.connect()
     try:
-        reader = DriveReader(oauth.access_token(conn), conn=conn, agent="cli")
+        oauth.access_token(conn)           # fail now, before the build, if the sign-in is dead
+        reader = DriveReader(lambda: oauth.access_token(conn), conn=conn, agent="cli")
     except oauth.DriveAuthError as e:
         print(f"{e} Building without photos.")
         reader = None

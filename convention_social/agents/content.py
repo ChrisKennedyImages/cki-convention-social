@@ -187,7 +187,8 @@ def run(ctx: runner.Context, fetch: Optional[Callable[[dict], bytes]] = None) ->
         from ..drive import oauth
         from ..drive.api import DriveReader
         try:
-            reader = DriveReader(oauth.access_token(ctx.conn), conn=ctx.conn, agent=ctx.agent)
+            oauth.access_token(ctx.conn)   # fail the run now if the sign-in is dead, not photo by photo
+            reader = DriveReader(lambda: oauth.access_token(ctx.conn), conn=ctx.conn, agent=ctx.agent)
         except oauth.DriveAuthError as e:
             runner.record_error_once(ctx.conn, ctx.agent, "drive_auth", str(e))
             return f"not signed in: {e}"
