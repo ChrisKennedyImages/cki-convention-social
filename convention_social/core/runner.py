@@ -68,6 +68,18 @@ def record_error(conn: sqlite3.Connection, agent: str, kind: str, message: str,
                      message=message[:2000], traceback=tb, alerted=0)
 
 
+def record_error_once(conn: sqlite3.Connection, agent: str, kind: str, message: str) -> int:
+    """For a standing condition an agent meets on every run (Drive not signed in yet): while the same
+    error is still open on the dashboard (not dismissed), move its time forward instead of adding a
+    row each run, so the list holds one line per problem. Once dismissed, the next run records anew."""
+    row = db.one(conn, "SELECT id FROM errors WHERE agent=? AND kind=? AND message=? AND alerted=0 ORDER BY id DESC LIMIT 1",
+                 (agent, kind, message[:2000]))
+    if row:
+        conn.execute("UPDATE errors SET ts=? WHERE id=?", (db.utcnow(), row["id"]))
+        return row["id"]
+    return record_error(conn, agent, kind, message)
+
+
 def run(agent: str, fn: Callable[[Context], Optional[str]], *, force_dry_run: Optional[bool] = None) -> int:
     """Run one agent invocation under lock; return the process exit code."""
     cfg = config.get_config()

@@ -189,7 +189,7 @@ def run(ctx: runner.Context, fetch: Optional[Callable[[dict], bytes]] = None) ->
         try:
             reader = DriveReader(oauth.access_token(ctx.conn), conn=ctx.conn, agent=ctx.agent)
         except oauth.DriveAuthError as e:
-            runner.record_error(ctx.conn, ctx.agent, "drive_auth", str(e))
+            runner.record_error_once(ctx.conn, ctx.agent, "drive_auth", str(e))
             return f"not signed in: {e}"
 
         def fetch(row):

@@ -279,6 +279,27 @@ class ScannerAgent(IsolatedCase):
         self.assertEqual(settings.get(conn, oauth.STATE_KEY), "missing")
         self.assertEqual(db.one(conn, "SELECT kind FROM errors")["kind"], "drive_auth")
 
+    def test_not_signed_in_is_one_open_error_however_many_runs(self):
+        """The Mini, 2026-10-10: 22 identical "not signed in yet" rows from the hourly scanner and one
+        from the daily draft. One open row per agent, its time moved forward; a dismissed one
+        (Dashboard, alerted=1) lets the next run record afresh."""
+        from convention_social.agents import content, scanner
+        conn = db.connect()
+        for _ in range(3):
+            self.assertEqual(runner.run("scanner", scanner.run), runner.EXIT_OK)
+            self.assertEqual(runner.run("content", content.run), runner.EXIT_OK)
+        rows = [dict(r) for r in db.rows(conn, "SELECT id, agent, kind, ts, alerted FROM errors ORDER BY id")]
+        self.assertTrue(rows)
+        self.assertEqual(sorted((r["agent"], r["kind"]) for r in rows), [("content", "drive_auth"), ("scanner", "drive_auth")])
+        first = rows[0]
+        conn.execute("UPDATE errors SET ts='2000-01-01T00:00:00+00:00' WHERE id=?", (first["id"],))
+        runner.run(first["agent"], {"scanner": scanner.run, "content": content.run}[first["agent"]])
+        self.assertNotEqual(db.one(conn, "SELECT ts FROM errors WHERE id=?", (first["id"],))["ts"], "2000-01-01T00:00:00+00:00")
+        conn.execute("UPDATE errors SET alerted=1 WHERE agent='scanner'")
+        runner.run("scanner", scanner.run)
+        self.assertEqual(db.one(conn, "SELECT COUNT(*) n FROM errors WHERE agent='scanner'")["n"], 2)
+        self.assertEqual(db.one(conn, "SELECT COUNT(*) n FROM errors WHERE agent='scanner' AND alerted=0")["n"], 1)
+
     def test_dry_run_scans_but_never_pays(self):
         from convention_social.agents import scanner
         drive = library()
