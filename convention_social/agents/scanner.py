@@ -36,7 +36,7 @@ def run(ctx: runner.Context, reader: DriveReader | None = None) -> str:
         try:
             token = oauth.access_token(ctx.conn)
         except oauth.DriveAuthError as e:
-            runner.record_error(ctx.conn, ctx.agent, "drive_auth", str(e))
+            runner.record_error_once(ctx.conn, ctx.agent, "drive_auth", str(e))
             return f"not signed in: {e}"
         reader = DriveReader(token, conn=ctx.conn, agent=ctx.agent)
     full = needs_full(ctx.conn)
