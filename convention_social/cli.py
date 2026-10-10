@@ -165,13 +165,20 @@ def cmd_drive(args) -> int:
         if args.what == "scan":
             from .agents import scanner
             from .core import logs, runner
-            ctx = runner.Context(agent="scanner", conn=conn, log=logs.get_logger("scanner"), cfg=config.get_config(),
-                                 dry_run=True, run_id=0)
-            print(scanner.run(ctx, reader=reader))
-            if args.classify:
-                from .library import classify
-                st = classify.sort_pass(conn, reader.thumbnail, limit=args.classify, log=ctx.log)
-                print(f"sorted by {st.sorter or 'nothing'}: {st.done} done, {st.failed} failed {st.stopped}")
+            lock = runner.Lock("scanner")          # the same lock the hourly scanner takes: never two passes at once
+            if not lock.acquire():
+                print("the scanner is already running (the hourly agent); try again when it finishes")
+                return 2
+            try:
+                ctx = runner.Context(agent="scanner", conn=conn, log=logs.get_logger("scanner"), cfg=config.get_config(),
+                                     dry_run=True, run_id=0)
+                print(scanner.run(ctx, reader=reader))
+                if args.classify:
+                    from .library import classify
+                    st = classify.sort_pass(conn, reader.thumbnail, limit=args.classify, log=ctx.log)
+                    print(f"sorted by {st.sorter or 'nothing'}: {st.done} done, {st.failed} failed {st.stopped}")
+            finally:
+                lock.release()
             return 0
         if args.what == "report":
             from .library import report

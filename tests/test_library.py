@@ -48,6 +48,21 @@ class Scan(IsolatedCase):
         self.assertTrue(self.drive.calls[0][0].endswith("/changes/startPageToken"))
         self.assertEqual(db.one(self.conn, "SELECT image_count FROM drive_folders WHERE drive_id='fcos'")["image_count"], 2)
 
+    def test_drive_is_read_before_the_write_lock_is_taken(self):
+        """The Mini's first full pass (2026-10-10) walked Drive inside one open transaction, holding the
+        database's write lock for minutes. Every call to Drive must happen with no transaction open."""
+        seen = []
+
+        def watching(url, params, headers, stream=False):
+            seen.append(self.conn.in_transaction)
+            return self.drive(url, params, headers, stream=stream)
+
+        reader = DriveReader("tok", conn=self.conn, transport=watching)
+        st = scan.full_inventory(self.conn, reader)
+        self.assertEqual(st.images, 4)
+        self.assertTrue(seen)
+        self.assertNotIn(True, seen)
+
     def test_changes_apply(self):
         scan.full_inventory(self.conn, self.reader)
         new = self.drive.image("p5", "new.jpg", "fcpac")
