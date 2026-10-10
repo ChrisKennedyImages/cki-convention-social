@@ -145,7 +145,7 @@ class Drafting(OutreachCase):
         config.reset()
         fake = FakeClaude()
         d = draft.draft_first(self.conn, FACTS, client=fake)
-        self.assertEqual(d.model, "claude-opus-5-5")
+        self.assertEqual(d.model, "claude-opus-5")
         self.assertIn("photographer lined up", d.body)
         kw = fake.calls[0]
         self.assertEqual((kw["betas"], kw["fallbacks"], kw["thinking"]), (["server-side-fallback-2026-07-01"], "default", {"type": "adaptive"}))
@@ -179,7 +179,7 @@ class Drafting(OutreachCase):
         config.reset()
         body = "Hello,\nSample Con 2027 — what a weekend. Do you have a photographer lined up yet?\nChris\nEvent Caliber"
         d = draft.draft_first(self.conn, FACTS, client=FakeClaude(body=body))
-        self.assertEqual(d.model, "claude-opus-5-5")
+        self.assertEqual(d.model, "claude-opus-5")
         self.assertIsNone(DASHES.search(d.body))
 
     def test_an_api_error_costs_one_claude_draft_not_the_run(self):
@@ -197,7 +197,7 @@ class Drafting(OutreachCase):
     def test_no_call_at_the_cap(self):
         os.environ["AI_MONTHLY_CAP_USD"] = "1"
         config.reset()
-        spend.record(self.conn, "content", "claude-opus-5-5", 1_000_000, 0)
+        spend.record(self.conn, "content", "claude-opus-5", 1_000_000, 0)
         fake = FakeClaude()
         d = draft.draft_first(self.conn, FACTS, client=fake)
         self.assertEqual((d.model, fake.calls), ("template", []))

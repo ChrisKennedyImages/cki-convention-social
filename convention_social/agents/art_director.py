@@ -31,7 +31,7 @@ from ..ai import claude as claude_mod
 from ..ai import spend
 from ..core import config, secrets
 
-MODEL = "claude-opus-5-5"
+MODEL = "claude-opus-5"
 MAX_REDOS = 2
 EDGE = 900
 

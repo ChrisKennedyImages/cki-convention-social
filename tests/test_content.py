@@ -139,7 +139,7 @@ class ArtClient:
 
     def create(self, **kw):
         self.calls += 1
-        assert kw["model"] == "claude-opus-5-5" and kw["fallbacks"] == "default"
+        assert kw["model"] == "claude-opus-5" and kw["fallbacks"] == "default"
         assert sum(1 for b in kw["messages"][0]["content"] if b["type"] == "image") == 2     # both aspects, side by side
         a = self.answers.pop(0)
         t = types.SimpleNamespace(type="text", text=json.dumps(a))

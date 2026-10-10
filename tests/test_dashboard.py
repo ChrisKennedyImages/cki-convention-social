@@ -42,7 +42,7 @@ class Dashboard(IsolatedCase):
 
     def final_check(self, pid, minor=0):
         db.insert(self.conn, "final_checks", photo_id=pid, possible_minor=minor, personal_details="[]",
-                  model="claude-opus-5-5", checked_at=db.utcnow())
+                  model="claude-opus-5", checked_at=db.utcnow())
 
     def draft(self, caption="Green room before the keynote. Request a quote for your event.", photo_ids=(), convention_id=None):
         now = db.utcnow()

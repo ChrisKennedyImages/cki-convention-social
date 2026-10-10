@@ -130,12 +130,19 @@ class Auth(IsolatedCase):
 
 class Spend(IsolatedCase):
     def test_rates_and_cap(self):
-        self.assertEqual(spend.rate_for("claude-opus-5-5"), (4.00, 20.00))
         self.assertEqual(spend.rate_for("claude-opus-5"), (5.00, 25.00))
+        self.assertEqual(spend.rate_for("claude-sonnet-5"), (2.00, 10.00))
+        # a dated member is priced by its family prefix, not by a guess
+        self.assertEqual(spend.rate_for("claude-haiku-4-5"), (1.00, 5.00))
+        self.assertEqual(spend.rate_for("claude-opus-4-8"), (5.00, 25.00))
+        self.assertEqual(spend.rate_for("claude-sonnet-4-6"), (3.00, 15.00))
+        # an unknown family is never silently priced; cost 0 is what the watchdog flags
+        self.assertIsNone(spend.rate_for("claude-mirage-7"))
+        self.assertEqual(spend.cost_usd("claude-mirage-7", 1_000_000, 1_000_000), 0.0)
         conn = db.connect()
         self.assertFalse(spend.cap_reached(conn))
-        spend.record(conn, "t", "claude-opus-5-5", 1_000_000, 1_000_000)
-        self.assertAlmostEqual(spend.month_to_date(conn, datetime.now(timezone.utc)), 24.0)
+        spend.record(conn, "t", "claude-opus-5", 1_000_000, 1_000_000)
+        self.assertAlmostEqual(spend.month_to_date(conn, datetime.now(timezone.utc)), 30.0)
         self.assertTrue(spend.cap_reached(conn))
 
     def test_zero_cap_fails_closed(self):

@@ -3,7 +3,7 @@
 1. Search text (seo/photo_text.py): a slug, title, alt text, description and
    5 to 10 keywords for every postable photo and every photo on a queued
    post, stored in photo_seo for the site build, the sitemap and post alt
-   text. Live: claude-haiku-5-5 under the monthly cap, every answer checked,
+   text. Live: claude-haiku-4-5 under the monthly cap, every answer checked,
    the template where an answer fails. Dry run (the default): the template
    only, no paid call; the rows are internal, so they are written.
 2. The site check (seo/site_check.py), live only: GET /, /book/,

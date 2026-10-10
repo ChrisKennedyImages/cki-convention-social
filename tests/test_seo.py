@@ -74,7 +74,7 @@ class SeoCase(AgentCase):
         db.insert(self.conn, "classifications", photo_id=pid, method="vision", subject=subject, shot_type=shot, convention_name=event,
                   event_kind=kind, view=view, possible_minor=0, personal_details="[]", summary=summary, classified_at=now)
         if final:
-            db.insert(self.conn, "final_checks", photo_id=pid, possible_minor=0, personal_details="[]", model="claude-opus-5-5",
+            db.insert(self.conn, "final_checks", photo_id=pid, possible_minor=0, personal_details="[]", model="claude-opus-5",
                       checked_at=now)
         return pid
 
@@ -221,7 +221,7 @@ class Template(SeoCase):
         self.assertEqual(self.row(a)["slug"], "cosplay-portrait-katsucon-2025")
         self.assertEqual(self.row(b)["slug"], f"cosplay-portrait-katsucon-2025-{b}")
         photo_text.write_all(self.conn, dry_run=False, client=FakeClaude())
-        self.assertEqual(self.row(a)["model"], "claude-haiku-5-5")
+        self.assertEqual(self.row(a)["model"], "claude-haiku-4-5")
         self.assertEqual(self.row(a)["slug"], "cosplay-portrait-katsucon-2025")
 
     def test_slugify(self):
@@ -259,12 +259,12 @@ class Writer(SeoCase):
         self.assertEqual(stats["claude"], 1)
         r = self.row(pid)
         self.assert_public(r)
-        self.assertEqual(r["model"], "claude-haiku-5-5")
+        self.assertEqual(r["model"], "claude-haiku-4-5")
         self.assertEqual(r["alt"], GOOD["alt"])
         self.assertEqual(len(fake.calls), 1)
         path, kw = fake.calls[0]
         self.assertEqual(path, "plain")
-        self.assertEqual(kw["model"], "claude-haiku-5-5")
+        self.assertEqual(kw["model"], "claude-haiku-4-5")
         self.assertNotIn("thinking", kw)
         self.assertEqual(kw["output_config"]["format"]["type"], "json_schema")
         self.assertIn("Event: Katsucon", kw["messages"][0]["content"])
@@ -274,7 +274,7 @@ class Writer(SeoCase):
         self.assertGreater(usage["cost_usd"], 0)
 
     def test_an_opus_override_goes_through_the_fallback_beta(self):
-        os.environ["SEO_MODEL"] = "claude-opus-5-5"
+        os.environ["SEO_MODEL"] = "claude-opus-5"
         config.reset()
         self.photo()
         fake = FakeClaude()
@@ -357,7 +357,7 @@ class Writer(SeoCase):
         r = self.row(pid)
         self.assertEqual(r["alt"], "Cosplayer with a red cape by the window")
         self.assertIsNotNone(r["edited_at"])
-        photo_text.save(self.conn, pid, {**GOOD, "alt": "overwritten"}, "claude-haiku-5-5")
+        photo_text.save(self.conn, pid, {**GOOD, "alt": "overwritten"}, "claude-haiku-4-5")
         self.assertEqual(self.row(pid)["alt"], "Cosplayer with a red cape by the window")
 
     def test_chris_edits_pass_the_hard_rules(self):

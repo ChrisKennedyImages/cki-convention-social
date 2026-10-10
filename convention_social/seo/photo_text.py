@@ -10,7 +10,7 @@ convention_name, event_kind, view, summary), the credit Chris recorded
 (conventions.city, only when a calendar row is tied to the photo by its
 folder, by a queued post or by the event's name). Text only: no image is sent.
 
-Writers: claude-haiku-5-5 (SEO_MODEL overrides) when a key is set, the run is
+Writers: claude-haiku-4-5 (SEO_MODEL overrides) when a key is set, the run is
 live and the monthly cap allows; otherwise a deterministic template from the
 same fields. Every answer is checked before it is stored (problems()): the
 copy rules (no price, no dash, no affiliation or client claims), alt text
@@ -37,7 +37,7 @@ from ..ai.claude import FALLBACK_BETA, tidy
 from ..core import config, db, runner, secrets
 from ..library import eligibility
 
-DEFAULT_MODEL = "claude-haiku-5-5"
+DEFAULT_MODEL = "claude-haiku-4-5"
 ALT_MAX = 124                     # alt text stays under 125 characters
 TITLE_MAX = 70
 DESCRIPTION_MAX = 200

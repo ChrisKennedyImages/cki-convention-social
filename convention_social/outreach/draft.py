@@ -6,7 +6,7 @@ is signed Chris and the company name. It never names a price, past clients or
 an official role (there are none: FOUNDER_DECISIONS.md), and the footer and
 opt-out line are added at send time by outreach.compliance, not here.
 
-Claude (claude-opus-5-5, OUTREACH_MODEL overrides) when a key is set and the
+Claude (claude-opus-5, OUTREACH_MODEL overrides) when a key is set and the
 monthly cap allows; a plain template otherwise. A Claude draft that fails any
 check is thrown away for the template, so what Chris sees always passes.
 """
@@ -23,7 +23,7 @@ from ..ai.claude import FALLBACK_BETA, tidy
 from ..core import config, secrets
 from . import compliance, keys
 
-DEFAULT_MODEL = "claude-opus-5-5"
+DEFAULT_MODEL = "claude-opus-5"
 MAX_WORDS = 160
 
 # what fits each kind of event, as offer.json keys; labels always come from offer.json

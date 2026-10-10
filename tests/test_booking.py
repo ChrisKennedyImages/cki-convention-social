@@ -97,7 +97,7 @@ class Inbox(IsolatedCase):
         os.environ["AI_MONTHLY_CAP_USD"] = "5"
         config.reset()
         good = reply.draft(self.conn, row, client=Fake(f"Hi Dana,\nThanks for asking.\n{reply.QUOTE_MARK}\nChris"))
-        self.assertEqual(good.model, "claude-opus-5-5")
+        self.assertEqual(good.model, "claude-opus-5")
         priced = reply.draft(self.conn, row, client=Fake("Hi Dana, coverage is $1,500 a day.\nChris"))
         self.assertEqual(priced.model, "template")       # a drafted price is thrown away
         self.assertNotIn("$", priced.body)
