@@ -214,3 +214,23 @@ class DaemonInstaller(IsolatedCase):
         go = (REPO / "scripts/go-live.sh").read_text()
         self.assertIn('sudo "$REPO/scripts/install-daemons.sh" || stop ', go)
 
+
+
+class SharedMini(IsolatedCase):
+    """The Mini runs other suites too. On 2026-10-09 a bare `tailscale serve --bg 4610` (https 443)
+    took over another suite's dashboard address; every instruction in this repo uses port 8443."""
+
+    def test_every_tailscale_serve_instruction_uses_8443_only(self):
+        found = []
+        for path in REPO.rglob("*"):
+            if any(part in {".git", ".venv", "node_modules", "__pycache__"} for part in path.parts) or not path.is_file():
+                continue
+            if path.suffix not in {".md", ".sh", ".py", ".template", ".txt", ".jsonc", ".html"}:
+                continue
+            for line in path.read_text(errors="ignore").splitlines():
+                if "tailscale serve --bg" in line and path.name != "test_go_live.py":
+                    found.append((path.name, line.strip()))
+        self.assertTrue(found)
+        for name, line in found:
+            self.assertIn("--https=8443", line, f"{name}: {line}")
+            self.assertNotIn("--https=443 ", line, f"{name}: {line}")

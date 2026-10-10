@@ -35,8 +35,16 @@ FOUNDER_DECISIONS.md is the source of truth. Read it first.
 - Runtime is the Mac mini, as system LaunchDaemons with the prefix
   `com.chriskennedyimages.conventionsocial.`; the dashboard listens on
   127.0.0.1:4610 and is reached over Tailscale at
-  https://mac-mini.tail915d2c.ts.net/ (`tailscale serve --bg 4610` on the Mini,
-  2026-10-09; only devices on Chris's Tailscale network can open it). The suite's links
-  use it once `DASHBOARD_PUBLIC_URL` is set to it on the Mini (Keys page).
+  https://mac-mini.tail915d2c.ts.net:8443/
+  (`tailscale serve --bg --https=8443 http://127.0.0.1:4610` on the Mini; only devices on
+  Chris's Tailscale network can open it). The suite's links use it once
+  `DASHBOARD_PUBLIC_URL` is set to it on the Mini (Keys page).
+- **The Mini is shared with other suites. Touch only what is ours.** Our launchd
+  labels, our port 4610, our `.env`, our data root, Tailscale https port 8443.
+  Never https 443 on the Mini's Tailscale name: another suite's dashboard lives
+  there. On 2026-10-09 serving port 4610 without `--https=8443` (so on 443) replaced
+  it; before any command that changes a machine-wide setting (Tailscale serve,
+  wrangler login, Homebrew, launchd outside our prefix), read what is there now
+  and leave everything that is not ours exactly as it is.
 - Going live and every redeploy: `scripts/go-live.sh` on the Mini. First run
   ended LIVE on 2026-10-09.

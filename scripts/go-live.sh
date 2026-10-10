@@ -139,7 +139,9 @@ bin/ccs status
 print
 if (( SITE_OK && DASH_OK )); then
   say "LIVE: https://$DOMAIN and the dashboard. Every agent is in dry run until you switch it on (Agents page)."
-  print "    Your phone: run  tailscale serve --bg $PORT  on this Mini and open the address it prints."
+  # port 8443 only: https 443 on this Mini's Tailscale name belongs to another suite's dashboard
+  print "    Your phone: run  tailscale serve --bg --https=8443 http://127.0.0.1:$PORT  on this Mini"
+  print "    (never --https=443, which another dashboard on this Mini uses) and open the :8443 address it prints."
 else
   stop "not everything passed; the FAIL and !! lines above say what. Fix that, then run this again."
 fi

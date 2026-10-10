@@ -145,5 +145,6 @@ skips what is done and refreshes the rest. It needs Python 3.13 and Node
 (`brew install python@3.13 node`); it says so if either is missing.
 
 The dashboard listens on 127.0.0.1:4610. From your phone, reach it over
-Tailscale: `tailscale serve --bg 4610` on the Mini, then open the address it
+Tailscale on port 8443, never 443 (another dashboard on this Mini uses 443):
+`tailscale serve --bg --https=8443 http://127.0.0.1:4610` on the Mini, then open the address it
 prints. Every agent starts in dry run.
