@@ -175,14 +175,14 @@ def cmd_drive(args) -> int:
                 print(scanner.run(ctx, reader=reader))
                 if args.classify:
                     from .library import classify
-                    st = classify.sort_pass(conn, reader.thumbnail, limit=args.classify, log=ctx.log)
+                    st = classify.sort_pass(conn, reader.thumbnail_for, limit=args.classify, log=ctx.log)
                     print(f"sorted by {st.sorter or 'nothing'}: {st.done} done, {st.failed} failed {st.stopped}")
             finally:
                 lock.release()
             return 0
         if args.what == "report":
             from .library import report
-            sheet = report.write_contact_sheet(conn, reader.thumbnail, n=args.sheet) if args.sheet else None
+            sheet = report.write_contact_sheet(conn, reader.thumbnail_for, n=args.sheet) if args.sheet else None
             out = report.write_report(conn, sheet=sheet)
             print(f"report: {out}")
             if sheet:

@@ -7,11 +7,11 @@ import types
 
 from convention_social.core import config, db, runner, settings
 from convention_social.drive import oauth, scan
-from convention_social.drive.api import DriveReader
+from convention_social.drive.api import DriveReader, NoThumbnail
 from convention_social.library import classify, credits, eligibility, heuristics, report
 from convention_social.library.classify import ollama_model as real_ollama_model
 from tests._base import IsolatedCase
-from tests.fake_drive import FakeDrive
+from tests.fake_drive import FakeDrive, StaleThumbnailLink
 
 
 def library():
@@ -126,7 +126,7 @@ class Eligibility(IsolatedCase):
         os.environ["AI_MONTHLY_CAP_USD"] = "5"
         config.reset()
         c = classify.VisionClassifier(self.conn, client=FakeClaude(answer))
-        return classify.vision_pass(self.conn, self.reader.thumbnail, classifier=c)
+        return classify.vision_pass(self.conn, self.reader.thumbnail_for, classifier=c)
 
     def final(self, drive_id, minor=0, details="[]"):
         db.insert(self.conn, "final_checks", photo_id=self.pid(drive_id), possible_minor=minor, personal_details=details,
@@ -226,28 +226,28 @@ class Classification(IsolatedCase):
         os.environ["AI_MONTHLY_CAP_USD"] = "5"
         config.reset()
         fake = FakeClaude(ADULTS)
-        st = classify.vision_pass(self.conn, self.reader.thumbnail, classifier=classify.VisionClassifier(self.conn, client=fake))
+        st = classify.vision_pass(self.conn, self.reader.thumbnail_for, classifier=classify.VisionClassifier(self.conn, client=fake))
         self.assertEqual(st.done, 3)       # the wedding folder is never sent
         self.assertEqual(fake.calls, 3)
         self.assertGreater(db.one(self.conn, "SELECT SUM(cost_usd) c FROM api_usage WHERE provider='anthropic'")["c"], 0)
         os.environ["AI_MONTHLY_CAP_USD"] = "0"
         config.reset()
         self.conn.execute("UPDATE classifications SET method='folder'")
-        st = classify.vision_pass(self.conn, self.reader.thumbnail, classifier=classify.VisionClassifier(self.conn, client=fake))
+        st = classify.vision_pass(self.conn, self.reader.thumbnail_for, classifier=classify.VisionClassifier(self.conn, client=fake))
         self.assertEqual((st.done, st.stopped), (0, "monthly AI spend cap reached"))
 
     def test_refusal_leaves_photo_unchecked(self):
         classify.folder_pass(self.conn)
         os.environ["AI_MONTHLY_CAP_USD"] = "5"
         config.reset()
-        st = classify.vision_pass(self.conn, self.reader.thumbnail,
+        st = classify.vision_pass(self.conn, self.reader.thumbnail_for,
                                   classifier=classify.VisionClassifier(self.conn, client=FakeClaude(ADULTS, stop="refusal")))
         self.assertEqual((st.done, st.failed), (0, 3))
         self.assertEqual(db.one(self.conn, "SELECT COUNT(*) n FROM classifications WHERE possible_minor IS NOT NULL")["n"], 0)
 
     def test_no_ollama_and_no_key_means_no_sort(self):
         classify.folder_pass(self.conn)
-        st = classify.sort_pass(self.conn, self.reader.thumbnail)
+        st = classify.sort_pass(self.conn, self.reader.thumbnail_for)
         self.assertIn("no sorter", st.stopped)
         self.assertEqual(st.done, 0)
 
@@ -262,6 +262,69 @@ class Heuristics(IsolatedCase):
         self.assertIsNone(heuristics.guess("My Drive/Misc").is_event)
 
 
+def _ollama_ok(url, json=None, **kw):
+    """A local sorter that always answers well, so a test can isolate the thumbnail fetch."""
+    return types.SimpleNamespace(status_code=200,
+                                 json=lambda: {"message": {"content": __import__("json").dumps(ADULTS)}})
+
+
+class ThumbnailLinks(IsolatedCase):
+    """Drive's thumbnailLink expires about an hour after it is issued. On 2026-10-10 a real sort
+    pass stored links during the inventory and reused them: 158 photos sorted, then all 342
+    remaining failed 403 inside forty seconds. Every preview must resolve its link fresh."""
+
+    def test_sort_pass_never_reuses_the_stored_link(self):
+        conn = db.connect()
+        drive = library()
+        reader = DriveReader("tok", conn=conn, transport=drive)
+        scan.full_inventory(conn, reader)
+        classify.folder_pass(conn)
+        # the inventory stored the stale-path links; the fake 403s them, as Drive does
+        stored = db.one(conn, "SELECT thumbnail_link FROM photos LIMIT 1")["thumbnail_link"]
+        self.assertIn("/stale/", stored)
+        with self.assertRaises(StaleThumbnailLink):
+            reader.thumbnail(stored)
+
+        mark = len(drive.calls)          # ignore the probe above
+        st = classify.sort_pass(conn, reader.thumbnail_for,
+                                sorter=classify.OllamaSorter("m", post=_ollama_ok))
+        self.assertEqual(st.failed, 0, "a fresh link must be fetched for every photo")
+        self.assertGreater(st.done, 0)
+        self.assertFalse([u for u, _ in drive.calls[mark:] if "/stale/" in u])
+
+    def test_contact_sheet_resolves_fresh_links(self):
+        conn = db.connect()
+        drive = library()
+        reader = DriveReader("tok", conn=conn, transport=drive)
+        scan.full_inventory(conn, reader)
+        classify.folder_pass(conn)
+        classify.sort_pass(conn, reader.thumbnail_for, sorter=classify.OllamaSorter("m", post=_ollama_ok))
+        mark = len(drive.calls)
+        sheet = report.write_contact_sheet(conn, reader.thumbnail_for, n=30)
+        self.assertTrue(sheet.exists() and sheet.stat().st_size > 1000)
+        self.assertFalse([u for u, _ in drive.calls[mark:] if "/stale/" in u])
+
+    def test_a_photo_drive_stops_previewing_stays_unsorted(self):
+        """A photo that had a thumbnail at inventory time but none now: fail closed, never postable.
+        (A photo with no thumbnail at all is already dropped by scan.skip_reason as unrenderable.)"""
+        conn = db.connect()
+        drive = library()
+        reader = DriveReader("tok", conn=conn, transport=drive)
+        scan.full_inventory(conn, reader)
+        classify.folder_pass(conn)
+        drive.files["p1"]["thumbnailLink"] = None          # Drive now offers no preview for p1
+        with self.assertRaises(NoThumbnail):
+            reader.thumbnail_for("p1")
+
+        st = classify.sort_pass(conn, reader.thumbnail_for, sorter=classify.OllamaSorter("m", post=_ollama_ok))
+        self.assertEqual(st.failed, 1)
+        self.assertGreater(st.done, 0)                      # one bad photo never stops the pass
+        row = db.one(conn, "SELECT c.method, c.possible_minor FROM classifications c "
+                           "JOIN photos p ON p.id=c.photo_id WHERE p.drive_id='p1'")
+        self.assertEqual(row["method"], "folder", "an unpreviewable photo stays unsorted")
+        self.assertIsNone(row["possible_minor"], "so it is never postable")
+
+
 class Report(IsolatedCase):
     def test_report_and_contact_sheet(self):
         conn = db.connect()
@@ -271,13 +334,13 @@ class Report(IsolatedCase):
         classify.folder_pass(conn)
         os.environ["AI_MONTHLY_CAP_USD"] = "5"
         config.reset()
-        classify.vision_pass(conn, reader.thumbnail, classifier=classify.VisionClassifier(conn, client=FakeClaude(ADULTS)))
+        classify.vision_pass(conn, reader.thumbnail_for, classifier=classify.VisionClassifier(conn, client=FakeClaude(ADULTS)))
         s = report.summary(conn)
         self.assertEqual(s["convention_photos"], 3)
         self.assertEqual(s["by_event"]["Katsucon"], {"2024": 3})
         picks = report.best(conn, 30)
         self.assertEqual(len(picks), 3)
-        sheet = report.write_contact_sheet(conn, reader.thumbnail, n=30)
+        sheet = report.write_contact_sheet(conn, reader.thumbnail_for, n=30)
         out = report.write_report(conn, sheet=sheet)
         self.assertTrue(sheet.exists() and sheet.stat().st_size > 1000)
         text = out.read_text()
@@ -398,7 +461,7 @@ class Ollama(IsolatedCase):
             if "architecture" in json["messages"][1]["content"]:
                 answer.update(subject="architecture", shot_type="building_interior", people_count=0, view="interior")
             return types.SimpleNamespace(status_code=200, json=lambda: {"message": {"content": __import__("json").dumps(answer)}})
-        st = classify.sort_pass(self.conn, self.reader.thumbnail, sorter=classify.OllamaSorter("qwen2.5vl:7b", post=post))
+        st = classify.sort_pass(self.conn, self.reader.thumbnail_for, sorter=classify.OllamaSorter("qwen2.5vl:7b", post=post))
         self.assertEqual(st.done, 4)                  # three event photos and the lobby; the wedding is never sent
         self.assertTrue(seen[0][0].endswith("/api/chat"))
         self.assertEqual(db.one(self.conn, "SELECT COUNT(*) n FROM api_usage WHERE provider='anthropic'")["n"], 0)
@@ -407,7 +470,7 @@ class Ollama(IsolatedCase):
 
     def test_bad_local_answer_leaves_photo_unchecked(self):
         post = lambda url, **kw: types.SimpleNamespace(status_code=200, json=lambda: {"message": {"content": '{"subject": "event"}'}})
-        st = classify.sort_pass(self.conn, self.reader.thumbnail, sorter=classify.OllamaSorter("m", post=post))
+        st = classify.sort_pass(self.conn, self.reader.thumbnail_for, sorter=classify.OllamaSorter("m", post=post))
         self.assertEqual(st.done, 0)
         self.assertEqual(db.one(self.conn, "SELECT COUNT(*) n FROM classifications WHERE possible_minor IS NOT NULL")["n"], 0)
 

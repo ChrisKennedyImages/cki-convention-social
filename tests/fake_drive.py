@@ -10,6 +10,10 @@ from PIL import Image
 FOLDER = "application/vnd.google-apps.folder"
 
 
+class StaleThumbnailLink(Exception):
+    """What Drive does to a thumbnailLink about an hour after it issues it: 403."""
+
+
 class Resp:
     def __init__(self, data=None, content: bytes = b""):
         self._data = data
@@ -43,7 +47,7 @@ class FakeDrive:
     def image(self, fid, name, parent, *, mime="image/jpeg", w=6000, h=4000, time="2024:03:02 10:00:00", thumb=True):
         self.files[fid] = {"id": fid, "name": name, "mimeType": mime, "parents": [parent], "md5Checksum": "m" + fid,
                            "size": "1234", "modifiedTime": "2024-03-02T10:00:00Z", "hasThumbnail": thumb,
-                           "thumbnailLink": f"https://thumbs.example/{fid}=s220" if thumb else None,
+                           "thumbnailLink": f"https://thumbs.example/stale/{fid}=s220" if thumb else None,
                            "imageMediaMetadata": {"width": w, "height": h, "time": time, "cameraMake": "Canon", "cameraModel": "R5"}}
         return fid
 
@@ -59,6 +63,8 @@ class FakeDrive:
         u = urlparse(url)
         path = u.path.replace("/drive/v3", "")
         if u.netloc == "thumbs.example":
+            if u.path.startswith("/stale/"):   # a link captured at inventory time: Drive now 403s it
+                raise StaleThumbnailLink(url)
             return Resp(content=thumb_bytes())
         if path == "/changes/startPageToken":
             return Resp({"startPageToken": "100"})
@@ -80,4 +86,11 @@ class FakeDrive:
             return Resp(data)
         if path.startswith("/files/") and params.get("alt") == "media":
             return Resp(content=thumb_bytes((200, 10, 10)))
+        if path.startswith("/files/") and params.get("fields") == "thumbnailLink":
+            fid = path.split("/files/", 1)[1]
+            if fid not in self.files:
+                raise AssertionError(f"thumbnailLink asked for unknown file {fid}")
+            # Drive signs a new link each time it is asked; the one stored earlier is dead
+            fresh = f"https://thumbs.example/fresh/{fid}=s220" if self.files[fid]["thumbnailLink"] else None
+            return Resp({"thumbnailLink": fresh})
         raise AssertionError(f"unexpected Drive call {url} {params}")
