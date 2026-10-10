@@ -34,4 +34,9 @@ FOUNDER_DECISIONS.md is the source of truth. Read it first.
   never in the repo.
 - Runtime is the Mac mini, as system LaunchDaemons with the prefix
   `com.chriskennedyimages.conventionsocial.`; the dashboard listens on
-  127.0.0.1:4610 and is reached over Tailscale.
+  127.0.0.1:4610 and is reached over Tailscale at
+  https://mac-mini.tail915d2c.ts.net/ (`tailscale serve --bg 4610` on the Mini,
+  2026-10-09; only devices on Chris's Tailscale network can open it). The suite's links
+  use it once `DASHBOARD_PUBLIC_URL` is set to it on the Mini (Keys page).
+- Going live and every redeploy: `scripts/go-live.sh` on the Mini. First run
+  ended LIVE on 2026-10-09.
