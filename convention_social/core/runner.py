@@ -85,6 +85,8 @@ def run(agent: str, fn: Callable[[Context], Optional[str]], *, force_dry_run: Op
     cfg = config.get_config()
     cfg.ensure_dirs()
     log = logs.get_logger(agent)
+    from . import limits
+    limits.raise_open_files()
     lock = Lock(agent)
     if not lock.acquire():
         log.warning("%s: another copy holds %s; exiting", agent, lock.path.name)
