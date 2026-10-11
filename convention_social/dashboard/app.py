@@ -15,10 +15,12 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import os
 import re
 import secrets as pysecrets
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 from typing import Optional
@@ -322,6 +324,45 @@ def photo_page(conn, view: str, page: int, size: int = PAGE, subject: Optional[s
                                      (size, (page - 1) * size))]
 
 
+# The Photos tab asks for 48 previews at once. Each Drive fetch happens once per photo (a second
+# request for the same photo waits for the first), at most THUMB_FETCHES at a time, and the file is
+# written whole before anyone can read it (2026-10-11: "Too many open files" and "Too little data for
+# declared Content-Length" on /media/thumb).
+THUMB_FETCHES = threading.BoundedSemaphore(6)
+_thumb_locks: dict[str, threading.Lock] = {}
+_thumb_locks_guard = threading.Lock()
+
+
+def _thumb_lock(drive_id: str) -> threading.Lock:
+    with _thumb_locks_guard:
+        return _thumb_locks.setdefault(drive_id, threading.Lock())
+
+
+def cached_thumb(drive_id: str, fetch) -> Optional[Path]:
+    """The preview's file, fetched with `fetch(drive_id) -> bytes` only when it is not cached yet.
+    None when there is nothing to show (no fetch, or Drive could not give it)."""
+    path = config.get_config().data_root / "thumbs" / f"{drive_id}.jpg"
+    if path.is_file() and path.stat().st_size > 0:
+        return path
+    if fetch is None:
+        return None
+    with _thumb_lock(drive_id):
+        if path.is_file() and path.stat().st_size > 0:
+            return path
+        try:
+            with THUMB_FETCHES:
+                data = fetch(drive_id)
+        except Exception:  # noqa: BLE001  not signed in, network: no picture, not a crash
+            return None
+        if not data:
+            return None
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_name(f"{path.name}.{os.getpid()}.{threading.get_ident()}.part")
+        tmp.write_bytes(data)
+        os.replace(tmp, path)                   # readers see the whole file or none of it
+        return path
+
+
 def running_commit() -> str:
     """The commit of the code this process loaded ("" when git cannot say; never stops the dashboard)."""
     try:
@@ -530,18 +571,14 @@ def create_app() -> FastAPI:
         row = db.one(conn, "SELECT drive_id, thumbnail_link FROM photos WHERE id=?", (photo_id,))
         if not row:
             raise HTTPException(404)
-        path = config.get_config().data_root / "thumbs" / f"{row['drive_id']}.jpg"
-        if not path.exists():
-            if not row["thumbnail_link"]:
-                raise HTTPException(404)
+
+        def fetch(drive_id: str) -> bytes:
             from ..drive import oauth
             from ..drive.api import DriveReader
-            try:
-                data = DriveReader(oauth.access_token(conn), conn=conn, agent="dashboard").thumbnail_for(row["drive_id"], 400)
-            except Exception:  # noqa: BLE001 — not signed in, network: no picture, not a crash
-                raise HTTPException(404)
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_bytes(data)
+            return DriveReader(oauth.access_token(conn), conn=conn, agent="dashboard").thumbnail_for(drive_id, 400)
+        path = cached_thumb(row["drive_id"], fetch if row["thumbnail_link"] else None)
+        if path is None:
+            raise HTTPException(404)
         return FileResponse(path, media_type="image/jpeg")
 
     # ------------------------------------------------------------------ library
