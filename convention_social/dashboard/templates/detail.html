@@ -11,8 +11,12 @@
 <div class="muted">{{ item.art.notes or '' }}{% if item.art.rounds %} ({{ item.art.rounds }} look{{ 's' if item.art.rounds != 1 else '' }}){% endif %}</div></div>{% endif %}
 {% if item.video %}<div class="card"><video class="reel" src="/media/render/{{ item.id }}/9x16/1"{% if item.cover %} poster="/media/render/{{ item.id }}/cover/1"{% endif %} controls playsinline muted loop preload="metadata"></video></div>
 {% endif %}{% if item.renders %}<div class="card"><div class="thumbs">{% for aspect, idx in item.renders.items() %}{% for i in idx %}<img src="/media/render/{{ item.id }}/{{ aspect.replace(':','x') }}/{{ i }}" alt="{{ aspect }}">{% endfor %}{% endfor %}</div></div>{% endif %}
-{% if item.photo_checks %}<div class="card"><h2>Photos</h2>{% for pid, ok, why in item.photo_checks %}
-  <div class="row"><img src="/media/thumb/{{ pid }}" style="height:70px;border-radius:6px" alt=""><span class="badge {{ 'ok' if ok else 'blocked' }}">{{ 'usable' if ok else why }}</span></div>{% endfor %}</div>{% endif %}
+{% if item.photo_checks %}<div class="card"><h2>Photos</h2>{% for pid, ok, why, shot in item.photo_checks %}
+  <div class="row"><img src="/media/thumb/{{ pid }}" style="height:70px;border-radius:6px" alt=""><span class="badge {{ 'ok' if ok else 'blocked' }}">{{ 'usable' if ok else why }}</span>
+    <span class="muted">shows: {{ (shot or 'not sorted').replace('_', ' ') }}</span></div>
+  {% if item.status == 'draft' %}<form method="post" action="/queue/{{ item.id }}/photo/{{ pid }}/shot" class="row" style="margin:4px 0 10px">
+    <select name="shot_type" style="width:auto">{% for key, words in shot_choices %}<option value="{{ key }}" {{ 'selected' if key == shot else '' }}>{{ words }}</option>{% endfor %}</select>
+    <button class="small" type="submit">Wrong? Fix and draft again</button></form>{% endif %}{% endfor %}</div>{% endif %}
 <form method="post" action="/queue/{{ item.id }}/save" class="card">
   {% for n in networks %}
   <label class="row"><input type="checkbox" name="target_{{ n }}" {{ 'checked' if n in item.targets else '' }}> {{ n|capitalize }}

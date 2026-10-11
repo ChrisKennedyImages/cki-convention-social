@@ -106,9 +106,10 @@ SCHEMA = {
 }
 
 FINAL_SYSTEM = """You are the last check before a photographer posts a photo publicly.
-Answer two things about the photo only from what is visible:
+Answer three things about the photo only from what is visible:
 possible_minor: true if anyone in the photo could be under 18. When unsure, true.
 personal_details: anything readable that identifies a private person or a home: a name on a badge, a vehicle plate, a screen or document with personal information, a house number, a street sign. Empty when none.
+shot_type: what the photo is of. stage_panel for anyone on a stage, at a podium or on a panel, however close the framing; portrait or headshot only for a posed picture of a person made for its own sake, away from a stage; group for a posed group; candid for an unposed moment; crowd for an audience or a room of people; vendor_hall or booth for an exhibit floor; backstage; dinner_reception; venue, building_exterior or building_interior for a building with no event in it; cosplay_portrait for a person in costume; other when none fits.
 Return JSON only, matching the schema."""
 
 FINAL_SCHEMA = {
@@ -116,11 +117,22 @@ FINAL_SCHEMA = {
     "properties": {
         "possible_minor": {"type": "boolean"},
         "personal_details": {"type": "array", "items": {"type": "string", "enum": list(DETAILS)}},
+        "shot_type": {"type": "string", "enum": list(SHOT_TYPES)},
         "summary": {"type": "string"},
     },
-    "required": ["possible_minor", "personal_details", "summary"],
+    "required": ["possible_minor", "personal_details", "shot_type", "summary"],
     "additionalProperties": False,
 }
+
+
+def set_shot_type(conn: sqlite3.Connection, photo_id: int, shot_type: str) -> bool:
+    """One word for what the photo shows, everywhere it is read: the sorting row (the Photos tab,
+    the candidates, the design labels) and the final check. False for a word that is not a shot type."""
+    if shot_type not in SHOT_TYPES:
+        return False
+    conn.execute("UPDATE classifications SET shot_type=? WHERE photo_id=?", (shot_type, photo_id))
+    conn.execute("UPDATE final_checks SET shot_type=? WHERE photo_id=?", (shot_type, photo_id))
+    return True
 
 
 @dataclass
@@ -425,9 +437,14 @@ def final_check(conn: sqlite3.Connection, photo_id: int, image: bytes, *, client
     if not text:
         return None
     data = json.loads(text)
-    conn.execute("INSERT INTO final_checks (photo_id, possible_minor, personal_details, summary, model, checked_at) "
-                 "VALUES (?,?,?,?,?,?) ON CONFLICT(photo_id) DO UPDATE SET possible_minor=excluded.possible_minor, "
-                 "personal_details=excluded.personal_details, summary=excluded.summary, model=excluded.model, checked_at=excluded.checked_at",
+    shot = data.get("shot_type") if data.get("shot_type") in SHOT_TYPES else None
+    conn.execute("INSERT INTO final_checks (photo_id, possible_minor, personal_details, summary, model, checked_at, shot_type) "
+                 "VALUES (?,?,?,?,?,?,?) ON CONFLICT(photo_id) DO UPDATE SET possible_minor=excluded.possible_minor, "
+                 "personal_details=excluded.personal_details, summary=excluded.summary, model=excluded.model, "
+                 "checked_at=excluded.checked_at, shot_type=excluded.shot_type",
                  (photo_id, 1 if data.get("possible_minor", True) else 0, json.dumps(data.get("personal_details") or []),
-                  (data.get("summary") or "")[:300], answered, db.utcnow()))
+                  (data.get("summary") or "")[:300], answered, db.utcnow(), shot))
+    if shot:
+        # Claude's word beats the local sorter's guess (2026-10-11: a stage shot called a portrait)
+        conn.execute("UPDATE classifications SET shot_type=? WHERE photo_id=? AND COALESCE(shot_type, '') != ?", (shot, photo_id, shot))
     return data

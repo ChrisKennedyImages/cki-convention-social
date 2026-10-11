@@ -165,7 +165,7 @@ def queue_view(conn, row) -> dict:
     known_names = ai_names.public_names(conn)
     reports = {n: copy_rules.check(captions.get(n, ""), official=official, names=known_names) for n in NETWORKS}
     photo_ids = json.loads(row["photo_ids"] or "[]")
-    photo_checks = [(pid, *eligibility.is_eligible(conn, int(pid))) for pid in photo_ids]
+    photo_checks = [(pid, *eligibility.is_eligible(conn, int(pid)), shot_type_of(conn, int(pid))) for pid in photo_ids]
     renders = json.loads(row["render_paths"] or "{}")
     try:
         art = json.loads(row["rule_report"] or "{}").get("art") or {}
@@ -179,6 +179,36 @@ def queue_view(conn, row) -> dict:
 
 
 MEDIA_TYPES = {".mp4": "video/mp4", ".png": "image/png"}
+
+
+# what a photo shows, in plain words, for the draft page's correction (Chris, 2026-10-11: "it calls a
+# stage shot a portrait which, never can happen!")
+SHOT_CHOICES = [("stage_panel", "Stage and panel"), ("backstage", "Backstage"), ("portrait", "Portrait"), ("headshot", "Headshot"),
+                ("group", "Group photo"), ("candid", "Candid moment"), ("crowd", "Crowd"), ("vendor_hall", "Vendor hall"),
+                ("booth", "Exhibitor booth"), ("dinner_reception", "Dinner and reception"), ("venue", "Venue"),
+                ("building_exterior", "Building exterior"), ("building_interior", "Building interior"), ("other", "Other")]
+
+
+def shot_type_of(conn, photo_id: int) -> str:
+    row = db.one(conn, "SELECT shot_type FROM classifications WHERE photo_id=?", (photo_id,))
+    return (row["shot_type"] if row else None) or ""
+
+
+def start_agent(name: str) -> None:
+    """One run now, exactly as its schedule would start it: its own lock, its own dry-run switch,
+    its own gates. The dashboard only starts it and returns."""
+    cfg = config.get_config()
+    cfg.ensure_dirs()
+    with open(cfg.data_root / "logs" / f"{name}.manual.log", "ab") as log:
+        subprocess.Popen([sys.executable, "-m", "convention_social.cli", "run", name], cwd=str(config.REPO_ROOT),
+                         stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
+
+
+def photo_ids_of_row(row) -> list[int]:
+    try:
+        return [int(x) for x in json.loads(row["photo_ids"] or "[]")]
+    except (TypeError, ValueError):
+        return []
 
 
 def load_queue_row(conn, qid: int):
@@ -456,7 +486,8 @@ def create_app() -> FastAPI:
 
     @app.get("/queue/{qid}", response_class=HTMLResponse)
     def queue_detail(qid: int, request: Request, user: str = Depends(require_user), conn=Depends(conn_dep), msg: str = ""):
-        return render(request, "detail.html", item=queue_view(conn, load_queue_row(conn, qid)), networks=NETWORKS, msg=msg)
+        return render(request, "detail.html", item=queue_view(conn, load_queue_row(conn, qid)), networks=NETWORKS, msg=msg,
+                      shot_choices=SHOT_CHOICES)
 
     @app.post("/queue/{qid}/save")
     async def queue_save(qid: int, request: Request, user: str = Depends(require_user), conn=Depends(conn_dep)):
@@ -491,6 +522,22 @@ def create_app() -> FastAPI:
         if row["status"] in ("would_publish", "failed"):
             conn.execute("UPDATE content_queue SET status='draft', last_error=NULL, payload=NULL, updated_at=? WHERE id=?", (db.utcnow(), qid))
         return RedirectResponse(f"/queue/{qid}?msg=requeued", status_code=303)
+
+    @app.post("/queue/{qid}/photo/{pid}/shot")
+    def queue_fix_shot(qid: int, pid: int, user: str = Depends(require_user), conn=Depends(conn_dep), shot_type: str = Form(...)):
+        """Chris says what the photo shows. The word is corrected everywhere it is read, this draft is
+        set aside, and a new one is drafted with the right words (the photo is free to be picked again)."""
+        row = load_queue_row(conn, qid)
+        from ..library import classify
+        if pid not in (photo_ids_of_row(row) or []) or not classify.set_shot_type(conn, pid, shot_type):
+            raise HTTPException(400)
+        words = dict(SHOT_CHOICES).get(shot_type, shot_type)
+        if row["status"] == "draft":
+            conn.execute("UPDATE content_queue SET status='rejected', last_error=?, updated_at=? WHERE id=?",
+                         (f"Set aside: photo {pid} shows {words}, not what the caption said. Drafted again.", db.utcnow(), qid))
+            start_agent("content")
+            return RedirectResponse(f"/?msg=redraft", status_code=303)
+        return RedirectResponse(f"/queue/{qid}?msg=saved", status_code=303)
 
     @app.post("/queue/{qid}/reject")
     def queue_reject(qid: int, user: str = Depends(require_user), conn=Depends(conn_dep)):
@@ -849,12 +896,7 @@ def create_app() -> FastAPI:
         its own gates. The dashboard only starts it and returns; the run shows here when it ends."""
         if name not in RUNNABLE or not is_built(name):
             raise HTTPException(404)
-        cfg = config.get_config()
-        cfg.ensure_dirs()
-        log = open(cfg.data_root / "logs" / f"{name}.manual.log", "ab")
-        subprocess.Popen([sys.executable, "-m", "convention_social.cli", "run", name], cwd=str(config.REPO_ROOT),
-                         stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
-        log.close()
+        start_agent(name)
         return RedirectResponse(f"/agents?msg={name}+started.+Its+result+shows+here+when+it+ends.", status_code=303)
 
     @app.post("/agents/all/dry-run")

@@ -211,6 +211,8 @@ def draft_one(ctx: runner.Context, fetch: Callable[[dict], bytes], *, now: Optio
             verdict = classify.final_check(ctx.conn, row["id"], data, client=check_client, agent=ctx.agent)
             if not (verdict and eligibility.is_eligible(ctx.conn, row["id"])[0]):
                 continue
+            if verdict.get("shot_type") in classify.SHOT_TYPES:
+                row["shot_type"] = verdict["shot_type"]       # what the photo shows, by the model that looked at it in full
         chosen.append((row, data))
         if len(chosen) >= TAKES[design]:
             break
