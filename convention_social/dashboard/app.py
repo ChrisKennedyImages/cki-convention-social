@@ -297,14 +297,25 @@ def prepare_photo_views(conn, decisions) -> None:
     conn.executemany("INSERT INTO temp.hidden_photo VALUES (?)", hidden)
 
 
-def count_photos(conn, view: str) -> int:
-    return db.one(conn, f"SELECT COUNT(*) AS n {PAGE_FROM} WHERE {VIEWS[view][0]}")["n"]
+# Chris, 2026-10-11: "Architecture images should be separated from event/convention photos". Each
+# list is shown in two parts: the event work, and the building work (the sorter's subject).
+SUBJECTS = {"event": "COALESCE(c.subject, '') != 'architecture'", "architecture": "c.subject = 'architecture'"}
+SUBJECT_WORDS = (("event", "Events"), ("architecture", "Buildings"))
 
 
-def photo_page(conn, view: str, page: int, size: int = PAGE) -> list[dict]:
+def _where(view: str, subject: Optional[str]) -> str:
+    where = VIEWS[view][0]
+    return f"{where} AND {SUBJECTS[subject]}" if subject else where
+
+
+def count_photos(conn, view: str, subject: Optional[str] = None) -> int:
+    return db.one(conn, f"SELECT COUNT(*) AS n {PAGE_FROM} WHERE {_where(view, subject)}")["n"]
+
+
+def photo_page(conn, view: str, page: int, size: int = PAGE, subject: Optional[str] = None) -> list[dict]:
     """One page of a photo list, read straight from the database: the Photos tab never loads the
     whole library (Chris, 2026-10-11: "Photos tab is dead")."""
-    where, order = VIEWS[view]
+    where, order = _where(view, subject), VIEWS[view][1]
     return [dict(r) for r in db.rows(conn, f"""SELECT p.*, c.method, c.subject, c.shot_type, c.quality, c.sharp, c.light, c.moment,
                                                       c.possible_minor, c.personal_details, f.name AS folder_name
                                                {PAGE_FROM} WHERE {where} ORDER BY {order} LIMIT ? OFFSET ?""",
@@ -536,7 +547,7 @@ def create_app() -> FastAPI:
     # ------------------------------------------------------------------ library
     @app.get("/library", response_class=HTMLResponse)
     def library(request: Request, user: str = Depends(require_user), conn=Depends(conn_dep), view: str = "review",
-                show: str = "events", page: int = 1):
+                show: str = "events", page: int = 1, subject: str = "event"):
         """Photos. Chris, 2026-10-11: "I only want to choose what I approve and if it's not approved then
         don't use it yet or at all". To review: the sorted photos he has not decided on, best first,
         each with Use and Don't use. Approved: everything cleared, by the photo or its folder.
@@ -568,17 +579,20 @@ def create_app() -> FastAPI:
             return render(request, "library.html", renders=latest_renders(), design=latest_design(), tracks=music.tracks(conn),
                           design_status=design_samples.read_status(), readiness=design_samples.readiness(conn), **common)
         view = "approved" if view == "approved" else "review"
-        total = count_photos(conn, view)
+        subject = subject if subject in SUBJECTS else "event"
+        subject_counts = {s: count_photos(conn, view, s) for s, _ in SUBJECT_WORDS}
+        total = subject_counts[subject]
         pages = max(1, (total + PAGE - 1) // PAGE)
         page = max(1, min(page, pages))
-        shown = photo_page(conn, view, page)
+        shown = photo_page(conn, view, page, subject=subject)
         for i, p in enumerate(shown):
             # after a tap the page comes back to the next photo, since the one tapped may leave this list
             nxt = shown[i + 1]["id"] if i + 1 < len(shown) else p["id"]
-            p["back"] = f"/library?view={view}&page={page}#p{nxt}"
+            p["back"] = f"/library?view={view}&subject={subject}&page={page}#p{nxt}"
             p["why"] = eligibility.is_candidate(conn, p["id"]) if view == "approved" else None
         common["view"] = view
-        return render(request, "library.html", items=shown, page=page, pages=pages, total=total, **common)
+        return render(request, "library.html", items=shown, page=page, pages=pages, total=total, subject=subject,
+                      subject_counts=subject_counts, subject_words=SUBJECT_WORDS, **common)
 
     @app.get("/more", response_class=HTMLResponse)
     def more(request: Request, user: str = Depends(require_user)):

@@ -306,6 +306,16 @@ only when Chris says so.
 - "Where I work is everywhere": `SERVICE_AREA` takes `nationwide`, a home base
   such as `Washington DC`, or both as `Washington DC, nationwide` ("Based in
   Washington DC, covering events nationwide.") (`ai/seo_plan.py`).
+## 2026-10-11: buildings apart from events; the draft at 8
+
+- "Architecture images should be separated from event/convention photos (even
+  though we're using them for the same thing)." To review and Approved each
+  show Events and Buildings as two lists with their own counts; a building is
+  what the sorter called architecture (`dashboard/app.py` `SUBJECTS`).
+- The daily draft runs at 8:00, not 6:00. It drafts the next day's post, so
+  the hour changes nothing about when posts go out; it only sets when the
+  draft and its ping arrive (`launchd/…content.plist.template`, one
+  `scripts/go-live.sh` on the Mini to take effect).
 
 ## Standing rules from the brief
 

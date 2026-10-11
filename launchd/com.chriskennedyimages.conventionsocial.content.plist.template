@@ -19,7 +19,7 @@
     <key>CCS_DATA_ROOT</key><string>__DATA__</string>
     <key>PYTHONUNBUFFERED</key><string>1</string>
   </dict>
-  <key>StartCalendarInterval</key><dict><key>Hour</key><integer>6</integer><key>Minute</key><integer>0</integer></dict>
+  <key>StartCalendarInterval</key><dict><key>Hour</key><integer>8</integer><key>Minute</key><integer>0</integer></dict>
   <key>RunAtLoad</key><false/>
   <key>StandardOutPath</key><string>__DATA__/logs/content.launchd.log</string>
   <key>StandardErrorPath</key><string>__DATA__/logs/content.launchd.log</string>

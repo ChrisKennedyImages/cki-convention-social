@@ -1,4 +1,4 @@
-"""Content agent (daily, 06:00): tomorrow's post, drafted into the review queue for Chris.
+"""Content agent (daily, 08:00; Chris, 2026-10-11): tomorrow's post, drafted into the review queue for Chris.
 
 1. The day: one post a day. BUILDING_WEEKDAY (default wednesday) is the
    building day, from the architecture work (Chris, 2026-10-09: one day a
