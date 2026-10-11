@@ -18,7 +18,7 @@ from tests.fake_drive import FakeDrive, StaleThumbnailLink
 def library():
     d = FakeDrive()
     d.folder("fcon", "Katsucon 2025")
-    d.folder("fcos", "Cosplay", "fcon")
+    d.folder("fcos", "Portraits", "fcon")
     d.folder("fcpac", "CPAC Texas 2022 Selects")
     d.folder("fwed", "Smith Wedding 2021")
     d.image("p1", "DSC_1.jpg", "fcos")
@@ -41,7 +41,7 @@ class Scan(IsolatedCase):
         st = scan.full_inventory(self.conn, self.reader)
         self.assertEqual((st.folders, st.images, st.skipped_raw, st.skipped_unrenderable), (4, 4, 1, 1))
         paths = {r["drive_id"]: r["path"] for r in db.rows(self.conn, "SELECT * FROM drive_folders")}
-        self.assertEqual(paths["fcos"], "My Drive/Katsucon 2025/Cosplay")
+        self.assertEqual(paths["fcos"], "My Drive/Katsucon 2025/Portraits")
         p2 = db.one(self.conn, "SELECT * FROM photos WHERE drive_id='p2'")
         self.assertEqual((p2["width"], p2["height"], p2["camera"]), (4000, 6000, "Canon R5"))
         self.assertEqual(settings.get(self.conn, scan.CHANGES_TOKEN_KEY), "100")
@@ -106,10 +106,10 @@ class FakeClaude:
                                      usage=types.SimpleNamespace(input_tokens=900, output_tokens=120))
 
 
-ADULTS = {"subject": "event", "event_kind": "fan", "event_name_seen": "Katsucon", "shot_type": "cosplay_portrait",
+ADULTS = {"subject": "event", "event_kind": "fan", "event_name_seen": "Katsucon", "shot_type": "portrait",
           "view": "interior", "quality": 5, "people_count": 1, "possible_minor": False, "personal_details": [],
           "space": "not_a_building", "residential": False, "empty_room": False,
-          "sharp": True, "light": 4, "moment": 4, "summary": "A cosplayer."}
+          "sharp": True, "light": 4, "moment": 4, "summary": "A speaker."}
 BUILDING = {**ADULTS, "subject": "architecture", "shot_type": "building_exterior", "view": "exterior",
             "event_name_seen": "", "people_count": 0, "space": "exterior"}
 
@@ -262,7 +262,7 @@ class Heuristics(IsolatedCase):
         self.assertEqual((g.is_event, g.event_kind, g.year), (True, "business", 2022))
         self.assertIn("CPAC", g.event_name)
         self.assertFalse(heuristics.guess("My Drive/Smith Wedding 2021").is_event)
-        self.assertEqual(heuristics.guess("My Drive/Katsucon 2025/Cosplay").event_kind, "fan")
+        self.assertEqual(heuristics.guess("My Drive/Katsucon 2025/Portraits").event_kind, "fan")
         self.assertIsNone(heuristics.guess("My Drive/Misc").is_event)
 
     def test_a_private_occasion_is_never_convention_work(self):

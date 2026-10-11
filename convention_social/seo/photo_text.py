@@ -49,19 +49,19 @@ PER_RUN_DEFAULT = 300
 MAX_DEPTH = 64
 
 SHOT_WORDS = {
-    "cosplay_portrait": "Cosplay portrait", "portrait": "Portrait", "headshot": "Headshot", "group": "Group photo",
+    "portrait": "Portrait", "headshot": "Headshot", "group": "Group photo",
     "candid": "Candid moment", "stage_panel": "Stage and panel", "stage": "Stage", "vendor_hall": "Vendor hall",
     "booth": "Exhibitor booth", "backstage": "Backstage", "dinner_reception": "Dinner and reception", "dinner": "Dinner",
     "crowd": "Crowd", "venue": "Venue",
 }
-PEOPLE_SHOTS = {"cosplay_portrait", "portrait", "headshot", "group"}
+PEOPLE_SHOTS = {"portrait", "headshot", "group"}
 KIND_WORDS = {"fan": "fan convention", "business": "business or political conference"}
 KIND_KEYWORDS = {"fan": "fan convention photography", "business": "conference photography"}
 # words that are never a person's name, so a Title Cased answer is not mistaken for one
 COMMON_WORDS = set("""
 a an the and or of at in on for with by from to into near during before after while
 photo photos photograph photography photographer event events convention conventions conference conferences
-portrait portraits cosplay cosplayer cosplayers candid moment stage panel panels backstage green room rooms vendor vendors
+portrait portraits candid moment stage panel panels backstage green room rooms vendor vendors
 hall halls booth booths exhibitor exhibitors exhibition dinner dinners reception receptions gala galas award awards
 headshot headshots crowd crowds venue venues building buildings architecture architectural interior exterior view
 group groups keynote speaker speakers presenter presenters attendee attendees staff fan fans business political
@@ -259,8 +259,6 @@ def template_keywords(f: PhotoFacts, *, filler: bool = True) -> list[str]:
             kw.append(KIND_KEYWORDS[f.event_kind])
         if shot != "event photo":
             kw.append(shot)
-        if f.shot_type == "cosplay_portrait":
-            kw.append("cosplay photography")
     if f.city:
         kw.append(f"{f.city} event photography")
     if filler:

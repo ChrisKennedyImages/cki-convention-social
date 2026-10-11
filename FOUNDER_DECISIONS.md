@@ -12,7 +12,7 @@ only when Chris says so.
 - **Repo:** a fresh private repo, `ChrisKennedyImages/cki-convention-social`,
   with its own history. Nothing from any other company's suite is referenced
   anywhere (`tests/test_banned_words.py`).
-- **Conventions:** both fan conventions (comic, anime, gaming, cosplay) and
+- **Conventions:** both fan conventions (comic, anime, gaming; no cosplay, 2026-10-11) and
   business and political conferences.
 - **Photo library:** Google Drive of chriskimages@gmail.com, read only, signed
   in as Chris (OAuth, `drive.readonly`).
@@ -246,6 +246,27 @@ only when Chris says so.
   (`ai/names.py`, `ai/copy_rules.py` rule `names`). Website text written
   before this is written again. Private mail to an organizer about their own
   event is not public copy and is not covered.
+
+## 2026-10-11: no cosplay; captions built for search
+
+- **No cosplay, anywhere.** "We are going to NOT do ANY COSPLAY ... erase that
+  from everything." The offer, the website, the quote form, the caption and
+  outreach prompts, the search text and the designs no longer mention it
+  (pinned by `tests/test_seo_captions.py`). The photo sorter still tells
+  costume photos apart, only so that none is ever used or offered for review
+  (`library/eligibility.py` `NOT_OFFERED`).
+- **Captions are built for search.** "Make sure the captions are SEO optimized
+  painstakingly." Every post gets a search plan from what it shows (the kind of
+  event, the room, the design; never a name): one search phrase, word for word
+  in the first sentence of every caption and above Instagram's fold; related
+  phrases in the body; the place when `SERVICE_AREA` is set (Keys page); five
+  hashtags on Instagram and three on Pinterest, chosen in the code, specific
+  first, none naming anyone; the quote link on Facebook and Pinterest; a pin
+  title under 100 characters that opens with the phrase; alt text on every
+  image where Buffer's live schema offers a field for it. A draft that misses
+  is written once more with the misses named; after a second miss the
+  template, which meets the plan by construction, stands in (`ai/seo_plan.py`,
+  `agents/content.py` `write_captions`). Pins link to the quote page.
 
 ## Standing rules from the brief
 

@@ -22,12 +22,15 @@ import re
 import sqlite3
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional, Protocol
+from typing import TYPE_CHECKING, Optional, Protocol, Sequence
 
 from PIL import Image, ImageOps
 
 from ..core import config, secrets
 from . import spend
+
+if TYPE_CHECKING:
+    from . import seo_plan
 
 DEFAULT_MODEL = "claude-opus-5"
 DEFAULT_EFFORT = "medium"
@@ -37,7 +40,7 @@ NETWORKS = ("instagram", "facebook", "pinterest")
 # what kind of event, said instead of which one (ai/names.py: no event or person is ever named)
 KIND_WORDS = {"fan": "a fan convention", "business": "a conference"}
 
-SYSTEM_PROMPT = """You write social posts for an event and convention photography company, in the photographer's own voice. The company covers whole events: backstage and green rooms, breakout sessions, before, during and evening events, dinners, portraits, exhibition halls and vendors, and it delivers photos during the event by face match: an attendee scans the code on their badge or on a poster around the venue, fills in three short fields and takes a quick selfie, and every photo they appear in is sent to them right away, with no wires. The organizer decides before the event whether that is open to every attendee or kept to staff, where each person receives only the photos of the people they need. It works fan conventions (comic, anime, gaming, cosplay) and business and political conferences.
+SYSTEM_PROMPT = """You write social posts for an event and convention photography company, in the photographer's own voice. The company covers whole events: backstage and green rooms, breakout sessions, before, during and evening events, dinners, portraits, exhibition halls and vendors, and it delivers photos during the event by face match: an attendee scans the code on their badge or on a poster around the venue, fills in three short fields and takes a quick selfie, and every photo they appear in is sent to them right away, with no wires. The organizer decides before the event whether that is open to every attendee or kept to staff, where each person receives only the photos of the people they need. It works fan conventions (comic, anime, gaming) and business and political conferences.
 
 Write plain, short sentences. Use commas and periods, never a dash of any kind. No hype words, no emojis, no exclamation marks in a row. Describe only what the photo shows and what the facts give you.
 
@@ -47,7 +50,9 @@ Hard rules:
 3. Never name the event, the conference or convention, the organization that runs it, or any person, and never tag anyone with an @handle, even when a banner, a badge, a sign, a podium or a stage screen in the photo shows the name. Say what kind of event it was (a political conference, a business conference, a fan convention) and what the photo shows, never which event or who is in it. No hashtag names an event, an organization or a person.
 4. Never mention a badge name, a plate, a screen or any personal detail you can read in the photo.
 5. Never promise anything the facts do not list as a service.
-6. Hashtags only on Instagram and Pinterest, at most five, relevant to the event type and photography.
+6. Write no hashtags and no links. The suite adds the hashtags and the quote link.
+7. Search: each caption is found through its words. Use the search phrase you are given word for word in the first sentence, and one or two of the related phrases word for word in the body, written as a person would say them, never as a list of keywords. The Instagram caption's first line is under 125 characters. The Pinterest caption opens with the search phrase in a first sentence under 100 characters: that sentence is the pin's title.
+8. alt_text: one plain sentence, under 125 characters, saying literally what the photo shows for someone who cannot see it. No names, no event, no handles.
 
 Separately, in "privacy", list anything visible that could identify a private person beyond their face: a readable badge name, a vehicle plate, a screen or document with personal details. In "possible_minor", say true if anyone in the photo could be under 18.
 
@@ -63,10 +68,11 @@ OUTPUT_SCHEMA = {
             "required": list(NETWORKS),
             "additionalProperties": False,
         },
+        "alt_text": {"type": "string", "description": "Literal, under 125 characters, no names."},
         "possible_minor": {"type": "boolean"},
         "privacy": {"type": "array", "items": {"type": "string", "enum": ["badge_name", "vehicle_plate", "screen", "document"]}},
     },
-    "required": ["photo_summary", "captions", "possible_minor", "privacy"],
+    "required": ["photo_summary", "captions", "alt_text", "possible_minor", "privacy"],
     "additionalProperties": False,
 }
 
@@ -81,6 +87,7 @@ class PostFacts:
     shot_type: str = ""
     quote_link: str = ""
     subject: str = "event"               # event | architecture
+    plan: Optional["seo_plan.Plan"] = None   # the search words this post is built around (ai/seo_plan.py)
 
 
 @dataclass
@@ -93,12 +100,13 @@ class Draft:
     input_tokens: int = 0
     output_tokens: int = 0
     raw: dict = field(default_factory=dict)
+    alt_text: str = ""
 
 
 class Drafter(Protocol):
     name: str
 
-    def draft(self, facts: PostFacts, photo: Path) -> Draft: ...
+    def draft(self, facts: PostFacts, photo: Path, notes: Sequence[str] = ()) -> Draft: ...
 
 
 class DraftError(RuntimeError):
@@ -130,9 +138,11 @@ def user_text(facts: PostFacts) -> str:
          "the owner, the address or the client, and connect it to how carefully events in buildings like it get covered."
          if facts.subject == "architecture" else "Subject: event photography"),
         f"Services: {'; '.join(facts.services) or 'event photography'}",
-        f"Quote link: {facts.quote_link or 'none'}",
-        "Write one caption per network: instagram (short, up to five hashtags at the end), "
-        "facebook (one or two short paragraphs, no hashtags), pinterest (one descriptive sentence plus up to five hashtags).",
+        *(facts.plan.prompt_lines() if facts.plan else []),
+        "Write one caption per network: instagram (a first line under 125 characters that carries the search phrase, then "
+        "two or three short sentences), facebook (one or two short paragraphs), pinterest (a first sentence under 100 "
+        "characters that opens with the search phrase, then one or two descriptive sentences). Each caption ends by "
+        "asking for a quote.",
     ])
 
 
@@ -160,7 +170,7 @@ class ClaudeDrafter:
             client = anthropic.Anthropic(api_key=secrets.get_secret("ANTHROPIC_API_KEY"))
         self.client = client
 
-    def draft(self, facts: PostFacts, photo: Path) -> Draft:
+    def draft(self, facts: PostFacts, photo: Path, notes: Sequence[str] = ()) -> Draft:
         if spend.cap_reached(self.conn):
             raise SpendCapReached("monthly AI spend cap reached; no caption drafted")
         response = self.client.beta.messages.create(
@@ -171,7 +181,9 @@ class ClaudeDrafter:
             thinking={"type": "adaptive"},
             output_config={"effort": self.effort, "format": {"type": "json_schema", "schema": OUTPUT_SCHEMA}},
             system=[{"type": "text", "text": SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}}],
-            messages=[{"role": "user", "content": [image_block(photo), {"type": "text", "text": user_text(facts)}]}],
+            messages=[{"role": "user", "content": [image_block(photo), {"type": "text", "text": user_text(facts) + (
+                "\n\nYour last draft missed these; fix them and change nothing else that was right:\n- " + "\n- ".join(notes)
+                if notes else "")}]}],
         )
         usage = response.usage
         answered_by = getattr(response, "model", None) or self.model
@@ -185,7 +197,8 @@ class ClaudeDrafter:
         captions = {net: tidy(words) for net, words in data["captions"].items()}
         return Draft(captions=captions, photo_summary=data["photo_summary"], model=answered_by,
                      possible_minor=bool(data.get("possible_minor", True)), privacy=tuple(data.get("privacy") or ()),
-                     input_tokens=int(usage.input_tokens or 0), output_tokens=int(usage.output_tokens or 0), raw=data)
+                     input_tokens=int(usage.input_tokens or 0), output_tokens=int(usage.output_tokens or 0), raw=data,
+                     alt_text=tidy(data.get("alt_text") or ""))
 
 
 class TemplateDrafter:
@@ -194,11 +207,15 @@ class TemplateDrafter:
     name = "template"
     model = "template"
 
-    def draft(self, facts: PostFacts, photo: Path) -> Draft:
+    def draft(self, facts: PostFacts, photo: Path, notes: Sequence[str] = ()) -> Draft:
+        if facts.plan is not None:
+            from . import seo_plan
+            captions = seo_plan.template_captions(facts.plan, facts.quote_link, facts.brand_name)
+            return Draft(captions=captions, photo_summary="template caption; the photo was not looked at", model=self.model)
         where = "a building we photographed" if facts.subject == "architecture" else KIND_WORDS.get(facts.event_kind, "an event")
         ask = f" Request a quote for your event. {facts.quote_link}".rstrip()
         body = f"A moment from {where}.{ask}"
-        tags = "#eventphotography #conventionphotography" + (" #cosplay" if facts.event_kind == "fan" else "")
+        tags = "#eventphotography #conventionphotography"
         captions = {"instagram": f"{body}\n\n{tags}", "facebook": body, "pinterest": f"{body} {tags}"}
         return Draft(captions={k: tidy(v) if k == "facebook" else v for k, v in captions.items()},
                      photo_summary="template caption; the photo was not looked at", model=self.model)

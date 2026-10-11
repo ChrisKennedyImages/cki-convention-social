@@ -210,7 +210,10 @@ class BufferClient:
         return list(meta.get("boards") or [])
 
     def input_fields(self, type_name: str) -> list[dict]:
-        """[{name, type, required}] of one GraphQL input type, from the live schema."""
+        """[{name, type, required}] of one GraphQL input type, from the live schema (read once per client)."""
+        cache = self.__dict__.setdefault("_types", {})
+        if type_name in cache:
+            return cache[type_name]
         data = self._gql(Q_INPUT_TYPE, {"name": type_name}, op=f"Schema {type_name}")
         t = data.get("__type") or {}
         if not t:
@@ -219,7 +222,33 @@ class BufferClient:
         for f in t.get("inputFields") or []:
             name, required = _named(f.get("type") or {})
             out.append({"name": f.get("name"), "type": name, "required": required})
+        cache[type_name] = out
         return out
+
+    ALT_NAMES = ("altText", "alt", "altTextDescription")
+
+    def image_alt_path(self) -> Optional[list[str]]:
+        """Where an image's alt text goes in AssetInput.image, read from the live schema: [field] or
+        ["metadata", field]. None when Buffer offers no alt text field (then no alt text is sent)."""
+        member = next((f for f in self.input_fields("AssetInput") if f["name"] == "image"), None)
+        if member is None or not member["type"]:
+            return None
+        try:
+            fields = self.input_fields(member["type"])
+        except BufferError:
+            return None
+        direct = next((f["name"] for f in fields if f["name"] in self.ALT_NAMES), None)
+        if direct:
+            return [direct]
+        meta = next((f for f in fields if f["name"] == "metadata" and f["type"]), None)
+        if meta is None:
+            return None
+        try:
+            inner = self.input_fields(meta["type"])
+        except BufferError:
+            return None
+        found = next((f["name"] for f in inner if f["name"] in self.ALT_NAMES), None)
+        return ["metadata", found] if found else None
 
     def video_asset_fields(self) -> list[dict]:
         """The fields of the input type behind AssetInput.video, both read from the live schema."""

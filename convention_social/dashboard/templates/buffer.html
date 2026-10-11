@@ -11,6 +11,7 @@
   {% endfor %}
   <div class="line"><span>Pinterest board</span><span class="badge {{ 'ok' if b.board else 'failed' }}">{{ 'chosen' if b.board else 'not chosen' }}</span></div>
   <div class="line"><span>Video format (reels)</span><span class="badge {{ 'ok' if b.video and not b.video.problem else 'failed' }}">{{ 'checked ' ~ b.video.checked_at[:10] if b.video and not b.video.problem else ('needs a change' if b.video else 'not checked') }}</span></div>
+  <div class="line"><span>Alt text on images (search)</span><span class="badge {{ 'ok' if b.image_alt and b.image_alt.path else 'failed' }}">{{ 'supported' if b.image_alt and b.image_alt.path else ('not offered by Buffer' if b.image_alt else 'not checked') }}</span></div>
   <div class="line"><span>Publisher</span><span class="badge {{ 'live' if b.publisher_live else 'dry' }}">{{ 'live' if b.publisher_live else 'dry run' }}</span></div>
   <div class="muted">Every post still waits for your Approve on Today. A network with no linked channel is skipped and the draft says so.</div>
 </div>
@@ -63,9 +64,9 @@
 {% endif %}
 
 {% if b.key %}
-<div class="card" style="margin-top:12px"><strong>Video format for reels</strong>
-  <div class="muted">Reads what Buffer asks a video post to carry, so the first reel is built the way Buffer wants. Nothing is posted.</div>
-  <form method="post" action="/buffer/video" class="inline"><button class="small" type="submit">Check the video format</button></form>
+<div class="card" style="margin-top:12px"><strong>Post formats</strong>
+  <div class="muted">Reads what Buffer asks a video post to carry, and where it takes an image's alt text (which search reads), so posts are built the way Buffer wants. Nothing is posted.</div>
+  <form method="post" action="/buffer/video" class="inline"><button class="small" type="submit">Check the post formats</button></form>
   {% if b.video %}<div class="muted" style="margin-top:6px">{% for f in b.video.fields %}{{ f.name }}{{ ' (required)' if f.required else '' }}{{ ', ' if not loop.last else '' }}{% endfor %}{% if b.video.problem %}<br><span class="rule block">{{ b.video.problem }}</span>{% endif %}</div>{% endif %}
 </div>
 {% endif %}

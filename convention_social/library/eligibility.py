@@ -46,6 +46,11 @@ def folder_chain(conn: sqlite3.Connection, folder_id: str | None) -> list[sqlite
     return out
 
 
+# Chris, 2026-10-11: "We are going to NOT do ANY COSPLAY ... erase that from everything". The sorter still
+# tells costume photos apart, only so that none is ever used or offered for review.
+NOT_OFFERED = ("cosplay_portrait",)
+
+
 def clearance_of(conn: sqlite3.Connection, photo: sqlite3.Row) -> str:
     """'cleared' | 'blocked' | 'excluded' | 'not_cleared' — the decision that applies to this photo."""
     if photo["clearance"] == "blocked":
@@ -161,10 +166,12 @@ def is_candidate(conn: sqlite3.Connection, photo_id: int) -> tuple[bool, str]:
     for c in credits_for(conn, photo):
         if c["consent"] == "no":
             return False, "the credits sheet says no consent"
-    cls = db.one(conn, "SELECT possible_minor, personal_details, subject, space, residential, empty_room "
+    cls = db.one(conn, "SELECT possible_minor, personal_details, subject, space, residential, empty_room, shot_type "
                        "FROM classifications WHERE photo_id=?", (photo_id,))
     if cls is None or cls["possible_minor"] is None:
         return False, "not checked for minors yet"
+    if cls["shot_type"] in NOT_OFFERED:
+        return False, "a costume photo: Event Caliber does no cosplay"
     if cls["subject"] == "architecture":
         why = building_blocked(cls)
         if why:

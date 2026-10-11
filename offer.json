@@ -3,7 +3,7 @@
   "company": "Event Caliber",
   "legal_name": "CKI, LLC",
   "tagline": "Event and convention photography",
-  "event_kinds": ["Fan conventions: comic, anime, gaming and cosplay", "Business and political conferences", "Galas, receptions and award dinners"],
+  "event_kinds": ["Fan conventions: comic, anime and gaming", "Business and political conferences", "Galas, receptions and award dinners"],
   "coverage": [
     {"key": "backstage", "label": "Backstage"},
     {"key": "green_room", "label": "Green rooms"},
@@ -13,7 +13,6 @@
     {"key": "dinners", "label": "Dinners and receptions"},
     {"key": "portraits", "label": "Portraits"},
     {"key": "headshots", "label": "Headshots"},
-    {"key": "cosplay", "label": "Cosplay portraits"},
     {"key": "exhibition_hall", "label": "Exhibition halls"},
     {"key": "vendors", "label": "Vendors and booths"},
     {"key": "on_site_delivery", "label": "Instant delivery by face match: guests scan their badge, add a selfie, and get every photo they are in"}

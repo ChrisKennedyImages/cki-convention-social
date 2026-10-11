@@ -23,7 +23,7 @@ const PRIVATE_PREFIX = "private/";
 const FIELDS = { name: 120, email: 200, phone: 40, organization: 160, event_name: 200, event_kind: 20, start_date: 10,
                  end_date: 10, city: 120, venue: 200, attendance: 40, message: 4000 };
 const COVERAGE = ["backstage", "green_room", "breakouts", "evening_events", "dinners", "portraits", "exhibition_hall",
-                  "vendors", "on_site_delivery", "cosplay", "stage", "headshots"];
+                  "vendors", "on_site_delivery", "stage", "headshots"];
 const PER_HOUR = 5;
 const OPT_OUT_TOKEN = /^[a-f0-9]{32}$/;
 const OPT_OUTS_PER_HOUR = 20;     // per address; mail providers send one-click opt-outs from shared addresses

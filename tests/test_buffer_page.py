@@ -122,7 +122,7 @@ class Page(IsolatedCase):
     def test_the_video_check_feeds_the_publishers_dry_run(self):
         self.fake.schema = {"AssetInput": [field("video", "VideoAssetInput")],
                             "VideoAssetInput": [field("url", "String", True, "SCALAR"), field("thumbnail", "String", False, "SCALAR")]}
-        self.assertIn("read and understood", self.post("/buffer/video"))
+        self.assertIn("Reels can post", self.post("/buffer/video"))
         self.assertIn("url (required), thumbnail", self.client.get("/buffer").text)
         # the dry run builds the reel by what Buffer said, and no longer says it assumed
         self.post("/buffer/find")

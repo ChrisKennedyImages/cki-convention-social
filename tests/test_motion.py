@@ -136,7 +136,7 @@ class DesignSamples(IsolatedCase):
 
     def test_picks_one_frame_per_room_first(self):
         for n, st in enumerate(("stage_panel", "stage_panel", "backstage", "portrait", "vendor_hall", "dinner_reception",
-                                "cosplay_portrait")):
+                                "crowd")):
             self.photo(n, st)
         picked = design_samples.pick(self.conn, 6)
         rooms = [design_samples.ROOMS.get(r["shot_type"], design_samples.OTHER)[0] for r in picked]

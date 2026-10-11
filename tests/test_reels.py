@@ -163,8 +163,9 @@ class Publish(PublisherCase):
         stats = self.publish(make_ctx(self.conn, dry_run=False), client=BufferClient("test-key", conn=self.conn, transport=fake),
                              uploader=self.uploader())
         self.assertEqual(stats["scheduled"], 2)
-        self.assertEqual([op.split("(")[0] for op, _ in fake.calls if "InputType" in op], ["query InputType"] * 2,
-                         "the schema is read once a run, not once a post")
+        asked = [v["name"] for op, v in fake.calls if "InputType" in op]
+        self.assertIn("VideoAssetInput", asked)
+        self.assertEqual(len(asked), len(set(asked)), "each schema type is read once a run, not once a post")
         self.assertIn(("r.mp4", f"convention-social/reels/{qid}-video.mp4"), self.uploads)
         self.assertIn(("cover.jpg", f"convention-social/reels/{qid}-cover.jpg"), self.uploads)
         self.assertIn(("pin-23.jpg", f"convention-social/cards/{qid}-23-1.jpg"), self.uploads)
@@ -214,7 +215,7 @@ class Publish(PublisherCase):
         fake = FakeBuffer()
         self.publish(make_ctx(self.conn, dry_run=False), client=BufferClient("test-key", conn=self.conn, transport=fake),
                      uploader=self.uploader())
-        self.assertFalse([op for op, _ in fake.calls if "InputType" in op])
+        self.assertNotIn("VideoAssetInput", [v["name"] for op, v in fake.calls if "InputType" in op])
         self.assertEqual([k for _, k in self.uploads], [f"convention-social/cards/{qid}-23-1.jpg"])
 
 

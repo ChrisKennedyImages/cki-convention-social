@@ -30,7 +30,6 @@ ROOMS = {
     "backstage": ("BACKSTAGE", "Green rooms and the minutes before the doors open."),
     "portrait": ("PORTRAITS", "Speakers, guests and staff, lit properly."),
     "headshot": ("PORTRAITS", "Speakers, guests and staff, lit properly."),
-    "cosplay_portrait": ("COSPLAY", "Fan conventions shot like the main event they are."),
     "vendor_hall": ("EXPO FLOOR", "Your vendors and exhibitors get their shots too."),
     "booth": ("EXPO FLOOR", "Your vendors and exhibitors get their shots too."),
     "dinner_reception": ("AFTER DARK", "Dinners, receptions and the after party."),
@@ -53,6 +52,8 @@ def usable(conn, row) -> bool:
         return False
     if eligibility.blocked_by_list(conn, photo):
         return False
+    if (row["shot_type"] if "shot_type" in row.keys() else None) in eligibility.NOT_OFFERED:
+        return False                     # a costume photo, which Event Caliber does not offer
     return not any(c["consent"] == "no" for c in eligibility.credits_for(conn, photo))
 
 
