@@ -182,7 +182,8 @@ def cmd_drive(args) -> int:
             return 0
         if args.what == "report":
             from .library import report
-            sheet = report.write_contact_sheet(conn, reader.thumbnail_for, n=args.sheet) if args.sheet else None
+            sheet = (report.write_contact_sheet(conn, reader.thumbnail_for, n=args.sheet, subject=args.subject)
+                     if args.sheet else None)
             out = report.write_report(conn, sheet=sheet)
             print(f"report: {out}")
             if sheet:
@@ -346,6 +347,8 @@ def build_parser() -> argparse.ArgumentParser:
     dv.add_argument("--wait", type=float, default=0, help="login: seconds to wait for the browser to return here")
     dv.add_argument("--classify", type=int, default=0, help="scan: sort this many photos (Ollama free; Claude under the cap)")
     dv.add_argument("--sheet", type=int, default=30, help="report: photos on the contact sheet (0 for none)")
+    dv.add_argument("--subject", choices=["event", "architecture"], default="event",
+                    help="report: which sheet, the convention frames or Chris's building work")
     dv.set_defaults(fn=cmd_drive)
     sub.add_parser("fonts").set_defaults(fn=cmd_fonts)
     sub.add_parser("samples").set_defaults(fn=cmd_samples)
