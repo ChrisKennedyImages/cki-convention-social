@@ -67,6 +67,26 @@ only when Chris says so.
   still per folder, by Chris; readable house numbers and street signs keep a
   photo out.
 
+## 2026-10-10: what the building work may show
+
+- **Architecture is buildings, not rooms.** Chris, after the first building
+  contact sheet: the architecture work must **never** include empty rooms,
+  bathrooms, closets or anything residential. The sheet of 2026-10-10 was
+  full of all four, because the library's building work is largely
+  commissioned real estate photography of apartments. **Bars are fine
+  anywhere.** What is left is what the work was meant to be: building
+  exteriors, and non residential interiors shown as architecture, such as a
+  lobby, an atrium, a ballroom or event space, a bar, or a commercial or
+  retail interior. Residential is asked as its own question, because a flat's
+  hallway and a hotel's hallway are both corridors (`library/classify.py`
+  `BANNED_SPACES`, `library/eligibility.py` `building_blocked`).
+- **Addresses are fine on the building work.** Amending 2026-10-09: a street
+  number or a street name is not a personal detail on Chris's architecture
+  photographs, because they are public buildings and he already holds
+  releases for them. On a photo of people it still blocks, because there the
+  number says where somebody lives (`library/eligibility.py`
+  `ADDRESS_DETAILS`). The sort still reads and records them either way.
+
 ## 2026-10-10: third round
 
 - **Look:** not Lens. Black, white and greys with a touch of cyan. The first

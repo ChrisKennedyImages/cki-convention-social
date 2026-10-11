@@ -49,7 +49,8 @@ class Content(IsolatedCase):
             pid = db.insert(self.conn, "photos", drive_id=did, name=f"{did}.jpg", folder_id=folder, width=3000, height=2000,
                             taken_at="2025:02:14 10:00:00", first_seen_at=now, last_seen_at=now)
             db.insert(self.conn, "classifications", photo_id=pid, method="ollama", subject=subject, convention_name=event,
-                      is_convention=int(subject == "event"), quality=q, possible_minor=0, personal_details="[]", classified_at=now)
+                      is_convention=int(subject == "event"), quality=q, possible_minor=0, personal_details="[]",
+                      space="exterior", residential=0, empty_room=0, sharp=1, light=4, moment=4, classified_at=now)
             self.ids[did] = pid
         self.fetched = []
 
@@ -99,7 +100,7 @@ class Content(IsolatedCase):
         pid = db.insert(self.conn, "photos", drive_id="e4", name="e4.jpg", folder_id="fe", width=3000, height=2000,
                         first_seen_at=now, last_seen_at=now)
         db.insert(self.conn, "classifications", photo_id=pid, method="ollama", subject="event", convention_name="Awesome Con",
-                  quality=2, possible_minor=0, personal_details="[]", classified_at=now)
+                  quality=2, possible_minor=0, personal_details="[]", space="exterior", residential=0, empty_room=0, sharp=1, light=4, moment=4, classified_at=now)
         content.draft_one(self.ctx(), self.fetch, now=datetime(2026, 10, 20, 10, 0, tzinfo=timezone.utc))
         meta = json.loads(self.queue()[3]["rule_report"])
         self.assertEqual((meta["wanted"], meta["subject"], meta["event"]), ("architecture", "event", "Awesome Con"))

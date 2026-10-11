@@ -22,6 +22,7 @@ from typing import Callable, Optional
 from PIL import Image, ImageDraw, ImageOps
 
 from ..core import config, db, settings
+from . import eligibility
 from ..render import fonts
 
 PER_EVENT_CAP = 4
@@ -36,6 +37,7 @@ def _year(row) -> str:
 
 ROW_FIELDS = """
         SELECT p.*, c.method, c.is_convention, c.subject, c.view, c.convention_name, c.event_kind, c.shot_type, c.quality,
+               c.space, c.residential, c.empty_room, c.sharp, c.light, c.moment,
                c.people_count, c.possible_minor, c.personal_details, c.summary, f.path AS folder_path, f.clearance AS folder_clearance
         FROM photos p JOIN classifications c ON c.photo_id = p.id LEFT JOIN drive_folders f ON f.drive_id = p.folder_id
         WHERE p.trashed = 0 AND """
@@ -74,6 +76,24 @@ def summary(conn: sqlite3.Connection) -> dict:
             "by_event": {k: dict(sorted(v.items())) for k, v in sorted(by_event.items(), key=lambda kv: -sum(kv[1].values()))}}
 
 
+def strength(r) -> float:
+    """How strong a picture is, 0 to 10.
+
+    A single "quality 1 to 5" asked once put 16 photos at 5 and almost nothing between, which
+    cannot order a shortlist. Asking separately whether the subject is sharp, what the light is
+    doing and whether anything is happening gives something that can. Softness is the heaviest
+    penalty because no amount of light or moment rescues an out of focus frame, and a photo
+    sorted before these questions existed falls back to the old score so it still ranks.
+    """
+    quality, light, moment = r["quality"] or 0, r["light"], r["moment"]
+    if light is None and moment is None:
+        return float(quality)                      # sorted before the strength questions existed
+    score = quality + (light or 0) + (moment or 0)  # 3 to 15
+    if r["sharp"] == 0:
+        score -= 6
+    return max(0.0, score * 10 / 15)
+
+
 def best(conn: sqlite3.Connection, n: int = 30, *, subject: str = "event") -> list[sqlite3.Row]:
     """The strongest frames, at most PER_EVENT_CAP per event, never a possible minor.
 
@@ -84,9 +104,10 @@ def best(conn: sqlite3.Connection, n: int = 30, *, subject: str = "event") -> li
     """
     source = architecture_rows if subject == "architecture" else convention_rows
     rows = [r for r in source(conn)
-            if r["method"] in ("vision", "ollama") and r["possible_minor"] == 0 and (r["personal_details"] or "[]") == "[]"
-            and r["thumbnail_link"]]
-    rows.sort(key=lambda r: (-(r["quality"] or 0), -(min(r["people_count"] or 0, 3)), -(r["width"] or 0)))
+            if r["method"] in ("vision", "ollama") and r["possible_minor"] == 0 and r["thumbnail_link"]
+            and not eligibility.blocking_details(json.loads(r["personal_details"] or "[]"), subject)
+            and not (subject == "architecture" and eligibility.building_blocked(r))]
+    rows.sort(key=lambda r: (-strength(r), -(min(r["people_count"] or 0, 3)), -(r["width"] or 0)))
     picked, per = [], Counter()
     for r in rows:
         key = (r["convention_name"] if subject != "architecture" else None) or r["folder_id"]

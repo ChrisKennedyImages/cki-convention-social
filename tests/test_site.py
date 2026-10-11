@@ -96,7 +96,7 @@ class Site(IsolatedCase):
                          "VALUES (?,?,?,?, 'cleared', ?, ?)", (f"d{n}", "x.jpg", 3000, 2000, now, now))
             pid = db.one(conn, "SELECT id FROM photos WHERE drive_id=?", (f"d{n}",))["id"]
             db.insert(conn, "classifications", photo_id=pid, method="ollama", subject=subject, possible_minor=0,
-                      personal_details="[]", quality=5 - n, classified_at=now)
+                      personal_details="[]", quality=5 - n, space="exterior", residential=0, empty_room=0, sharp=1, light=4, moment=4, classified_at=now)
             if final:
                 db.insert(conn, "final_checks", photo_id=pid, possible_minor=0, personal_details="[]", model="m", checked_at=now)
         fetched = []

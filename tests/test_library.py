@@ -107,7 +107,10 @@ class FakeClaude:
 
 ADULTS = {"subject": "event", "event_kind": "fan", "event_name_seen": "Katsucon", "shot_type": "cosplay_portrait",
           "view": "interior", "quality": 5, "people_count": 1, "possible_minor": False, "personal_details": [],
-          "summary": "A cosplayer."}
+          "space": "not_a_building", "residential": False, "empty_room": False,
+          "sharp": True, "light": 4, "moment": 4, "summary": "A cosplayer."}
+BUILDING = {**ADULTS, "subject": "architecture", "shot_type": "building_exterior", "view": "exterior",
+            "event_name_seen": "", "people_count": 0, "space": "exterior"}
 
 
 class Eligibility(IsolatedCase):
@@ -375,9 +378,8 @@ class ArchitectureSheet(IsolatedCase):
         classify.folder_pass(conn)
         for drive_id, subject in (("e1", "event"), ("b1", "architecture"), ("b2", "architecture")):
             photo = db.one(conn, "SELECT * FROM photos WHERE drive_id=?", (drive_id,))
-            classify.save_sort(conn, photo, {**ADULTS, "subject": subject, "view": "exterior",
-                                             "shot_type": "building_exterior" if subject == "architecture" else "portrait"},
-                               "ollama", "m")
+            data = BUILDING if subject == "architecture" else {**ADULTS, "shot_type": "portrait"}
+            classify.save_sort(conn, photo, data, "ollama", "m")
         conn.commit()
         return conn, reader, d
 
@@ -399,13 +401,49 @@ class ArchitectureSheet(IsolatedCase):
         self.assertNotEqual(sheet, other, "one sheet must not overwrite the other")
 
     def test_a_building_with_a_readable_detail_is_still_kept_out(self):
-        """A house number or a street sign keeps a photo out (Chris, 2026-10-09)."""
         conn, _, _ = self._sorted_library()
         photo = db.one(conn, "SELECT * FROM photos WHERE drive_id='b1'")
-        classify.save_sort(conn, photo, {**ADULTS, "subject": "architecture", "view": "exterior",
-                                         "personal_details": ["house_number"]}, "ollama", "m")
+        classify.save_sort(conn, photo, {**BUILDING, "personal_details": ["badge_name"]}, "ollama", "m")
         conn.commit()
         self.assertEqual({r["drive_id"] for r in report.best(conn, 30, subject="architecture")}, {"b2"})
+
+    def test_an_address_does_not_block_a_building_but_does_block_people(self):
+        """Chris, 2026-10-10: these are public buildings he holds releases for, so a street
+        number is not a personal detail on them. On a photo of people it still is."""
+        conn, _, _ = self._sorted_library()
+        for drive_id, detail in (("b1", "house_number"), ("b2", "street_sign")):
+            photo = db.one(conn, "SELECT * FROM photos WHERE drive_id=?", (drive_id,))
+            classify.save_sort(conn, photo, {**BUILDING, "personal_details": [detail]}, "ollama", "m")
+        photo = db.one(conn, "SELECT * FROM photos WHERE drive_id='e1'")
+        classify.save_sort(conn, photo, {**ADULTS, "personal_details": ["house_number"]}, "ollama", "m")
+        conn.commit()
+        self.assertEqual({r["drive_id"] for r in report.best(conn, 30, subject="architecture")}, {"b1", "b2"})
+        self.assertEqual(report.best(conn, 30), [], "a house number still blocks a photo of people")
+
+    def test_nothing_residential_and_no_empty_room_however_smart(self):
+        """Chris, 2026-10-10: never anything residential, never an empty room, never a bathroom
+        or a closet. Bars are fine anywhere."""
+        conn, _, _ = self._sorted_library()
+        photo = db.one(conn, "SELECT * FROM photos WHERE drive_id='b1'")
+        for data, allowed in ((dict(BUILDING, space="bar"), True),
+                              (dict(BUILDING, space="lobby"), True),
+                              (dict(BUILDING, space="lobby", residential=True), False),
+                              (dict(BUILDING, space="bathroom"), False),
+                              (dict(BUILDING, space="closet_or_utility"), False),
+                              (dict(BUILDING, space="office", empty_room=True), False),
+                              (dict(BUILDING, space="not_a_building"), False)):
+            classify.save_sort(conn, photo, data, "ollama", "m")
+            conn.commit()
+            got = "b1" in {r["drive_id"] for r in report.best(conn, 30, subject="architecture")}
+            self.assertEqual(got, allowed, f"space={data['space']} residential={data['residential']} "
+                                           f"empty={data['empty_room']}")
+
+    def test_an_unsorted_building_fails_closed(self):
+        conn, _, _ = self._sorted_library()
+        conn.execute("UPDATE classifications SET space=NULL WHERE photo_id="
+                     "(SELECT id FROM photos WHERE drive_id='b1')")
+        conn.commit()
+        self.assertNotIn("b1", {r["drive_id"] for r in report.best(conn, 30, subject="architecture")})
 
 
 class SortQueue(IsolatedCase):
