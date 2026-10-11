@@ -80,6 +80,44 @@ def blocked_by_list(conn: sqlite3.Connection, photo: sqlite3.Row) -> str | None:
     return None
 
 
+# A street number or a street name on a building Chris photographed is not a personal detail:
+# they are public buildings and he holds releases for them (Chris, 2026-10-10). On a photo of
+# people it still blocks, because there the number says where somebody lives.
+ADDRESS_DETAILS = frozenset({"house_number", "street_sign"})
+
+
+def blocking_details(details: list, subject: str | None) -> list:
+    """The readable details that stop this photo. Addresses are kept out of the answer for
+    architecture, and only for architecture."""
+    if subject != "architecture":
+        return list(details)
+    return [d for d in details if d not in ADDRESS_DETAILS]
+
+
+def building_blocked(cls: sqlite3.Row) -> str:
+    """Why this building frame may never be used, or "".
+
+    Chris, 2026-10-10, after the first building sheet: the architecture work is buildings, never
+    rooms. No empty room, no bathroom, no closet, nothing residential. Bars are fine anywhere.
+    The library's building work is largely commissioned real estate photography of apartments, so
+    most of it is exactly what he ruled out. Fails closed: a frame sorted before these questions
+    existed has space NULL and is not used until it is sorted again.
+    """
+    from . import classify
+    space = cls["space"]
+    if space is None:
+        return "not sorted for what the building frame shows"
+    if cls["residential"] != 0:
+        return "a building frame may not show somebody's home"
+    if space in classify.BANNED_SPACES:
+        return f"a building frame may not show a {space.replace('_', ' ')}"
+    if space == "not_a_building":
+        return "sorted as architecture but the frame shows no building"
+    if cls["empty_room"] != 0:
+        return "an empty room is not a building frame"
+    return ""
+
+
 def is_candidate(conn: sqlite3.Connection, photo_id: int) -> tuple[bool, str]:
     photo = db.one(conn, "SELECT * FROM photos WHERE id=?", (photo_id,))
     if photo is None:
@@ -96,15 +134,21 @@ def is_candidate(conn: sqlite3.Connection, photo_id: int) -> tuple[bool, str]:
     for c in credits_for(conn, photo):
         if c["consent"] == "no":
             return False, "the credits sheet says no consent"
-    cls = db.one(conn, "SELECT possible_minor, personal_details FROM classifications WHERE photo_id=?", (photo_id,))
+    cls = db.one(conn, "SELECT possible_minor, personal_details, subject, space, residential, empty_room "
+                       "FROM classifications WHERE photo_id=?", (photo_id,))
     if cls is None or cls["possible_minor"] is None:
         return False, "not checked for minors yet"
+    if cls["subject"] == "architecture":
+        why = building_blocked(cls)
+        if why:
+            return False, why
     if cls["possible_minor"] != 0:
         return False, "someone in it may be under 18"
     try:
         details = json.loads(cls["personal_details"] or "[]")
     except ValueError:
         return False, "personal details check unreadable"
+    details = blocking_details(details, cls["subject"])
     if details:
         return False, "shows personal details: " + ", ".join(map(str, details))
     return True, "ok"
@@ -123,6 +167,8 @@ def is_eligible(conn: sqlite3.Connection, photo_id: int) -> tuple[bool, str]:
         details = json.loads(fc["personal_details"] or "[]")
     except ValueError:
         return False, "final check unreadable"
+    subject = db.one(conn, "SELECT subject FROM classifications WHERE photo_id=?", (photo_id,))
+    details = blocking_details(details, subject["subject"] if subject else None)
     if details:
         return False, "the final check found personal details: " + ", ".join(map(str, details))
     return True, "ok"

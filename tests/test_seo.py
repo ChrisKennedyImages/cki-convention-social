@@ -72,7 +72,8 @@ class SeoCase(AgentCase):
         pid = db.insert(self.conn, "photos", drive_id=f"drive-{self.n}", name=f"p{self.n}.jpg", folder_id=folder, taken_at=taken,
                         first_seen_at=now, last_seen_at=now)
         db.insert(self.conn, "classifications", photo_id=pid, method="vision", subject=subject, shot_type=shot, convention_name=event,
-                  event_kind=kind, view=view, possible_minor=0, personal_details="[]", summary=summary, classified_at=now)
+                  event_kind=kind, view=view, possible_minor=0, personal_details="[]", summary=summary,
+                  space="exterior", residential=0, empty_room=0, sharp=1, light=4, moment=4, classified_at=now)
         if final:
             db.insert(self.conn, "final_checks", photo_id=pid, possible_minor=0, personal_details="[]", model="claude-opus-5",
                       checked_at=now)

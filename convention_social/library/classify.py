@@ -43,11 +43,37 @@ THUMB_EDGE = 512
 SHOT_TYPES = ("cosplay_portrait", "portrait", "group", "candid", "stage_panel", "vendor_hall", "booth",
               "backstage", "dinner_reception", "headshot", "crowd", "venue", "building_exterior", "building_interior", "other")
 DETAILS = ("badge_name", "vehicle_plate", "screen", "document", "house_number", "street_sign")
+# What an architecture frame shows. Chris, 2026-10-10, after the first building sheet: the
+# building work is buildings, never rooms. The library's architecture is largely commissioned
+# real estate photography of apartments, so empty rooms, bathrooms, closets and residential
+# interiors all have to be named to be kept out.
+SPACES = ("exterior", "lobby", "atrium", "ballroom_or_event_space", "office", "retail", "bar",
+          "corridor", "bathroom", "closet_or_utility", "not_a_building")
+# Chris, 2026-10-10: nothing residential, and no empty rooms. Bars are fine anywhere. A bathroom
+# or a closet is not a building frame wherever it is, so those two go by space; everything else
+# turns on the `residential` answer, which catches a flat's hallway as surely as its bedroom.
+BANNED_SPACES = frozenset({"bathroom", "closet_or_utility"})
 
 SYSTEM = """You sort a photographer's archive of event and architecture work. For each photo, say what it shows, factually and briefly.
 subject: "event" for conventions, conferences, galas, expos and similar gatherings; "architecture" for a building, its exterior or its interior shown as architecture; "other" for anything else.
 Judge only what is visible. When unsure whether anyone could be under 18, answer true.
-List personal details only when they are actually readable: a name on a badge, a vehicle plate, a screen or document with personal information, a house number, a street sign.
+
+Read the picture for text before you answer about it. Look at signs above doors, numbers on
+facades, street signs, name badges, screens and papers. house_number means any street number on a
+building, however small. street_sign means any road or street name. Report them whenever they are
+readable; what is done with them is decided later.
+
+space says what an architecture frame shows. Use "exterior" for a building from outside, and
+"not_a_building" when the photo is not architecture at all.
+residential: true when the space is somebody's home: a flat or house, inside or its own private
+rooms. A hotel, an office, a shop, a bar or a venue is not residential.
+empty_room: true when a room has no people in it and is unfurnished or nearly so.
+
+Then judge the picture as a photographer would:
+sharp: true when the main subject is in focus.
+light: 1 (flat, blown or muddy) to 5 (light that makes the picture).
+moment: 1 (nothing happening, a blink, a turned back) to 5 (a real expression or a moment worth
+keeping). For a building, judge the composition instead.
 Return JSON only, matching the schema."""
 
 SCHEMA = {
@@ -59,12 +85,19 @@ SCHEMA = {
         "shot_type": {"type": "string", "enum": list(SHOT_TYPES)},
         "view": {"type": "string", "enum": ["exterior", "interior", "none"]},
         "quality": {"type": "integer", "description": "technical quality 1 (unusable) to 5 (portfolio)"},
+        "space": {"type": "string", "enum": list(SPACES), "description": "what an architecture frame shows"},
+        "residential": {"type": "boolean", "description": "the space is somebody's home"},
+        "empty_room": {"type": "boolean", "description": "a room with no people, unfurnished or nearly so"},
+        "sharp": {"type": "boolean", "description": "the main subject is in focus"},
+        "light": {"type": "integer", "description": "1 flat or blown, 5 light that makes the picture"},
+        "moment": {"type": "integer", "description": "1 nothing happening, 5 a real moment; for a building, composition"},
         "people_count": {"type": "integer"},
         "possible_minor": {"type": "boolean"},
         "personal_details": {"type": "array", "items": {"type": "string", "enum": list(DETAILS)}},
         "summary": {"type": "string", "description": "one short sentence"},
     },
-    "required": ["subject", "event_kind", "event_name_seen", "shot_type", "view", "quality", "people_count",
+    "required": ["subject", "event_kind", "event_name_seen", "shot_type", "view", "quality", "space",
+                 "residential", "empty_room", "sharp", "light", "moment", "people_count",
                  "possible_minor", "personal_details", "summary"],
     "additionalProperties": False,
 }
@@ -271,19 +304,33 @@ def event_name_seen(value) -> Optional[str]:
     return None if name.lower() in NO_NAME else name
 
 
+def _score_1_5(value) -> Optional[int]:
+    return max(1, min(5, int(value))) if isinstance(value, int) else None
+
+
+def _flag(value, default: bool) -> int:
+    """A missing or unreadable answer takes the default, and every default here is the safe one."""
+    return 1 if (default if not isinstance(value, bool) else value) else 0
+
+
 def save_sort(conn: sqlite3.Connection, photo: sqlite3.Row, data: dict, method: str, model: str) -> None:
-    q = data.get("quality")
     subject = data.get("subject") if data.get("subject") in ("event", "architecture", "other") else None
     view = data.get("view") if data.get("view") in ("exterior", "interior") else None
+    space = data.get("space") if data.get("space") in SPACES else None
     conn.execute(
         "UPDATE classifications SET method=?, is_convention=?, subject=?, view=?, "
         "convention_name=COALESCE(?, convention_name), "
         "event_kind=CASE WHEN ?='unknown' THEN event_kind ELSE ? END, shot_type=?, quality=?, people_count=?, personal_details=?, "
-        "possible_minor=?, summary=?, model=?, classified_at=? WHERE photo_id=?",
+        "possible_minor=?, space=?, residential=?, empty_room=?, sharp=?, light=?, moment=?, "
+        "summary=?, model=?, classified_at=? WHERE photo_id=?",
         (method, int(subject == "event"), subject, view, event_name_seen(data.get("event_name_seen")),
          data.get("event_kind"), data.get("event_kind"), data.get("shot_type"),
-         max(1, min(5, int(q))) if isinstance(q, int) else None, int(data.get("people_count") or 0),
-         json.dumps(data.get("personal_details") or []), 1 if data.get("possible_minor", True) else 0,
+         _score_1_5(data.get("quality")), int(data.get("people_count") or 0),
+         json.dumps(data.get("personal_details") or []), _flag(data.get("possible_minor"), True),
+         space, _flag(data.get("residential"), True),   # unreadable counts as residential, so it is kept out
+         _flag(data.get("empty_room"), True),      # and as empty, likewise
+         _flag(data.get("sharp"), False),          # and as not sharp, so it does not rank
+         _score_1_5(data.get("light")), _score_1_5(data.get("moment")),
          (data.get("summary") or "")[:300], model, db.utcnow(), photo["id"]))
 
 
