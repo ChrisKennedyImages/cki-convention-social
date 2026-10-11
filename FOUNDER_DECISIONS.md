@@ -214,6 +214,23 @@ only when Chris says so.
   when it lags the checkout; if it still lags after one restart, Chris gets the
   one command that restarts it (`agents/updater.py` `ensure_dashboard`).
 
+## 2026-10-11: the Photos tab, the Mini's disk
+
+- **"Photos tab is dead."** Every visit loaded the whole library twice before
+  showing 48 photos. The tab now reads one page from the database, with the
+  same rules and order (`dashboard/app.py` `photo_page`, pinned against the old
+  lists in `tests/test_photos_tab.py`). A page that fails says what failed and
+  records it on the Agents page; when Drive is signed out the Photos tab says
+  that is why the pictures do not load.
+- **"The mini can't hold all these high res images."** Originals stay in Google
+  Drive. The Mini keeps small previews, the full-size copy of each photo picked
+  for a post, and the rendered posts; the company's bucket gets only the files
+  of posts that go out. Every night the backup agent deletes the copies nothing
+  needs any more, only inside the data folder, and says how much disk is free
+  (`storage.py`).
+- **Music in an .mp4.** An audio-only .mp4 is taken as a track; a file with no
+  sound is refused (`music.py`).
+
 ## Standing rules from the brief
 
 - Nothing publishes without Chris's Approve on the dashboard, until he says

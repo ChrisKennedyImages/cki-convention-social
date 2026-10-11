@@ -14,7 +14,7 @@ from typing import Optional
 
 from .core import config, db
 
-ALLOWED = (".mp3", ".m4a", ".aac", ".wav")
+ALLOWED = (".mp3", ".m4a", ".aac", ".wav", ".mp4")    # .mp4: phones and Macs save audio-only tracks that way too
 MAX_BYTES = 25 * 1024 * 1024
 FIELDS = ("title", "artist", "source", "terms")
 
@@ -43,7 +43,21 @@ def add(conn: sqlite3.Connection, filename: str, data: bytes, *, title: str, art
     name = f"{stem}-{db.utcnow()[:19].replace(':', '').replace('-', '')}{ext}"
     folder().mkdir(parents=True, exist_ok=True)
     (folder() / name).write_bytes(data)
+    if not has_sound(folder() / name):
+        (folder() / name).unlink()
+        raise Refused("ffmpeg finds no sound in that file")
     return db.insert(conn, "music_tracks", file=name, added_at=db.utcnow(), **{k: v.strip() for k, v in record.items()})
+
+
+def has_sound(path: Path) -> bool:
+    """True when ffmpeg reads an audio stream in the file (the encoder that mixes it into reels)."""
+    import subprocess
+    from .render.reel import ffmpeg_path
+    try:
+        probe = subprocess.run([ffmpeg_path(), "-hide_banner", "-i", str(path)], capture_output=True, text=True, timeout=60).stderr
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return "Audio:" in probe
 
 
 def tracks(conn: sqlite3.Connection) -> list[sqlite3.Row]:

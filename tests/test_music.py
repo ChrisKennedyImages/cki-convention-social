@@ -117,3 +117,32 @@ class Page(IsolatedCase):
         page = self.client.get("/library?view=design").text
         self.assertIn("Night Shift by Sample Artist", page)
         self.assertIn("Music for reels", page)
+
+
+class Formats(IsolatedCase):
+    """Chris sent an audio-only .mp4 (2026-10-11): such a track is taken; a file with no sound is not."""
+    def setUp(self):
+        super().setUp()
+        self.conn = db.connect()
+
+    def tearDown(self):
+        self.conn.close()
+        super().tearDown()
+
+    def mp4(self, audio: bool) -> bytes:
+        src = self.root / "t.wav"
+        src.write_bytes(tone(1.0))
+        out = self.root / ("a.mp4" if audio else "v.mp4")
+        args = ["-i", str(src), "-c:a", "aac"] if audio else ["-f", "lavfi", "-i", "color=c=black:s=64x64:d=1", "-c:v", "libx264"]
+        subprocess.run([reel.ffmpeg_path(), "-y", "-loglevel", "error", *args, str(out)], check=True)
+        return out.read_bytes()
+
+    def test_an_audio_only_mp4_is_a_track_and_a_silent_file_is_refused(self):
+        tid = music.add(self.conn, "Legendary.mp4", self.mp4(audio=True), **RECORD)
+        self.assertTrue(tid)
+        self.assertTrue(music.current(self.conn).name.endswith(".mp4"))
+        for name, data in (("silent.mp4", self.mp4(audio=False)), ("fake.mp3", b"ID3 not really audio")):
+            with self.assertRaises(music.Refused):
+                music.add(self.conn, name, data, **dict(RECORD, title=name))
+        self.assertEqual([t["id"] for t in music.tracks(self.conn)], [tid])
+        self.assertEqual(len(list(music.folder().iterdir())), 1, "a refused file is not kept")

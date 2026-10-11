@@ -222,35 +222,60 @@ def latest_design() -> Optional[str]:
 
 
 PAGE = 48
-PHOTO_FIELDS = """SELECT p.*, c.method, c.subject, c.shot_type, c.quality, c.sharp, c.light, c.moment, c.possible_minor,
-                         c.personal_details, f.name AS folder_name
-                  FROM photos p LEFT JOIN classifications c ON c.photo_id = p.id
-                  LEFT JOIN drive_folders f ON f.drive_id = p.folder_id WHERE p.trashed = 0"""
+SORTED = "c.method IN ('ollama', 'vision')"
+# report.strength, in SQL: the old single score for a photo sorted before the strength questions,
+# else quality + light + moment, minus 6 when the subject is soft, on 0 to 10.
+STRENGTH = """CASE WHEN c.light IS NULL AND c.moment IS NULL THEN COALESCE(c.quality, 0) * 1.0
+                   ELSE MAX(0.0, (COALESCE(c.quality, 0) + COALESCE(c.light, 0) + COALESCE(c.moment, 0)
+                                  - CASE WHEN c.sharp = 0 THEN 6 ELSE 0 END) * 10.0 / 15) END"""
+DECISION = "CASE WHEN p.clearance IN ('blocked', 'cleared') THEN p.clearance ELSE COALESCE(fd.decision, 'not_cleared') END"
+PAGE_FROM = """FROM photos p LEFT JOIN classifications c ON c.photo_id = p.id
+               LEFT JOIN drive_folders f ON f.drive_id = p.folder_id
+               LEFT JOIN temp.folder_decision fd ON fd.drive_id = p.folder_id"""
+VIEWS = {
+    # Sorted photos Chris has not decided on that could ever be used: nobody who may be under 18,
+    # no readable personal detail (temp.hidden_photo). Strongest first.
+    "review": (f"p.trashed = 0 AND {SORTED} AND c.possible_minor = 0 AND {DECISION} = 'not_cleared' "
+               "AND p.id NOT IN (SELECT id FROM temp.hidden_photo)",
+               f"({STRENGTH}) DESC, p.id"),
+    # Everything Chris cleared, by the photo itself or by its folder. Sorted ones first, strongest first.
+    "approved": (f"p.trashed = 0 AND {DECISION} = 'cleared'",
+                 f"CASE WHEN {SORTED} THEN 0 ELSE 1 END, CASE WHEN {SORTED} THEN ({STRENGTH}) ELSE 0 END DESC, p.id"),
+}
 
 
-def _sorted(r) -> bool:
-    return r["method"] in ("ollama", "vision")
+def prepare_photo_views(conn, decisions) -> None:
+    """Per connection: each folder's decision, and the photos a readable personal detail keeps off
+    the review list (eligibility.blocking_details, read only for the few photos that list any)."""
+    conn.execute("CREATE TEMP TABLE IF NOT EXISTS folder_decision (drive_id TEXT PRIMARY KEY, decision TEXT NOT NULL)")
+    conn.execute("CREATE TEMP TABLE IF NOT EXISTS hidden_photo (id INTEGER PRIMARY KEY)")
+    conn.execute("DELETE FROM temp.folder_decision")
+    conn.execute("DELETE FROM temp.hidden_photo")
+    conn.executemany("INSERT INTO temp.folder_decision VALUES (?, ?)", [(k, v) for k, v in decisions.items() if v != "not_cleared"])
+    hidden = []
+    for r in db.rows(conn, "SELECT c.photo_id, c.personal_details, c.subject FROM classifications c "
+                           "WHERE c.personal_details IS NOT NULL AND TRIM(c.personal_details) NOT IN ('', '[]')"):
+        try:
+            details = json.loads(r["personal_details"])
+        except ValueError:
+            details = ["unreadable"]
+        if eligibility.blocking_details(details, r["subject"]):
+            hidden.append((r["photo_id"],))
+    conn.executemany("INSERT INTO temp.hidden_photo VALUES (?)", hidden)
 
 
-def review_photos(conn, decisions) -> list[dict]:
-    """Sorted photos Chris has not decided on, that could ever be used: nobody who may be under 18,
-    no readable personal detail. Strongest first."""
-    out = []
-    for r in db.rows(conn, PHOTO_FIELDS):
-        if not _sorted(r) or r["possible_minor"] != 0 or eligibility.decision_of(r, decisions) != "not_cleared":
-            continue
-        if eligibility.blocking_details(json.loads(r["personal_details"] or "[]"), r["subject"]):
-            continue
-        out.append(dict(r))
-    out.sort(key=lambda r: -report.strength(r))
-    return out
+def count_photos(conn, view: str) -> int:
+    return db.one(conn, f"SELECT COUNT(*) AS n {PAGE_FROM} WHERE {VIEWS[view][0]}")["n"]
 
 
-def approved_photos(conn, decisions) -> list[dict]:
-    """Everything Chris cleared, by the photo itself or by its folder. Sorted ones first, strongest first."""
-    out = [dict(r) for r in db.rows(conn, PHOTO_FIELDS) if eligibility.decision_of(r, decisions) == "cleared"]
-    out.sort(key=lambda r: (0 if _sorted(r) else 1, -report.strength(r) if _sorted(r) else 0))
-    return out
+def photo_page(conn, view: str, page: int, size: int = PAGE) -> list[dict]:
+    """One page of a photo list, read straight from the database: the Photos tab never loads the
+    whole library (Chris, 2026-10-11: "Photos tab is dead")."""
+    where, order = VIEWS[view]
+    return [dict(r) for r in db.rows(conn, f"""SELECT p.*, c.method, c.subject, c.shot_type, c.quality, c.sharp, c.light, c.moment,
+                                                      c.possible_minor, c.personal_details, f.name AS folder_name
+                                               {PAGE_FROM} WHERE {where} ORDER BY {order} LIMIT ? OFFSET ?""",
+                                     (size, (page - 1) * size))]
 
 
 def running_commit() -> str:
@@ -295,8 +320,39 @@ def buffer_state(conn) -> dict:
             "publisher_live": not settings.dry_run(conn, "publisher"), "networks": buffer_payloads.NETWORKS}
 
 
+CRASH_PAGE = """<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Something broke</title><style>body{{margin:0;padding:18px;font:16px/1.5 -apple-system,Helvetica,Arial,sans-serif;background:#f4f4f2;color:#17171a}}
+.card{{background:#fff;border:1px solid #e2e1dc;border-radius:12px;padding:14px;margin:0 0 14px}}code{{word-break:break-word}}a{{color:#1f4fd1;font-weight:600}}</style></head>
+<body><h1>This page broke</h1><div class="card">Page: <code>{path}</code><br>What failed: <code>{what}</code></div>
+<div class="card">It is recorded on <a href="/agents">Agents</a> (error {eid}), with the details. Nothing was changed by it.</div>
+<a href="/">Back to Today</a></body></html>"""
+
+
+def record_crash(path: str, exc: BaseException) -> Optional[int]:
+    """A page that fails says so and leaves its trace on the Agents page, instead of a dead screen."""
+    import traceback
+    from ..core import runner
+    try:
+        conn = db.connect()
+        try:
+            return runner.record_error(conn, "dashboard", "page_error", f"{path}: {type(exc).__name__}: {exc}"[:500],
+                                       tb="".join(traceback.format_exception(exc))[-8000:])
+        finally:
+            conn.close()
+    except Exception:  # noqa: BLE001  the page still answers when even the database cannot be reached
+        return None
+
+
 def create_app() -> FastAPI:
     app = FastAPI(title="review", docs_url=None, redoc_url=None, openapi_url=None)
+
+    @app.exception_handler(Exception)
+    async def crashed(request: Request, exc: Exception):
+        import html as html_mod
+        eid = record_crash(request.url.path, exc)
+        return HTMLResponse(CRASH_PAGE.format(path=html_mod.escape(request.url.path),
+                                              what=html_mod.escape(f"{type(exc).__name__}: {exc}"[:300]),
+                                              eid=eid if eid is not None else "not saved"), status_code=500)
 
     @app.middleware("http")
     async def never_stale(request: Request, call_next):
@@ -435,10 +491,9 @@ def create_app() -> FastAPI:
         each with Use and Don't use. Approved: everything cleared, by the photo or its folder.
         Folders: clear a whole shoot at once. Design and music: samples on approved photos only."""
         msg = request.query_params.get("msg", "")
-        decisions = eligibility.folder_decisions(conn)
-        lists = {"review": review_photos(conn, decisions), "approved": approved_photos(conn, decisions)}
-        counts = {k: len(v) for k, v in lists.items()}
-        common = dict(view=view, msg=msg, counts=counts)
+        prepare_photo_views(conn, eligibility.folder_decisions(conn))
+        common = dict(view=view, msg=msg, counts={"approved": count_photos(conn, "approved")} if view == "design" else {},
+                      drive_state=settings.get(conn, "drive.auth_state") or "missing")
         if view == "folders":
             where = "conv > 0" if show == "events" else ("f.clearance='cleared'" if show == "cleared" else "1=1")
             rows = db.rows(conn, f"""
@@ -461,17 +516,17 @@ def create_app() -> FastAPI:
             return render(request, "library.html", renders=latest_renders(), design=latest_design(), tracks=music.tracks(conn),
                           **common)
         view = "approved" if view == "approved" else "review"
-        items = lists[view]
-        pages = max(1, (len(items) + PAGE - 1) // PAGE)
+        total = count_photos(conn, view)
+        pages = max(1, (total + PAGE - 1) // PAGE)
         page = max(1, min(page, pages))
-        shown = items[(page - 1) * PAGE: page * PAGE]
+        shown = photo_page(conn, view, page)
         for i, p in enumerate(shown):
             # after a tap the page comes back to the next photo, since the one tapped may leave this list
             nxt = shown[i + 1]["id"] if i + 1 < len(shown) else p["id"]
             p["back"] = f"/library?view={view}&page={page}#p{nxt}"
             p["why"] = eligibility.is_candidate(conn, p["id"]) if view == "approved" else None
         common["view"] = view
-        return render(request, "library.html", items=shown, page=page, pages=pages, total=len(items), **common)
+        return render(request, "library.html", items=shown, page=page, pages=pages, total=total, **common)
 
     @app.get("/more", response_class=HTMLResponse)
     def more(request: Request, user: str = Depends(require_user)):
