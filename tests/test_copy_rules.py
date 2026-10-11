@@ -49,6 +49,22 @@ class CopyRules(unittest.TestCase):
     def test_promises_blocked(self):
         self.assertFalse(copy_rules.check("Guaranteed the best shots.").ok)
 
+    def test_offer_talk_is_blocked_on_social_copy_only(self):
+        """Chris, 2026-10-11: "keep to specifics and not talk about what is offered or what is a service,
+        specifically in captions and social media"."""
+        for text in ("Every room of your event, covered.", "Your vendors and exhibitors get their shots too.",
+                     "Photo delivery by face match while the event is on.", "We cover whole events.",
+                     "Our services for conferences.", "Full coverage from the keynote on.", "Scan a badge, add a selfie.",
+                     "Conference photography and what we offer."):
+            r = copy_rules.check(text, social=True)
+            self.assertIn("offer", [b.rule for b in r.blocks], text)
+            self.assertIn("what the photo shows", r.blocks[0].message)
+            self.assertTrue(copy_rules.check(text).ok, f"a quote reply or a note to an organizer may say it: {text}")
+        for text in ("Conference photography: a speaker on the main stage. Event Caliber, event photographer.",
+                     "Based in Washington DC, covering events nationwide. Request a quote for your event.",
+                     "The keynote, from the room.", "ONE EVENT. ROOM BY ROOM."):
+            self.assertTrue(copy_rules.check(text, social=True).ok, text)
+
     def test_tidy_turns_dashes_into_commas(self):
         out = tidy("Backstage — before the panel -- calm")
         self.assertTrue(copy_rules.check(out).ok, out)

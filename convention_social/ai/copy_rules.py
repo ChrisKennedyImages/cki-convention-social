@@ -19,6 +19,11 @@ Blocks:
               portraits like this one, shot on site in a few minutes": "Suite wide - NOTHING
               INCLUDES ANYTHING! Don't ever say something you don't know or don't ask me about my
               own company." The facts come from offer.json and him; everything else is a question.
+  offer       social copy only (callers pass `social=True`: captions, the cards, the reels): any talk of
+              what is offered or what a service is: offer, service, coverage, covered, delivery, face
+              match, selfie, "we cover", "your vendors", "every room". Chris, 2026-10-11: "keep to
+              specifics and not talk about what is offered or what is a service, specifically in
+              captions and social media". A post is about the photo; the rest is between him and the client.
 """
 from __future__ import annotations
 
@@ -46,6 +51,13 @@ CLAIMS = re.compile(
     r"|\bwithin\s+(?:minutes|hours|an?\s+(?:hour|day|week)|\d+)\b|\bin\s+(?:a\s+few\s+|just\s+|under\s+)?minutes\b",
     re.IGNORECASE,
 )
+OFFER = re.compile(
+    r"\bwe\s+(?:offer|cover|deliver|provide|shoot|photograph|also|do|bring|make)\b|\boffer(?:s|ed|ing|ings)?\b"
+    r"|\bour\s+services?\b|\bservices?\b|\bcoverage\b|\bcovered\b|\bdeliver(?:y|ed|s|ing)?\b|\bprovid(?:e|es|ed|ing)\b"
+    r"|\bface\s+match\b|\bselfies?\b|\bgets?\s+their\s+(?:photos?|shots?|pictures?)\b"
+    r"|\byour\s+(?:vendors|exhibitors|guests|staff|team|attendees|speakers|sponsors)\b|\bevery\s+(?:room|guest|attendee)\b",
+    re.IGNORECASE,
+)
 
 
 @dataclass
@@ -66,9 +78,10 @@ class Report:
         return {"ok": self.ok, "blocks": [{"rule": b.rule, "message": b.message} for b in self.blocks]}
 
 
-def check(text: str, *, official: bool = False, allow_price: bool = False, names=None) -> Report:
+def check(text: str, *, official: bool = False, allow_price: bool = False, names=None, social: bool = False) -> Report:
     """`allow_price` only for a private quote reply Chris wrote the price into himself; never for public copy.
-    `names` (ai/names.public_names) for public copy: no event, company or person is named in it."""
+    `names` (ai/names.public_names) for public copy: no event, company or person is named in it.
+    `social` for captions and cards: nothing about what is offered or what a service is."""
     report = Report()
     text = text or ""
     m = None if allow_price else PRICE.search(text)
@@ -86,6 +99,10 @@ def check(text: str, *, official: bool = False, allow_price: bool = False, names
     if m:
         report.blocks.append(Block("claims", f"says something about the company Chris has not stated ({m.group(0)!r}); nothing includes "
                                              "anything, and nothing about how the work is done, what comes with it or when"))
+    m = OFFER.search(text) if social else None
+    if m:
+        report.blocks.append(Block("offer", f"talks about what is offered ({m.group(0)!r}); a post keeps to what the photo shows, "
+                                            "never a service"))
     if names is not None:
         from .names import mentions
         hit = mentions(text, names)

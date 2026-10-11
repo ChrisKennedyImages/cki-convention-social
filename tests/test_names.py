@@ -105,7 +105,7 @@ class Writers(IsolatedCase):
     def test_the_line_printed_on_the_post_names_no_event(self):
         self.assertEqual(content.kicker_for({"subject": "event", "event_kind": "business", "convention_name": "CPAC 2025"}), "Conferences")
         self.assertEqual(content.kicker_for({"subject": "event", "event_kind": "fan", "convention_name": "Katsucon"}), "Fan conventions")
-        self.assertEqual(content.kicker_for({"subject": "event", "event_kind": None}), "Event coverage")
+        self.assertEqual(content.kicker_for({"subject": "event", "event_kind": None}), "Events")
 
     def test_the_search_fields_in_the_image_file_name_no_one(self):
         conn = db.connect()

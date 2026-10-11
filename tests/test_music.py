@@ -78,7 +78,7 @@ class Encode(IsolatedCase):
         self.assertIn("Video: h264", probe)
         self.assertNotIn("Audio:", probe)
 
-    def test_the_samples_pass_the_current_track_to_both_reels(self):
+    def test_the_samples_pass_the_current_track_to_the_reel(self):
         conn = db.connect()
         music.add(conn, "one.wav", tone(), **RECORD)
         seen = {}
@@ -90,11 +90,10 @@ class Encode(IsolatedCase):
                 return out
             return job
         with mock.patch.object(design_samples, "pick", return_value=[{"drive_id": f"d{i}", "shot_type": "stage_panel"} for i in range(3)]), \
-             mock.patch.object(motion, "rooms_reel", fake("rooms")), mock.patch.object(motion, "facematch_reel", fake("facematch")):
+             mock.patch.object(motion, "rooms_reel", fake("rooms")):
             buf = io.BytesIO(); shots[0].photo.save(buf, "JPEG")
             design_samples.make(conn, lambda fid: buf.getvalue(), out_root=self.root / "renders", log=lambda m: None)
-        self.assertEqual(seen["rooms"], music.current(conn))
-        self.assertEqual(seen["facematch"], music.current(conn))
+        self.assertEqual(seen, {"rooms": music.current(conn)}, "the face match reel is retired; only the rooms reel is made")
         conn.close()
 
 

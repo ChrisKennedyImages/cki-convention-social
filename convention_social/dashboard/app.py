@@ -163,7 +163,7 @@ def queue_view(conn, row) -> dict:
     targets = json.loads(row["targets"] or "[]")
     official = official_for(conn, row)
     known_names = ai_names.public_names(conn)
-    reports = {n: copy_rules.check(captions.get(n, ""), official=official, names=known_names) for n in NETWORKS}
+    reports = {n: copy_rules.check(captions.get(n, ""), official=official, names=known_names, social=True) for n in NETWORKS}
     photo_ids = json.loads(row["photo_ids"] or "[]")
     photo_checks = [(pid, *eligibility.is_eligible(conn, int(pid)), shot_type_of(conn, int(pid))) for pid in photo_ids]
     renders = json.loads(row["render_paths"] or "{}")

@@ -345,6 +345,18 @@ only when Chris says so.
   dashboard, outreach mail, quote replies, the site and the photo text; the
   writer is told the rule and the template describes only the coverage he
   listed.
+- Then, sharper: "You need to keep to specifics and not talk about what is
+  offered or what is a service, specifically in captions and social media or
+  anything public. That's between the client and I!" A post is about the
+  photo: what it shows, where in the event, the moment; never the company's
+  services, coverage, delivery or what a client gets. Rule `offer` in the gate
+  runs on every social surface (captions, the dashboard, the door, the cards,
+  the reels); the writer's prompt no longer describes the company's services
+  at all; the template says the scene and the byline; the cards say the room
+  and what is shown. The face match post (Sundays) and the face match reel
+  are retired: they explained the delivery service. Sunday is a single photo;
+  the Saturday reel is the rooms reel. The website keeps the coverage list
+  from `offer.json` that he saw go live; whether that stays is his to say.
 
 ## Standing rules from the brief
 

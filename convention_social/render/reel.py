@@ -48,8 +48,9 @@ class Clip:
 
 @dataclass
 class ReelCopy:
-    montage: Sequence[str] = ("EVERY", "ROOM.")
-    block: str = "COVERED."
+    """About the photos, never a service (Chris, 2026-10-11)."""
+    montage: Sequence[str] = ("ONE", "EVENT.")
+    block: str = "ROOM BY ROOM."
     tagline: str = "Event and convention photography"
     ask: str = "Request a quote"
     site: str = "eventcaliber.com"

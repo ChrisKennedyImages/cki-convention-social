@@ -2,7 +2,7 @@
 
 The model sees one downscaled photo plus the facts the suite knows (the kind
 of event, never which one or who is in it; whether the company was the
-official photographer; the services) and returns strict JSON through
+official photographer) and returns strict JSON through
 output_config. The
 prompt states the rules, but ai/copy_rules.py is the gate, not the prompt.
 
@@ -40,7 +40,7 @@ NETWORKS = ("instagram", "facebook", "pinterest")
 # what kind of event, said instead of which one (ai/names.py: no event or person is ever named)
 KIND_WORDS = {"fan": "a fan convention", "business": "a conference"}
 
-SYSTEM_PROMPT = """You write social posts for an event and convention photography company, in the photographer's own voice. The company covers whole events: backstage and green rooms, breakout sessions, before, during and evening events, dinners, portraits, exhibition halls and vendors, and it delivers photos during the event by face match: an attendee scans the code on their badge or on a poster around the venue, fills in three short fields and takes a quick selfie, and every photo they appear in is sent to them right away, with no wires. The organizer decides before the event whether that is open to every attendee or kept to staff, where each person receives only the photos of the people they need. It works fan conventions (comic, anime, gaming) and business and political conferences.
+SYSTEM_PROMPT = """You write social posts for an event and convention photography company, in the photographer's own voice. A post is about the photo: what it shows, where in the event it was made, the moment. It is never about the company's services, what it offers, how it works or what a client gets; that is between the photographer and the client. The company photographs fan conventions (comic, anime, gaming) and business and political conferences.
 
 Write plain, short sentences. Use commas and periods, never a dash of any kind. No hype words, no emojis, no exclamation marks in a row. Describe only what the photo shows and what the facts give you.
 
@@ -49,7 +49,7 @@ Hard rules:
 2. Never say or imply the company is a convention's official photographer, partner or sponsor, or affiliated with it, unless the facts say official: yes.
 3. Never name the event, the conference or convention, the organization that runs it, or any person, and never tag anyone with an @handle, even when a banner, a badge, a sign, a podium or a stage screen in the photo shows the name. Say what kind of event it was (a political conference, a business conference, a fan convention) and what the photo shows, never which event or who is in it. No hashtag names an event, an organization or a person.
 4. Never mention a badge name, a plate, a screen or any personal detail you can read in the photo.
-5. Never promise anything the facts do not list as a service, and say nothing about how the company works that the facts do not state: not what a service includes or comes with, not how a shoot is set up, how long anything takes, what anyone leaves with, or what happens afterwards. The word include never appears. A detail the photo suggests about the company but the facts do not give is left out.
+5. Never describe the company's services or what it offers: not what it covers, includes or comes with, not how a shoot is set up, how photos are delivered, how long anything takes, or what anyone leaves with. The words include, coverage, service, offer and delivery never appear. The caption describes the photo; the one ask is a quote.
 6. Write no hashtags and no links. The suite adds the hashtags and the quote link.
 7. Search: each caption is found through its words. Use the search phrase you are given word for word in the first sentence, and one or two of the related phrases word for word in the body, written as a person would say them, never as a list of keywords. The Instagram caption's first line is under 125 characters. The Pinterest caption opens with the search phrase in a first sentence under 100 characters: that sentence is the pin's title.
 8. alt_text: one plain sentence, under 125 characters, saying literally what the photo shows for someone who cannot see it. No names, no event, no handles.
@@ -83,7 +83,6 @@ class PostFacts:
     brand_name: str
     event_kind: str = "unknown"          # fan | business | unknown
     official: bool = False               # only True when Chris confirmed it for this event
-    services: tuple[str, ...] = ()
     shot_type: str = ""
     quote_link: str = ""
     subject: str = "event"               # event | architecture
@@ -135,9 +134,8 @@ def user_text(facts: PostFacts) -> str:
         f"Official photographer for this event: {'yes' if facts.official else 'no'}",
         f"Shot type: {facts.shot_type or 'unknown'}",
         ("Subject: a building or venue from the photographer's architecture work. Say what the building shows, never name "
-         "the owner, the address or the client, and connect it to how carefully events in buildings like it get covered."
+         "the owner, the address or the client."
          if facts.subject == "architecture" else "Subject: event photography"),
-        f"Services: {'; '.join(facts.services) or 'event photography'}",
         *(facts.plan.prompt_lines() if facts.plan else []),
         "Write one caption per network: instagram (a first line under 125 characters that carries the search phrase, then "
         "two or three short sentences), facebook (one or two short paragraphs), pinterest (a first sentence under 100 "

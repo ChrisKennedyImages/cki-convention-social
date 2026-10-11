@@ -53,7 +53,7 @@ class Music(IsolatedCase):
     def test_a_reel_with_a_track_comes_out_with_sound(self):
         track = self.root / "t.wav"
         track.write_bytes(tone(2.0))
-        out = motion.facematch_reel(shots(), motion.MotionCopy(), out=self.root / "f.mp4", audio=track, only=list(range(8)))
+        out = motion.rooms_reel(shots(), motion.MotionCopy(), out=self.root / "f.mp4", audio=track, only=list(range(8)))
         probe = subprocess.run([reel.ffmpeg_path(), "-hide_banner", "-i", str(out)], capture_output=True, text=True).stderr
         self.assertIn("Video: h264", probe)
         self.assertIn("Audio: aac", probe)
@@ -238,7 +238,7 @@ class Saturday(IsolatedCase):
                       empty_room=0, sharp=1, light=4, moment=4, shot_type=room, classified_at=now)
             self.ids[did] = pid
         self.reels = []
-        fake = mock.patch.dict(motion.REELS, {"rooms": self.fake_reel("rooms"), "facematch": self.fake_reel("facematch")})
+        fake = mock.patch.dict(motion.REELS, {"rooms": self.fake_reel("rooms")})
         fake.start()
         self.addCleanup(fake.stop)
 
@@ -278,16 +278,16 @@ class Saturday(IsolatedCase):
         line = content.draft_one(self.ctx(), self.fetch, now=FRIDAY)
         self.assertIn("reel with", line)
         _, meta_, renders, ids = self.last()
-        self.assertEqual((meta_["design"], meta_["reel"], meta_["music"]), ("reel", "facematch", track.name))
+        self.assertEqual((meta_["design"], meta_["reel"], meta_["music"]), ("reel", "rooms", track.name))
         self.assertEqual(len(self.reels), 1)
         kind, rooms, audio = self.reels[0]
-        self.assertEqual((kind, audio), ("facematch", track))
+        self.assertEqual((kind, audio), ("rooms", track))
         self.assertEqual(sorted(rooms[:4]), ["BACKSTAGE", "MAIN STAGE", "ON THE FLOOR", "PORTRAITS"],
                          "one photo per room first; a room repeats only after every room has had one")
         self.assertEqual(ids[0], self.ids["e1"] if rooms[0] == "ON THE FLOOR" else self.ids["s1"])
         self.assertEqual(sorted(renders), ["2:3", "9:16", "cover", "stills"])
-        self.assertTrue(renders["9:16"][0].endswith("-facematch.mp4"))
-        self.assertTrue(Path(renders["cover"][0]).name.startswith("facematch-240"))
+        self.assertTrue(renders["9:16"][0].endswith("-rooms.mp4"))
+        self.assertTrue(Path(renders["cover"][0]).name.startswith("rooms-060"))
         self.assertEqual(len(ids), len(rooms))
         self.assertTrue(4 <= len(ids) <= 6)
 
@@ -300,18 +300,21 @@ class Saturday(IsolatedCase):
 
     def test_a_reel_that_cannot_be_made_is_a_carousel_of_the_same_photos_and_says_why(self):
         self.with_music()
-        motion.REELS["facematch"] = self.fake_reel("facematch", fail=True)
+        motion.REELS["rooms"] = self.fake_reel("rooms", fail=True)
         line = content.draft_one(self.ctx(), self.fetch, now=FRIDAY)
         self.assertIn("the reel could not be made", line)
         _, meta_, renders, ids = self.last()
         self.assertEqual(meta_["design"], "carousel")
         self.assertIn("ffmpeg stopped", meta_["reel_failed"])
-        self.assertEqual(len(renders["4:5"]), len(ids) + 3)
+        self.assertEqual(len(renders["4:5"]), len(ids) + 2)
         self.assertEqual(db.one(self.conn, "SELECT kind FROM errors")["kind"], "reel")
 
-    def test_the_two_reels_take_turns_by_week(self):
-        self.assertEqual(content.reel_kind(datetime(2026, 10, 17).date()), "facematch")    # ISO week 42
-        self.assertEqual(content.reel_kind(datetime(2026, 10, 24).date()), "rooms")        # ISO week 43
+    def test_the_reel_is_always_the_rooms_reel(self):
+        """The face match reel is retired (Chris, 2026-10-11: a post never talks about a service)."""
+        for day in (datetime(2026, 10, 17).date(), datetime(2026, 10, 24).date()):
+            self.assertEqual(content.reel_kind(day), "rooms")
+        self.assertEqual(list(motion.REELS), ["rooms"])
+        self.assertFalse(hasattr(motion, "facematch_reel") or hasattr(motion, "facematch_post"))
 
     def test_the_art_director_never_gets_the_mp4(self):
         seen = []

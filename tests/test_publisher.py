@@ -152,6 +152,12 @@ class Door(PublisherCase):
                                               "facebook": "Fine.", "pinterest": "Fine."})
         self.assert_back(qid, self.publish(make_ctx(self.conn)), "nothing includes anything")
 
+    def test_a_caption_that_talks_about_a_service_goes_back(self):
+        """Chris, 2026-10-11: "not talk about what is offered or what is a service, specifically in captions"."""
+        _, qid = self.rendered_post(captions={"instagram": "Fine.", "facebook": "Photo delivery by face match while the event is on.",
+                                              "pinterest": "Fine."})
+        self.assert_back(qid, self.publish(make_ctx(self.conn)), "what is offered")
+
     def test_a_caption_with_a_dash_goes_back(self):
         _, qid = self.rendered_post(captions={"instagram": "Fine.", "facebook": "Backstage, calm.", "pinterest": "Backstage — calm."})
         self.assert_back(qid, self.publish(make_ctx(self.conn)), "pinterest caption")

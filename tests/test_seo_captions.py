@@ -43,7 +43,7 @@ class Plans(IsolatedCase):
                 caps = seo_plan.template_captions(plan, "eventcaliber.com/book", "Event Caliber")
                 self.assertEqual(seo_plan.problems(caps, plan), [], plan)
                 for net, text in caps.items():
-                    self.assertTrue(copy_rules.check(text, names=list(names.ALWAYS)).ok, (net, text))
+                    self.assertTrue(copy_rules.check(text, names=list(names.ALWAYS), social=True).ok, (net, text))
                     self.assertIn(plan.primary.lower(), seo_plan.first_sentence(text).lower())
                 self.assertEqual(len(seo_plan.HASHTAG.findall(caps["instagram"])), 5)
                 self.assertEqual(len(seo_plan.HASHTAG.findall(caps["pinterest"])), 3)
@@ -61,7 +61,6 @@ class Plans(IsolatedCase):
         self.assertEqual(p(event_kind="fan", shot_type="stage_panel"), "convention photography")
         self.assertEqual(p(event_kind=None, shot_type="backstage"), "backstage event photography")
         self.assertEqual(p(event_kind="business", shot_type="portrait", design="carousel"), "conference photography")
-        self.assertEqual(p(event_kind="business", shot_type="crowd", design="facematch"), "event photo delivery")
         self.assertEqual(seo_plan.plan_for(subject="architecture", event_kind=None, shot_type=None).primary, "venue photography")
 
     def test_misses_are_named(self):
@@ -119,9 +118,9 @@ class DailyDraft(IsolatedCase):
         row = db.one(self.conn, "SELECT caption, rule_report FROM content_queue ORDER BY id DESC LIMIT 1")
         return line, json.loads(row["caption"]), json.loads(row["rule_report"])
 
-    GOOD = {"instagram": "Conference photography from the keynote to the last panel. Your event photographer for every room.",
-            "facebook": "Conference photography from the keynote to the last panel. Your event photographer for every room. Request a quote.",
-            "pinterest": "Conference photography from the keynote to the last panel. Your event photographer for every room."}
+    GOOD = {"instagram": "Conference photography: the keynote, from the back of the room. Event Caliber, event photographer.",
+            "facebook": "Conference photography: the keynote, from the back of the room. Event Caliber, event photographer. Request a quote.",
+            "pinterest": "Conference photography: the keynote, from the back of the room. Event Caliber, event photographer."}
 
     def test_a_draft_that_meets_its_plan_is_used_as_written_with_its_alt_text(self):
         writer = Writer([self.GOOD])
@@ -144,6 +143,17 @@ class DailyDraft(IsolatedCase):
         self.assertTrue(any('does not say "conference photography"' in n for n in writer.calls[1]["notes"]))
         self.assertTrue(caps["facebook"].startswith("Conference photography"))
         self.assertEqual([len(t["missed"]) > 0 for t in meta["seo"]["tries"]], [True, False])
+
+    def test_service_talk_is_a_miss_even_when_the_plan_is_met(self):
+        """Chris, 2026-10-11: "not talk about what is offered or what is a service, specifically in captions"."""
+        selling = {n: ("Conference photography from the keynote to the last panel. Your event photographer for every room, "
+                       "with photo delivery by face match. Request a quote.") for n in self.GOOD}
+        writer = Writer([selling, self.GOOD])
+        _, caps, meta = self.run_draft(writer)
+        self.assertEqual(len(writer.calls), 2)
+        self.assertTrue(any("talks about what is offered" in n for n in writer.calls[1]["notes"]), writer.calls[1]["notes"])
+        self.assertTrue(caps["instagram"].startswith("Conference photography: the keynote"))
+        self.assertEqual(meta["seo"]["fell_back"], False)
 
     def test_a_claim_about_the_company_is_never_used(self):
         """The real draft of 2026-10-11: "Suite wide - NOTHING INCLUDES ANYTHING!"."""
@@ -172,15 +182,19 @@ class DailyDraft(IsolatedCase):
 
 
 class Prompt(IsolatedCase):
-    def test_the_writer_is_told_nothing_includes_anything(self):
-        self.assertIn("The word include never appears.", claude.SYSTEM_PROMPT)
-        self.assertIn("say nothing about how the company works that the facts do not state", claude.SYSTEM_PROMPT)
+    def test_the_writer_is_told_nothing_includes_anything_and_no_service_talk(self):
+        self.assertIn("The words include, coverage, service, offer and delivery never appear.", claude.SYSTEM_PROMPT)
+        self.assertIn("Never describe the company's services or what it offers", claude.SYSTEM_PROMPT)
+        self.assertIn("A post is about the photo", claude.SYSTEM_PROMPT)
+        for word in ("face match", "selfie", "delivers", "covers whole events"):
+            self.assertNotIn(word, claude.SYSTEM_PROMPT, word)
 
     def test_the_writer_is_given_the_plan_and_asked_for_alt_text(self):
         plan = seo_plan.plan_for(subject="event", event_kind="business", shot_type="stage_panel")
         text = claude.user_text(claude.PostFacts(brand_name="Event Caliber", event_kind="business", plan=plan))
         self.assertIn("Search phrase: conference photography.", text)
-        self.assertIn("Related search phrases: event photographer; corporate event photography; photo delivery by face match", text)
+        self.assertIn("Related search phrases: event photographer; corporate event photography.", text)
+        self.assertNotIn("Services:", text, "the writer is given no list of services to repeat")
         self.assertIn("Write no hashtags and no links", text)
         self.assertIn("alt_text", claude.OUTPUT_SCHEMA["required"])
         self.assertIn("first sentence under 100 characters", claude.SYSTEM_PROMPT)

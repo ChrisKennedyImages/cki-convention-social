@@ -13,7 +13,7 @@ from convention_social.render import edge, meta, posts, reel
 from tests._base import IsolatedCase
 from tests._photos import jpeg_bytes
 
-COPY = edge.EdgeCopy(service="Backstage", headline=["BACKSTAGE.", "COVERED."],
+COPY = edge.EdgeCopy(service="Backstage", headline=["BACKSTAGE.", "BEFORE DOORS."],
                      line="Green rooms and the minutes before the doors open.", kicker="On assignment")
 
 

@@ -52,8 +52,9 @@ class EdgeCopy:
         return " ".join([self.service, *self.headline, self.line, self.kicker, self.credit, self.ask, self.site])
 
 
-def check_copy(*texts: str, official: bool = False) -> None:
-    report = copy_rules.check(" ".join(t for t in texts if t), official=official)
+def check_copy(*texts: str, official: bool = False, social: bool = True) -> None:
+    """Every card is social copy: nothing about a service, only the photo (Chris, 2026-10-11)."""
+    report = copy_rules.check(" ".join(t for t in texts if t), official=official, social=social)
     if not report.ok:
         raise CopyRefused(report.blocks[0].message)
 
@@ -421,11 +422,12 @@ class Slide:
 
 @dataclass
 class CarouselCopy:
-    cover: Sequence[str] = ("EVERY", "ROOM.")
-    cover_block: str = "COVERED."
-    cover_line: str = "What full coverage of your event looks like."
-    close: Sequence[str] = ("APPROVED", "IMAGES IN", "HAND BEFORE", "THE EVENT", "ENDS.")
-    close_line: str = "Attendees, staff, speakers and presenters get their photos while the event is still on."
+    """About the photos, never a service (Chris, 2026-10-11)."""
+    cover: Sequence[str] = ("ONE", "EVENT.")
+    cover_block: str = "ROOM BY ROOM."
+    cover_line: str = "One event, one room at a time."
+    close: Sequence[str] = ("REQUEST", "A QUOTE", "FOR YOUR", "EVENT.")
+    close_line: str = ""
     ask: str = "Request a quote"
     site: str = "eventcaliber.com/book"
 
@@ -476,7 +478,7 @@ def carousel(slides: Sequence[Slide], copy: CarouselCopy, *, out_dir: Path, offi
         if sl.af:
             af_box(d, sx + sl.af[0] * w, sl.af[1] * BAND, 190, 146, 4, C, "AF LOCK", s)
         ix = sx + 70
-        mono(d, (ix, BAND + 66), f"N°{num}  ·  COVERAGE", 22, C, 0.18)
+        mono(d, (ix, BAND + 66), f"N°{num}  ·  EVENTS", 22, C, 0.18)
         hf = fit(d, [sl.service], DISPLAY, w - 150, 116, 60)
         solid(d, (ix, BAND + 212), sl.service, hf, s)
         lf = face(BODY, 32)
