@@ -30,7 +30,7 @@ from zoneinfo import ZoneInfo
 
 from PIL import Image
 
-from ..ai import claude, copy_rules
+from ..ai import claude, copy_rules, names
 from ..core import config, db, runner
 from ..library import classify, eligibility
 
@@ -101,10 +101,11 @@ def candidates(conn: sqlite3.Connection, subject: str) -> list[dict]:
 
 
 def kicker_for(row: dict) -> str:
+    """The small line printed on the post: the kind of work, never which event or who is in it.
+    Chris, 2026-10-11: "i want to make sure the captions don't say the specific event or person"."""
     if row["subject"] == "architecture":
         return "Venues and buildings"
-    year = (row.get("taken_at") or "")[:4]
-    return " ".join(x for x in ((row.get("convention_name") or "").strip(), year if year.isdigit() else "") if x) or "On assignment"
+    return {"fan": "Fan conventions", "business": "Conferences"}.get(row.get("event_kind") or "", "Event coverage")
 
 
 # Chris, 2026-10-11: "Switch to new designs and it's ok to use 1 photo too sometimes." One design a
@@ -197,9 +198,7 @@ def draft_one(ctx: runner.Context, fetch: Callable[[dict], bytes], *, now: Optio
             cache.write_bytes(data)
         ctx.conn.execute("UPDATE photos SET local_path=? WHERE id=?", (str(cache), row["id"]))
     hero = chosen[0][0]
-    credits = " ".join(dict.fromkeys(c for r, _ in chosen for c in (r["credit"] or "").split()))
-    facts = claude.PostFacts(brand_name=ctx.cfg.brand_name, event_name=hero.get("convention_name") or "",
-                             event_kind=hero.get("event_kind") or "unknown", credit=credits,
+    facts = claude.PostFacts(brand_name=ctx.cfg.brand_name, event_kind=hero.get("event_kind") or "unknown",
                              shot_type=hero.get("shot_type") or "", subject=hero["subject"],
                              quote_link=f"{ctx.cfg.brand_domain}/book" if ctx.cfg.brand_domain else "",
                              services=("full event coverage", "backstage and green rooms", "breakouts and panels",
@@ -207,17 +206,13 @@ def draft_one(ctx: runner.Context, fetch: Callable[[dict], bytes], *, now: Optio
                                        "every photo a guest is in, sent to them by face match"))
     drafter = drafter or (claude.TemplateDrafter() if ctx.dry_run else claude.get_drafter(ctx.conn, agent=ctx.agent))
     draft = drafter.draft(facts, ctx.cfg.data_root / "photos" / f"{hero['drive_id']}.img")
-    reports = {n: copy_rules.check(t).as_dict() for n, t in draft.captions.items()}
+    known_names = names.public_names(ctx.conn)
+    reports = {n: copy_rules.check(t, names=known_names).as_dict() for n, t in draft.captions.items()}
     images = {r["id"]: Image.open(io.BytesIO(d)) for r, d in chosen}
     out_dir = ctx.cfg.data_root / "renders" / "posts" / day.isoformat()
     seo = image_meta.for_photo(ctx.conn, hero)
     copy = motion.MotionCopy()
-    kicker = "  ·  ".join(x for x in (kicker_for(hero), hero["credit"]) if x).upper()
-    try:
-        copy_rules_ok = copy_rules.check(kicker).ok
-    except Exception:  # noqa: BLE001
-        copy_rules_ok = False
-    kicker = kicker if copy_rules_ok else ""                 # a name read off a photo never stops the draft
+    kicker = kicker_for(hero).upper()
     tag = f"{hero['id']}-{design}"
 
     reel_failed: list[str] = []

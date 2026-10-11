@@ -31,7 +31,7 @@ class ImageMeta:
     title: str = ""
     description: str = ""
     keywords: Sequence[str] = field(default_factory=tuple)
-    credit: str = ""              # e.g. "Cosplay: @handle"; the photographer credit is always the company
+    credit: str = ""              # the photographer credit is always the company; no person is named (2026-10-11)
 
     def creator(self) -> str:
         return config.get_config().brand_name
@@ -115,32 +115,32 @@ SHOT_WORDS = {"cosplay_portrait": "Cosplay portrait", "portrait": "Portrait", "g
 
 def for_photo(conn, row) -> ImageMeta:
     """Our descriptive fields for one library photo: the SEO agent's text when it has written some
-    (photo_seo), else plain words from the photo's sorting."""
+    (photo_seo), else plain words from the photo's sorting. Never the event's name, a person's name or
+    credit, or the sorter's own description, which may carry either (Chris, 2026-10-11; ai/names.py)."""
+    from ..ai import names
     row = dict(row)
     pid = row.get("id")
     try:
         seo = conn.execute("SELECT * FROM photo_seo WHERE photo_id=?", (pid,)).fetchone()
     except Exception:  # noqa: BLE001 — the SEO table may not exist yet
         seo = None
-    credit = row.get("credit") or ""
-    credit_line = f"Cosplay: {credit}" if credit and row.get("shot_type") == "cosplay_portrait" else (f"Featuring {credit}" if credit else "")
+    known = names.public_names(conn)
     if seo is not None:
         import json as _json
         try:
             kws = _json.loads(seo["keywords"] or "[]")
         except ValueError:
             kws = []
-        return ImageMeta(title=seo["title"] or "", description=seo["alt"] or seo["description"] or "", keywords=kws, credit=credit_line)
+        title, description = seo["title"] or "", seo["alt"] or seo["description"] or ""
+        if not names.mentions(" ".join([title, description, *map(str, kws)]), known):
+            return ImageMeta(title=title, description=description, keywords=kws)
     shot = SHOT_WORDS.get(row.get("shot_type") or "", "")
-    year = (row.get("taken_at") or "")[:4]
     if row.get("subject") == "architecture":
         title = f"{shot or 'Architecture'} photography"
         kws = ["architectural photography", "venue photography", "event venue", "building photography"]
     else:
-        event = row.get("convention_name") or ""
-        title = " ".join(x for x in (shot or "Event photography", f"at {event}" if event else "", year if year.isdigit() else "") if x)
+        kind = {"fan": "fan convention", "business": "conference"}.get(row.get("event_kind") or "", "event")
+        title = f"{shot or 'Event photography'} at a {kind}" if kind != "event" else (shot or "Event photography")
         kws = ["event photography", "convention photography"] + (["cosplay photography"] if row.get("event_kind") == "fan" else
                                                                   ["conference photography"] if row.get("event_kind") == "business" else [])
-        if event:
-            kws.append(event)
-    return ImageMeta(title=title, description=row.get("summary") or title, keywords=kws, credit=credit_line)
+    return ImageMeta(title=title, description=title, keywords=kws)

@@ -1,8 +1,9 @@
 """Caption drafting with Claude: a photo goes in, one JSON draft per network comes out.
 
-The model sees one downscaled photo plus the facts the suite knows (event,
-whether the company was the official photographer, the credit Chris
-recorded, the services) and returns strict JSON through output_config. The
+The model sees one downscaled photo plus the facts the suite knows (the kind
+of event, never which one or who is in it; whether the company was the
+official photographer; the services) and returns strict JSON through
+output_config. The
 prompt states the rules, but ai/copy_rules.py is the gate, not the prompt.
 
 Model: claude-opus-5 (override with AI_MODEL), effort set explicitly, the
@@ -33,6 +34,8 @@ DEFAULT_EFFORT = "medium"
 FALLBACK_BETA = "server-side-fallback-2026-07-01"
 MAX_IMAGE_EDGE = 1024
 NETWORKS = ("instagram", "facebook", "pinterest")
+# what kind of event, said instead of which one (ai/names.py: no event or person is ever named)
+KIND_WORDS = {"fan": "a fan convention", "business": "a conference"}
 
 SYSTEM_PROMPT = """You write social posts for an event and convention photography company, in the photographer's own voice. The company covers whole events: backstage and green rooms, breakout sessions, before, during and evening events, dinners, portraits, exhibition halls and vendors, and it delivers photos during the event by face match: an attendee scans the code on their badge or on a poster around the venue, fills in three short fields and takes a quick selfie, and every photo they appear in is sent to them right away, with no wires. The organizer decides before the event whether that is open to every attendee or kept to staff, where each person receives only the photos of the people they need. It works fan conventions (comic, anime, gaming, cosplay) and business and political conferences.
 
@@ -41,7 +44,7 @@ Write plain, short sentences. Use commas and periods, never a dash of any kind. 
 Hard rules:
 1. Never state or hint at a price, a rate, a discount or a package cost. The call to action is to request a quote for an event.
 2. Never say or imply the company is a convention's official photographer, partner or sponsor, or affiliated with it, unless the facts say official: yes.
-3. Never name a person. If the facts give a credit, use the credit exactly as written and nothing else about who they are. If there is no credit, do not identify anyone.
+3. Never name the event, the conference or convention, the organization that runs it, or any person, and never tag anyone with an @handle, even when a banner, a badge, a sign, a podium or a stage screen in the photo shows the name. Say what kind of event it was (a political conference, a business conference, a fan convention) and what the photo shows, never which event or who is in it. No hashtag names an event, an organization or a person.
 4. Never mention a badge name, a plate, a screen or any personal detail you can read in the photo.
 5. Never promise anything the facts do not list as a service.
 6. Hashtags only on Instagram and Pinterest, at most five, relevant to the event type and photography.
@@ -70,11 +73,10 @@ OUTPUT_SCHEMA = {
 
 @dataclass
 class PostFacts:
+    """No event name and no credit, by design: a caption never says which event or who (ai/names.py)."""
     brand_name: str
-    event_name: str = ""
     event_kind: str = "unknown"          # fan | business | unknown
     official: bool = False               # only True when Chris confirmed it for this event
-    credit: str = ""                     # e.g. "@handle", exactly as recorded in the credits sheet
     services: tuple[str, ...] = ()
     shot_type: str = ""
     quote_link: str = ""
@@ -121,10 +123,8 @@ def image_block(path: Path, edge: int = MAX_IMAGE_EDGE) -> dict:
 def user_text(facts: PostFacts) -> str:
     return "\n".join([
         f"Company name: {facts.brand_name}",
-        f"Event: {facts.event_name or 'unknown, do not name one'}",
-        f"Event type: {facts.event_kind}",
+        f"Event type: {KIND_WORDS.get(facts.event_kind, 'an event')} (never name which event, or anyone in the photo)",
         f"Official photographer for this event: {'yes' if facts.official else 'no'}",
-        f"Credit: {facts.credit or 'none, identify no one'}",
         f"Shot type: {facts.shot_type or 'unknown'}",
         ("Subject: a building or venue from the photographer's architecture work. Say what the building shows, never name "
          "the owner, the address or the client, and connect it to how carefully events in buildings like it get covered."
@@ -195,10 +195,9 @@ class TemplateDrafter:
     model = "template"
 
     def draft(self, facts: PostFacts, photo: Path) -> Draft:
-        where = f" at {facts.event_name}" if facts.event_name else ""
-        credit = f" {facts.credit}." if facts.credit else ""
+        where = "a building we photographed" if facts.subject == "architecture" else KIND_WORDS.get(facts.event_kind, "an event")
         ask = f" Request a quote for your event. {facts.quote_link}".rstrip()
-        body = f"A moment{where}.{credit}{ask}"
+        body = f"A moment from {where}.{ask}"
         tags = "#eventphotography #conventionphotography" + (" #cosplay" if facts.event_kind == "fan" else "")
         captions = {"instagram": f"{body}\n\n{tags}", "facebook": body, "pinterest": f"{body} {tags}"}
         return Draft(captions={k: tidy(v) if k == "facebook" else v for k, v in captions.items()},

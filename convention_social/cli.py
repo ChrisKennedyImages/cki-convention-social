@@ -249,8 +249,7 @@ def cmd_samples(_args) -> int:
     def captions(row, fmt):
         if fmt != "photo":
             return {}
-        facts = claude.PostFacts(brand_name=cfg.brand_name, event_name=row.get("convention_name") or "",
-                                 event_kind=row.get("event_kind") or "unknown", credit=row.get("credit", ""),
+        facts = claude.PostFacts(brand_name=cfg.brand_name, event_kind=row.get("event_kind") or "unknown",
                                  shot_type=row.get("shot_type") or "", services=tuple(SERVICES_FOR_COPY))
         return drafter.draft(facts, cache / f"{row['drive_id']}.img").captions
 

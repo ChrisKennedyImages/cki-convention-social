@@ -33,6 +33,7 @@ from dataclasses import dataclass, replace
 from typing import Optional
 
 from ..ai import copy_rules, spend
+from ..ai import names as ai_names
 from ..ai.claude import FALLBACK_BETA, tidy
 from ..core import config, db, runner, secrets
 from ..library import eligibility
@@ -78,10 +79,10 @@ SYSTEM = """You write search text for one photo from an event and convention pho
 Write plain, short sentences in sentence case. Use commas and periods, never a dash of any kind.
 Rules:
 1. The alt text says literally what the photo shows, in under 125 characters. Do not start it with "image of" or "photo of".
-2. Never name a person. The only way to identify anyone is a credit handle given in the facts, written exactly as given.
+2. Never name the event, the conference or convention, the organization that runs it, or any person, and never write an @handle, even when the sorter's notes or a sign in the photo give the name. Say what kind of event it was, never which one or who is in it.
 3. Never write a street address, a house number or a street name. Describe a building by its type, such as hotel, convention center, office tower or house, never by its owner or its name.
 4. Never state or hint at a price. Never say or imply the company is an event's official photographer, partner or sponsor, and never name clients.
-5. Use only the facts given. Name the event and the year only when the facts give them.
+5. Use only the facts given. Give the year only when the facts give it.
 6. Keywords: 5 to 10 short lowercase phrases people search for, such as event photography, convention photography, the kind of event and the kind of shot. Add a city only when the facts give one.
 Return JSON only, matching the schema."""
 
@@ -119,6 +120,7 @@ class PhotoFacts:
     summary: str
     handles: tuple[str, ...]
     brand: str
+    names: tuple[str, ...] = ()      # ai/names.public_names: none of these may appear in any field
 
 
 # ------------------------------------------------------------------ facts
@@ -169,21 +171,21 @@ def gather(conn: sqlite3.Connection, photo_id: int, cfg: Optional[config.Config]
     if row is None or not row["subject"]:
         return None
     subject = row["subject"]
-    event_name = (row["convention_name"] or "").strip() if subject == "event" else ""
-    cal = calendar_row(conn, row, event_name)
-    if subject == "event" and not event_name and cal is not None:
-        event_name = (cal["name"] or "").strip()
+    # Chris, 2026-10-11: no public text says which event or who is in the photo (ai/names.py), so the
+    # writers are never given the event's name or a credit; the calendar is read for the year and city
+    event_name = ""
+    cal = calendar_row(conn, row, (row["convention_name"] or "").strip() if subject == "event" else "")
     year = (row["taken_at"] or "")[:4]
     if not year.isdigit() and cal is not None:
         year = (cal["start_date"] or "")[:4]
     year = year if year.isdigit() else ""
-    credit = eligibility.credit_line(conn, photo_id)
-    handles = tuple(dict.fromkeys(w for w in credit.split() if w.startswith("@") and len(w) > 1))
+    handles: tuple[str, ...] = ()
     return PhotoFacts(photo_id=photo_id, subject=subject, shot_type=row["shot_type"] or "", event_name=event_name,
                       event_kind=row["event_kind"] or "unknown", year=year,
                       city=((cal["city"] or "").strip() if cal is not None else ""),
                       view=row["view"] if row["view"] in ("exterior", "interior") else "",
-                      summary=(row["summary"] or "").strip(), handles=handles, brand=cfg.brand_name)
+                      summary=(row["summary"] or "").strip(), handles=handles, brand=cfg.brand_name,
+                      names=tuple(ai_names.public_names(conn)))
 
 
 # ------------------------------------------------------------------ slugs
@@ -259,10 +261,6 @@ def template_keywords(f: PhotoFacts, *, filler: bool = True) -> list[str]:
             kw.append(shot)
         if f.shot_type == "cosplay_portrait":
             kw.append("cosplay photography")
-        if f.event_name:
-            kw.append(f"{f.event_name} photography")
-            if f.year:
-                kw.append(f"{f.event_name} {f.year}")
     if f.city:
         kw.append(f"{f.city} event photography")
     if filler:
@@ -278,12 +276,12 @@ def template(f: PhotoFacts) -> dict:
         title = f"{shot} photography" + (f" in {f.city}" if f.city else "")
         description = f"{alt}. Venue and architecture photography by {f.brand}."
     else:
-        where = " ".join(x for x in (f.event_name, f.year) if x)
-        who = f" of {' and '.join(f.handles)}" if f.handles and f.shot_type in PEOPLE_SHOTS else ""
-        title = f"{shot} at {where}" if where else f"{shot}, event photography"
-        alt = f"{shot}{who} at {where}" if where else f"{shot}{who} at an event"
+        # the kind of event, never which one, and nobody named (ai/names.py)
+        kind = KIND_WORDS.get(f.event_kind, "")
+        title = f"{shot} at a {kind}" if kind else f"{shot}, event photography"
+        alt = f"{shot} at a {kind}" if kind else f"{shot} at an event"
         place = f" in {f.city}" if f.city else ""
-        description = (f"{shot} at {where}{place}. " if where else f"{shot}{place}. ") + \
+        description = (f"{shot} at a {kind}{place}. " if kind else f"{shot}{place}. ") + \
                       f"Event and convention photography by {f.brand}."
     return {"title": _cut(title, TITLE_MAX), "alt": _cut(alt, ALT_MAX), "description": _cut(description, DESCRIPTION_MAX),
             "keywords": template_keywords(f)}
@@ -347,7 +345,7 @@ def problems(fields: dict, f: PhotoFacts, *, guess_names: bool = True) -> list[s
             continue
         if len(text) > limit:
             out.append(f"{name} is {len(text)} characters, the most is {limit}")
-        report = copy_rules.check(text)
+        report = copy_rules.check(text, names=f.names)
         if not report.ok:
             out.append(f"{name} {report.blocks[0].message}")
         if ADDRESS.search(text):
@@ -362,7 +360,7 @@ def problems(fields: dict, f: PhotoFacts, *, guess_names: bool = True) -> list[s
         out.append(f"keywords must be {KEYWORDS_MIN} to {KEYWORDS_MAX}")
     else:
         for k in kws:
-            if not isinstance(k, str) or not k.strip() or len(k) > KEYWORD_MAX_LEN or not copy_rules.check(k).ok \
+            if not isinstance(k, str) or not k.strip() or len(k) > KEYWORD_MAX_LEN or not copy_rules.check(k, names=f.names).ok \
                     or ADDRESS.search(k) or "@" in k:
                 out.append(f"keyword {k!r} is not allowed")
                 break
@@ -387,7 +385,7 @@ def merge_keywords(suggested, f: PhotoFacts) -> list[str]:
             continue
         k = " ".join(tidy(k).lower().split())
         tokens = re.findall(r"[a-z0-9'’]+", k)
-        if tokens and all(t in vocab or (f.year and t == f.year) for t in tokens) and copy_rules.check(k).ok \
+        if tokens and all(t in vocab or (f.year and t == f.year) for t in tokens) and copy_rules.check(k, names=f.names).ok \
                 and len(k) <= KEYWORD_MAX_LEN:
             extra.append(k)
     return _dedupe(template_keywords(f, filler=False) + extra + filler_keywords(f))[:KEYWORDS_MAX]
@@ -404,11 +402,9 @@ def user_text(f: PhotoFacts) -> str:
         f"Company: {f.brand}",
         f"Subject: {subject}",
         f"Shot type: {shot_words(f)}",
-        f"Event: {f.event_name or 'none, do not name one'}",
         f"Kind of event: {KIND_WORDS.get(f.event_kind, 'unknown')}",
         f"Year: {f.year or 'unknown, do not give one'}",
         f"City: {f.city or 'none, do not name a city'}",
-        f"Credit handles: {' '.join(f.handles) or 'none, identify no one'}",
         f"What the sorter saw: {f.summary or 'nothing recorded'}",
     ])
 
@@ -531,6 +527,19 @@ def pick_writer(conn: sqlite3.Connection, *, dry_run: bool, client=None, agent: 
     return None
 
 
+def purge_named(conn: sqlite3.Connection) -> int:
+    """Text written before 2026-10-11 may name the event or a person: such a row (address included) is
+    dropped so it is written again by today's rules, with a new address. A row Chris edited stays his."""
+    known = ai_names.public_names(conn)
+    gone = 0
+    for r in db.rows(conn, "SELECT * FROM photo_seo WHERE edited_at IS NULL"):
+        text = " ".join([r["slug"].replace("-", " "), r["title"] or "", r["alt"] or "", r["description"] or "", r["keywords"] or ""])
+        if ai_names.mentions(text, known):
+            conn.execute("DELETE FROM photo_seo WHERE photo_id=?", (r["photo_id"],))
+            gone += 1
+    return gone
+
+
 def write_all(conn: sqlite3.Connection, cfg: Optional[config.Config] = None, *, dry_run: bool = True, client=None,
               agent: str = "seo", limit: Optional[int] = None) -> dict:
     cfg = cfg or config.get_config()
@@ -540,9 +549,11 @@ def write_all(conn: sqlite3.Connection, cfg: Optional[config.Config] = None, *, 
         except ValueError:
             limit = PER_RUN_DEFAULT
     writer = pick_writer(conn, dry_run=dry_run, client=client, agent=agent)
+    renamed = purge_named(conn)
     ids, left_out = wanted_photos(conn)
     stats = {"wanted": len(ids), "written": 0, "claude": 0, "template": 0, "fell_back": 0, "kept": 0, "edited": 0,
-             "left_out": left_out, "unsorted": 0, "refused": 0, "stopped": "", "model": writer.model if writer else "template"}
+             "left_out": left_out, "unsorted": 0, "refused": 0, "stopped": "", "model": writer.model if writer else "template",
+             "renamed": renamed}
     for pid in ids:
         row = db.one(conn, "SELECT model, edited_at FROM photo_seo WHERE photo_id=?", (pid,))
         if row is not None and row["edited_at"]:
