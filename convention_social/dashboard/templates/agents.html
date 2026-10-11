@@ -26,6 +26,9 @@
 {% endfor %}
 <h2>Open errors</h2>
 {% if not errors %}<div class="card muted">None.</div>{% endif %}
+{% if kinds %}<div class="row" style="margin-bottom:12px">
+{% for k in kinds %}<form method="post" action="/errors/ack-kind" class="inline"><input type="hidden" name="kind" value="{{ k.kind }}"><button class="small" type="submit">Dismiss all {{ k.n }} {{ k.kind.replace('_', ' ') }}</button></form>{% endfor %}
+</div>{% endif %}
 {% for e in errors %}
 <div class="card"><div class="row"><strong>{{ e.agent }}</strong><span class="badge failed">{{ e.kind }}</span><span class="muted">{{ e.ts[:16].replace('T',' ') }}</span>
   <form method="post" action="/errors/{{ e.id }}/ack" class="inline" style="margin-left:auto"><button class="small" type="submit">Dismiss</button></form></div>

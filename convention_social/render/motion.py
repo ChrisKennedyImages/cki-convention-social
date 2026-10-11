@@ -416,7 +416,7 @@ def _end_card(f: int, copy: MotionCopy, base: Image.Image) -> Image.Image:
 
 def rooms_reel(shots: Sequence[Shot], copy: MotionCopy, *, out: Path, official: bool = False,
                encoder: Optional[Callable] = None, only: Optional[Sequence[int]] = None,
-               frames_dir: Optional[Path] = None) -> Path:
+               frames_dir: Optional[Path] = None, audio: Optional[Path] = None) -> Path:
     """15 s: the photos deal into a hand, one lifts per room, the hand folds into a spinning ring,
     the logo and the ask."""
     _check(shots, copy, official)
@@ -480,12 +480,12 @@ def rooms_reel(shots: Sequence[Shot], copy: MotionCopy, *, out: Path, official: 
             img = _end_card(f, copy, img)
         return grain(img, i, 0.2)
 
-    return _render(frame, total, out, encoder, only, frames_dir)
+    return _render(frame, total, out, encoder, only, frames_dir, audio)
 
 
 def facematch_reel(shots: Sequence[Shot], copy: MotionCopy, *, out: Path, official: bool = False,
-                   encoder: Optional[Callable] = None, only: Optional[Sequence[int]] = None,
-                   frames_dir: Optional[Path] = None) -> Path:
+               encoder: Optional[Callable] = None, only: Optional[Sequence[int]] = None,
+               frames_dir: Optional[Path] = None, audio: Optional[Path] = None) -> Path:
     """15 s: a badge swings in, its code is scanned, three fields fill, a selfie locks, and the
     photos fly in from every side to land on one person's stack; then the organizer's choice and the ask."""
     _check(shots, copy, official)
@@ -622,7 +622,7 @@ def facematch_reel(shots: Sequence[Shot], copy: MotionCopy, *, out: Path, offici
             img = _end_card(t - (BADGE + SCAN + FIELDS + SELFIE + STREAM + CHOICE), copy, img)
         return grain(img, i, 0.2)
 
-    return _render(frame, total, out, encoder, only, frames_dir)
+    return _render(frame, total, out, encoder, only, frames_dir, audio)
 
 
 def _slam(img: Image.Image, text: str, f, x: float, y: float, t: float) -> None:
@@ -649,7 +649,7 @@ def _fade(img: Image.Image, xy, text: str, f, fill, alpha: float) -> None:
     ImageDraw.Draw(img).text(xy, text, font=f, fill=col, anchor="ls")
 
 
-def _render(frame: Callable[[int], Image.Image], total: int, out: Path, encoder, only, frames_dir) -> Path:
+def _render(frame: Callable[[int], Image.Image], total: int, out: Path, encoder, only, frames_dir, audio=None) -> Path:
     out = Path(out)
     out.parent.mkdir(parents=True, exist_ok=True)
     if frames_dir:

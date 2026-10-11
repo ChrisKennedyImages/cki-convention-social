@@ -389,11 +389,16 @@ def make(clips: Sequence[Clip], copy: ReelCopy, *, out: Path, montage: Optional[
     return (encoder or encode)(frames(), out)
 
 
-def encode(frames, out: Path, size=(FW, FH), fps: int = FPS) -> Path:
-    """Pipe RGB frames to ffmpeg: H.264, yuv420p, faststart, what Instagram and Facebook take."""
+def encode(frames, out: Path, size=(FW, FH), fps: int = FPS, audio: Optional[Path] = None, seconds: float = 15.0) -> Path:
+    """Pipe RGB frames to ffmpeg: H.264, yuv420p, faststart, what Instagram and Facebook take. With
+    `audio` (a track from music.current), its first `seconds` ride along, faded in and out."""
     cmd = [ffmpeg_path(), "-y", "-loglevel", "error", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{size[0]}x{size[1]}",
-           "-r", str(fps), "-i", "-", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "20", "-preset", "medium",
-           "-movflags", "+faststart", str(out)]
+           "-r", str(fps), "-i", "-"]
+    if audio:
+        fade_out = max(0.0, seconds - 1.5)
+        cmd += ["-i", str(audio), "-map", "0:v", "-map", "1:a", "-af",
+                f"afade=t=in:st=0:d=0.4,afade=t=out:st={fade_out:.2f}:d=1.5", "-c:a", "aac", "-b:a", "192k", "-shortest"]
+    cmd += ["-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "20", "-preset", "medium", "-movflags", "+faststart", str(out)]
     proc = subprocess.Popen(cmd, stdin=subprocess.PIPE)
     try:
         for img in frames:

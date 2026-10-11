@@ -218,3 +218,21 @@ class Dashboard(IsolatedCase):
         page = c.get(f"/library/folder/{fid}").text
         self.assertIn(">Undo use<", page)
         self.assertNotIn('class="card off"', page)
+
+    def test_dismiss_all_of_one_kind_leaves_the_others(self):
+        """Chris, 2026-10-11: "the terminal command to dismiss all the drive errors". 23 stale Drive
+        sign-in errors sat on the Agents page with one Dismiss button each."""
+        from convention_social.core import runner
+        for _ in range(3):
+            runner.record_error(self.conn, "scanner", "drive_auth", "Google Drive is not signed in yet.")
+        runner.record_error(self.conn, "seo", "site_check", "the sitemap did not answer")
+        c = self.signed_in()
+        page = c.get("/agents").text
+        self.assertIn("Dismiss all 3 drive auth", page)
+        self.assertIn("Dismiss all 1 site check", page)
+        r = c.post("/errors/ack-kind", data={"kind": "drive_auth"}, follow_redirects=False)
+        self.assertEqual(r.status_code, 303)
+        self.assertIn("3+drive+auth+errors+dismissed", r.headers["location"])
+        open_kinds = [row["kind"] for row in db.rows(self.conn, "SELECT kind FROM errors WHERE alerted=0")]
+        self.assertEqual(open_kinds, ["site_check"])
+        self.assertEqual(db.one(self.conn, "SELECT COUNT(*) n FROM errors")["n"], 4)       # dismissed, never deleted
