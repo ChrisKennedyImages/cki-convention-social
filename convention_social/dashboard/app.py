@@ -982,7 +982,9 @@ def create_app() -> FastAPI:
                         f("PINTEREST_BOARD_ID", "Pinterest board id")]},
             {"title": "Image hosting", "note": "Where Buffer fetches post images from.",
              "fields": [f("MEDIA_BASE_URL", "Image address"), f("MEDIA_UPLOAD_TOKEN", "Upload token", secret=True)]},
-            {"title": "Phone alerts", "note": "This company's own ntfy topic.", "fields": [f("NTFY_TOPIC", "ntfy topic")]},
+            {"title": "Phone alerts", "note": "This company's own ntfy topic. Pings: a post ready to approve, a post that went out, "
+                                              "the watchdog's alerts and the morning brief. Save the topic, then send a test below.",
+             "fields": [f("NTFY_TOPIC", "ntfy topic")]},
             {"title": "Local sorting", "note": "Ollama on this Mini sorts the photo library for free. Leave blank to use the first vision model it has.",
              "fields": [f("OLLAMA_MODEL", "Ollama model"), f("CLASSIFY_BACKEND", "Sorter", choices=["auto", "ollama", "claude"])]},
             {"title": "This dashboard", "note": "The address you open this dashboard at from your phone.",
@@ -1011,6 +1013,15 @@ def create_app() -> FastAPI:
         if updates:
             config.write_env(updates)
         return RedirectResponse(f"/keys?msg=saved+{len(updates)}", status_code=303)
+
+    @app.post("/keys/test-alert")
+    def keys_test_alert(user: str = Depends(require_user)):
+        """Verified at the consumer: the phone. Says what happened, never only that it tried."""
+        from ..core import notify
+        result = notify.push_result(f"{config.get_config().brand_name}: test", "This is the dashboard's test ping. Tap to open it.",
+                                    dry_run=False, priority="default", click=notify.link("/"))
+        msg = "Test ping sent: it should be on your phone now" if result == "sent" else f"No ping: {result}"
+        return RedirectResponse("/keys?msg=" + quote_plus(msg), status_code=303)
 
     @app.post("/keys/password")
     def keys_password(user: str = Depends(require_user), password: str = Form(...), confirm: str = Form(default="")):

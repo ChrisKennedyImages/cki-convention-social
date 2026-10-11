@@ -17,6 +17,11 @@
 {% endfor %}
 <button class="ok" type="submit">Save keys</button>
 </form>
+<form method="post" action="/keys/test-alert" class="card" style="margin-top:14px">
+  <strong>Phone alerts</strong>
+  <div class="muted">Sends one ping to the ntfy topic saved above, so you know the pings reach your phone.</div>
+  <button type="submit" style="margin-top:10px">Send a test ping</button>
+</form>
 <h2 style="margin-top:20px">Dashboard password</h2>
 <form method="post" action="/keys/password" class="card">
   <label>New password (8 or more characters)</label><input type="password" name="password" autocomplete="new-password">
