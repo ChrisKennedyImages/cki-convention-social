@@ -147,6 +147,21 @@ def drive_id_from(text: str) -> str:
 
 
 # ---------------------------------------------------------------------- app
+RENDER_NAME = re.compile(r"(library-report|contact-sheet|building-sheet)-\d{8}\.(html|jpg)")
+
+
+def latest_renders() -> dict:
+    """The newest library report, event contact sheet and building sheet in DATA_ROOT/renders, by name."""
+    renders = config.get_config().data_root / "renders"
+    found = {}
+    for key, pattern in (("report", "library-report-*.html"), ("sheet", "contact-sheet-*.jpg"),
+                         ("buildings", "building-sheet-*.jpg")):
+        names = sorted(p.name for p in renders.glob(pattern) if RENDER_NAME.fullmatch(p.name)) if renders.is_dir() else []
+        if names:
+            found[key] = names[-1]
+    return found
+
+
 def create_app() -> FastAPI:
     app = FastAPI(title="review", docs_url=None, redoc_url=None, openapi_url=None)
 
@@ -286,7 +301,31 @@ def create_app() -> FastAPI:
               LEFT JOIN classifications c ON c.photo_id=p.id
               GROUP BY f.drive_id) f
             WHERE image_count > 0 AND {where} ORDER BY conv DESC, image_count DESC LIMIT 400""")
-        return render(request, "library.html", folders=rows, show=show, msg=request.query_params.get("msg", ""))
+        note = ""
+        if show == "events" and not rows:
+            rows = db.rows(conn, """SELECT f.drive_id, f.name, f.path, f.clearance, f.image_count, 0 AS conv, 0 AS minors
+                                    FROM drive_folders f WHERE f.image_count > 0 ORDER BY f.image_count DESC LIMIT 400""")
+            if rows:
+                note = "No folder has been recognised as event work yet, so every folder with photos is shown."
+        return render(request, "library.html", folders=rows, show=show, msg=request.query_params.get("msg", ""),
+                      note=note, renders=latest_renders())
+
+    @app.get("/library/report")
+    def library_report(user: str = Depends(require_user)):
+        latest = latest_renders().get("report")
+        if not latest:
+            return RedirectResponse("/library?msg=No+report+yet:+the+scanner+makes+one+after+its+next+pass", status_code=303)
+        return RedirectResponse(f"/library/renders/{latest}", status_code=303)
+
+    @app.get("/library/renders/{name}")
+    def library_render(name: str, user: str = Depends(require_user)):
+        # only the report and the two sheets, by exact name: nothing else under DATA_ROOT is reachable
+        if not RENDER_NAME.fullmatch(name):
+            raise HTTPException(404)
+        path = config.get_config().data_root / "renders" / name
+        if not path.is_file():
+            raise HTTPException(404)
+        return FileResponse(path, media_type="text/html" if name.endswith(".html") else "image/jpeg")
 
     @app.post("/library/folder/{fid}/clearance")
     def folder_clearance(fid: str, user: str = Depends(require_user), conn=Depends(conn_dep), state: str = Form(...),

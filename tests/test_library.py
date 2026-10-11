@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import os
 import types
+from unittest import mock
 
 from convention_social.core import config, db, runner, settings
 from convention_social.drive import oauth, scan
@@ -665,6 +666,31 @@ class ScannerAgent(IsolatedCase):
         self.assertEqual(db.one(conn, "SELECT COUNT(*) n FROM api_usage WHERE provider='anthropic'")["n"], 0)
         line2 = scanner.run(ctx, reader=DriveReader("tok", conn=conn, transport=drive))
         self.assertIn("changes:", line2)
+
+    def test_the_scanner_makes_the_report_for_the_dashboard(self):
+        """Chris, 2026-10-11: "I see nothing in my dashboard". The report used to exist only when a
+        command was run on the Mini; the scanner now makes it after a pass that found or sorted photos."""
+        from convention_social.agents import scanner
+        drive = library()
+        conn = db.connect()
+        ctx = runner.Context("scanner", conn, None, config.get_config(), True, 0)
+        line = scanner.run(ctx, reader=DriveReader("tok", conn=conn, transport=drive))
+        reports = sorted((config.get_config().data_root / "renders").glob("library-report-*.html"))
+        self.assertEqual(len(reports), 1, line)
+        self.assertIn(f"report: {reports[0].name}", line)
+        self.assertTrue(reports[0].read_text().strip())
+        line2 = scanner.run(ctx, reader=DriveReader("tok", conn=conn, transport=drive))
+        self.assertIn("report: up to date", line2)
+
+    def test_a_failed_report_never_fails_the_scan(self):
+        from convention_social.agents import scanner
+        drive = library()
+        conn = db.connect()
+        ctx = runner.Context("scanner", conn, None, config.get_config(), True, 0)
+        with mock.patch.object(report, "write_report", side_effect=OSError("disk full")):
+            line = scanner.run(ctx, reader=DriveReader("tok", conn=conn, transport=drive))
+        self.assertIn("full:", line)
+        self.assertIn("report: not made (OSError)", line)
 
 
 class OAuthState(IsolatedCase):
