@@ -3,12 +3,16 @@ real git repositories in a temporary folder: it tests the candidate commit befor
 fast-forwards a clean `main`, holds back on red tests, and never touches local work."""
 from __future__ import annotations
 
+import io
 import os
 import subprocess
 import sys
 import time
+from contextlib import redirect_stdout
 from pathlib import Path
+from unittest import mock
 
+from convention_social import cli
 from convention_social.agents import updater
 from convention_social.core import config, db, runner, settings
 from tests._base import IsolatedCase
@@ -20,7 +24,9 @@ def git(cwd, *args):
     return subprocess.run(["git", *GIT_ID, *args], cwd=str(cwd), capture_output=True, text=True, check=True).stdout.strip()
 
 
-class Updater(IsolatedCase):
+class Repos(IsolatedCase):
+    """Real git repositories in a temporary folder: a bare origin, a seed clone that pushes to it, and
+    the checkout the code under test moves."""
     def setUp(self):
         super().setUp()
         base = self.root / "git"
@@ -73,6 +79,8 @@ class Updater(IsolatedCase):
     def head(self):
         return git(self.repo, "rev-parse", "HEAD")
 
+
+class Updater(Repos):
     def test_up_to_date_does_nothing(self):
         line = self.run_updater()
         self.assertIn("up to date", line)
@@ -213,3 +221,136 @@ class Probe(IsolatedCase):
         def down(url, **kw):
             raise ConnectionError("refused")
         self.assertIsNone(updater.dashboard_commit(down))
+
+
+class CodeState(Repos):
+    """`ccs status` and go-live say where the code stands against GitHub main (2026-10-11: a go-live
+    run on a checkout from before the last merge installed the old schedule, and nothing said so)."""
+
+    def test_says_when_the_mini_is_behind_github(self):
+        state = updater.code_state(self.repo)
+        self.assertEqual((state["head"], state["branch"], state["behind"], state["dirty"]), (self.head(), "main", 0, False))
+        self.assertIn("the same as GitHub main", updater.code_line(state))
+        target = self.commit("b.txt", "two")
+        self.assertEqual(updater.code_state(self.repo)["behind"], 0, "nothing fetched yet: as of the last fetch")
+        git(self.repo, "fetch", "-q", "origin", "main")
+        state = updater.code_state(self.repo)
+        self.assertEqual((state["target"], state["behind"]), (target, 1))
+        line = updater.code_line(state)
+        self.assertIn(f"on main, 1 commit(s) BEHIND GitHub main {target[:7]}", line)
+        self.assertIn("scripts/go-live.sh", line)
+        (self.repo / "a.txt").write_text("edited")
+        self.assertIn("(with local changes)", updater.code_line(updater.code_state(self.repo)))
+        self.assertEqual(updater.code_line(updater.code_state(self.root)), "code: not a git checkout")
+
+    def test_status_prints_it(self):
+        self.commit("b.txt", "two")
+        git(self.repo, "fetch", "-q", "origin", "main")
+        out = io.StringIO()
+        with mock.patch.object(config, "REPO_ROOT", self.repo), redirect_stdout(out):
+            self.assertEqual(cli.main(["status"]), 0)
+        self.assertIn("BEHIND GitHub main", out.getvalue())
+        self.assertIn("updater", out.getvalue())
+
+
+class Installed(Repos):
+    def test_go_live_clears_the_ask_for_itself_until_new_service_files_arrive(self):
+        target = self.commit("launchd/com.example.new.plist.template", "<plist/>")
+        self.run_updater()
+        self.assertEqual(db.one(self.conn, "SELECT COUNT(*) n FROM errors WHERE kind='needs_install' AND alerted=0")["n"], 1)
+
+        def installed():
+            out = io.StringIO()
+            with mock.patch.object(config, "REPO_ROOT", self.repo), redirect_stdout(out):
+                self.assertEqual(cli.main(["launchd", "installed"]), 0)
+            return out.getvalue()
+        self.assertIn(f"services installed from {target[:7]}; the Agents page no longer asks for scripts/go-live.sh", installed())
+        self.assertEqual(settings.get(self.conn, updater.NEEDS_INSTALL_KEY), "")
+        self.assertEqual(db.one(self.conn, "SELECT COUNT(*) n FROM errors WHERE kind='needs_install' AND alerted=0")["n"], 0)
+        self.assertIn("nothing was waiting on it", installed())
+        self.commit("launchd/com.example.other.plist.template", "<plist/>")
+        self.run_updater()
+        self.assertEqual(db.one(self.conn, "SELECT COUNT(*) n FROM errors WHERE kind='needs_install' AND alerted=0")["n"], 1,
+                         "the next update with new service files asks again")
+
+
+class Sync(Repos):
+    """`ccs sync`: go-live's first step, proven on real repositories like the updater itself."""
+
+    def setUp(self):
+        super().setUp()
+        real = updater.run
+        self.suite_ok = True
+
+        def fake_run(ctx):
+            return real(ctx, repo=self.repo,
+                        suite=lambda wt: (self.suite_ok, "Ran 3 tests" if self.suite_ok else "FAILED (failures=1)"),
+                        requirements=lambda r, w: None, migrations=lambda r: None,
+                        restart=lambda: "dashboard: restarted", probe=lambda: self.dash)
+        self.sleeps = []
+        self.on_sleep = lambda s: None
+        for target, value in (("convention_social.agents.updater.run", fake_run),
+                              ("convention_social.core.config.REPO_ROOT", self.repo),
+                              ("time.sleep", lambda s: (self.sleeps.append(s), self.on_sleep(s)))):
+            patcher = mock.patch(target, value)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def sync(self):
+        out = io.StringIO()
+        with redirect_stdout(out):
+            code = cli.main(["sync"])
+        return code, out.getvalue()
+
+    def test_up_to_date_says_so(self):
+        code, out = self.sync()
+        self.assertEqual(code, 0)
+        self.assertIn(f"code: {self.head()[:7]} on main, the same as GitHub main", out)
+        self.assertEqual(self.sleeps, [])
+
+    def test_a_green_new_commit_is_tested_and_switched_to(self):
+        target = self.commit("b.txt", "two")
+        code, out = self.sync()
+        self.assertEqual((code, self.head()), (0, target))
+        self.assertIn(f"code: {target[:7]} on main, the same as GitHub main", out)
+        run = db.one(self.conn, "SELECT dry_run, ok, summary FROM agent_runs WHERE agent='updater' ORDER BY id DESC")
+        self.assertEqual((run["dry_run"], run["ok"]), (0, 1), "live, whatever the updater's dry-run flag says")
+        self.assertIn("tests passed", run["summary"])
+
+    def test_red_tests_leave_the_checkout_where_it_was_and_say_why(self):
+        before = self.head()
+        self.commit("b.txt", "broken")
+        self.suite_ok = False
+        code, out = self.sync()
+        self.assertEqual((code, self.head()), (1, before))
+        self.assertIn("1 commit(s) BEHIND GitHub main", out)
+        self.assertIn("not brought up to date: held back", out)
+
+    def test_local_changes_stop_it_with_the_reason(self):
+        self.commit("b.txt", "two")
+        (self.repo / "a.txt").write_text("edited on the Mini")
+        code, out = self.sync()
+        self.assertEqual(code, 1)
+        self.assertIn("(with local changes)", out)
+        self.assertIn("not brought up to date: not updating: the checkout has local changes", out)
+
+    def test_waits_for_a_running_updater_instead_of_failing(self):
+        lock = runner.Lock("updater")
+        self.assertTrue(lock.acquire())
+        self.addCleanup(lock.release)
+        self.on_sleep = lambda s: lock.release() if len(self.sleeps) == 2 else None
+        code, out = self.sync()
+        self.assertEqual(code, 0)
+        self.assertEqual(self.sleeps, [15, 15])
+        self.assertIn("the updater is running now", out)
+        self.assertIn("the same as GitHub main", out)
+
+    def test_an_updater_that_never_finishes_is_reported(self):
+        lock = runner.Lock("updater")
+        self.assertTrue(lock.acquire())
+        self.addCleanup(lock.release)
+        with mock.patch.object(cli, "cmd_sync", lambda a: updater.sync(wait_seconds=30)):
+            code, out = self.sync()
+        self.assertEqual(code, 1)
+        self.assertEqual(self.sleeps, [15, 15])
+        self.assertIn("the updater is still running; run this again", out)

@@ -1,6 +1,6 @@
 #!/bin/zsh
 # Put the suite live on this Mac mini and eventcaliber.com live on Cloudflare, then check both.
-# Run ON the Mini, as yourself (not with sudo), from the repo, after `git pull`:
+# Run ON the Mini, as yourself (not with sudo), from the repo (it brings the checkout up to date itself):
 #
 #   scripts/go-live.sh
 #
@@ -27,6 +27,21 @@ setenv() { py 'import sys; from convention_social.core import config; config.wri
 
 [[ $EUID -ne 0 ]] || stop "run this as yourself, without sudo; it asks for sudo only when it needs it"
 
+# ---------------------------------------------------------------- 0. the code
+# Install what GitHub main has, never an older checkout (2026-10-11: a run on a checkout from before
+# the last merge installed the old schedule and said LIVE). The suite's own updater does it: tested
+# first, in a worktree, fast-forward only. When the code moves, this script starts over on the new
+# version of itself. A first run has no venv yet: the fresh clone is current.
+if [[ -z "${CCS_GO_LIVE_SYNCED:-}" && -x .venv/bin/python ]]; then
+  say "0/4  the code: this checkout against GitHub main"
+  before="$(git rev-parse HEAD)"
+  bin/ccs sync || stop "this checkout was not brought up to date with GitHub main (the lines above say why)"
+  if [[ "$(git rev-parse HEAD)" != "$before" ]]; then
+    say "the code moved; starting this script over on the new version"
+    CCS_GO_LIVE_SYNCED=1 exec "$HERE/go-live.sh" "$@"
+  fi
+fi
+
 # ---------------------------------------------------------------- 1. the suite on this Mini
 say "1/4  the suite: packages, database, typefaces and the full test run"
 scripts/setup.sh --no-load
@@ -37,8 +52,13 @@ if ! have DASHBOARD_PASSWORD_HASH; then
 fi
 have DASHBOARD_PASSWORD_HASH || stop "no dashboard password was saved; run this again"
 
-say "installing the agents as system services (your Mac password)"
+if sudo -n true 2>/dev/null; then
+  say "installing the agents as system services (sudo still remembers your Mac password; it will not ask)"
+else
+  say "installing the agents as system services (your Mac password)"
+fi
 sudo "$REPO/scripts/install-daemons.sh" || stop "not every service loaded (the lines just above say which); run this again"
+bin/ccs launchd installed | sed 's/^/    /'
 
 # ---------------------------------------------------------------- 2. Cloudflare
 say "2/4  Cloudflare"
