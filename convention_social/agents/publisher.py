@@ -152,7 +152,7 @@ def door(ctx: runner.Context, row) -> Optional[tuple[str, str]]:
     official = is_official(ctx.conn, row["convention_id"])
     known_names = names.public_names(ctx.conn)          # no event or person is named (ai/names.py)
     for net in targets_of(row):
-        report = copy_rules.check(captions.get(net, ""), official=official, names=known_names)
+        report = copy_rules.check(captions.get(net, ""), official=official, names=known_names, social=True)
         if not report.ok:
             return "back", f"The {net} caption no longer passes the rules: {report.blocks[0].message}. Fix it and approve again."
     ids = photo_ids_of(row)

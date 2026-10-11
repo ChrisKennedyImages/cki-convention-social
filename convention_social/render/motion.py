@@ -12,11 +12,9 @@ Scenes (each returns the cards for one moment, so a still and a frame of a reel 
 
 Pieces built from them:
   rooms_reel       15 s: deal, a lift per room, fan to ring, the ask
-  facematch_reel   15 s: the badge, the scan, the selfie, the photos finding their person, the ask
   carousel         9 slides: a fanned cover, a rail slide per room, face match, the ask on a ring
   spotlight_post   the daily post: today's photo opened on the rail
   fan_post         a hook post: the hand of photos
-  facematch_post   the three folders
 
 Every word passes ai.copy_rules first. The daily draft (agents/content.py) uses these; a reel only once
 a music track is on (music.py), and nothing leaves without Chris's Approve.
@@ -155,77 +153,6 @@ def rail(shots: Sequence[Shot], *, center: float, open_: float, w: int = 330, h:
     return cards
 
 
-def folder_face(number: str, word: str, inside: Optional[Image.Image], w: int = 360, h: int = 420, lit: float = 1.0) -> Image.Image:
-    """A folder: a tab at the top left, a dark body, the number, the word, and what it holds rising out."""
-    ss = 2
-    W2, H2 = w * ss, h * ss
-    tab_h = int(H2 * 0.09)
-    img = Image.new("RGBA", (W2, H2), (0, 0, 0, 0))
-    if inside is not None:
-        ins = inside.resize((int(W2 * 0.8), int(H2 * 0.62)), Image.LANCZOS)
-        img.alpha_composite(ins.convert("RGBA") if ins.mode != "RGBA" else ins, (int(W2 * 0.1), int(tab_h * 0.4)))
-    body = Image.new("L", (W2, H2), 0)
-    d = ImageDraw.Draw(body)
-    r = int(26 * ss)
-    d.rounded_rectangle([0, tab_h, W2 - 1, H2 - 1], r, fill=255)
-    d.rounded_rectangle([0, 0, int(W2 * 0.42), tab_h + r], r // 2, fill=255)
-    front = Image.new("L", (W2, H2), 0)
-    ImageDraw.Draw(front).rounded_rectangle([0, int(H2 * 0.46), W2 - 1, H2 - 1], r, fill=255)
-    grad = Image.linear_gradient("L").resize((W2, H2))
-    back_fill = Image.composite(Image.new("RGB", (W2, H2), (18, 18, 21)), Image.new("RGB", (W2, H2), (44, 44, 50)), grad)
-    back = back_fill.convert("RGBA")
-    back.putalpha(body)
-    out = Image.new("RGBA", (W2, H2), (0, 0, 0, 0))
-    out.alpha_composite(back)
-    out.alpha_composite(img)
-    front_fill = Image.composite(Image.new("RGB", (W2, H2), (14, 14, 16)), Image.new("RGB", (W2, H2), (52, 52, 60)), grad)
-    fr = front_fill.convert("RGBA")
-    fr.putalpha(front)
-    out.alpha_composite(fr)
-    dd = ImageDraw.Draw(out)
-    dd.line([(r, int(H2 * 0.46)), (W2 - r, int(H2 * 0.46))], fill=C + (255,), width=2 * ss)
-    dd.text((26 * ss, int(H2 * 0.46) + 30 * ss), number, font=face(MONO, 54 * ss), fill=C + (255,))
-    wf = fit(dd, [word], DISPLAY, W2 - 52 * ss, 44 * ss, 20 * ss)
-    dd.text((26 * ss, H2 - 34 * ss), word, font=wf, fill=W + (255,), anchor="ls")
-    out = out.resize((w, h), Image.LANCZOS)
-    if lit < 1:
-        a = out.getchannel("A")
-        out = out.convert("RGB").point(lambda v: int(v * lit)).convert("RGBA")
-        out.putalpha(a)
-    pad = Image.new("RGBA", (w + 6, h + 6), (0, 0, 0, 0))
-    pad.alpha_composite(out, (3, 3))
-    return pad
-
-
-def barcode(w: int, h: int, seed: int = 7) -> Image.Image:
-    """Bars like the code on a lanyard badge (a drawing; it scans as nothing)."""
-    im = Image.new("RGB", (w, h), (240, 240, 236))
-    d = ImageDraw.Draw(im)
-    x, r = int(w * 0.08), seed
-    while x < w * 0.92:
-        r = (r * 1103515245 + 12345) % (2 ** 31)
-        bw = 2 + r % 7
-        if (r >> 5) % 3:
-            d.rectangle([x, h * 0.12, x + bw, h * 0.88], fill=(12, 12, 14))
-        x += bw + 2 + (r >> 9) % 4
-    return im
-
-
-def selfie_icon(w: int, h: int) -> Image.Image:
-    """A selfie frame: a head and shoulders outline inside a ring, focus corners locked on it."""
-    ss = 3
-    im = Image.new("RGB", (w * ss, h * ss), (20, 22, 26))
-    d = ImageDraw.Draw(im)
-    cx, cy, R = w * ss / 2, h * ss * 0.48, min(w, h) * ss * 0.36
-    d.ellipse([cx - R, cy - R, cx + R, cy + R], outline=(90, 92, 100), width=3 * ss)
-    hr = R * 0.36
-    d.ellipse([cx - hr, cy - hr * 1.5, cx + hr, cy + hr * 0.5], fill=(150, 152, 160))
-    d.pieslice([cx - R * 0.72, cy + R * 0.25, cx + R * 0.72, cy + R * 1.5], 180, 360, fill=(150, 152, 160))
-    af_box(d, cx, cy - hr * 0.5, hr * 3.2, hr * 3.4, 3 * ss, C)
-    return im.resize((w, h), Image.LANCZOS)
-
-
-# --------------------------------------------------------------------------- type
 def caption(img: Image.Image, x: float, y: float, kicker: str, title: str, line: str, *, width: float, s: float = 1.0,
             title_size: float = 92, align: str = "left") -> float:
     """Kicker, title and line, set from y down. Returns the y it ended at."""
@@ -287,23 +214,21 @@ def save(img: Image.Image, out: Path, meta: Optional[ImageMeta] = None) -> Path:
 # --------------------------------------------------------------------------- copy
 @dataclass
 class MotionCopy:
-    hook: Sequence[str] = ("EVERY ROOM", "OF YOUR EVENT.")
-    covered: str = "COVERED."
-    fm_title: str = "YOUR PHOTOS FIND YOU."
-    fm_steps: Sequence[tuple] = (("01", "SCAN"), ("02", "SELFIE"), ("03", "SENT"))
-    fm_line: str = "Scan the badge, three quick fields, a selfie. Every photo you are in comes straight to you."
-    fm_choice: str = "Open to every attendee, or staff only. Your call before the event."
+    """The words on the cards and in the reels. About the photos, never about a service (Chris,
+    2026-10-11: "keep to specifics and not talk about what is offered or what is a service")."""
+    hook: Sequence[str] = ("ONE EVENT.", "ROOM BY ROOM.")
+    covered: str = "EVENT CALIBER."              # the closing slam before the ask
+    kicker: str = "EVENTS"                        # the kind of event, from the content agent (never which event)
     tagline: str = "Event and convention photography"
     ask: str = "Request a quote"
     site: str = "eventcaliber.com"
 
     def words(self) -> str:
-        return " ".join([*self.hook, self.covered, self.fm_title, *(f"{a} {b}" for a, b in self.fm_steps), self.fm_line,
-                         self.fm_choice, self.tagline, self.ask, self.site])
+        return " ".join([*self.hook, self.covered, self.kicker, self.tagline, self.ask, self.site])
 
 
 def _check(shots: Sequence[Shot], copy: MotionCopy, official: bool) -> None:
-    check_copy(copy.words(), *(f"{s.room} {s.line}" for s in shots), official=official)
+    check_copy(copy.words(), *(f"{s.room} {s.line}" for s in shots), official=official, social=True)
 
 
 # --------------------------------------------------------------------------- stills
@@ -316,7 +241,7 @@ def fan_post(shots: Sequence[Shot], copy: MotionCopy, *, out: Path, focus: int =
     stage.draw(img, fan(faces, focus=focus, lift=1.0, y0=40, scale=0.62, spread=10, radius=1000, lift_y=150),
                cy=h * 0.6, floor=420)
     corner_marks(img, 1.0)
-    y = caption(img, 70, 170, "EVENT CALIBER  ·  FULL COVERAGE", copy.hook[0], "", width=940, title_size=88)
+    y = caption(img, 70, 170, f"EVENT CALIBER  ·  {copy.kicker}", copy.hook[0], "", width=940, title_size=88)
     caption(img, 70, y - 20, "", copy.hook[1], "", width=940, title_size=88)
     ask_strip(img, h - 120, copy)
     return save(grain_still(img), out, meta)
@@ -372,27 +297,7 @@ def spotlight_post(shots: Sequence[Shot], copy: MotionCopy, *, out: Path, index:
     stage.draw(img, rail(shots, center=index, open_=1.0, w=300, h=430, gap=190, y0=-40), cy=h * 0.42, floor=230)
     corner_marks(img, 1.0, counter)
     sh = shots[index]
-    caption(img, w / 2, h * 0.66, f"N°{index + 1:02d}  ·  COVERAGE", sh.room, sh.line, width=920, title_size=96, align="center")
-    ask_strip(img, h - 120, copy)
-    return save(grain_still(img), out, meta)
-
-
-def facematch_post(shots: Sequence[Shot], copy: MotionCopy, *, out: Path, official: bool = False,
-                   meta: Optional[ImageMeta] = None, counter: str = "") -> Path:
-    _check(shots, copy, official)
-    w, h = 1080, 1350
-    img = backdrop(w, h, floor=h * 0.74)
-    insides = [barcode(300, 160), selfie_icon(300, 260), card_face(shots[0], 300, 260, 0, label=False).convert("RGB")]
-    faces = [folder_face(n, word, ins, 320, 400) for (n, word), ins in zip(copy.fm_steps, insides)]
-    cards = [stage.Card(f, x=(i - 1) * 330, y=0, z=40 if i != 1 else -40, yaw=(1 - i) * 16, pitch=6, scale=1.0,
-                        reflect=0.25, shadow=0.7, light=0.9 if i != 1 else 1.0) for i, f in enumerate(faces)]
-    stage.draw(img, [replace(c, scale=1.12) for c in cards], cy=h * 0.56, floor=250)
-    corner_marks(img, 1.0, counter)
-    caption(img, 70, 190, "FACE MATCH DELIVERY", copy.fm_title, copy.fm_line, width=940, title_size=84)
-    d = ImageDraw.Draw(img)
-    lf = face(BODY, 30)
-    for i, t in enumerate(wrap(d, copy.fm_choice, lf, 940)[:2]):
-        d.text((70, h - 200 + i * 40), t, font=lf, fill=W, anchor="ls")
+    caption(img, w / 2, h * 0.66, f"N°{index + 1:02d}  ·  {copy.kicker}", sh.room, sh.line, width=920, title_size=96, align="center")
     ask_strip(img, h - 120, copy)
     return save(grain_still(img), out, meta)
 
@@ -400,10 +305,10 @@ def facematch_post(shots: Sequence[Shot], copy: MotionCopy, *, out: Path, offici
 def carousel(shots: Sequence[Shot], copy: MotionCopy, *, out_dir: Path, official: bool = False,
              meta: Optional[ImageMeta] = None) -> list[Path]:
     """A fanned cover, a rail slide per room (the next room waits on the right, so the swipe
-    walks the rail), face match, and the ask on a ring of every room."""
+    walks the rail), and the ask on a ring of the rooms."""
     _check(shots, copy, official)
     out_dir = Path(out_dir)
-    n = len(shots) + 3
+    n = len(shots) + 2
     paths = [fan_post(shots, copy, out=out_dir / "slide-01.jpg", focus=len(shots) // 2, official=official, meta=meta)]
     # the cover carries the swipe cue in place of the ask
     cover_img = Image.open(paths[0]).convert("RGB")
@@ -415,14 +320,12 @@ def carousel(shots: Sequence[Shot], copy: MotionCopy, *, out_dir: Path, official
     for i in range(len(shots)):
         paths.append(spotlight_post(shots, copy, out=out_dir / f"slide-{i + 2:02d}.jpg", index=i, official=official, meta=meta,
                                     counter=f"{i + 2:02d} / {n:02d}"))
-    paths.append(facematch_post(shots, copy, out=out_dir / f"slide-{n - 1:02d}.jpg", official=official, meta=meta,
-                                counter=f"{n - 1:02d} / {n:02d}"))
     w, h = 1080, 1350
     img = backdrop(w, h, floor=h * 0.6)
     faces = [card_face(sh, 360, 480, i) for i, sh in enumerate(shots)]
     stage.draw(img, ring(faces, angle=14, tilt=14, radius=470, zc=560, scale=0.66), cy=h * 0.36, floor=250)
     corner_marks(img, 1.0, f"{n:02d} / {n:02d}")
-    y = caption(img, w / 2, h * 0.62, "EVERY ROOM  ·  EVERY GUEST", copy.covered, "", width=900, title_size=120, align="center")
+    y = caption(img, w / 2, h * 0.62, f"EVENT CALIBER  ·  {copy.kicker}", copy.covered, "", width=900, title_size=120, align="center")
     ask_block(img, w / 2, y + 60, copy.ask, copy.site + "/book")
     paths.append(save(grain_still(img), out_dir / f"slide-{n:02d}.jpg", meta))
     return paths
@@ -501,7 +404,7 @@ def rooms_reel(shots: Sequence[Shot], copy: MotionCopy, *, out: Path, official: 
             _block(img, copy.covered, tf, 76, 1450, (f - MORPH) / 6)
             if f > MORPH + 20:
                 lf = face(BODY, 38)
-                for j, t in enumerate(wrap(d, copy.fm_line, lf, 900)[:2]):
+                for j, t in enumerate(wrap(d, copy.tagline, lf, 900)[:2]):
                     _fade(img, (80, 1540 + j * 50), t, lf, W, (f - MORPH - 20) / 8)
         else:
             f = i - (DEAL + ROOM * n + MORPH + SPIN)
@@ -510,148 +413,6 @@ def rooms_reel(shots: Sequence[Shot], copy: MotionCopy, *, out: Path, official: 
                 cards = [replace(c, alpha=1 - f / 12) for c in ring(big, angle=spin, radius=560 + 240 * f / 12, zc=420, scale=0.92, tilt=13, y0=-60)]
                 stage.draw(img, cards, cy=cy, floor=floor_y, fast=True)
             img = _end_card(f, copy, img)
-        return grain(img, i, 0.2)
-
-    return _render(frame, total, out, encoder, only, frames_dir, audio)
-
-
-def facematch_reel(shots: Sequence[Shot], copy: MotionCopy, *, out: Path, official: bool = False,
-               encoder: Optional[Callable] = None, only: Optional[Sequence[int]] = None,
-               frames_dir: Optional[Path] = None, audio: Optional[Path] = None) -> Path:
-    """15 s: a badge swings in, its code is scanned, three fields fill, a selfie locks, and the
-    photos fly in from every side to land on one person's stack; then the organizer's choice and the ask."""
-    _check(shots, copy, official)
-    grain = Grain()
-    faces = [card_face(sh, 360, 480, i, label=False) for i, sh in enumerate(shots)]
-    BADGE, SCAN, FIELDS, SELFIE, STREAM, CHOICE, END = FACEMATCH_TIMING
-    total = total_frames("facematch")
-    bc = barcode(420, 150)
-
-    def badge(img: Image.Image, swing: float, scan: Optional[float]) -> None:
-        bw, bh = 520, 700
-        b = Image.new("RGBA", (bw, bh), (0, 0, 0, 0))
-        d = ImageDraw.Draw(b)
-        d.rounded_rectangle([0, 0, bw - 1, bh - 1], 34, fill=(236, 236, 232, 255))
-        d.rounded_rectangle([bw / 2 - 60, 26, bw / 2 + 60, 46], 10, fill=(170, 170, 170, 255))
-        d.rectangle([0, 90, bw, 230], fill=(16, 16, 18, 255))
-        mono(d, (40, 128), "ATTENDEE", 30, C, 0.3)
-        mono(d, (40, 176), "SCAN FOR YOUR PHOTOS", 18, W, 0.18)
-        d.rounded_rectangle([60, 300, bw - 60, 520], 18, fill=(255, 255, 255, 255))
-        b.paste(bc, (50, 335))
-        mono(d, (40, bh - 110), "GENERAL ADMISSION", 22, (60, 60, 64), 0.18)
-        if scan is not None:
-            y = 320 + 200 * scan
-            glow = Image.new("RGBA", (bw, 60), C + (0,))
-            gd = ImageDraw.Draw(glow)
-            for k in range(30):
-                gd.line([(40, 30 - k), (bw - 40, 30 - k)], fill=C + (int(120 * (1 - k / 30)),))
-                gd.line([(40, 30 + k), (bw - 40, 30 + k)], fill=C + (int(120 * (1 - k / 30)),))
-            b.alpha_composite(glow, (0, int(y - 30)))
-            d.line([(30, y), (bw - 30, y)], fill=C + (255,), width=5)
-        card = stage.Card(b, x=0, y=-60, z=0, roll=swing, scale=1.0, shadow=0.8)
-        d2 = ImageDraw.Draw(img)
-        attach = (RW / 2, RH * 0.46 - 410)
-        d2.line([(RW / 2 - 70, 0), attach], fill=(20, 20, 24), width=26)
-        d2.line([(RW / 2 + 70, 0), attach], fill=(20, 20, 24), width=26)
-        d2.line([(RW / 2 - 70, 0), attach], fill=(0, 150, 170), width=4)
-        stage.draw(img, [card], cy=RH * 0.46)
-
-    def frame(i: int) -> Image.Image:
-        img = backdrop(RW, RH)
-        d = ImageDraw.Draw(img)
-        t = i
-        if t < BADGE + SCAN:
-            sw = 18 * math.exp(-t / 18) * math.cos(t / 4.2)
-            yoff = -900 * (1 - ease_out(t / 18))
-            tmp = backdrop(RW, RH)
-            badge(tmp, sw, (t - BADGE) / SCAN if t >= BADGE else None)
-            img.paste(tmp.crop((0, max(0, -int(yoff)), RW, RH)), (0, max(0, int(yoff))))
-            d = ImageDraw.Draw(img)
-            mono(d, (76, 1500), "01  SCAN", 26, C, 0.2)
-            tf = fit(d, ["SCAN YOUR BADGE."], DISPLAY, 920, 104, 50)
-            _slam(img, "SCAN YOUR BADGE.", tf, 76, 1620, (t - 12) / 6)
-            if BADGE <= t < BADGE + 4:
-                img = Image.blend(img, Image.new("RGB", (RW, RH), C), 0.25 * (1 - (t - BADGE) / 4))
-        elif t < BADGE + SCAN + FIELDS:
-            f = t - BADGE - SCAN
-            mono(d, (76, 500), "02  THREE QUICK FIELDS", 26, C, 0.2)
-            for k in range(3):
-                y = 640 + k * 190
-                p = ease_out((f - 6 * k) / 14)
-                d.rounded_rectangle([76, y, RW - 76, y + 120], 22, outline=G3, width=3)
-                if p > 0:
-                    d.rounded_rectangle([90, y + 14, 90 + (RW - 180) * p, y + 106], 16, fill=(24, 40, 46))
-                    d.rectangle([90 + (RW - 180) * p - 4, y + 30, 90 + (RW - 180) * p, y + 90], fill=C)
-                if p >= 1:
-                    d.line([(RW - 160, y + 62), (RW - 144, y + 78), (RW - 116, y + 42)], fill=C, width=7, joint="curve")
-            tf = fit(d, ["THREE QUICK FIELDS."], DISPLAY, 920, 96, 50)
-            _slam(img, "THREE QUICK FIELDS.", tf, 76, 1400, f / 6)
-        elif t < BADGE + SCAN + FIELDS + SELFIE:
-            f = t - BADGE - SCAN - FIELDS
-            mono(d, (76, 300), "03  A QUICK SELFIE", 26, C, 0.2)
-            s_img = selfie_icon(620, 760)
-            k = ease_back(f / 10)
-            sz = (int(620 * (0.6 + 0.4 * k)), int(760 * (0.6 + 0.4 * k)))
-            s_img = stage.rounded(s_img.resize(sz, Image.LANCZOS), 40)
-            img.paste(s_img, (int(RW / 2 - sz[0] / 2), int(RH * 0.47 - sz[1] / 2)), s_img)
-            if f > 14:
-                d = ImageDraw.Draw(img)
-                af_box(d, RW / 2, RH * 0.47 - 90, 360, 400, 6, C, "MATCH LOCKED" if f > 20 else "", 1.4)
-            tf = fit(d, ["A QUICK SELFIE."], DISPLAY, 920, 104, 50)
-            _slam(img, "A QUICK SELFIE.", tf, 76, 1400, f / 6)
-            if f > 29:
-                img = Image.blend(img, Image.new("RGB", (RW, RH), W), 0.9 * (1 - (f - 30) / 4))
-        elif t < BADGE + SCAN + FIELDS + SELFIE + STREAM:
-            f = t - BADGE - SCAN - FIELDS - SELFIE
-            cards = []
-            nn = len(faces)
-            for k in range(nn * 2):
-                start = 6 * k
-                p = ease_out((f - start) / 20)
-                if p <= 0:
-                    continue
-                ang = (k * 137) % 360
-                fx, fy = 1400 * math.cos(math.radians(ang)), 1400 * math.sin(math.radians(ang))
-                rot = ((k * 53) % 30) - 15
-                cards.append(stage.Card(faces[k % nn], x=lerp(fx, (k % 3 - 1) * 14, p), y=lerp(fy, -120 - min(k, 12) * 3, p),
-                                        z=lerp(600, -k * 4, p), roll=lerp(rot * 3, rot * 0.4, p), scale=1.3, shadow=0.7,
-                                        alpha=clamp(p * 2), light=0.85 + 0.15 * p))
-            stage.draw(img, cards, cy=RH * 0.44, fast=True)
-            got = sum(1 for k in range(nn * 2) if f - 6 * k >= 20)
-            d = ImageDraw.Draw(img)
-            if got:
-                af_box(d, RW / 2, RH * 0.44 - 300, 400, 340, 6, C, "", 1.4)
-                pill = f"+{got}  YOUR PHOTOS"
-                pw = mono_w(d, pill, 28, 0.16)
-                d.rounded_rectangle([RW / 2 - pw / 2 - 28, 230, RW / 2 + pw / 2 + 28, 300], 35, fill=C)
-                mono(d, (RW / 2 - pw / 2, 248), pill, 28, K, 0.16)
-            tf = fit(d, [copy.fm_title], DISPLAY, 920, 100, 50)
-            _slam(img, copy.fm_title, tf, 76, 1450, (f - 10) / 6)
-            lf = face(BODY, 38)
-            for j, tline in enumerate(wrap(d, copy.fm_line, lf, 900)[:3]):
-                _fade(img, (80, 1530 + j * 50), tline, lf, G5, (f - 24) / 8)
-        elif t < BADGE + SCAN + FIELDS + SELFIE + STREAM + CHOICE:
-            f = t - BADGE - SCAN - FIELDS - SELFIE - STREAM
-            opts = [("01", "EVERY GUEST"), ("02", "STAFF ONLY")]
-            insides = [card_face(shots[0], 300, 260, 0, label=False).convert("RGB"), card_face(shots[1 % len(shots)], 300, 260, 1, label=False).convert("RGB")]
-            pick = 0 if (f // 24) % 2 == 0 else 1
-            cards = []
-            for k, ((num, word), ins) in enumerate(zip(opts, insides)):
-                p = ease_back((f - 4 * k) / 12)
-                on = k == pick
-                cards.append(stage.Card(folder_face(num, word, ins, 440, 540, lit=1.0 if on else 0.55), x=(k - 0.5) * 470,
-                                        y=lerp(400, -60 if on else 0, p), z=-60 if on else 40, yaw=(0.5 - k) * 18, scale=1.0,
-                                        alpha=clamp(p * 2), shadow=0.8, reflect=0.25))
-            stage.draw(img, cards, cy=RH * 0.47, floor=330, fast=True)
-            d = ImageDraw.Draw(img)
-            mono(d, (76, 300), "FOR ORGANIZERS", 26, C, 0.2)
-            tf = fit(d, ["YOUR CALL."], DISPLAY, 920, 150, 60)
-            _slam(img, "YOUR CALL.", tf, 76, 1400, f / 6)
-            lf = face(BODY, 38)
-            for j, tline in enumerate(wrap(d, copy.fm_choice, lf, 900)[:2]):
-                _fade(img, (80, 1480 + j * 50), tline, lf, W, (f - 10) / 8)
-        else:
-            img = _end_card(t - (BADGE + SCAN + FIELDS + SELFIE + STREAM + CHOICE), copy, img)
         return grain(img, i, 0.2)
 
     return _render(frame, total, out, encoder, only, frames_dir, audio)
@@ -701,28 +462,23 @@ def _render(frame: Callable[[int], Image.Image], total: int, out: Path, encoder,
 
 
 ROOMS_TIMING = (40, 30, 24, 66, 140)                   # deal, each room, fan to ring, spin, end card
-FACEMATCH_TIMING = (40, 30, 36, 34, 120, 70, 120)      # badge, scan, fields, selfie, photos arrive, choice, end card
 
 
 def total_frames(kind: str, n: int = 6) -> int:
     """15 seconds at 30 frames a second for six rooms."""
-    if kind == "rooms":
-        deal, room, morph, spin, end = ROOMS_TIMING
-        return deal + room * n + morph + spin + end
-    return sum(FACEMATCH_TIMING)
+    deal, room, morph, spin, end = ROOMS_TIMING
+    return deal + room * n + morph + spin + end
 
 
-REELS = {"rooms": rooms_reel, "facematch": facematch_reel}
+# the face match reel is retired (2026-10-11): it explained the delivery service, and a reel keeps to the photos
+REELS = {"rooms": rooms_reel}
 
 
 def still_frames(kind: str, n: int) -> tuple[int, ...]:
-    """The cover first (the first room opened out; the photos landing on one person), then the
-    stills the art director looks at: the second room and the ring, or the organizer's choice."""
-    if kind == "rooms":
-        deal, room, morph, spin, _ = ROOMS_TIMING
-        return (deal + 20, deal + room + 20, deal + room * n + morph + spin - 10)
-    badge, scan, fields, selfie, stream, _, _ = FACEMATCH_TIMING
-    return (badge + scan + fields + selfie + 100, badge + scan + fields + selfie + stream + 40)
+    """The cover first (the first room opened out), then the stills the art director looks at: the
+    second room and the ring."""
+    deal, room, morph, spin, _ = ROOMS_TIMING
+    return (deal + 20, deal + room + 20, deal + room * n + morph + spin - 10)
 
 
 def reel_stills(kind: str, shots: Sequence[Shot], copy: MotionCopy, *, out_dir: Path, official: bool = False,

@@ -57,6 +57,7 @@ BANNED_SPACES = frozenset({"bathroom", "closet_or_utility"})
 
 SYSTEM = """You sort a photographer's archive of event and architecture work. For each photo, say what it shows, factually and briefly.
 subject: "event" for conventions, conferences, galas, expos and similar gatherings; "architecture" for a building, its exterior or its interior shown as architecture; "other" for anything else.
+event_kind: "fan" for a fan convention (comics, anime, gaming), "business" for a business, trade or political conference or a corporate gala; "wedding" for a wedding or its reception (a bride, a groom, a wedding party, a first dance, a cake); "private" for a party, a family or personal occasion, a religious ceremony or a portrait session with no event around it; "unknown" when the kind of gathering cannot be told.
 Judge only what is visible. When unsure whether anyone could be under 18, answer true.
 
 Read the picture for text before you answer about it. Look at signs above doors, numbers on
@@ -79,11 +80,14 @@ moment: 1 (nothing happening, a blink, a turned back) to 5 (a real expression or
 keeping). For a building, judge the composition instead.
 Return JSON only, matching the schema."""
 
+KINDS = ("fan", "business", "wedding", "private", "unknown")
+NOT_OFFERED_KINDS = ("wedding", "private")     # Event Caliber photographs conventions and conferences (Chris, 2026-10-11)
+
 SCHEMA = {
     "type": "object",
     "properties": {
         "subject": {"type": "string", "enum": ["event", "architecture", "other"]},
-        "event_kind": {"type": "string", "enum": ["fan", "business", "unknown"]},
+        "event_kind": {"type": "string", "enum": list(KINDS)},
         "event_name_seen": {"type": "string", "description": "an event name readable on signage or badges; empty if none"},
         "shot_type": {"type": "string", "enum": list(SHOT_TYPES)},
         "view": {"type": "string", "enum": ["exterior", "interior", "none"]},
@@ -106,10 +110,11 @@ SCHEMA = {
 }
 
 FINAL_SYSTEM = """You are the last check before a photographer posts a photo publicly.
-Answer three things about the photo only from what is visible:
+Answer four things about the photo only from what is visible:
 possible_minor: true if anyone in the photo could be under 18. When unsure, true.
 personal_details: anything readable that identifies a private person or a home: a name on a badge, a vehicle plate, a screen or document with personal information, a house number, a street sign. Empty when none.
 shot_type: what the photo is of. stage_panel for anyone on a stage, at a podium or on a panel, however close the framing; portrait or headshot only for a posed picture of a person made for its own sake, away from a stage; group for a posed group; candid for an unposed moment; crowd for an audience or a room of people; vendor_hall or booth for an exhibit floor; backstage; dinner_reception; venue, building_exterior or building_interior for a building with no event in it; cosplay_portrait for a person in costume; other when none fits.
+event_kind: what kind of occasion the photo is from. fan for a fan convention (comics, anime, gaming); business for a business, trade or political conference or a corporate gala; wedding for a wedding or its reception (a bride, a groom, a wedding party, a first dance, a cake, wedding dress); private for a party, a family or personal occasion, a religious ceremony or a portrait session with no event around it; unknown only when nothing visible tells. A wedding is never business.
 Return JSON only, matching the schema."""
 
 FINAL_SCHEMA = {
@@ -118,9 +123,10 @@ FINAL_SCHEMA = {
         "possible_minor": {"type": "boolean"},
         "personal_details": {"type": "array", "items": {"type": "string", "enum": list(DETAILS)}},
         "shot_type": {"type": "string", "enum": list(SHOT_TYPES)},
+        "event_kind": {"type": "string", "enum": list(KINDS)},
         "summary": {"type": "string"},
     },
-    "required": ["possible_minor", "personal_details", "shot_type", "summary"],
+    "required": ["possible_minor", "personal_details", "shot_type", "event_kind", "summary"],
     "additionalProperties": False,
 }
 
@@ -356,7 +362,8 @@ def save_sort(conn: sqlite3.Connection, photo: sqlite3.Row, data: dict, method: 
         "event_kind=CASE WHEN ?='unknown' THEN event_kind ELSE ? END, shot_type=?, quality=?, people_count=?, personal_details=?, "
         "possible_minor=?, space=?, residential=?, empty_room=?, sharp=?, light=?, moment=?, "
         "summary=?, model=?, classified_at=? WHERE photo_id=?",
-        (method, int(subject == "event"), subject, view, event_name_seen(data.get("event_name_seen")),
+        (method, int(subject == "event" and data.get("event_kind") not in NOT_OFFERED_KINDS), subject, view,
+         event_name_seen(data.get("event_name_seen")),
          data.get("event_kind"), data.get("event_kind"), data.get("shot_type"),
          _score_1_5(data.get("quality")), int(data.get("people_count") or 0),
          json.dumps(data.get("personal_details") or []), _flag(data.get("possible_minor"), True),
@@ -438,13 +445,18 @@ def final_check(conn: sqlite3.Connection, photo_id: int, image: bytes, *, client
         return None
     data = json.loads(text)
     shot = data.get("shot_type") if data.get("shot_type") in SHOT_TYPES else None
-    conn.execute("INSERT INTO final_checks (photo_id, possible_minor, personal_details, summary, model, checked_at, shot_type) "
-                 "VALUES (?,?,?,?,?,?,?) ON CONFLICT(photo_id) DO UPDATE SET possible_minor=excluded.possible_minor, "
+    kind = data.get("event_kind") if data.get("event_kind") in KINDS else "unknown"
+    conn.execute("INSERT INTO final_checks (photo_id, possible_minor, personal_details, summary, model, checked_at, shot_type, event_kind) "
+                 "VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(photo_id) DO UPDATE SET possible_minor=excluded.possible_minor, "
                  "personal_details=excluded.personal_details, summary=excluded.summary, model=excluded.model, "
-                 "checked_at=excluded.checked_at, shot_type=excluded.shot_type",
+                 "checked_at=excluded.checked_at, shot_type=excluded.shot_type, event_kind=excluded.event_kind",
                  (photo_id, 1 if data.get("possible_minor", True) else 0, json.dumps(data.get("personal_details") or []),
-                  (data.get("summary") or "")[:300], answered, db.utcnow(), shot))
+                  (data.get("summary") or "")[:300], answered, db.utcnow(), shot, kind))
     if shot:
         # Claude's word beats the local sorter's guess (2026-10-11: a stage shot called a portrait)
         conn.execute("UPDATE classifications SET shot_type=? WHERE photo_id=? AND COALESCE(shot_type, '') != ?", (shot, photo_id, shot))
+    if kind != "unknown":
+        # and what kind of occasion it is (2026-10-11: a wedding on the website as the hero)
+        conn.execute("UPDATE classifications SET event_kind=?, is_convention=? WHERE photo_id=?",
+                     (kind, 0 if kind in NOT_OFFERED_KINDS else 1, photo_id))
     return data

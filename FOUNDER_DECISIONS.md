@@ -337,6 +337,50 @@ only when Chris says so.
   draft and its ping arrive (`launchd/…content.plist.template`, one
   `scripts/go-live.sh` on the Mini to take effect).
 
+## 2026-10-11: nothing includes anything
+
+- On a draft that said conference photography "includes portraits like this
+  one, shot on site in a few minutes. Colored gradient background, one chair,
+  and a short line of attendees who all leave with a new headshot": "Suite
+  wide - NOTHING INCLUDES ANYTHING!!!!! Don't ever say something you don't
+  know or don't ask me about my own company!!!!" Public text says only what
+  `offer.json` and Chris have stated. Nothing about what a service includes
+  or comes with, how a shoot is set up, how long anything takes, what anyone
+  leaves with, packages or turnaround. A detail the suite does not have is a
+  question to him, never a sentence. The gate (`ai/copy_rules.py`, rule
+  `claims`) blocks it on every surface: captions, the publisher door, the
+  dashboard, outreach mail, quote replies, the site and the photo text; the
+  writer is told the rule and the template describes only the coverage he
+  listed.
+- Then, sharper: "You need to keep to specifics and not talk about what is
+  offered or what is a service, specifically in captions and social media or
+  anything public. That's between the client and I!" A post is about the
+  photo: what it shows, where in the event, the moment; never the company's
+  services, coverage, delivery or what a client gets. Rule `offer` in the gate
+  runs on every social surface (captions, the dashboard, the door, the cards,
+  the reels); the writer's prompt no longer describes the company's services
+  at all; the template says the scene and the byline; the cards say the room
+  and what is shown. The face match post (Sundays) and the face match reel
+  are retired: they explained the delivery service. Sunday is a single photo;
+  the Saturday reel is the rooms reel. The website keeps the coverage list
+  from `offer.json` that he saw go live; whether that stays is his to say.
+
+## 2026-10-11: never a wedding; every photo judged on its own
+
+- "The main photo when you open the website is from a damn wedding! That one
+  needs to be the best of the best and not a wedding! Don't get stuck on
+  certain photos. They get judge individually not against anything but
+  itself." The local sorter had called a wedding reception an event. Now the
+  sorter and Claude's final check both say what kind of occasion a photo is
+  from (fan, business, wedding, private, unknown); a wedding or a private
+  occasion is never a candidate, never eligible, never in the samples, never
+  offered for review. The website picks each photo on its own merit: the
+  strongest frame first (sharp, lit, a moment), a known conference or
+  convention before an unknown kind; a photo Claude has not yet judged for
+  its kind gets that check during the site build, up to twelve a build. The
+  live daily draft re-checks every photo it picks, so a wedding never reaches
+  a post either.
+
 ## Standing rules from the brief
 
 - Nothing publishes without Chris's Approve on the dashboard, until he says

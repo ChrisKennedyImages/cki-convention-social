@@ -96,7 +96,7 @@ def template_first(ev) -> OutreachDraft:
     lines = ["Hello,", "",
              f"I am Chris, a convention and event photographer with {cfg.brand_name}. I saw that {event} is coming up{where}, "
              "and I wanted to ask: do you have a photographer lined up yet?", "",
-             f"We cover whole events. For {event} that could include:"]
+             f"We cover whole events. What we photograph at {event}:"]
     lines += [f"  {label}" for label in coverage_for(_get(ev, "event_kind"))]
     lines += ["", "Attendees can also get every photo they are in, sent straight to their phone: they scan their badge, add a quick selfie, "
               "and the photos find them. You decide whether that is open to everyone or kept to your staff.", "",

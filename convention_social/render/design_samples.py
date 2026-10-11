@@ -25,22 +25,25 @@ from ..library import eligibility, report
 from .. import music
 from . import motion
 
+# The room a photo is from and one line about what it shows. Never what is offered or how it is done
+# (Chris, 2026-10-11: "keep to specifics and not talk about what is offered or what is a service").
 ROOMS = {
-    "stage_panel": ("MAIN STAGE", "Keynotes, panels and the full room."),
-    "backstage": ("BACKSTAGE", "Green rooms and the minutes before the doors open."),
-    "portrait": ("PORTRAITS", "Speakers, guests and staff, lit properly."),
-    "headshot": ("PORTRAITS", "Speakers, guests and staff, lit properly."),
-    "vendor_hall": ("EXPO FLOOR", "Your vendors and exhibitors get their shots too."),
-    "booth": ("EXPO FLOOR", "Your vendors and exhibitors get their shots too."),
-    "dinner_reception": ("AFTER DARK", "Dinners, receptions and the after party."),
-    "crowd": ("THE CROWD", "The people who make the event, in the moment."),
-    "candid": ("THE CROWD", "The people who make the event, in the moment."),
-    "group": ("THE CROWD", "The people who make the event, in the moment."),
-    "venue": ("THE VENUE", "The building, shot as carefully as the people in it."),
-    "building_exterior": ("THE VENUE", "The building, shot as carefully as the people in it."),
-    "building_interior": ("THE VENUE", "The building, shot as carefully as the people in it."),
+    "stage_panel": ("MAIN STAGE", "The keynote, from the room."),
+    "backstage": ("BACKSTAGE", "The minutes before the doors open."),
+    "portrait": ("PORTRAITS", "Made at the event."),
+    "headshot": ("PORTRAITS", "Made at the event."),
+    "vendor_hall": ("EXPO FLOOR", "On the exhibition floor."),
+    "booth": ("EXPO FLOOR", "On the exhibition floor."),
+    "dinner_reception": ("AFTER DARK", "After the last session."),
+    "crowd": ("THE CROWD", "In the moment."),
+    "candid": ("THE CROWD", "In the moment."),
+    "group": ("THE CROWD", "In the moment."),
+    "venue": ("THE VENUE", "The room, before the event."),
+    "building_exterior": ("THE VENUE", "The building, before the event."),
+    "building_interior": ("THE VENUE", "The room, before the event."),
 }
-OTHER = ("ON THE FLOOR", "Every room of the event, covered.")
+OTHER = ("ON THE FLOOR", "In the moment.")
+COPY_VERSION = "2026-10-11b"             # bump when the words on the cards change: the samples are made again
 FOLDER_PREFIX = "design-"
 STATUS_FILE = "design-status.json"       # in DATA_ROOT/renders: what the designer did last, for the Design card
 LAST_SET_KEY = "designer.last_set"
@@ -119,7 +122,7 @@ def auto(conn) -> str:
         return "design samples: " + too_few(readiness(conn))
     if read_status().get("state") == "running":
         return "design samples: being made"
-    key = ",".join(sorted(r["drive_id"] for r in rows))
+    key = COPY_VERSION + ":" + ",".join(sorted(r["drive_id"] for r in rows))
     if settings.get(conn, LAST_SET_KEY) == key:
         return "design samples: up to date"
     settings.set(conn, LAST_SET_KEY, key)
@@ -138,6 +141,8 @@ def usable(conn, row) -> bool:
         return False
     if (row["shot_type"] if "shot_type" in row.keys() else None) in eligibility.NOT_OFFERED:
         return False                     # a costume photo, which Event Caliber does not offer
+    if (row["event_kind"] if "event_kind" in row.keys() else None) in eligibility.NOT_OFFERED_KINDS:
+        return False                     # a wedding or a private occasion (Chris, 2026-10-11)
     return not any(c["consent"] == "no" for c in eligibility.credits_for(conn, photo))
 
 
@@ -179,8 +184,7 @@ def make(conn, fetch: Callable[[str], bytes], *, out_root: Optional[Path] = None
     copy = motion.MotionCopy()
     made, failed = [], []
     for name, job in (("fan-post.jpg", lambda p: motion.fan_post(shots, copy, out=p, focus=len(shots) // 2)),
-                      ("spotlight-post.jpg", lambda p: motion.spotlight_post(shots, copy, out=p, index=min(2, len(shots) - 1))),
-                      ("facematch-post.jpg", lambda p: motion.facematch_post(shots, copy, out=p))):
+                      ("spotlight-post.jpg", lambda p: motion.spotlight_post(shots, copy, out=p, index=min(2, len(shots) - 1)))):
         job(out / name)
         made.append(name)
     made += [p.name for p in motion.carousel(shots, copy, out_dir=out)]
@@ -188,7 +192,7 @@ def make(conn, fetch: Callable[[str], bytes], *, out_root: Optional[Path] = None
     if reels:
         if track is None:
             failed.append("the reels are silent: no music added yet (Library page, Music for reels)")
-        for name, job in (("rooms-reel.mp4", motion.rooms_reel), ("facematch-reel.mp4", motion.facematch_reel)):
+        for name, job in (("rooms-reel.mp4", motion.rooms_reel),):
             try:
                 job(shots, copy, out=out / name, audio=track)
                 made.append(name)

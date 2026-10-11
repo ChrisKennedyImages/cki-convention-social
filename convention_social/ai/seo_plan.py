@@ -12,6 +12,9 @@ Chris, 2026-10-11: "Make sure the captions are SEO optimized painstakingly". Whe
   The image  carries alt text (Instagram and Pinterest read it, when Buffer takes it) and our search fields
              inside the file (render/meta.py).
 
+A caption is about the photo. It never says what the company offers or what a service is (Chris,
+2026-10-11); the search phrase names the kind of work, the scene says what is shown, the ask is a quote.
+
 A plan comes from what the post shows: the kind of event, the room the photo is from and the design;
 never from a name (ai/names.py). It holds one primary phrase, the related phrases, the place when
 SERVICE_AREA is set (Keys page), and the hashtags. `finish` puts the hashtags and the link where they
@@ -46,11 +49,10 @@ PRIMARY = {
                 "floor": "event photography", "evening": "corporate event photography", "crowd": "event photography"},
 }
 RELATED = {
-    "business": ("event photographer", "corporate event photography", "photo delivery by face match"),
-    "fan": ("convention photographer", "event photographer", "photo delivery by face match"),
-    "unknown": ("event photographer", "corporate event photography", "photo delivery by face match"),
-    "architecture": ("architectural photography", "event venue photography", "event photographer"),
-    "facematch": ("event photographer", "event photo sharing", "conference photography"),
+    "business": ("event photographer", "corporate event photography"),
+    "fan": ("convention photographer", "event photographer"),
+    "unknown": ("event photographer", "corporate event photography"),
+    "architecture": ("architectural photography", "event venue photography"),
 }
 # specific before broad; #eventprofs and #eventplanning reach the people who book photographers
 HASHTAGS = {
@@ -58,12 +60,13 @@ HASHTAGS = {
     "fan": ("#conventionphotography", "#conventionphotographer", "#eventprofs", "#eventphotographer", "#eventphotography"),
     "unknown": ("#eventphotography", "#eventphotographer", "#eventprofs", "#eventplanning", "#corporateevents"),
     "architecture": ("#venuephotography", "#architecturalphotography", "#eventvenue", "#eventprofs", "#eventphotography"),
-    "facematch": ("#eventtech", "#eventprofs", "#eventphotography", "#eventphotographer", "#conferencephotography"),
 }
-# a phrase for the room, for the template's first line
-ROOM_WORDS = {"stage": "from the keynote to the last panel", "backstage": "from the green room to the side of the stage",
-              "portrait": "made between sessions in good light", "floor": "across the exhibit floor and every booth",
-              "evening": "through the dinners and receptions", "crowd": "in every room of the event"}
+# what the photo shows, by room, for the template's first line. Never a service, never what is covered
+# (Chris, 2026-10-11: "keep to specifics and not talk about what is offered or what is a service")
+SCENE = {"stage": "a speaker on the main stage", "backstage": "backstage, before the doors open",
+         "portrait": "a portrait made at the event", "floor": "the exhibition floor", "evening": "the dinner after the sessions",
+         "crowd": "a moment between sessions", "venue": "the room before the event"}
+SET_SCENE = "moments from one event, room by room"
 KIND_WORDS = {"business": "conference", "fan": "fan convention"}
 HASHTAG = re.compile(r"(?<!\w)#\w+")
 SENTENCE_END = re.compile(r"(?<=[.!?])\s+")
@@ -127,8 +130,6 @@ def plan_for(*, subject: str, event_kind: Optional[str], shot_type: Optional[str
     area = service_area()
     if subject == "architecture":
         return Plan("venue photography", RELATED["architecture"], HASHTAGS["architecture"], area, "venue", kind, design)
-    if design in ("facematch",):
-        return Plan("event photo delivery", RELATED["facematch"], HASHTAGS["facematch"], area, room, kind, design)
     primary = PRIMARY[kind][room]
     if design in ("spotlight", "carousel", "fan", "reel"):          # several rooms in one post: the broad phrase
         primary = {"business": "conference photography", "fan": "convention photography"}.get(kind, "event photography")
@@ -202,16 +203,9 @@ def alt_text(plan: Plan, shot_words: str, brand: str) -> str:
 def template_captions(plan: Plan, link: str, brand: str) -> dict:
     """Captions that meet the plan by construction, for dry runs and when the writer misses twice."""
     cap = plan.primary[0].upper() + plan.primary[1:]
-    if plan.room == "venue":
-        first = f"{cap} of the rooms where events happen."
-        second = f"Architectural photography and event venue photography by {brand}."
-    elif plan.design == "facematch":
-        first = f"{cap} by face match, with no wires."
-        second = ("Guests scan their badge, add a selfie, and every photo they are in comes straight to them. "
-                  "Your event photographer and event photo sharing in one.")
-    else:
-        first = f"{cap}, {ROOM_WORDS.get(plan.room, ROOM_WORDS['crowd'])}."
-        second = "Your event photographer for every room you need, with photo delivery by face match while the event is on."
+    scene = SET_SCENE if plan.design in ("spotlight", "carousel", "fan", "reel") else SCENE.get(plan.room, SCENE["crowd"])
+    first = f"{cap}: {scene}."
+    second = f"{brand}, {plan.related[0]}."
     place = f" {place_phrase(plan.area)}" if plan.area else ""
     ask = f" Request a quote at {link}." if link else " Request a quote for your event."
     body = f"{first} {second}{place}{ask}".strip()

@@ -163,7 +163,7 @@ def queue_view(conn, row) -> dict:
     targets = json.loads(row["targets"] or "[]")
     official = official_for(conn, row)
     known_names = ai_names.public_names(conn)
-    reports = {n: copy_rules.check(captions.get(n, ""), official=official, names=known_names) for n in NETWORKS}
+    reports = {n: copy_rules.check(captions.get(n, ""), official=official, names=known_names, social=True) for n in NETWORKS}
     photo_ids = json.loads(row["photo_ids"] or "[]")
     photo_checks = [(pid, *eligibility.is_eligible(conn, int(pid)), shot_type_of(conn, int(pid))) for pid in photo_ids]
     renders = json.loads(row["render_paths"] or "{}")
@@ -271,6 +271,7 @@ VIEWS = {
     # no readable personal detail (temp.hidden_photo). Strongest first.
     "review": (f"p.trashed = 0 AND {SORTED} AND c.possible_minor = 0 AND {DECISION} = 'not_cleared' "
                "AND COALESCE(c.shot_type, '') NOT IN ('cosplay_portrait') "
+               "AND COALESCE(c.event_kind, '') NOT IN ('wedding', 'private') "
                "AND p.id NOT IN (SELECT id FROM temp.hidden_photo)",
                f"({STRENGTH}) DESC, p.id"),
     # Everything Chris cleared, by the photo itself or by its folder. Sorted ones first, strongest first.

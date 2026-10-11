@@ -289,9 +289,16 @@ class Sync(Repos):
                         restart=lambda: "dashboard: restarted", probe=lambda: self.dash)
         self.sleeps = []
         self.on_sleep = lambda s: None
+        self.wait_seconds = 30 * 60
+
+        def sleeping(s):
+            self.sleeps.append(s)
+            self.on_sleep(s)
+        # the sync's own waits only: a patched time.sleep also caught subprocess's busy-wait inside a git
+        # call on a slow runner (CI, 2026-10-11: [15, 15, 0.001])
         for target, value in (("convention_social.agents.updater.run", fake_run),
                               ("convention_social.core.config.REPO_ROOT", self.repo),
-                              ("time.sleep", lambda s: (self.sleeps.append(s), self.on_sleep(s)))):
+                              ("convention_social.cli.cmd_sync", lambda a: updater.sync(sleep=sleeping, wait_seconds=self.wait_seconds))):
             patcher = mock.patch(target, value)
             patcher.start()
             self.addCleanup(patcher.stop)
@@ -349,8 +356,8 @@ class Sync(Repos):
         lock = runner.Lock("updater")
         self.assertTrue(lock.acquire())
         self.addCleanup(lock.release)
-        with mock.patch.object(cli, "cmd_sync", lambda a: updater.sync(wait_seconds=30)):
-            code, out = self.sync()
+        self.wait_seconds = 30
+        code, out = self.sync()
         self.assertEqual(code, 1)
         self.assertEqual(self.sleeps, [15, 15])
         self.assertIn("the updater is still running; run this again", out)

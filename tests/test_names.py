@@ -103,9 +103,12 @@ class Writers(IsolatedCase):
             self.assertTrue(d.captions["facebook"].startswith(want))
 
     def test_the_line_printed_on_the_post_names_no_event(self):
-        self.assertEqual(content.kicker_for({"subject": "event", "event_kind": "business", "convention_name": "CPAC 2025"}), "Conferences")
-        self.assertEqual(content.kicker_for({"subject": "event", "event_kind": "fan", "convention_name": "Katsucon"}), "Fan conventions")
-        self.assertEqual(content.kicker_for({"subject": "event", "event_kind": None}), "Event coverage")
+        self.assertEqual(content.kicker_for({"subject": "event", "event_kind": "business", "convention_name": "CPAC 2025"}), "Conference photography")
+        self.assertEqual(content.kicker_for({"subject": "event", "event_kind": "fan", "convention_name": "Katsucon"}), "Convention photography")
+        self.assertEqual(content.kicker_for({"subject": "event", "event_kind": None}), "Event photography")
+        self.assertEqual(content.kicker_for({"subject": "architecture", "event_kind": None}), "Venue photography")
+        for row in ({"subject": "event", "event_kind": k} for k in ("business", "fan", None)):
+            self.assertIn("photography", content.kicker_for(row), "Chris, 2026-10-11: it should say photography somewhere")
 
     def test_the_search_fields_in_the_image_file_name_no_one(self):
         conn = db.connect()

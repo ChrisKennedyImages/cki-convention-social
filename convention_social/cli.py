@@ -346,8 +346,16 @@ def cmd_site(args) -> int:
             path.write_bytes(reader.download(row["drive_id"]))
         return Image.open(io.BytesIO(path.read_bytes()))
 
+    def recheck(row, image):
+        # Claude's final check, for a photo it has not yet judged for the kind of occasion (a wedding is never used)
+        from .library import classify
+        buf = io.BytesIO()
+        image.convert("RGB").save(buf, "JPEG", quality=90)
+        return classify.final_check(conn, row["id"], buf.getvalue(), agent="site")
+
     # Chris, 2026-10-09: the site goes live before any photo is cleared; photos join on the next build
-    photos = build.pick_photos(conn, fetch) if reader else build.SitePhotos()
+    photos = build.pick_photos(conn, fetch, recheck=recheck if secrets.get_secret("ANTHROPIC_API_KEY") else None) \
+        if reader else build.SitePhotos()
     if not photos.hero:
         print("no postable photos yet, so the site is built without photos; they join on the next build "
               "once folders are cleared on the Library page and the final check has passed")

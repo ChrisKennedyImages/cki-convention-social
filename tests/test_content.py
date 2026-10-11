@@ -233,7 +233,7 @@ class NewDesigns(Content):
         _, meta_, renders, ids = self.last()
         self.assertEqual(meta_["design"], "carousel")
         self.assertEqual(len(ids), 4)
-        self.assertEqual(len(renders["4:5"]), 4 + 3)                       # cover, a slide per photo, face match, the ask
+        self.assertEqual(len(renders["4:5"]), 4 + 2)                       # cover, a slide per photo, the ask
 
     def test_too_few_photos_for_the_fan_is_a_single_photo_day(self):
         line = content.draft_one(self.ctx(), self.fetch, now=THURSDAY)
@@ -243,10 +243,12 @@ class NewDesigns(Content):
         self.assertEqual(ids, [self.ids["e1"]])
         self.assertEqual(sorted(renders), ["2:3", "4:5"])
 
-    def test_sunday_is_face_match(self):
+    def test_sunday_is_a_single_photo(self):
+        """The face match post is retired (Chris, 2026-10-11: a post never talks about a service)."""
         content.draft_one(self.ctx(), self.fetch, now=SATURDAY)
         _, meta_, renders, ids = self.last()
-        self.assertEqual((meta_["design"], ids), ("facematch", [self.ids["e1"]]))
+        self.assertEqual((meta_["design"], ids), ("single", [self.ids["e1"]]))
+        self.assertNotIn("facematch", content.DESIGNS.values())
 
     def test_live_every_photo_on_the_post_passes_the_final_check(self):
         os.environ["AI_MONTHLY_CAP_USD"] = "5"

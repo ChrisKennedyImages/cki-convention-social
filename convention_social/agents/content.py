@@ -111,7 +111,7 @@ def write_captions(drafter, facts: claude.PostFacts, photo: Path, known_names) -
         draft = drafter.draft(facts, photo, notes=notes)
         caps = seo_plan.finish(draft.captions, plan, link)
         misses = seo_plan.problems(caps, plan) + [f"the {n} caption {b.message}" for n, t in caps.items()
-                                                  for b in copy_rules.check(t, names=known_names).blocks]
+                                                  for b in copy_rules.check(t, names=known_names, social=True).blocks]
         tries.append({"by": draft.model, "missed": misses})
         if not misses or draft.model == "template":
             break
@@ -121,7 +121,7 @@ def write_captions(drafter, facts: claude.PostFacts, photo: Path, known_names) -
         caps, writer = seo_plan.template_captions(plan, link, facts.brand_name), "template"
     from ..seo.photo_text import SHOT_WORDS
     alt = draft.alt_text
-    if not alt or len(alt) > 125 or not copy_rules.check(alt, names=known_names).ok:
+    if not alt or len(alt) > 125 or not copy_rules.check(alt, names=known_names, social=True).ok:
         alt = seo_plan.alt_text(plan, SHOT_WORDS.get(facts.shot_type, ""), facts.brand_name)
     record = {"primary": plan.primary, "related": list(plan.related), "hashtags": list(plan.hashtags), "area": plan.area,
               "tries": tries, "fell_back": bool(misses)}
@@ -130,10 +130,11 @@ def write_captions(drafter, facts: claude.PostFacts, photo: Path, known_names) -
 
 def kicker_for(row: dict) -> str:
     """The small line printed on the post: the kind of work, never which event or who is in it.
-    Chris, 2026-10-11: "i want to make sure the captions don't say the specific event or person"."""
+    Chris, 2026-10-11: "i want to make sure the captions don't say the specific event or person", and on
+    the cards: "It should say photography somewhere. Something in the middle"."""
     if row["subject"] == "architecture":
-        return "Venues and buildings"
-    return {"fan": "Fan conventions", "business": "Conferences"}.get(row.get("event_kind") or "", "Event coverage")
+        return "Venue photography"
+    return {"fan": "Convention photography", "business": "Conference photography"}.get(row.get("event_kind") or "", "Event photography")
 
 
 # Chris, 2026-10-11: "Switch to new designs and it's ok to use 1 photo too sometimes." One design a
@@ -141,10 +142,12 @@ def kicker_for(row: dict) -> str:
 # design needs more approved photos than pass the final check falls back to a single photo.
 # "Let's get the music and everything working (video format too)": Saturday is a reel once a music
 # track is on (music.py); with none it stays a single photo, never a silent reel.
+# The face match post (Sundays) and the face match reel (every other Saturday) are retired, 2026-10-11:
+# they explained the delivery service, and a post keeps to what the photo shows.
 DESIGNS = {"monday": "spotlight", "tuesday": "single", "wednesday": "single", "thursday": "carousel",
-           "friday": "fan", "saturday": "reel", "sunday": "facematch"}
-NEEDS = {"single": 1, "facematch": 1, "spotlight": 3, "carousel": 4, "fan": 5, "reel": 4}      # fewest photos
-TAKES = {"single": 1, "facematch": 1, "spotlight": 5, "carousel": 6, "fan": 7, "reel": 6}      # most
+           "friday": "fan", "saturday": "reel", "sunday": "single"}
+NEEDS = {"single": 1, "spotlight": 3, "carousel": 4, "fan": 5, "reel": 4}      # fewest photos
+TAKES = {"single": 1, "spotlight": 5, "carousel": 6, "fan": 7, "reel": 6}      # most
 
 
 def design_for(day: date, subject: str, has_music: bool = False) -> str:
@@ -155,8 +158,8 @@ def design_for(day: date, subject: str, has_music: bool = False) -> str:
 
 
 def reel_kind(day: date) -> str:
-    """The two reels take turns by week: the rooms one week, face match the next."""
-    return "rooms" if day.isocalendar()[1] % 2 else "facematch"
+    """The rooms reel, every time: the face match reel is retired (2026-10-11, it explained a service)."""
+    return "rooms"
 
 
 def rooms_first(pool: list) -> list:
@@ -213,6 +216,8 @@ def draft_one(ctx: runner.Context, fetch: Callable[[dict], bytes], *, now: Optio
                 continue
             if verdict.get("shot_type") in classify.SHOT_TYPES:
                 row["shot_type"] = verdict["shot_type"]       # what the photo shows, by the model that looked at it in full
+            if verdict.get("event_kind") in classify.KINDS and verdict["event_kind"] != "unknown":
+                row["event_kind"] = verdict["event_kind"]     # and what kind of occasion, likewise
         chosen.append((row, data))
         if len(chosen) >= TAKES[design]:
             break
@@ -230,10 +235,7 @@ def draft_one(ctx: runner.Context, fetch: Callable[[dict], bytes], *, now: Optio
     hero = chosen[0][0]
     facts = claude.PostFacts(brand_name=ctx.cfg.brand_name, event_kind=hero.get("event_kind") or "unknown",
                              shot_type=hero.get("shot_type") or "", subject=hero["subject"],
-                             quote_link=f"{ctx.cfg.brand_domain}/book" if ctx.cfg.brand_domain else "",
-                             services=("full event coverage", "backstage and green rooms", "breakouts and panels",
-                                       "evening events and dinners", "portraits", "exhibition halls and vendors",
-                                       "every photo a guest is in, sent to them by face match"))
+                             quote_link=f"{ctx.cfg.brand_domain}/book" if ctx.cfg.brand_domain else "")
     drafter = drafter or (claude.TemplateDrafter() if ctx.dry_run else claude.get_drafter(ctx.conn, agent=ctx.agent))
     known_names = names.public_names(ctx.conn)
     plan = seo_plan.plan_for(subject=hero["subject"], event_kind=hero.get("event_kind"), shot_type=hero.get("shot_type"),
@@ -241,12 +243,12 @@ def draft_one(ctx: runner.Context, fetch: Callable[[dict], bytes], *, now: Optio
     facts.plan = plan
     captions, alt, seo_record, writer = write_captions(drafter, facts, ctx.cfg.data_root / "photos" / f"{hero['drive_id']}.img",
                                                        known_names)
-    reports = {n: copy_rules.check(t, names=known_names).as_dict() for n, t in captions.items()}
+    reports = {n: copy_rules.check(t, names=known_names, social=True).as_dict() for n, t in captions.items()}
     images = {r["id"]: Image.open(io.BytesIO(d)) for r, d in chosen}
     out_dir = ctx.cfg.data_root / "renders" / "posts" / day.isoformat()
     seo = image_meta.for_photo(ctx.conn, hero)
-    copy = motion.MotionCopy()
     kicker = kicker_for(hero).upper()
+    copy = motion.MotionCopy(kicker=kicker)
     tag = f"{hero['id']}-{design}"
 
     reel_failed: list[str] = []
@@ -273,8 +275,6 @@ def draft_one(ctx: runner.Context, fetch: Callable[[dict], bytes], *, now: Optio
             else:
                 return {"9:16": [str(video)], "cover": [str(stills[0])], **single(focus, ("2:3",)),
                         "stills": [str(p) for p in stills[1:]]}
-        if design == "facematch":
-            return {"4:5": [str(motion.facematch_post(shots, copy, out=out_dir / f"{tag}.jpg", meta=seo))]}
         if design in ("carousel", "reel"):        # the reel's fallback takes the same 4 to 6 photos
             return {"4:5": [str(p) for p in motion.carousel(shots, copy, out_dir=out_dir / tag, meta=seo)]}
         ordered = middle_first(shots, shots[0])

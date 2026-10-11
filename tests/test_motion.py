@@ -73,7 +73,7 @@ class Stage(IsolatedCase):
 class Pieces(IsolatedCase):
     def test_stills_render_with_the_ask_and_clean_metadata(self):
         copy = motion.MotionCopy()
-        for fn in (motion.fan_post, motion.spotlight_post, motion.facematch_post):
+        for fn in (motion.fan_post, motion.spotlight_post):
             out = fn(shots(), copy, out=self.root / f"{fn.__name__}.jpg")
             with Image.open(out) as im:
                 self.assertEqual(im.size, (1080, 1350))
@@ -85,14 +85,14 @@ class Pieces(IsolatedCase):
         self.assertEqual(face.size, (206, 266))
         self.assertGreater(ImageStat.Stat(face.convert("RGB").crop((60, 20, 140, 60))).stddev[0], 0)
 
-    def test_the_carousel_is_a_cover_a_slide_per_room_face_match_and_the_ask(self):
+    def test_the_carousel_is_a_cover_a_slide_per_room_and_the_ask(self):
         paths = motion.carousel(shots(), motion.MotionCopy(), out_dir=self.root / "c")
-        self.assertEqual([p.name for p in paths], [f"slide-{i:02d}.jpg" for i in range(1, 10)])
+        self.assertEqual([p.name for p in paths], [f"slide-{i:02d}.jpg" for i in range(1, 9)])
         with Image.open(paths[-1]) as close:
             self.assertGreater(cyan_pixels(close, (0, 900, 1080, 1250)), 30000)
 
-    def test_both_reels_are_fifteen_seconds_of_vertical_frames(self):
-        for kind, fn in (("rooms", motion.rooms_reel), ("facematch", motion.facematch_reel)):
+    def test_the_reel_is_fifteen_seconds_of_vertical_frames(self):
+        for kind, fn in (("rooms", motion.rooms_reel),):
             total = motion.total_frames(kind)
             self.assertEqual(total, 15 * 30, kind)
             got = []
@@ -106,14 +106,33 @@ class Pieces(IsolatedCase):
     def test_the_rules_stop_every_piece(self):
         bad = shots()
         bad[1] = motion.Shot(None, "BACKSTAGE", "Packages from $300.")
-        for fn in (motion.fan_post, motion.spotlight_post, motion.facematch_post):
+        for fn in (motion.fan_post, motion.spotlight_post):
             with self.assertRaises(posts.CopyRefused):
                 fn(bad, motion.MotionCopy(), out=self.root / "x.jpg")
         with self.assertRaises(posts.CopyRefused):
             motion.rooms_reel(bad, motion.MotionCopy(), out=self.root / "r.mp4", encoder=lambda f, o: list(f))
+        self.assertFalse((self.root / "x.jpg").exists())
+
+    def test_service_talk_stops_every_piece(self):
+        """Chris, 2026-10-11: a card or a reel never talks about what is offered; the old words are refused."""
+        selling = [motion.MotionCopy(hook=("EVERY ROOM", "OF YOUR EVENT.")), motion.MotionCopy(covered="COVERED."),
+                   motion.MotionCopy(kicker="FULL COVERAGE")]
+        for copy in selling:
+            with self.assertRaises(posts.CopyRefused):
+                motion.fan_post(shots(), copy, out=self.root / "x.jpg")
+            with self.assertRaises(posts.CopyRefused):
+                motion.rooms_reel(shots(), copy, out=self.root / "r.mp4", encoder=lambda f, o: list(f))
+        bad = shots()
+        bad[2] = motion.Shot(None, "EXPO FLOOR", "Your vendors and exhibitors get their shots too.")
         with self.assertRaises(posts.CopyRefused):
-            motion.facematch_reel(shots(), motion.MotionCopy(fm_title="OFFICIAL PHOTOGRAPHER"), out=self.root / "r.mp4",
-                                  encoder=lambda f, o: list(f))
+            motion.spotlight_post(bad, motion.MotionCopy(), out=self.root / "x.jpg")
+        for room, line in design_samples.ROOMS.values():
+            motion.check_copy(room, line, social=True)
+            for word in ("your", "we ", "get ", "lit ", "properly", "every", "covered", "too"):
+                self.assertNotIn(word, line.lower(), (room, line))
+            self.assertLessEqual(len(line.split()), 6, (room, line))
+        self.assertEqual(design_samples.ROOMS["portrait"], ("PORTRAITS", "Made at the event."))
+        motion.check_copy(*design_samples.OTHER, motion.MotionCopy().words(), social=True)
         self.assertFalse((self.root / "x.jpg").exists())
 
 
@@ -169,7 +188,8 @@ class DesignSamples(IsolatedCase):
         out = design_samples.make(self.conn, fetch, out_root=self.root / "renders", reels=False, log=lambda m: None)
         self.assertRegex(out.name, r"design-\d{8}-\d{4}")
         names = sorted(p.name for p in out.iterdir())
-        for want in ("index.html", "about.json", "fan-post.jpg", "spotlight-post.jpg", "facematch-post.jpg", "slide-01.jpg", "slide-07.jpg"):
+        for want in ("index.html", "about.json", "fan-post.jpg", "spotlight-post.jpg", "slide-01.jpg", "slide-06.jpg"):
+            self.assertNotIn("facematch-post.jpg", names)
             self.assertIn(want, names)
         self.assertEqual(sorted(fetched), ["d0", "d1", "d2", "d3"])
         page = (out / "index.html").read_text()
