@@ -34,8 +34,9 @@ from ..core import config, secrets
 MODEL = "claude-opus-5"
 MAX_REDOS = 2
 EDGE = 900
+STILLS = {".jpg", ".jpeg", ".png"}   # a reel is judged by its cover and stills, never the mp4 itself
 
-SYSTEM = """You are the art director for a photography company's social posts. You see the post as rendered: one design at two aspect ratios, one design built from several photos, or the first slides of a carousel.
+SYSTEM = """You are the art director for a photography company's social posts. You see the post as rendered: one design at two aspect ratios, one design built from several photos, the first slides of a carousel, or the cover and stills of a short video.
 Judge only what you see, as a picky photo editor would:
 1. Crop: is anyone's head, face, hands or feet cut awkwardly, or is the subject jammed against an edge?
 2. Placement: is the main subject well placed for the format?
@@ -108,7 +109,7 @@ def direct(conn: sqlite3.Connection, render: Callable[[tuple], dict], *, dry_run
         return paths, {"verdict": "not reviewed", "notes": "Dry run: the art director did not look.", "rounds": 0}
     rounds, last = 0, None
     while True:
-        files = [Path(p) for ps in paths.values() for p in ps][:max_files]
+        files = [Path(p) for ps in paths.values() for p in ps if Path(p).suffix.lower() in STILLS][:max_files]
         verdict = look(conn, files, client=client, agent=agent)
         rounds += 1
         if verdict is None:

@@ -74,6 +74,23 @@ query Posts($input: PostsInput!, $first: Int!, $after: String) {
 """
 
 
+# Read, don't recall: the shape of a video asset is asked of the live schema before a reel is built,
+# never written from memory (the 2026-10-09 introspection named AssetInput's members, not their fields).
+Q_INPUT_TYPE = """
+query InputType($name: String!) {
+  __type(name: $name) { name inputFields { name type { kind name ofType { kind name ofType { kind name } } } } }
+}
+"""
+
+
+def _named(t: dict) -> tuple[str, bool]:
+    """(the named type under any NON_NULL / LIST wrappers, whether the outermost is NON_NULL)."""
+    required = (t or {}).get("kind") == "NON_NULL"
+    while t and not t.get("name"):
+        t = t.get("ofType") or {}
+    return (t or {}).get("name") or "", required
+
+
 class BufferError(RuntimeError):
     pass
 
@@ -177,6 +194,25 @@ class BufferClient:
         data = self._gql(Q_PINTEREST_BOARDS, {"input": {"id": channel_id}}, op="PinterestBoards")
         meta = ((data.get("channel") or {}).get("metadata")) or {}
         return list(meta.get("boards") or [])
+
+    def input_fields(self, type_name: str) -> list[dict]:
+        """[{name, type, required}] of one GraphQL input type, from the live schema."""
+        data = self._gql(Q_INPUT_TYPE, {"name": type_name}, op=f"Schema {type_name}")
+        t = data.get("__type") or {}
+        if not t:
+            raise BufferError(f"Buffer's schema has no type {type_name}")
+        out = []
+        for f in t.get("inputFields") or []:
+            name, required = _named(f.get("type") or {})
+            out.append({"name": f.get("name"), "type": name, "required": required})
+        return out
+
+    def video_asset_fields(self) -> list[dict]:
+        """The fields of the input type behind AssetInput.video, both read from the live schema."""
+        member = next((f for f in self.input_fields("AssetInput") if f["name"] == "video"), None)
+        if member is None or not member["type"]:
+            raise BufferError("Buffer's AssetInput has no video member")
+        return self.input_fields(member["type"])
 
     # ------------------------------------------------------------------ posting
     def create_post(self, post_input: dict) -> str:

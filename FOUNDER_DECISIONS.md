@@ -169,8 +169,28 @@ only when Chris says so.
   design needs more approved photos than pass the final check is a single photo
   day. Every photo on a post is approved and passes the final check
   (`agents/content.py` `DESIGNS`).
-- Reels stay in the design samples until a music track is added and one real
-  video post has been checked through Buffer.
+- Reels stayed in the design samples until a music track was added (moved into
+  the rotation the same day, below).
+
+## 2026-10-11: reels, with music, in the rotation
+
+- "Let's get the music and everything working (video format too)." Saturday is
+  a reel once a music track is on (Photos, Design, Music for reels): the rooms
+  reel and the face match reel take turns by week, on 4 to 6 approved photos
+  that pass the final check, one per room before any room repeats. With no
+  track Saturday stays a single photo: a silent reel is never made. A reel that
+  cannot be made becomes a carousel of the same photos and says why
+  (`agents/content.py` `DESIGNS`, `reel_kind`).
+- The music is only ever a track Chris added with its record of where it came
+  from and what it allows; it rides the reel faded in and out (`music.py`,
+  `render/reel.py` `encode`).
+- Instagram and Facebook get the reel as a video post with its cover; Pinterest
+  gets a 2:3 card of the lead photo. Buffer's video format is not written from
+  memory: before a reel is sent the publisher reads the video fields from
+  Buffer's live schema, and if Buffer asks for anything the code cannot fill,
+  nothing is uploaded and nothing is sent (`agents/publisher.py`,
+  `buffer/payloads.py` `video_asset`). Like every post, a reel waits for
+  Chris's Approve; the first one he approves is the live check of the format.
 
 ## Standing rules from the brief
 

@@ -9,7 +9,8 @@
 {% if item.last_error %}<div class="msg bad">{{ item.last_error }}</div>{% endif %}
 {% if item.art and item.art.verdict %}<div class="card"><strong>Art director</strong> <span class="badge {{ 'ok' if item.art.verdict == 'pass' else 'draft' }}">{{ item.art.verdict }}</span>
 <div class="muted">{{ item.art.notes or '' }}{% if item.art.rounds %} ({{ item.art.rounds }} look{{ 's' if item.art.rounds != 1 else '' }}){% endif %}</div></div>{% endif %}
-{% if item.renders %}<div class="card"><div class="thumbs">{% for aspect, idx in item.renders.items() %}{% for i in idx %}<img src="/media/render/{{ item.id }}/{{ aspect.replace(':','x') }}/{{ i }}" alt="{{ aspect }}">{% endfor %}{% endfor %}</div></div>{% endif %}
+{% if item.video %}<div class="card"><video class="reel" src="/media/render/{{ item.id }}/9x16/1"{% if item.cover %} poster="/media/render/{{ item.id }}/cover/1"{% endif %} controls playsinline muted loop preload="metadata"></video></div>
+{% endif %}{% if item.renders %}<div class="card"><div class="thumbs">{% for aspect, idx in item.renders.items() %}{% for i in idx %}<img src="/media/render/{{ item.id }}/{{ aspect.replace(':','x') }}/{{ i }}" alt="{{ aspect }}">{% endfor %}{% endfor %}</div></div>{% endif %}
 {% if item.photo_checks %}<div class="card"><h2>Photos</h2>{% for pid, ok, why in item.photo_checks %}
   <div class="row"><img src="/media/thumb/{{ pid }}" style="height:70px;border-radius:6px" alt=""><span class="badge {{ 'ok' if ok else 'blocked' }}">{{ 'usable' if ok else why }}</span></div>{% endfor %}</div>{% endif %}
 <form method="post" action="/queue/{{ item.id }}/save" class="card">
