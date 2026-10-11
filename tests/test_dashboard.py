@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 
 from fastapi.testclient import TestClient
 
@@ -142,7 +143,7 @@ class Dashboard(IsolatedCase):
         d.folder("fmisc", "Phone dump")
         d.image("m1", "IMG_1.jpg", "fmisc")
         scan.full_inventory(self.conn, DriveReader("t", conn=self.conn, transport=d))
-        page = self.signed_in().get("/library").text
+        page = self.signed_in().get("/library?view=folders").text
         self.assertIn("Phone dump", page)
         self.assertIn("No folder has been recognised as event work yet", page)
 
@@ -154,7 +155,7 @@ class Dashboard(IsolatedCase):
         (renders / "contact-sheet-20261011.jpg").write_bytes(b"\xff\xd8jpeg")
         (renders / "building-sheet-20261011.jpg").write_bytes(b"\xff\xd8jpeg")
         (renders / "notes.txt").write_text("not for the web")
-        page = self.signed_in().get("/library").text
+        page = self.signed_in().get("/library?view=design").text
         for name in ("library-report-20261011.html", "contact-sheet-20261011.jpg", "building-sheet-20261011.jpg"):
             self.assertIn(f"/library/renders/{name}", page)
         r = self.client.get("/library/report", follow_redirects=False)
@@ -236,3 +237,56 @@ class Dashboard(IsolatedCase):
         open_kinds = [row["kind"] for row in db.rows(self.conn, "SELECT kind FROM errors WHERE alerted=0")]
         self.assertEqual(open_kinds, ["site_check"])
         self.assertEqual(db.one(self.conn, "SELECT COUNT(*) n FROM errors")["n"], 4)       # dismissed, never deleted
+
+    def test_photos_review_then_approved_and_only_approved_counts(self):
+        """Chris, 2026-10-11: "I only want to choose what I approve" and "I am unable to go back to the main
+        library page where I can hit clear". To review lists the undecided photos with Use; Approved lists
+        what he chose; a folder page links back and clears the whole folder in place."""
+        pid = self.seed_library()
+        fid = db.one(self.conn, "SELECT folder_id FROM photos WHERE id=?", (pid,))["folder_id"]
+        c = self.signed_in()
+        review = c.get("/library").text
+        self.assertIn(f'id="p{pid}"', review)
+        self.assertIn(">Use<", review)
+        self.assertIn('<a href="/library" class="on">Photos</a>', review)
+        self.assertNotIn(f'id="p{pid}"', c.get("/library?view=approved").text)
+        r = c.post(f"/library/photo/{pid}/clearance", data={"state": "cleared", "back": f"/library?view=review&page=1#p{pid}"},
+                   follow_redirects=False)
+        self.assertEqual(r.headers["location"], f"/library?view=review&page=1#p{pid}")
+        self.assertNotIn(f'id="p{pid}"', c.get("/library").text)
+        approved = c.get("/library?view=approved").text
+        self.assertIn(f'id="p{pid}"', approved)
+        self.assertIn(">Undo<", approved)
+        folder = c.get(f"/library/folder/{fid}").text
+        self.assertIn(f'href="/library?view=folders#f-{fid}"', folder)
+        self.assertIn("Approve all 1 photos", folder)
+        self.assertIn("not only the ones you picked", folder)
+        c.post(f"/library/folder/{fid}/clearance", data={"state": "cleared", "back": f"/library/folder/{fid}"})
+        self.assertEqual(db.one(self.conn, "SELECT clearance FROM drive_folders WHERE drive_id=?", (fid,))["clearance"], "cleared")
+        r = c.post(f"/library/photo/{pid}/clearance", data={"state": "inherit", "back": "//elsewhere.example/x"}, follow_redirects=False)
+        self.assertEqual(r.headers["location"], "/library")
+
+    def test_four_tabs_and_every_page_one_tap_from_its_section(self):
+        c = self.signed_in()
+        for path, tab, chip in (("/", "Today", None), ("/library?view=folders", "Photos", "Folders"), ("/calendar", "Bookings", "Calendar"),
+                                ("/agents", "More", "Agents"), ("/keys", "More", "Keys"), ("/more", "More", None)):
+            page = c.get(path).text
+            tabs = re.findall(r'<nav>(.*?)</nav>', page, flags=re.S)[0]
+            self.assertEqual(re.findall(r">([A-Za-z]+)</a>", tabs), ["Today", "Photos", "Bookings", "More"], path)
+            self.assertIn(f'class="on">{tab}</a>', tabs, path)
+            if chip:
+                self.assertRegex(page, rf'<div class="chips">.*class="on">{chip}</a>', path)
+
+    def test_everything_live_in_one_tap_and_back(self):
+        """Chris, 2026-10-11: "Everything should be live now too so we can see the damn thing work!" """
+        from convention_social.core import settings
+        c = self.signed_in()
+        self.assertIn("Switch everything live", c.get("/agents").text)
+        r = c.post("/agents/all/dry-run", data={"state": "off"}, follow_redirects=False)
+        self.assertIn("now+LIVE", r.headers["location"])
+        self.assertTrue(all(not settings.dry_run(self.conn, a) for a in settings.AGENTS_WITH_DRY_RUN))
+        page = c.get("/agents").text
+        self.assertIn(f"{len(settings.AGENTS_WITH_DRY_RUN)} of {len(settings.AGENTS_WITH_DRY_RUN)} agents live", page)
+        self.assertNotIn("Switch everything live", page)
+        c.post("/agents/all/dry-run", data={"state": "on"})
+        self.assertTrue(all(settings.dry_run(self.conn, a) for a in settings.AGENTS_WITH_DRY_RUN))

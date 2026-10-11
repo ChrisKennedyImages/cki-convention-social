@@ -1,13 +1,13 @@
-"""Design samples on Chris's own photos, made on the Mini and shown on the dashboard's Library page.
+"""Design samples on Chris's own approved photos, made on the Mini and shown on the dashboard's Photos page.
 
 Chris, 2026-10-11: "these are all original photos being used NO AI at all". The cloud session that
 draws the designs cannot open his Drive, so the Mini renders every motion design (render/motion.py)
 on the strongest frames of his library and the dashboard shows them.
 
-For review only, like the contact sheets: nothing here is posted, and nothing is written to Drive
-(the photos are read through Drive's own previews). A frame is used only when the sort found no one
-who may be a minor and no readable personal detail, and when Chris has not blocked it, excluded its
-folder, or put it, its folder or a person in it on the do-not-use list. Cleared frames come first.
+Nothing here is posted, and nothing is written to Drive (the photos are read through Drive's own
+previews). Only frames Chris approved (the photo or its folder cleared) are used, and only when the
+sort found no one who may be a minor and no readable personal detail, and nothing on the do-not-use
+list covers them.
 """
 from __future__ import annotations
 
@@ -54,9 +54,9 @@ def usable(conn, row) -> bool:
 
 
 def pick(conn, n: int = 6) -> list:
-    """Up to n frames, one per room first so the samples show the range, cleared frames first."""
-    rows = [r for r in report.best(conn, 60) if usable(conn, r)]
-    rows.sort(key=lambda r: 0 if eligibility.clearance_of(conn, r) == "cleared" else 1)
+    """Up to n of the frames Chris approved, one per room first so the samples show the range.
+    Chris, 2026-10-11: "if it's not approved then don't use it yet or at all"."""
+    rows = [r for r in report.best(conn, 400) if eligibility.clearance_of(conn, r) == "cleared" and usable(conn, r)]
     picked, rooms = [], set()
     for r in rows:
         room = ROOMS.get(r["shot_type"] or "", OTHER)[0]
@@ -77,7 +77,8 @@ def make(conn, fetch: Callable[[str], bytes], *, out_root: Optional[Path] = None
          reels: bool = True, log: Callable[[str], None] = print) -> Path:
     rows = pick(conn, n)
     if len(rows) < 3:
-        raise RuntimeError("fewer than 3 usable photos in the library yet: run the scanner first")
+        raise RuntimeError(f"only {len(rows)} approved photo(s) are ready (sorted, nobody who may be under 18); "
+                           "approve at least 3 on the Photos page")
     shots = []
     for r in rows:
         room, line = ROOMS.get(r["shot_type"] or "", OTHER)

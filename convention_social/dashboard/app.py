@@ -32,7 +32,7 @@ from ..ai import copy_rules, spend
 from ..ai.claude import NETWORKS
 from ..core import auth, config, db, secrets, settings
 from .. import music
-from ..library import eligibility
+from ..library import eligibility, report
 
 TEMPLATES = Jinja2Templates(directory=str(Path(__file__).with_name("templates")))
 COOKIE = "ccs_session"
@@ -98,8 +98,39 @@ def conn_dep():
         conn.close()
 
 
+# Chris, 2026-10-11: "The navigation is not intuitive or smart!" Thirteen tabs became four, each
+# with its own short row of pages, so every page is one tap from its section and two from anywhere.
+SECTIONS = (
+    ("Today", "/", ("/queue",), (("Queue", "/"),)),
+    ("Photos", "/library", ("/library", "/donotuse", "/drive"),
+     (("To review", "/library"), ("Approved", "/library?view=approved"), ("Folders", "/library?view=folders"),
+      ("Design", "/library?view=design"), ("Do not use", "/donotuse"), ("Drive", "/drive"))),
+    ("Bookings", "/inquiries", ("/inquiries", "/bookings", "/calendar"),
+     (("Requests", "/inquiries"), ("Bookings", "/bookings"), ("Calendar", "/calendar"))),
+    ("More", "/more", ("/more", "/outreach", "/scout", "/seo", "/learner", "/agents", "/keys", "/errors"),
+     (("Outreach", "/outreach"), ("Scout", "/scout"), ("Search", "/seo"), ("Learner", "/learner"),
+      ("Agents", "/agents"), ("Keys", "/keys"))),
+)
+
+
+def nav_for(request: Request) -> dict:
+    path = request.url.path
+    view = request.query_params.get("view", "")
+    here = next((s for s in SECTIONS if (path == "/" and s[1] == "/") or any(path.startswith(p) for p in s[2])), SECTIONS[0])
+
+    def on(href: str) -> bool:
+        p, _, q = href.partition("?")
+        if p != path and not (p != "/" and path.startswith(p + "/")):
+            return False
+        want = dict(x.split("=", 1) for x in q.split("&") if "=" in x).get("view", "")
+        return want == view or (path.startswith("/library/folder/") and want == "folders")
+    return {"tabs": [{"label": s[0], "href": s[1], "on": s is here} for s in SECTIONS],
+            "chips": [{"label": label, "href": href, "on": on(href)} for label, href in here[3]] if len(here[3]) > 1 else []}
+
+
 def render(request: Request, name: str, **ctx) -> HTMLResponse:
     ctx.setdefault("brand", config.get_config().brand_name)
+    ctx.setdefault("nav", nav_for(request))
     return TEMPLATES.TemplateResponse(request, name, ctx)
 
 
@@ -178,6 +209,38 @@ def latest_design() -> Optional[str]:
         return None
     names = sorted(p.name for p in renders.iterdir() if DESIGN_DIR.fullmatch(p.name) and (p / "index.html").is_file())
     return names[-1] if names else None
+
+
+PAGE = 48
+PHOTO_FIELDS = """SELECT p.*, c.method, c.subject, c.shot_type, c.quality, c.sharp, c.light, c.moment, c.possible_minor,
+                         c.personal_details, f.name AS folder_name
+                  FROM photos p LEFT JOIN classifications c ON c.photo_id = p.id
+                  LEFT JOIN drive_folders f ON f.drive_id = p.folder_id WHERE p.trashed = 0"""
+
+
+def _sorted(r) -> bool:
+    return r["method"] in ("ollama", "vision")
+
+
+def review_photos(conn, decisions) -> list[dict]:
+    """Sorted photos Chris has not decided on, that could ever be used: nobody who may be under 18,
+    no readable personal detail. Strongest first."""
+    out = []
+    for r in db.rows(conn, PHOTO_FIELDS):
+        if not _sorted(r) or r["possible_minor"] != 0 or eligibility.decision_of(r, decisions) != "not_cleared":
+            continue
+        if eligibility.blocking_details(json.loads(r["personal_details"] or "[]"), r["subject"]):
+            continue
+        out.append(dict(r))
+    out.sort(key=lambda r: -report.strength(r))
+    return out
+
+
+def approved_photos(conn, decisions) -> list[dict]:
+    """Everything Chris cleared, by the photo itself or by its folder. Sorted ones first, strongest first."""
+    out = [dict(r) for r in db.rows(conn, PHOTO_FIELDS) if eligibility.decision_of(r, decisions) == "cleared"]
+    out.sort(key=lambda r: (0 if _sorted(r) else 1, -report.strength(r) if _sorted(r) else 0))
+    return out
 
 
 def create_app() -> FastAPI:
@@ -308,25 +371,54 @@ def create_app() -> FastAPI:
 
     # ------------------------------------------------------------------ library
     @app.get("/library", response_class=HTMLResponse)
-    def library(request: Request, user: str = Depends(require_user), conn=Depends(conn_dep), show: str = "events"):
-        where = "conv > 0" if show == "events" else ("f.clearance='cleared'" if show == "cleared" else "1=1")
-        rows = db.rows(conn, f"""
-            SELECT * FROM (
-              SELECT f.drive_id, f.name, f.path, f.clearance, f.image_count,
-                     SUM(CASE WHEN c.is_convention=1 THEN 1 ELSE 0 END) AS conv,
-                     SUM(CASE WHEN c.possible_minor=1 THEN 1 ELSE 0 END) AS minors
-              FROM drive_folders f LEFT JOIN photos p ON p.folder_id=f.drive_id AND p.trashed=0
-              LEFT JOIN classifications c ON c.photo_id=p.id
-              GROUP BY f.drive_id) f
-            WHERE image_count > 0 AND {where} ORDER BY conv DESC, image_count DESC LIMIT 400""")
-        note = ""
-        if show == "events" and not rows:
-            rows = db.rows(conn, """SELECT f.drive_id, f.name, f.path, f.clearance, f.image_count, 0 AS conv, 0 AS minors
-                                    FROM drive_folders f WHERE f.image_count > 0 ORDER BY f.image_count DESC LIMIT 400""")
-            if rows:
-                note = "No folder has been recognised as event work yet, so every folder with photos is shown."
-        return render(request, "library.html", folders=rows, show=show, msg=request.query_params.get("msg", ""),
-                      note=note, renders=latest_renders(), design=latest_design(), tracks=music.tracks(conn))
+    def library(request: Request, user: str = Depends(require_user), conn=Depends(conn_dep), view: str = "review",
+                show: str = "events", page: int = 1):
+        """Photos. Chris, 2026-10-11: "I only want to choose what I approve and if it's not approved then
+        don't use it yet or at all". To review: the sorted photos he has not decided on, best first,
+        each with Use and Don't use. Approved: everything cleared, by the photo or its folder.
+        Folders: clear a whole shoot at once. Design and music: samples on approved photos only."""
+        msg = request.query_params.get("msg", "")
+        decisions = eligibility.folder_decisions(conn)
+        lists = {"review": review_photos(conn, decisions), "approved": approved_photos(conn, decisions)}
+        counts = {k: len(v) for k, v in lists.items()}
+        common = dict(view=view, msg=msg, counts=counts)
+        if view == "folders":
+            where = "conv > 0" if show == "events" else ("f.clearance='cleared'" if show == "cleared" else "1=1")
+            rows = db.rows(conn, f"""
+                SELECT * FROM (
+                  SELECT f.drive_id, f.name, f.path, f.clearance, f.image_count,
+                         SUM(CASE WHEN c.is_convention=1 THEN 1 ELSE 0 END) AS conv,
+                         SUM(CASE WHEN c.possible_minor=1 THEN 1 ELSE 0 END) AS minors
+                  FROM drive_folders f LEFT JOIN photos p ON p.folder_id=f.drive_id AND p.trashed=0
+                  LEFT JOIN classifications c ON c.photo_id=p.id
+                  GROUP BY f.drive_id) f
+                WHERE image_count > 0 AND {where} ORDER BY conv DESC, image_count DESC LIMIT 400""")
+            note = ""
+            if show == "events" and not rows:
+                rows = db.rows(conn, """SELECT f.drive_id, f.name, f.path, f.clearance, f.image_count, 0 AS conv, 0 AS minors
+                                        FROM drive_folders f WHERE f.image_count > 0 ORDER BY f.image_count DESC LIMIT 400""")
+                if rows:
+                    note = "No folder has been recognised as event work yet, so every folder with photos is shown."
+            return render(request, "library.html", folders=rows, show=show, note=note, **common)
+        if view == "design":
+            return render(request, "library.html", renders=latest_renders(), design=latest_design(), tracks=music.tracks(conn),
+                          **common)
+        view = "approved" if view == "approved" else "review"
+        items = lists[view]
+        pages = max(1, (len(items) + PAGE - 1) // PAGE)
+        page = max(1, min(page, pages))
+        shown = items[(page - 1) * PAGE: page * PAGE]
+        for i, p in enumerate(shown):
+            # after a tap the page comes back to the next photo, since the one tapped may leave this list
+            nxt = shown[i + 1]["id"] if i + 1 < len(shown) else p["id"]
+            p["back"] = f"/library?view={view}&page={page}#p{nxt}"
+            p["why"] = eligibility.is_candidate(conn, p["id"]) if view == "approved" else None
+        common["view"] = view
+        return render(request, "library.html", items=shown, page=page, pages=pages, total=len(items), **common)
+
+    @app.get("/more", response_class=HTMLResponse)
+    def more(request: Request, user: str = Depends(require_user)):
+        return render(request, "more.html")
 
     @app.get("/library/report")
     def library_report(user: str = Depends(require_user)):
@@ -400,7 +492,7 @@ def create_app() -> FastAPI:
         if state not in ("cleared", "excluded", "not_cleared"):
             raise HTTPException(400)
         conn.execute("UPDATE drive_folders SET clearance=?, clearance_at=? WHERE drive_id=?", (state, db.utcnow(), fid))
-        return RedirectResponse(back if back.startswith("/") else "/library", status_code=303)
+        return RedirectResponse(back if back.startswith("/") and not back.startswith("//") else "/library", status_code=303)
 
     @app.get("/library/folder/{fid}", response_class=HTMLResponse)
     def folder(fid: str, request: Request, user: str = Depends(require_user), conn=Depends(conn_dep)):
@@ -411,7 +503,8 @@ def create_app() -> FastAPI:
                                "LEFT JOIN classifications c ON c.photo_id=p.id WHERE p.folder_id=? AND p.trashed=0 "
                                "ORDER BY COALESCE(c.quality,0) DESC, p.taken_at LIMIT 300", (fid,))
         items = [{**dict(p), "eligible": eligibility.is_candidate(conn, p["id"])} for p in photos]
-        return render(request, "folder.html", folder=f, items=items)
+        picked = sum(1 for p in photos if p["clearance"] == "cleared")
+        return render(request, "folder.html", folder=f, items=items, picked=picked)
 
     @app.post("/library/photo/{pid}/clearance")
     def photo_clearance(pid: int, user: str = Depends(require_user), conn=Depends(conn_dep), state: str = Form(...),
@@ -419,7 +512,7 @@ def create_app() -> FastAPI:
         if state not in ("cleared", "blocked", "inherit"):
             raise HTTPException(400)
         conn.execute("UPDATE photos SET clearance=?, clearance_at=? WHERE id=?", (state, db.utcnow(), pid))
-        return RedirectResponse(back if back.startswith("/") else "/library", status_code=303)
+        return RedirectResponse(back if back.startswith("/") and not back.startswith("//") else "/library", status_code=303)
 
     # ------------------------------------------------------------------ do not use
     @app.get("/donotuse", response_class=HTMLResponse)
@@ -594,7 +687,9 @@ def create_app() -> FastAPI:
                          "last": dict(last) if last else None})
         errors = [dict(e) for e in db.rows(conn, "SELECT * FROM errors WHERE alerted=0 ORDER BY id DESC LIMIT 50")]
         kinds = [dict(k) for k in db.rows(conn, "SELECT kind, COUNT(*) AS n FROM errors WHERE alerted=0 GROUP BY kind ORDER BY n DESC")]
+        switches = [r for r in rows if r["dry_run"] is not None]
         return render(request, "agents.html", agents=rows, errors=errors, kinds=kinds, msg=request.query_params.get("msg", ""),
+                      live_n=sum(1 for r in switches if not r["dry_run"]), switch_n=len(switches),
                       ai_mtd=spend.month_to_date(conn), ai_cap=config.get_config().ai_monthly_cap_usd)
 
     @app.post("/agents/{name}/run")
@@ -610,6 +705,15 @@ def create_app() -> FastAPI:
                          stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
         log.close()
         return RedirectResponse(f"/agents?msg={name}+started.+Its+result+shows+here+when+it+ends.", status_code=303)
+
+    @app.post("/agents/all/dry-run")
+    def all_dry_run(user: str = Depends(require_user), conn=Depends(conn_dep), state: str = Form(...)):
+        """Chris, 2026-10-11: "Everything should be live now too so we can see the damn thing work!"
+        Every switch at once. Approve still gates every post, email and reply; the AI cap still holds."""
+        for name in settings.AGENTS_WITH_DRY_RUN:
+            settings.set_dry_run(conn, name, state != "off")
+        word = "dry+run" if state != "off" else "LIVE"
+        return RedirectResponse(f"/agents?msg=Every+agent+is+now+{word}.", status_code=303)
 
     @app.post("/agents/{name}/dry-run")
     def toggle_dry_run(name: str, user: str = Depends(require_user), conn=Depends(conn_dep), state: str = Form(...)):

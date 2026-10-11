@@ -124,7 +124,7 @@ class DesignSamples(IsolatedCase):
         self.conn.close()
         super().tearDown()
 
-    def photo(self, n, shot_type, *, minor=0, clearance="inherit", details="[]"):
+    def photo(self, n, shot_type, *, minor=0, clearance="cleared", details="[]"):
         now = db.utcnow()
         self.conn.execute("INSERT INTO photos (drive_id, name, width, height, clearance, thumbnail_link, first_seen_at, last_seen_at) "
                           "VALUES (?,?,?,?,?,?,?,?)", (f"d{n}", f"{n}.jpg", 3000, 2000, clearance, "https://x/t=s220", now, now))
@@ -149,6 +149,7 @@ class DesignSamples(IsolatedCase):
             self.photo(n, st)
         self.photo(10, "vendor_hall", minor=1)
         self.photo(11, "candid", clearance="blocked")
+        self.photo(14, "dinner_reception", clearance="inherit")     # never approved: Chris, "don't use it yet or at all"
         self.photo(12, "crowd")
         db.insert(self.conn, "do_not_use", kind="photo", value="d12", reason="takedown", added_at=db.utcnow())
         self.photo(13, "group", details='["badge_name"]')
@@ -188,7 +189,7 @@ class LibraryPage(IsolatedCase):
         self.client.cookies.set(COOKIE, make_token("chris"))
 
     def test_the_button_starts_the_designer_and_the_page_serves_only_its_files(self):
-        self.assertIn("Make design samples", self.client.get("/library").text)
+        self.assertIn("Make design samples", self.client.get("/library?view=design").text)
         with mock.patch("convention_social.dashboard.app.subprocess.Popen") as popen:
             r = self.client.post("/library/design", follow_redirects=False)
         self.assertEqual(r.status_code, 303)
@@ -207,3 +208,23 @@ class LibraryPage(IsolatedCase):
             self.assertEqual(self.client.get(bad).status_code, 404, bad)
         self.client.cookies.clear()
         self.assertNotEqual(self.client.get("/library/design/design-20261011-1800/index.html", follow_redirects=False).status_code, 200)
+
+
+class ApprovedOnly(IsolatedCase):
+    """Chris, 2026-10-11: "I only want to choose what I approve and if it's not approved then don't use it
+    yet or at all". The samples take a photo cleared by itself or by its folder, and nothing else."""
+
+    def test_a_folder_clear_counts_and_an_undecided_photo_never_does(self):
+        conn = db.connect()
+        now = db.utcnow()
+        for fid, name, state in (("fy", "Cleared shoot", "cleared"), ("fn", "Not yet", "not_cleared")):
+            conn.execute("INSERT INTO drive_folders (drive_id, name, clearance, first_seen_at, last_seen_at) VALUES (?,?,?,?,?)",
+                         (fid, name, state, now, now))
+        for n, folder in enumerate(("fy", "fy", "fn", "fn")):
+            conn.execute("INSERT INTO photos (drive_id, name, width, height, clearance, folder_id, thumbnail_link, first_seen_at, last_seen_at) "
+                         "VALUES (?,?,?,?, 'inherit', ?, 'https://x/t=s220', ?, ?)", (f"a{n}", f"{n}.jpg", 3000, 2000, folder, now, now))
+            pid = db.one(conn, "SELECT id FROM photos WHERE drive_id=?", (f"a{n}",))["id"]
+            db.insert(conn, "classifications", photo_id=pid, method="ollama", subject="event", is_convention=1, possible_minor=0,
+                      personal_details="[]", quality=5, sharp=1, light=4, moment=4, shot_type="portrait", classified_at=now)
+        self.assertEqual(sorted(r["drive_id"] for r in design_samples.pick(conn, 6)), ["a0", "a1"])
+        conn.close()

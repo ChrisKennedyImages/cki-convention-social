@@ -14,6 +14,14 @@ nav{display:flex;gap:2px;overflow-x:auto;white-space:nowrap;margin-left:auto;scr
 nav::-webkit-scrollbar{display:none}
 nav a{color:#fff;text-decoration:none;padding:8px 9px;border-radius:8px;font-size:14px}
 nav a.on{background:rgba(255,255,255,.18)}
+nav a{font-size:15px;padding:8px 11px}
+@media (max-width:560px){header .brand{display:none}nav{margin-left:0;flex:1;justify-content:space-between}nav a{padding:8px 10px;font-size:16px}}
+.sub{position:sticky;top:52px;z-index:1;background:var(--bg);border-bottom:1px solid var(--line)}
+.chips{display:flex;gap:6px;overflow-x:auto;white-space:nowrap;padding:8px 12px;max-width:880px;margin:0 auto;scrollbar-width:none}
+.chips::-webkit-scrollbar{display:none}
+.chips a{color:var(--ink);text-decoration:none;padding:7px 12px;border-radius:999px;font-size:14px;background:#e7e6e1}
+.chips a.on{background:var(--ink);color:#fff}
+.back{display:inline-block;margin:0 0 10px;color:var(--accent);text-decoration:none;font-weight:600}
 main{padding:14px;max-width:880px;margin:0 auto}
 .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin:0 0 14px}
 .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
@@ -50,12 +58,11 @@ form.inline{display:inline}
 <header>
   <span class="brand">{{ brand }}</span>
   <nav>
-    {% for href, label in [('/', 'Queue'), ('/inquiries', 'Requests'), ('/bookings', 'Bookings'), ('/outreach', 'Outreach'), ('/scout', 'Scout'), ('/library', 'Library'), ('/calendar', 'Calendar'), ('/donotuse', 'Do not use'), ('/drive', 'Drive'), ('/seo', 'Search'), ('/learner', 'Learner'), ('/agents', 'Agents'), ('/keys', 'Keys')] %}
-    <a href="{{ href }}" class="{{ 'on' if (request.url.path == href or (href != '/' and request.url.path.startswith(href))) else '' }}">{{ label }}</a>
-    {% endfor %}
+    {% for t in nav.tabs %}<a href="{{ t.href }}" class="{{ 'on' if t.on else '' }}">{{ t.label }}</a>{% endfor %}
   </nav>
   {% if request.cookies.get('ccs_session') %}<form method="post" action="/logout" class="inline"><button type="submit" class="small" style="background:transparent;color:#bbb">out</button></form>{% endif %}
 </header>
+{% if nav.chips %}<div class="sub"><div class="chips">{% for c in nav.chips %}<a href="{{ c.href }}" class="{{ 'on' if c.on else '' }}">{{ c.label }}</a>{% endfor %}</div></div>{% endif %}
 <main>
 {% block body %}{% endblock %}
 </main>

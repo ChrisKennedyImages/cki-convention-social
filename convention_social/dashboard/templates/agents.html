@@ -3,6 +3,14 @@
 <h1>Agents</h1>
 {% if msg %}<div class="card">{{ msg }}</div>{% endif %}
 <div class="card"><strong>AI spend this month:</strong> ${{ '%.2f'|format(ai_mtd) }} of ${{ '%.2f'|format(ai_cap) }}</div>
+<div class="card">
+  <strong>{{ live_n }} of {{ switch_n }} agents live</strong>
+  <div class="muted">Live means the agents do their real work on their schedules. Still, nothing posts, emails a person or replies to a request until you press Approve on it, and AI spending stops at the monthly cap above.</div>
+  <div class="row" style="margin-top:8px">
+    {% if live_n < switch_n %}<form method="post" action="/agents/all/dry-run" class="inline"><input type="hidden" name="state" value="off"><button class="danger" type="submit">Switch everything live</button></form>{% endif %}
+    {% if live_n %}<form method="post" action="/agents/all/dry-run" class="inline"><input type="hidden" name="state" value="on"><button class="small" type="submit">Everything back to dry run</button></form>{% endif %}
+  </div>
+</div>
 {% for a in agents %}
 <div class="card">
   <div class="row"><strong>{{ a.name }}</strong>

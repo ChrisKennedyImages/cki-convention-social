@@ -1,18 +1,71 @@
 {% extends "base.html" %}
 {% block body %}
-<h1>Library</h1>
-<div class="card muted">Nothing is used until you clear it. Clearing a folder clears the folders inside it, unless you exclude one. Photos where someone may be under 18 are never used, whatever you clear.</div>
-<div class="row" style="margin-bottom:12px">
-  <a class="btn" href="/library?show=events">Event folders</a><a class="btn" href="/library?show=cleared">Cleared</a><a class="btn" href="/library?show=all">All folders</a>
-</div>
 {% if msg %}<div class="msg">{{ msg }}</div>{% endif %}
+
+{% if view in ('review', 'approved') %}
+<h1>{{ 'To review' if view == 'review' else 'Approved' }} <span class="muted">{{ total }}</span></h1>
+<div class="card muted">
+  {% if view == 'review' %}Only what you approve is ever used. These are the sorted photos you have not decided on yet, strongest first. Use approves one; Don't use keeps it out for good. Photos where someone may be under 18, or with a readable name badge, plate or screen, never show here and are never used.
+  {% else %}Everything you approved, one photo at a time or by its folder. Only these are ever used: in posts, on the website and in the design samples. Undo puts a photo back to review; Don't use keeps it out for good.{% endif %}
+</div>
+{% if not items %}<div class="card muted">{{ 'Nothing to review right now.' if view == 'review' else 'Nothing approved yet. Tap Use on a photo in To review, or Clear a whole folder in Folders.' }}</div>{% endif %}
+<div class="grid">
+{% for p in items %}
+  <div class="card{% if p.clearance == 'blocked' %} off{% endif %}" id="p{{ p.id }}" style="padding:8px;margin:0">
+    <img src="/media/thumb/{{ p.id }}" loading="lazy" alt="">
+    <div class="muted" style="margin-top:6px">{{ (p.shot_type or 'not sorted yet').replace('_',' ') }}</div>
+    <a class="muted" href="/library/folder/{{ p.folder_id }}">{{ p.folder_name or '' }}</a>
+    {% if view == 'approved' %}<div><span class="badge {{ 'ok' if p.why[0] else 'blocked' }}">{{ 'ready to use' if p.why[0] else p.why[1] }}</span></div>{% endif %}
+    <div class="row" style="margin-top:6px">
+    {% for state, label, cls in ([('cleared', 'Use', 'ok'), ('blocked', "Don't use", 'danger')] if view == 'review'
+                                 else [('inherit', 'Undo', ''), ('blocked', "Don't use", 'danger')]) %}
+      <form method="post" action="/library/photo/{{ p.id }}/clearance" class="inline">
+        <input type="hidden" name="back" value="{{ p.back }}">
+        <input type="hidden" name="state" value="{{ state }}"><button class="small {{ cls }}" type="submit">{{ label }}</button>
+      </form>
+    {% endfor %}
+    </div>
+  </div>
+{% endfor %}
+</div>
+{% if pages > 1 %}<div class="row" style="margin-top:14px">
+  {% if page > 1 %}<a class="btn" href="/library?view={{ view }}&page={{ page - 1 }}">Previous</a>{% endif %}
+  <span class="muted">Page {{ page }} of {{ pages }}</span>
+  {% if page < pages %}<a class="btn" href="/library?view={{ view }}&page={{ page + 1 }}">Next</a>{% endif %}
+</div>{% endif %}
+
+{% elif view == 'folders' %}
+<h1>Folders</h1>
+<div class="card muted">Approve all approves every photo in a folder (and the folders inside it), not only ones you picked; photos you marked Don't use stay out. To approve only some, open the folder and tap Use on each. Exclude keeps a whole folder out.</div>
+<div class="row" style="margin-bottom:12px">
+  {% for key, label in [('events', 'Event folders'), ('cleared', 'Cleared'), ('all', 'All folders')] %}<a class="btn{{ ' primary' if show == key else '' }}" href="/library?view=folders&show={{ key }}">{{ label }}</a>{% endfor %}
+</div>
+{% if note %}<div class="card muted">{{ note }}</div>{% endif %}
+{% if not folders %}<div class="card muted">No folders yet. The scanner fills this in once Google Drive is signed in.</div>{% endif %}
+{% for f in folders %}
+<div class="card" id="f-{{ f.drive_id }}">
+  <div class="row"><a href="/library/folder/{{ f.drive_id }}"><strong>{{ f.name }}</strong></a>
+    <span class="badge {{ f.clearance }}">{{ f.clearance.replace('_',' ') }}</span></div>
+  <div class="muted">{{ f.path or '' }}</div>
+  <div class="muted">{{ f.conv or 0 }} look like event photos, {{ f.image_count }} photos in all{% if f.minors %}, {{ f.minors }} set aside (may be under 18){% endif %}</div>
+  <div class="row" style="margin-top:8px">
+    {% for state, label, cls in [('cleared', 'Approve all', 'ok'), ('excluded', 'Exclude', 'danger'), ('not_cleared', 'Undecided', '')] if state != f.clearance %}
+    <form method="post" action="/library/folder/{{ f.drive_id }}/clearance" class="inline"><input type="hidden" name="state" value="{{ state }}"><input type="hidden" name="back" value="/library?view=folders&show={{ show }}#f-{{ f.drive_id }}"><button class="small {{ cls }}" type="submit">{{ label }}</button></form>
+    {% endfor %}
+    <a class="btn small" style="padding:6px 10px;min-height:0;font-size:14px" href="/library/folder/{{ f.drive_id }}">Open</a>
+  </div>
+</div>
+{% endfor %}
+
+{% else %}
+<h1>Design and music</h1>
 <div class="card">
   <strong>Design samples</strong>
   <div class="row" style="margin-top:8px">
     {% if design %}<a class="btn primary" href="/library/design">Design samples</a>{% endif %}
     <form method="post" action="/library/design" class="inline"><button class="small" type="submit">Make design samples</button></form>
   </div>
-  <div class="muted">Every new post design and both reels, made on the strongest photos in your library. For review only: nothing is posted.</div>
+  <div class="muted">Every post design and both reels, made only from photos you approved ({{ counts.approved }} so far). For review: nothing is posted.</div>
 </div>
 <div class="card">
   <strong>Music for reels</strong>
@@ -42,24 +95,10 @@
     {% if renders.sheet %}<a class="btn" href="/library/renders/{{ renders.sheet }}">Best 30 event photos</a>{% endif %}
     {% if renders.buildings %}<a class="btn" href="/library/renders/{{ renders.buildings }}">Best 30 building photos</a>{% endif %}
   </div>
-  <div class="muted">Made by the scanner after its last pass that found or sorted photos. For review only: nothing here is cleared or posted.</div>
+  <div class="muted">Made by the scanner to help you choose. Nothing on these sheets is approved or used until you approve it.</div>
   {% else %}
   <div class="muted">Not made yet. The scanner makes it after its next pass that finds or sorts photos.</div>
   {% endif %}
 </div>
-{% if note %}<div class="card muted">{{ note }}</div>{% endif %}
-{% if not folders %}<div class="card muted">No folders yet. The scanner fills this in once Google Drive is signed in.</div>{% endif %}
-{% for f in folders %}
-<div class="card">
-  <div class="row"><a href="/library/folder/{{ f.drive_id }}"><strong>{{ f.name }}</strong></a>
-    <span class="badge {{ f.clearance }}">{{ f.clearance.replace('_',' ') }}</span></div>
-  <div class="muted">{{ f.path or '' }}</div>
-  <div class="muted">{{ f.conv or 0 }} look like event photos, {{ f.image_count }} photos in all{% if f.minors %}, {{ f.minors }} set aside (may be under 18){% endif %}</div>
-  <div class="row" style="margin-top:8px">
-    {% for state, label, cls in [('cleared', 'Clear', 'ok'), ('excluded', 'Exclude', 'danger'), ('not_cleared', 'Undecided', '')] if state != f.clearance %}
-    <form method="post" action="/library/folder/{{ f.drive_id }}/clearance" class="inline"><input type="hidden" name="state" value="{{ state }}"><input type="hidden" name="back" value="/library?show={{ show }}"><button class="small {{ cls }}" type="submit">{{ label }}</button></form>
-    {% endfor %}
-  </div>
-</div>
-{% endfor %}
+{% endif %}
 {% endblock %}
