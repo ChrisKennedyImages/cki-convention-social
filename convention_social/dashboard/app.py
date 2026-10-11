@@ -23,7 +23,7 @@ import time
 from pathlib import Path
 from typing import Optional
 
-from fastapi import Depends, FastAPI, Form, HTTPException, Request, status
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile, status
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
@@ -31,6 +31,7 @@ from ..agents import AGENTS, is_built
 from ..ai import copy_rules, spend
 from ..ai.claude import NETWORKS
 from ..core import auth, config, db, secrets, settings
+from .. import music
 from ..library import eligibility
 
 TEMPLATES = Jinja2Templates(directory=str(Path(__file__).with_name("templates")))
@@ -325,7 +326,7 @@ def create_app() -> FastAPI:
             if rows:
                 note = "No folder has been recognised as event work yet, so every folder with photos is shown."
         return render(request, "library.html", folders=rows, show=show, msg=request.query_params.get("msg", ""),
-                      note=note, renders=latest_renders(), design=latest_design())
+                      note=note, renders=latest_renders(), design=latest_design(), tracks=music.tracks(conn))
 
     @app.get("/library/report")
     def library_report(user: str = Depends(require_user)):
@@ -333,6 +334,25 @@ def create_app() -> FastAPI:
         if not latest:
             return RedirectResponse("/library?msg=No+report+yet:+the+scanner+makes+one+after+its+next+pass", status_code=303)
         return RedirectResponse(f"/library/renders/{latest}", status_code=303)
+
+    @app.post("/library/music")
+    async def library_music_add(file: UploadFile = File(...), title: str = Form(""), artist: str = Form(""),
+                                source: str = Form(""), terms: str = Form(""), rights: str = Form(""),
+                                user: str = Depends(require_user), conn=Depends(conn_dep)):
+        """A track for the reels, kept only with its record: where it came from and what that allows."""
+        if rights != "yes":
+            return RedirectResponse("/library?msg=Tick+that+you+have+the+right+to+use+the+track+in+posts", status_code=303)
+        data = await file.read(music.MAX_BYTES + 1)
+        try:
+            music.add(conn, file.filename or "", data, title=title, artist=artist, source=source, terms=terms)
+        except music.Refused as e:
+            return RedirectResponse(f"/library?msg=Track+not+added:+{str(e).replace(' ', '+')}", status_code=303)
+        return RedirectResponse("/library?msg=Track+added.+New+reels+use+the+newest+track.", status_code=303)
+
+    @app.post("/library/music/{tid}/active")
+    def library_music_active(tid: int, state: str = Form(...), user: str = Depends(require_user), conn=Depends(conn_dep)):
+        music.set_active(conn, tid, state == "on")
+        return RedirectResponse("/library", status_code=303)
 
     @app.post("/library/design")
     def library_design_make(user: str = Depends(require_user)):
@@ -573,7 +593,8 @@ def create_app() -> FastAPI:
                          "dry_run": settings.dry_run(conn, name) if name in settings.AGENTS_WITH_DRY_RUN else None,
                          "last": dict(last) if last else None})
         errors = [dict(e) for e in db.rows(conn, "SELECT * FROM errors WHERE alerted=0 ORDER BY id DESC LIMIT 50")]
-        return render(request, "agents.html", agents=rows, errors=errors, msg=request.query_params.get("msg", ""),
+        kinds = [dict(k) for k in db.rows(conn, "SELECT kind, COUNT(*) AS n FROM errors WHERE alerted=0 GROUP BY kind ORDER BY n DESC")]
+        return render(request, "agents.html", agents=rows, errors=errors, kinds=kinds, msg=request.query_params.get("msg", ""),
                       ai_mtd=spend.month_to_date(conn), ai_cap=config.get_config().ai_monthly_cap_usd)
 
     @app.post("/agents/{name}/run")
@@ -596,6 +617,13 @@ def create_app() -> FastAPI:
             raise HTTPException(404)
         settings.set_dry_run(conn, name, state != "off")
         return RedirectResponse("/agents", status_code=303)
+
+    @app.post("/errors/ack-kind")
+    def ack_kind(kind: str = Form(...), user: str = Depends(require_user), conn=Depends(conn_dep)):
+        """Dismiss every open error of one kind (Chris, 2026-10-11: "the terminal command to dismiss
+        all the drive errors"). A dismissed error stays in the table; it only leaves this list."""
+        n = conn.execute("UPDATE errors SET alerted=1 WHERE alerted=0 AND kind=?", (kind,)).rowcount
+        return RedirectResponse(f"/agents?msg={n}+{kind.replace('_', '+')}+errors+dismissed", status_code=303)
 
     @app.post("/errors/{eid}/ack")
     def ack_error(eid: int, user: str = Depends(require_user), conn=Depends(conn_dep)):

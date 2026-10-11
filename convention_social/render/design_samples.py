@@ -22,6 +22,7 @@ from PIL import Image
 
 from ..core import config, db
 from ..library import eligibility, report
+from .. import music
 from . import motion
 
 ROOMS = {
@@ -94,15 +95,19 @@ def make(conn, fetch: Callable[[str], bytes], *, out_root: Optional[Path] = None
         job(out / name)
         made.append(name)
     made += [p.name for p in motion.carousel(shots, copy, out_dir=out)]
+    track = music.current(conn)
     if reels:
+        if track is None:
+            failed.append("the reels are silent: no music added yet (Library page, Music for reels)")
         for name, job in (("rooms-reel.mp4", motion.rooms_reel), ("facematch-reel.mp4", motion.facematch_reel)):
             try:
-                job(shots, copy, out=out / name)
+                job(shots, copy, out=out / name, audio=track)
                 made.append(name)
             except Exception as e:  # noqa: BLE001 — the stills stand on their own; the page says why
                 failed.append(f"{name}: {e}")
                 log(f"{name} not made: {e}")
     (out / "about.json").write_text(json.dumps({"photos": [r["drive_id"] for r in rows], "made": made, "failed": failed,
+                                                "music": track.name if track else None,
                                                 "at": datetime.now().isoformat(timespec="seconds")}, indent=1))
     (out / "index.html").write_text(page(out.name, made, failed))
     log(f"design samples: {out}")

@@ -15,6 +15,26 @@
   <div class="muted">Every new post design and both reels, made on the strongest photos in your library. For review only: nothing is posted.</div>
 </div>
 <div class="card">
+  <strong>Music for reels</strong>
+  <div class="muted">Reels use the newest track you have switched on. Only a track you have the right to use in posts on Instagram and Facebook, with where it came from. With none, reels are silent.</div>
+  {% for t in tracks %}
+  <div class="row" style="margin-top:8px"><span>{{ t.title }} by {{ t.artist }}</span>
+    <span class="badge {{ 'ok' if t.active else 'blocked' }}">{{ 'on' if t.active else 'off' }}</span>
+    <span class="muted">{{ t.source }}</span>
+    <form method="post" action="/library/music/{{ t.id }}/active" class="inline"><input type="hidden" name="state" value="{{ 'off' if t.active else 'on' }}"><button class="small" type="submit">{{ 'Switch off' if t.active else 'Switch on' }}</button></form>
+  </div>
+  {% endfor %}
+  <form method="post" action="/library/music" enctype="multipart/form-data" style="margin-top:10px">
+    <label>Track (mp3, m4a, aac or wav, up to 25 MB)</label><input type="file" name="file" accept=".mp3,.m4a,.aac,.wav,audio/*" required>
+    <label>Title</label><input type="text" name="title" required>
+    <label>Artist</label><input type="text" name="artist" required>
+    <label>Where it came from (a link or the library's name)</label><input type="text" name="source" required>
+    <label>What that source allows</label><input type="text" name="terms" placeholder="for example: free for business posts on Instagram and Facebook" required>
+    <label class="row"><input type="checkbox" name="rights" value="yes" required> I have the right to use this track in posts on Instagram and Facebook</label>
+    <div class="row" style="margin-top:10px"><button class="primary" type="submit">Add track</button></div>
+  </form>
+</div>
+<div class="card">
   <strong>Library report</strong>
   {% if renders.report %}
   <div class="row" style="margin-top:8px">
