@@ -470,7 +470,7 @@ def create_app() -> FastAPI:
 
     @app.get("/drive/report/{name}")
     def drive_report(name: str, user: str = Depends(require_user)):
-        if "/" in name or not re.fullmatch(r"(library-report|contact-sheet)-\d{8}\.(html|jpg)", name):
+        if "/" in name or not re.fullmatch(r"(library-report|contact-sheet|building-sheet)-\d{8}\.(html|jpg)", name):
             raise HTTPException(404)
         p = config.get_config().data_root / "renders" / name
         if not inside_data_root(p):

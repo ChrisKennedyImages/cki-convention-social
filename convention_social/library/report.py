@@ -34,12 +34,22 @@ def _year(row) -> str:
     return "unknown"
 
 
-def convention_rows(conn: sqlite3.Connection) -> list[sqlite3.Row]:
-    return db.rows(conn, """
-        SELECT p.*, c.method, c.is_convention, c.convention_name, c.event_kind, c.shot_type, c.quality,
+ROW_FIELDS = """
+        SELECT p.*, c.method, c.is_convention, c.subject, c.view, c.convention_name, c.event_kind, c.shot_type, c.quality,
                c.people_count, c.possible_minor, c.personal_details, c.summary, f.path AS folder_path, f.clearance AS folder_clearance
         FROM photos p JOIN classifications c ON c.photo_id = p.id LEFT JOIN drive_folders f ON f.drive_id = p.folder_id
-        WHERE p.trashed = 0 AND c.is_convention = 1""")
+        WHERE p.trashed = 0 AND """
+
+
+def convention_rows(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    return db.rows(conn, ROW_FIELDS + "c.is_convention = 1")
+
+
+def architecture_rows(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    """Chris's building work: his own exteriors and interiors, which the suite may use as venue
+    shots one day a week and in the site portfolio (Chris, 2026-10-09). Never convention frames,
+    so the convention sheet has never shown any of it."""
+    return db.rows(conn, ROW_FIELDS + "c.subject = 'architecture'")
 
 
 def summary(conn: sqlite3.Connection) -> dict:
@@ -64,15 +74,22 @@ def summary(conn: sqlite3.Connection) -> dict:
             "by_event": {k: dict(sorted(v.items())) for k, v in sorted(by_event.items(), key=lambda kv: -sum(kv[1].values()))}}
 
 
-def best(conn: sqlite3.Connection, n: int = 30) -> list[sqlite3.Row]:
-    """The strongest convention frames, at most PER_EVENT_CAP per event, never a possible minor."""
-    rows = [r for r in convention_rows(conn)
+def best(conn: sqlite3.Connection, n: int = 30, *, subject: str = "event") -> list[sqlite3.Row]:
+    """The strongest frames, at most PER_EVENT_CAP per event, never a possible minor.
+
+    `subject` is "event" for convention work or "architecture" for Chris's building work. The
+    same safety filters apply to both: sorted by a model, no possible minor, no readable
+    personal detail. For buildings that last one matters most, since a house number or a street
+    sign keeps a photo out (Chris, 2026-10-09).
+    """
+    source = architecture_rows if subject == "architecture" else convention_rows
+    rows = [r for r in source(conn)
             if r["method"] in ("vision", "ollama") and r["possible_minor"] == 0 and (r["personal_details"] or "[]") == "[]"
             and r["thumbnail_link"]]
     rows.sort(key=lambda r: (-(r["quality"] or 0), -(min(r["people_count"] or 0, 3)), -(r["width"] or 0)))
     picked, per = [], Counter()
     for r in rows:
-        key = r["convention_name"] or r["folder_id"]
+        key = (r["convention_name"] if subject != "architecture" else None) or r["folder_id"]
         if per[key] >= PER_EVENT_CAP:
             continue
         per[key] += 1
@@ -83,13 +100,15 @@ def best(conn: sqlite3.Connection, n: int = 30) -> list[sqlite3.Row]:
 
 
 def write_contact_sheet(conn: sqlite3.Connection, fetch_thumb: Callable[[str], bytes], *, n: int = 30,
-                        out: Optional[Path] = None, cols: int = 5) -> Path:
-    picks = best(conn, n)
+                        out: Optional[Path] = None, cols: int = 5, subject: str = "event") -> Path:
+    picks = best(conn, n, subject=subject)
+    building = subject == "architecture"
     cell_w, cell_h, label_h, pad = 420, 420, 74, 18
     rows_n = max(1, (len(picks) + cols - 1) // cols)
     sheet = Image.new("RGB", (pad + cols * (cell_w + pad), 120 + rows_n * (cell_h + label_h + pad)), (18, 18, 20))
     d = ImageDraw.Draw(sheet)
-    d.text((pad, 34), f"{config.get_config().brand_name}  library contact sheet, best {len(picks)} convention frames",
+    d.text((pad, 34), f"{config.get_config().brand_name}  library contact sheet, best {len(picks)} "
+                      f"{'building frames' if building else 'convention frames'}",
            font=fonts.font("display", 34), fill=(240, 240, 240))
     d.text((pad, 80), f"made {datetime.now():%Y-%m-%d %H:%M}. For review only, nothing here is cleared or posted.",
            font=fonts.font("body", 20), fill=(160, 160, 165))
@@ -104,11 +123,15 @@ def write_contact_sheet(conn: sqlite3.Connection, fetch_thumb: Callable[[str], b
                 sheet.paste(im, (x + (cell_w - im.width) // 2, y + (cell_h - im.height) // 2))
         except Exception:  # noqa: BLE001 — a missing thumbnail leaves an empty cell, not a crash
             d.rectangle((x, y, x + cell_w, y + cell_h), outline=(80, 80, 80))
-        name = (r["convention_name"] or "event not named")[:36]
+        if building:
+            name = (r["view"] or "building").replace("_", " ")
+        else:
+            name = (r["convention_name"] or "event not named")[:36]
         d.text((x, y + cell_h + 8), f"{name}  {_year(r)}", font=small, fill=(235, 235, 235))
         d.text((x, y + cell_h + 34), f"{(r['shot_type'] or '').replace('_', ' ')}  q{r['quality'] or '?'}  "
                f"{(r['folder_path'] or '')[-40:]}", font=tiny, fill=(150, 150, 155))
-    out = out or config.get_config().data_root / "renders" / f"contact-sheet-{datetime.now():%Y%m%d}.jpg"
+    stem = "building-sheet" if building else "contact-sheet"
+    out = out or config.get_config().data_root / "renders" / f"{stem}-{datetime.now():%Y%m%d}.jpg"
     out.parent.mkdir(parents=True, exist_ok=True)
     sheet.save(out, format="JPEG", quality=88)
     return out

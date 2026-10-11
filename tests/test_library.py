@@ -358,6 +358,56 @@ class TokenLifetime(IsolatedCase):
         self.assertEqual(len(calls), 1, "only a 401 is worth a second attempt")
 
 
+class ArchitectureSheet(IsolatedCase):
+    """Chris's building work may be used one day a week and in the site portfolio (2026-10-09),
+    but report.best only ever read is_convention=1, so none of it could be reviewed."""
+
+    def _sorted_library(self):
+        d = FakeDrive()
+        d.folder("fcon", "Katsucon 2025")
+        d.folder("flobby", "Grand Hotel lobby exteriors")
+        d.image("e1", "E1.jpg", "fcon")
+        d.image("b1", "B1.jpg", "flobby")
+        d.image("b2", "B2.jpg", "flobby")
+        conn = db.connect()
+        reader = DriveReader("tok", conn=conn, transport=d)
+        scan.full_inventory(conn, reader)
+        classify.folder_pass(conn)
+        for drive_id, subject in (("e1", "event"), ("b1", "architecture"), ("b2", "architecture")):
+            photo = db.one(conn, "SELECT * FROM photos WHERE drive_id=?", (drive_id,))
+            classify.save_sort(conn, photo, {**ADULTS, "subject": subject, "view": "exterior",
+                                             "shot_type": "building_exterior" if subject == "architecture" else "portrait"},
+                               "ollama", "m")
+        conn.commit()
+        return conn, reader, d
+
+    def test_the_two_sheets_hold_different_photos(self):
+        conn, _, _ = self._sorted_library()
+        events = {r["drive_id"] for r in report.best(conn, 30)}
+        builds = {r["drive_id"] for r in report.best(conn, 30, subject="architecture")}
+        self.assertEqual(events, {"e1"})
+        self.assertEqual(builds, {"b1", "b2"})
+        self.assertFalse(events & builds, "a photo belongs to one sheet or the other")
+
+    def test_a_building_sheet_is_written_under_its_own_name(self):
+        conn, reader, _ = self._sorted_library()
+        sheet = report.write_contact_sheet(conn, reader.thumbnail_for, n=30, subject="architecture")
+        self.assertTrue(sheet.exists() and sheet.stat().st_size > 1000)
+        self.assertTrue(sheet.name.startswith("building-sheet-"), sheet.name)
+        other = report.write_contact_sheet(conn, reader.thumbnail_for, n=30)
+        self.assertTrue(other.name.startswith("contact-sheet-"), other.name)
+        self.assertNotEqual(sheet, other, "one sheet must not overwrite the other")
+
+    def test_a_building_with_a_readable_detail_is_still_kept_out(self):
+        """A house number or a street sign keeps a photo out (Chris, 2026-10-09)."""
+        conn, _, _ = self._sorted_library()
+        photo = db.one(conn, "SELECT * FROM photos WHERE drive_id='b1'")
+        classify.save_sort(conn, photo, {**ADULTS, "subject": "architecture", "view": "exterior",
+                                         "personal_details": ["house_number"]}, "ollama", "m")
+        conn.commit()
+        self.assertEqual({r["drive_id"] for r in report.best(conn, 30, subject="architecture")}, {"b2"})
+
+
 class SortQueue(IsolatedCase):
     """A bounded sort pass must cover the library, not bury itself in the newest folder.
     On 2026-10-10 the next 400 photos came from five 2022-and-later events while the 6,065
