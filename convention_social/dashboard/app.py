@@ -17,6 +17,8 @@ import hmac
 import json
 import re
 import secrets as pysecrets
+import subprocess
+import sys
 import time
 from pathlib import Path
 from typing import Optional
@@ -147,6 +149,7 @@ def drive_id_from(text: str) -> str:
 
 
 # ---------------------------------------------------------------------- app
+RUNNABLE = {name for name in AGENTS if name not in ("dashboard", "art_director")}   # one-shot agents only
 RENDER_NAME = re.compile(r"(library-report|contact-sheet|building-sheet)-\d{8}\.(html|jpg)")
 
 
@@ -522,12 +525,26 @@ def create_app() -> FastAPI:
         rows = []
         for name, meta in AGENTS.items():
             last = db.one(conn, "SELECT * FROM agent_runs WHERE agent=? ORDER BY id DESC LIMIT 1", (name,))
-            rows.append({"name": name, "meta": meta, "built": is_built(name),
+            rows.append({"name": name, "meta": meta, "built": is_built(name), "runnable": name in RUNNABLE,
                          "dry_run": settings.dry_run(conn, name) if name in settings.AGENTS_WITH_DRY_RUN else None,
                          "last": dict(last) if last else None})
         errors = [dict(e) for e in db.rows(conn, "SELECT * FROM errors WHERE alerted=0 ORDER BY id DESC LIMIT 50")]
-        return render(request, "agents.html", agents=rows, errors=errors,
+        return render(request, "agents.html", agents=rows, errors=errors, msg=request.query_params.get("msg", ""),
                       ai_mtd=spend.month_to_date(conn), ai_cap=config.get_config().ai_monthly_cap_usd)
+
+    @app.post("/agents/{name}/run")
+    def run_now(name: str, user: str = Depends(require_user)):
+        """One run now, exactly as its schedule would start it: its own lock, its own dry-run switch,
+        its own gates. The dashboard only starts it and returns; the run shows here when it ends."""
+        if name not in RUNNABLE or not is_built(name):
+            raise HTTPException(404)
+        cfg = config.get_config()
+        cfg.ensure_dirs()
+        log = open(cfg.data_root / "logs" / f"{name}.manual.log", "ab")
+        subprocess.Popen([sys.executable, "-m", "convention_social.cli", "run", name], cwd=str(config.REPO_ROOT),
+                         stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
+        log.close()
+        return RedirectResponse(f"/agents?msg={name}+started.+Its+result+shows+here+when+it+ends.", status_code=303)
 
     @app.post("/agents/{name}/dry-run")
     def toggle_dry_run(name: str, user: str = Depends(require_user), conn=Depends(conn_dep), state: str = Form(...)):

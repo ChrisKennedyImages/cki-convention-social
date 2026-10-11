@@ -112,6 +112,19 @@ only when Chris says so.
 - Going live is one command on the Mini, `scripts/go-live.sh`; it ends with
   `LIVE` only when every page and the booking API pass from the outside.
 
+## 2026-10-11: the Mini updates itself
+
+- "How the fuck do I work on this without a session in terminal on my mini."
+  Chris chose auto-update: the updater agent checks GitHub every 10 minutes,
+  runs the full suite on anything newly merged to `main`, and only on a green
+  run fast-forwards the Mini and restarts the dashboard. Red tests, a checkout
+  on another branch or with local changes hold it back. It ships in dry run
+  like every agent; Chris switches it live on the Agents page. New service
+  files still need one `scripts/go-live.sh` (his Mac password), flagged on the
+  Agents page, never attempted.
+- Every agent has a Run now button on the Agents page, so nothing day to day
+  needs a terminal.
+
 ## Standing rules from the brief
 
 - Nothing publishes without Chris's Approve on the dashboard, until he says

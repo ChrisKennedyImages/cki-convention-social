@@ -128,9 +128,12 @@ def cmd_hash_password(args) -> int:
 
 
 def cmd_dashboard(_args) -> int:
+    import os
     import uvicorn
     from .dashboard.app import create_app
     cfg = config.get_config()
+    cfg.locks_dir.mkdir(parents=True, exist_ok=True)
+    (cfg.locks_dir / "dashboard.pid").write_text(str(os.getpid()))   # the updater restarts it after an update
     uvicorn.run(create_app(), host="127.0.0.1", port=cfg.dashboard_port, log_level="info")
     return 0
 

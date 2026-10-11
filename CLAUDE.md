@@ -48,3 +48,8 @@ FOUNDER_DECISIONS.md is the source of truth. Read it first.
   and leave everything that is not ours exactly as it is.
 - Going live and every redeploy: `scripts/go-live.sh` on the Mini. First run
   ended LIVE on 2026-10-09.
+- Code reaches the Mini by itself (Chris, 2026-10-11): the updater agent
+  tests anything newly merged to `main` with the full suite, then
+  fast-forwards and restarts the dashboard. A merge to `main` is therefore a
+  deploy: never merge red. New `launchd/` templates still need one
+  `scripts/go-live.sh` on the Mini; the updater flags them.

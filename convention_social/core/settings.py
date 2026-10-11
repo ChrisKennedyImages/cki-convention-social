@@ -16,7 +16,7 @@ FALSE_WORDS = {"0", "false", "off", "no", "n"}
 TRUE_WORDS = {"1", "true", "on", "yes", "y"}
 
 AGENTS_WITH_DRY_RUN = ("scanner", "content", "publisher", "inbox", "watchdog", "chief",
-                       "learner", "seo", "scout", "outreach")
+                       "learner", "seo", "scout", "outreach", "updater")
 
 
 def get(conn: sqlite3.Connection, key: str, default: Optional[str] = None) -> Optional[str]:
