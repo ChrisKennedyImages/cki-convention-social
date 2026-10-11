@@ -31,7 +31,7 @@ from zoneinfo import ZoneInfo
 from PIL import Image
 
 from ..ai import claude, copy_rules, names, seo_plan
-from ..core import config, db, runner
+from ..core import config, db, notify, runner
 from ..library import classify, eligibility
 
 from . import art_director, learner
@@ -311,6 +311,9 @@ def draft_one(ctx: runner.Context, fetch: Callable[[dict], bytes], *, now: Optio
     qid = db.insert(ctx.conn, "content_queue", kind="photo", photo_ids=json.dumps(photo_ids), targets=json.dumps(list(TARGETS)),
                     caption=json.dumps(captions), render_paths=json.dumps(render_paths), rule_report=json.dumps(meta),
                     created_at=now_s, updated_at=now_s)
+    # the ping that opens the draft (Chris, 2026-10-11: "I haven't received any ntfy")
+    notify.push(f"{ctx.cfg.brand_name}: a post to approve", f"{design} with {len(photo_ids)} photo(s) for {day:%A}. Tap to see it.",
+                dry_run=ctx.dry_run, priority="default", click=notify.link(f"/queue/{qid}"))
     fell = (f", the reel could not be made ({reel_failed[0]})" if reel_failed
             else f", {asked} wanted but too few photos passed" if asked != design else "")
     return (f"{'DRY RUN ' if ctx.dry_run else ''}drafted post #{qid} for {day} ({kind_used}"
