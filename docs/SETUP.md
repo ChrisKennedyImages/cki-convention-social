@@ -76,15 +76,26 @@ service sends outgoing mail.
 2. Connect: the Instagram professional account, the Facebook Page, the
    Pinterest business account. Create the Pinterest board posts land on.
 3. publish.buffer.com/settings/api: create an API key. Keys (Buffer).
-4. On the Mini: `bin/ccs run publisher --dry-run` lists what it would send.
-   Nothing publishes until you switch the publisher to live on the Agents
-   page, and even then only posts you approved.
+4. More, Buffer: tap Find channels, then Use on each of this company's own
+   accounts (nothing links by itself). If the key sees more than one Buffer
+   organization, choose this company's first. Find boards, Use the Pinterest
+   board. Check the video format (for the Saturday reels).
+5. `bin/ccs run publisher --dry-run` (or Run now on the Agents page) lists
+   what it would send. Nothing publishes until you switch the publisher to
+   live on the Agents page, and even then only posts you approved.
 
-## 6. Anthropic: this company's own key
+## 6. Anthropic: your key
 
-1. console.anthropic.com: a new workspace `event-caliber`, an API key in it.
-2. Keys (AI). The monthly cap there (default 20 USD) stops every paid call
-   once reached.
+Chris, 2026-10-11: this suite uses the Anthropic key his other suite already
+uses. On the Mini, from this repo (that other file is only read, and the key
+is never shown):
+
+    bin/ccs copy-key ANTHROPIC_API_KEY --from <path to that suite's .env>
+
+It also takes the key under the name CLAUDE_API_KEY, or any name with
+`--as NAME`, and ends with one free check that Anthropic accepts it. The
+monthly cap on Keys (AI, default 20 USD) stops this suite's paid calls once
+reached, whatever the other suite spends.
 
 ## 7. Phone alerts: ntfy
 

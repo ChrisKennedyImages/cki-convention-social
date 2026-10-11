@@ -35,6 +35,7 @@ class Updater(IsolatedCase):
         subprocess.run(["git", "clone", "-q", str(self.origin), str(self.repo)], check=True)
         self.conn = db.connect()
         self.calls = {"suite": [], "migrate": 0, "restart": 0, "requirements": 0}
+        self.dash = self.head()          # the commit the running dashboard serves (None: not answering)
 
     def tearDown(self):
         self.conn.close()
@@ -66,14 +67,43 @@ class Updater(IsolatedCase):
             return "dashboard: restarted"
 
         ctx = runner.Context("updater", self.conn, None, config.get_config(), dry, 0)
-        return updater.run(ctx, repo=self.repo, suite=suite, requirements=requirements, migrations=migrations, restart=restart)
+        return updater.run(ctx, repo=self.repo, suite=suite, requirements=requirements, migrations=migrations, restart=restart,
+                           probe=lambda: self.dash)
 
     def head(self):
         return git(self.repo, "rev-parse", "HEAD")
 
     def test_up_to_date_does_nothing(self):
-        self.assertIn("up to date", self.run_updater())
-        self.assertEqual(self.calls["suite"], [])
+        line = self.run_updater()
+        self.assertIn("up to date", line)
+        self.assertIn(f"dashboard: serving {self.head()[:7]}", line)
+        self.assertEqual((self.calls["suite"], self.calls["restart"]), ([], 0))
+
+    def test_a_dashboard_left_on_old_code_is_restarted_once_then_chris_is_told(self):
+        # the bug of 2026-10-11: the checkout was current, the dashboard served old pages for good
+        self.dash = ""                                                   # older than /healthz itself
+        line = self.run_updater()
+        self.assertIn("up to date", line)
+        self.assertIn("dashboard was on older code; dashboard: restarted", line)
+        self.assertEqual(self.calls["restart"], 1)
+        self.assertIn("still on older code after a restart", self.run_updater())
+        self.assertEqual(self.calls["restart"], 1, "never a restart loop")
+        err = db.one(self.conn, "SELECT kind, message FROM errors WHERE agent='updater'")
+        self.assertEqual(err["kind"], "dashboard_stale")
+        self.assertIn(updater.KICKSTART, err["message"])
+        self.dash = self.head()
+        self.assertIn("dashboard: serving", self.run_updater())
+
+    def test_a_dashboard_that_does_not_answer_is_reported_not_signalled(self):
+        self.dash = None
+        self.assertIn("dashboard: not answering", self.run_updater())
+        self.assertEqual(self.calls["restart"], 0)
+        self.assertEqual(db.one(self.conn, "SELECT kind FROM errors WHERE agent='updater'")["kind"], "dashboard_down")
+
+    def test_dry_run_only_says_the_dashboard_is_stale(self):
+        self.dash = "0" * 40
+        self.assertIn("would restart it", self.run_updater(dry=True))
+        self.assertEqual(self.calls["restart"], 0)
 
     def test_a_green_new_commit_is_tested_first_then_switched_to(self):
         target = self.commit("b.txt", "two")
@@ -136,16 +166,50 @@ class Updater(IsolatedCase):
 
 class RestartDashboard(IsolatedCase):
     def test_only_the_suites_dashboard_is_ever_signalled(self):
+        none = dict(processes=lambda: [], cwd_of=lambda pid: "")
         pid_file = self.root / "dashboard.pid"
         pid_file.write_text(str(os.getpid()))                  # this test process is not a dashboard
-        self.assertEqual(updater.restart_dashboard(pid_file), "dashboard: not running")
-        fake = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)", "convention_social.cli", "dashboard"])
+        self.assertEqual(updater.restart_dashboard(pid_file, **none), "dashboard: not found running")
+        fake = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)", "-m", "convention_social.cli", "dashboard"])
         try:
             pid_file.write_text(str(fake.pid))
             time.sleep(0.2)
-            self.assertEqual(updater.restart_dashboard(pid_file), "dashboard: restarted")
+            self.assertEqual(updater.restart_dashboard(pid_file, **none), "dashboard: restarted")
             self.assertIsNotNone(fake.wait(timeout=5))
         finally:
             if fake.poll() is None:
                 fake.kill()
-        self.assertIn("no pid file", updater.restart_dashboard(self.root / "missing.pid"))
+        self.assertEqual(updater.restart_dashboard(self.root / "missing.pid", **none), "dashboard: not found running")
+
+    def test_without_a_pid_file_only_a_dashboard_running_from_this_checkout_is_found(self):
+        here = str(config.REPO_ROOT.resolve())
+        procs = [(111, "/x/Python.app/Contents/MacOS/Python -m convention_social.cli dashboard"),
+                 (222, "/y/python -m convention_social.cli dashboard"),          # another checkout, e.g. a test worktree
+                 (333, "/x/python -m convention_social.agents.updater"),
+                 (444, "/x/python -m convention_social.cli dashboard")]           # folder unreadable
+        cwd = {111: here, 222: str(self.root), 333: here}
+        self.assertEqual(updater.dashboard_pids(self.root / "missing.pid", processes=lambda: procs,
+                                                cwd_of=lambda pid: cwd.get(pid, "")), [111])
+
+
+class Probe(IsolatedCase):
+    def test_the_dashboards_answer_is_read_as_its_commit(self):
+        class R:
+            def __init__(self, code, body):
+                self.status_code, self.body = code, body
+
+            def json(self):
+                return self.body
+        seen = []
+
+        def get(url, **kw):
+            seen.append((url, kw))
+            return R(200, {"ok": True, "commit": "abc123"})
+        self.assertEqual(updater.dashboard_commit(get), "abc123")
+        self.assertEqual(seen[0], ("http://127.0.0.1:4610/healthz", {"timeout": 5, "allow_redirects": False}))
+        self.assertEqual(updater.dashboard_commit(lambda url, **kw: R(404, {})), "")          # older than /healthz
+        self.assertEqual(updater.dashboard_commit(lambda url, **kw: R(303, {})), "")
+
+        def down(url, **kw):
+            raise ConnectionError("refused")
+        self.assertIsNone(updater.dashboard_commit(down))

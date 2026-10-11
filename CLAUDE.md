@@ -23,6 +23,9 @@ FOUNDER_DECISIONS.md is the source of truth. Read it first.
   is wired. Flags for new surfaces default off.
 - **Nothing from another company.** No name, key, account, domain, bucket,
   topic or id from another suite, anywhere (`tests/test_banned_words.py`).
+  One exception, Chris's own choice on 2026-10-11: the Anthropic key is the one
+  his other suite uses, copied into `.env` with `bin/ccs copy-key` (that suite's
+  file is only read; the key never enters the repo).
 - **Secrets** live only in the untracked `.env` or the Keychain. Never commit,
   print or repeat them.
 

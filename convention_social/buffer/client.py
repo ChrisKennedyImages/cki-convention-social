@@ -163,13 +163,26 @@ class BufferClient:
         return resp.body.get("data") or {}
 
     # ------------------------------------------------------------------ discovery
+    def organizations(self) -> list[dict]:
+        """[{id, name}] every Buffer organization this key can see."""
+        data = self._gql(Q_ORGANIZATIONS, op="Organizations")
+        return [o for o in ((data.get("account") or {}).get("organizations")) or [] if o.get("id")]
+
     def organization_id(self) -> str:
+        """The organization chosen on the dashboard's Buffer page (BUFFER_ORGANIZATION_ID), or the only
+        one the key sees. A key that sees several and none chosen fails closed: posting to the wrong
+        account's channels is the one mistake this must never make."""
         if self._org:
             return self._org
-        data = self._gql(Q_ORGANIZATIONS, op="Organizations")
-        orgs = ((data.get("account") or {}).get("organizations")) or []
-        if not orgs or not orgs[0].get("id"):
+        chosen = config.getenv("BUFFER_ORGANIZATION_ID", "") or ""
+        if chosen:
+            self._org = chosen
+            return self._org
+        orgs = self.organizations()
+        if not orgs:
             raise BufferError("no Buffer organization visible to this key")
+        if len(orgs) > 1:
+            raise BufferError(f"this Buffer key sees {len(orgs)} organizations; choose this company's on the Buffer page")
         self._org = orgs[0]["id"]
         return self._org
 
@@ -179,7 +192,8 @@ class BufferClient:
 
     def channels(self, refresh: bool = False) -> list[dict]:
         cached = state_io.load_json(self.cache_path(), {})
-        if not refresh and isinstance(cached, dict) and cached.get("channels"):
+        chosen = config.getenv("BUFFER_ORGANIZATION_ID", "") or ""
+        if not refresh and isinstance(cached, dict) and cached.get("channels") and (not chosen or cached.get("organizationId") == chosen):
             self._org = self._org or cached.get("organizationId")
             return cached["channels"]
         org = self.organization_id()

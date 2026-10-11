@@ -192,6 +192,28 @@ only when Chris says so.
   `buffer/payloads.py` `video_asset`). Like every post, a reel waits for
   Chris's Approve; the first one he approves is the live check of the format.
 
+## 2026-10-11: one Anthropic key, Buffer ready to link, a dashboard that stays current
+
+- **The Anthropic key is shared, by Chris's choice.** "Use my Anthropic key from
+  [my other suite's] .env (DO NOT TOUCH ANYTHING IN THAT ENV)." This amends the
+  brief's "no Anthropic key shared"; nothing else from that suite is used.
+  `bin/ccs copy-key ANTHROPIC_API_KEY --from <that file>` only reads the file,
+  checks it is byte for byte unchanged, saves the key in this suite's own
+  `.env` and never prints it (`cli.py` `cmd_copy_key`). This suite's own spend
+  still stops at `AI_MONTHLY_CAP_USD`.
+- **Buffer plumbing before the account.** "A Buffer channel is not set up for
+  this yet, but definitely get the plumbing in so we can just add it quickly
+  when I do." The Buffer page (More, Buffer) takes it from a key to posting:
+  find the channels, Use on each of this company's own accounts (nothing links
+  by itself), the Pinterest board from Buffer's own list, and a check of the
+  reel video format. A key that sees more than one Buffer organization posts
+  nowhere until Chris chooses this company's (`buffer/client.py`
+  `organization_id`, `dashboard/app.py`).
+- **The dashboard stays current.** "Dashboard is still the old one." Every
+  updater run asks the running dashboard which commit it serves and restarts it
+  when it lags the checkout; if it still lags after one restart, Chris gets the
+  one command that restarts it (`agents/updater.py` `ensure_dashboard`).
+
 ## Standing rules from the brief
 
 - Nothing publishes without Chris's Approve on the dashboard, until he says

@@ -16,6 +16,8 @@
   ccs samples                 render twelve sample posts and three brand boards from the best photos (for review)
   ccs site build [--preview]  build eventcaliber.com into site/dist from postable photos (none yet: no photos)
   ccs site check [--wait S]   check the live site and its booking API from this machine (scripts/go-live.sh runs it)
+  ccs copy-key NAME --from FILE [--as OTHER]   copy one key from another .env file into this suite's .env;
+                              the other file is only read, and the value is never shown
 """
 from __future__ import annotations
 
@@ -364,6 +366,62 @@ def cmd_site_check(args) -> int:
     return 0 if ok else 1
 
 
+KEY_ALIASES = {"ANTHROPIC_API_KEY": ("ANTHROPIC_API_KEY", "CLAUDE_API_KEY")}
+
+
+def _fingerprint(path) -> tuple:
+    import hashlib
+    st = path.stat()
+    return st.st_size, st.st_mtime_ns, hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def check_anthropic_key(key: str) -> str:
+    """One free call (the model list; no tokens, no cost) to see that Anthropic accepts the key."""
+    import anthropic
+    try:
+        anthropic.Anthropic(api_key=key).models.list(limit=1)
+    except anthropic.APIError as e:
+        return f"Anthropic did not accept it ({type(e).__name__})"
+    return "Anthropic accepted it"
+
+
+def cmd_copy_key(args) -> int:
+    """Chris, 2026-10-11: "Use my Anthropic key from [my other suite's] .env (DO NOT TOUCH ANYTHING IN
+    THAT ENV)". The source file is opened for reading only and checked unchanged afterwards; the value
+    goes into this suite's own .env and is never printed."""
+    from pathlib import Path
+    from dotenv import dotenv_values
+    name = args.name
+    if name not in secrets.SECRET_NAMES:
+        print(f"{name} is not a key this suite uses ({', '.join(secrets.SECRET_NAMES)})")
+        return 2
+    src = Path(args.source).expanduser()
+    ours = config.env_file_path()
+    if not src.is_file():
+        print(f"no file at {src}; nothing copied")
+        return 1
+    if ours.exists() and src.resolve() == ours.resolve():
+        print("that is this suite's own .env; nothing to copy")
+        return 2
+    before = _fingerprint(src)
+    found = {k: v for k, v in dotenv_values(src).items() if v}
+    after = _fingerprint(src)
+    if before != after:
+        print(f"{src} changed while it was read; nothing copied")
+        return 1
+    names = [args.as_name] if args.as_name else list(KEY_ALIASES.get(name, (name,)))
+    hit = next((n for n in names if n in found), None)
+    if hit is None:
+        print(f"none of {', '.join(names)} is set in {src}; nothing copied")
+        return 1
+    value = "".join(found[hit].split())
+    config.write_env({name: value})
+    print(f"{name} saved to {ours} (read as {hit} from {src}; that file was only read and is unchanged)")
+    if name == "ANTHROPIC_API_KEY" and not args.no_check:
+        print(check_anthropic_key(value))
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="ccs", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -391,6 +449,11 @@ def build_parser() -> argparse.ArgumentParser:
     st = sub.add_parser("site"); st.add_argument("what", choices=["build", "check"]); st.add_argument("--preview", action="store_true")
     st.add_argument("--wait", type=float, default=0, help="check: keep retrying this many seconds until everything passes")
     st.set_defaults(fn=cmd_site)
+    ck = sub.add_parser("copy-key", help="copy one key from another .env file (only read) into this suite's .env")
+    ck.add_argument("name"); ck.add_argument("--from", dest="source", required=True)
+    ck.add_argument("--as", dest="as_name", default="", help="the key's name in that file, if it differs")
+    ck.add_argument("--no-check", action="store_true", help="skip the free check that Anthropic accepts the key")
+    ck.set_defaults(fn=cmd_copy_key)
     return p
 
 

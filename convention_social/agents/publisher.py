@@ -30,7 +30,7 @@ from typing import Optional
 from ..ai import copy_rules
 from ..buffer import budget, media, payloads
 from ..buffer.client import BufferBudgetExceeded, BufferClient, BufferError, BufferRateLimited
-from ..core import db, runner
+from ..core import db, runner, settings
 from . import pacing
 
 READY_SQL = "SELECT * FROM content_queue WHERE status = 'approved' ORDER BY COALESCE(approved_at, created_at), id"
@@ -39,8 +39,10 @@ TERMINAL_BAD = {"error"}
 ASPECT_FOR = {"instagram": "4:5", "facebook": "4:5", "pinterest": "2:3"}
 POSTABLE_SUFFIXES = {".jpg", ".jpeg", ".png"}
 VIDEO_ASPECT = "9:16"
-# A dry run asks Buffer nothing, so it builds the reel with the two fields a video asset is expected to
-# carry and says so on the row; a live run reads the real fields from Buffer before anything is uploaded.
+# A dry run asks Buffer nothing: it builds the reel with the fields last read from Buffer (the Buffer
+# page's Check, or the last live run), or else with the two a video asset is expected to carry and says
+# so on the row. A live run reads the real fields from Buffer before anything is uploaded.
+VIDEO_FIELDS_KEY = "buffer.video_fields"
 ASSUMED_VIDEO_FIELDS = [{"name": "url", "type": "String", "required": True},
                         {"name": "thumbnailUrl", "type": "String", "required": False}]
 DRY_REEL_NOTE = ("Dry run: the reel was built without asking Buffer for its video fields (url and thumbnailUrl "
@@ -306,7 +308,7 @@ def build_all(ctx: runner.Context, row, channels: dict[str, dict], when: dict[st
     reel_nets = [n for n in channels if n in payloads.REEL_NETWORKS] if reel_files(row) else []
     image_nets = {n: ch for n, ch in channels.items() if n not in reel_nets}
     if reel_nets:
-        fields = video_fields() if live else ASSUMED_VIDEO_FIELDS
+        fields = video_fields()
         video_url, cover_url = reel_urls(row, fields, live=live, uploader=uploader)
     built = build_payloads(ctx, row, image_nets, media_urls(ctx, row, list(image_nets), live=live, uploader=uploader),
                            when) if image_nets else {}
@@ -334,11 +336,23 @@ def publish_ready(ctx: runner.Context, client: Optional[BufferClient] = None, up
             record_once(ctx.conn, ctx.agent, "media_missing", "publisher is LIVE but image hosting is not configured; nothing sent")
             return stats
     fields_read: list = []
+    assumed: list = []
 
     def video_fields() -> list[dict]:
-        """Buffer's video asset fields, read once per run (two schema requests)."""
+        """Live: Buffer's video asset fields, read once per run (two schema requests) and kept for the
+        Buffer page and dry runs. Dry run: the fields last read, else the assumed two."""
         if not fields_read:
-            fields_read.append(client.video_asset_fields())
+            if live:
+                fields_read.append(client.video_asset_fields())
+                settings.set(ctx.conn, VIDEO_FIELDS_KEY, json.dumps({"fields": fields_read[0], "checked_at": db.utcnow()}))
+            else:
+                try:
+                    known = (json.loads(settings.get(ctx.conn, VIDEO_FIELDS_KEY) or "null") or {}).get("fields")
+                except (ValueError, AttributeError):
+                    known = None
+                if not known:
+                    assumed.append(True)
+                fields_read.append(known or ASSUMED_VIDEO_FIELDS)
         return fields_read[0]
 
     for row in rows:
@@ -374,8 +388,8 @@ def publish_ready(ctx: runner.Context, client: Optional[BufferClient] = None, up
         try:
             built = build_all(ctx, row, channels, when, live=live, uploader=uploader, video_fields=video_fields)
             if not live:
-                note = " ".join(x for x in (skip_note, DRY_REEL_NOTE if any(n in payloads.REEL_NETWORKS for n in built)
-                                            and reel_files(row) else None) if x) or None
+                note = " ".join(x for x in (skip_note, DRY_REEL_NOTE if assumed and reel_files(row)
+                                            and any(n in payloads.REEL_NETWORKS for n in built) else None) if x) or None
                 ctx.conn.execute("UPDATE content_queue SET status='would_publish', payload=?, dry_run=1, last_error=?, updated_at=? WHERE id=?",
                                  (json.dumps(built), note, db.utcnow(), row["id"]))
                 stats["would_publish"] += 1

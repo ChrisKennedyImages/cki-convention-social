@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block body %}
+<h1>Buffer</h1>
+{% if msg %}<div class="msg">{{ msg }}</div>{% endif %}
+<div class="card"><strong>Ready to post?</strong>
+  <div class="row"><span>Buffer API key</span><span class="badge {{ 'ok' if b.key else 'failed' }}">{{ 'set' if b.key else 'missing' }}</span></div>
+  <div class="row"><span>Image and video hosting</span><span class="badge {{ 'ok' if b.media else 'failed' }}">{{ 'set' if b.media else 'missing' }}</span></div>
+  {% for n in b.networks %}{% set l = b.linked.get(n) %}
+  <div class="row"><span>{{ n|capitalize }}</span><span class="badge {{ 'ok' if l and l.connected else 'failed' }}">{{ (l.display_name ~ ('' if l.connected else ', disconnected in Buffer')) if l else 'not linked' }}</span></div>
+  {% endfor %}
+  <div class="row"><span>Pinterest board</span><span class="badge {{ 'ok' if b.board else 'failed' }}">{{ 'chosen' if b.board else 'not chosen' }}</span></div>
+  <div class="row"><span>Video format (reels)</span><span class="badge {{ 'ok' if b.video and not b.video.problem else 'failed' }}">{{ 'checked ' ~ b.video.checked_at[:10] if b.video and not b.video.problem else ('needs a change' if b.video else 'not checked') }}</span></div>
+  <div class="row"><span>Publisher</span><span class="badge {{ 'live' if b.publisher_live else 'dry' }}">{{ 'live' if b.publisher_live else 'dry run' }}</span></div>
+  <div class="muted">Every post still waits for your Approve on Today. A network with no linked channel is skipped and the draft says so.</div>
+</div>
+
+{% if not b.key %}
+<div class="card"><strong>Set up, once</strong>
+  <ol class="muted" style="margin:6px 0 0 18px;padding:0">
+    <li>In Buffer, connect this company's Instagram (a business account), its Facebook Page and its Pinterest.</li>
+    <li>Make an API key at publish.buffer.com/settings/api.</li>
+    <li>Paste it on <a href="/keys">Keys</a>, under Buffer.</li>
+    <li>Come back here and tap Find channels.</li>
+  </ol>
+</div>
+{% endif %}
+
+<form method="post" action="/buffer/find" class="inline"><button class="primary" type="submit" {{ '' if b.key else 'disabled' }}>Find channels</button></form>
+{% if b.fetched_at %}<span class="muted"> last looked {{ b.fetched_at[:16].replace('T', ' ') }} UTC</span>{% endif %}
+
+{% if b.orgs|length > 1 %}
+<div class="card" style="margin-top:12px"><strong>Which Buffer organization is this company's?</strong>
+  <div class="muted">This key sees more than one. Nothing is found or posted until you choose.</div>
+  {% for o in b.orgs %}
+  <form method="post" action="/buffer/org" class="row"><input type="hidden" name="org_id" value="{{ o.id }}">
+    <span>{{ o.name or o.id }}</span>{% if o.id == b.org %}<span class="badge ok">chosen</span>{% else %}<button class="small" type="submit">Choose</button>{% endif %}</form>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% if b.found %}
+<div class="card" style="margin-top:12px"><strong>Channels in Buffer</strong>
+  <div class="muted">Tap Use only on this company's own accounts. Nothing is linked by itself.</div>
+  {% for c in b.found %}
+  <div class="row"><span>{{ c.service|capitalize }}: {{ c.displayName or c.name }}{% if c.isDisconnected %} <span class="badge failed">disconnected</span>{% endif %}{% if c.isLocked %} <span class="badge failed">locked</span>{% endif %}</span>
+    {% if c.service not in b.networks %}<span class="muted">not used here</span>
+    {% elif c.id in b.linked_ids %}<form method="post" action="/buffer/unlink" class="inline"><input type="hidden" name="service" value="{{ c.service }}"><span class="badge ok">in use</span> <button class="small" type="submit">Stop</button></form>
+    {% else %}<form method="post" action="/buffer/link" class="inline"><input type="hidden" name="channel_id" value="{{ c.id }}"><button class="small" type="submit">Use for {{ c.service|capitalize }}</button></form>{% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% if b.linked.get('pinterest') %}
+<div class="card" style="margin-top:12px"><strong>Pinterest board</strong>
+  <form method="post" action="/buffer/boards" class="inline"><button class="small" type="submit">Find boards</button></form>
+  {% for bd in b.boards %}
+  <form method="post" action="/buffer/board" class="row"><input type="hidden" name="board_id" value="{{ bd.serviceId }}">
+    <span>{{ bd.name or bd.serviceId }}</span>{% if bd.serviceId == b.board %}<span class="badge ok">pins go here</span>{% else %}<button class="small" type="submit">Use</button>{% endif %}</form>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% if b.key %}
+<div class="card" style="margin-top:12px"><strong>Video format for reels</strong>
+  <div class="muted">Reads what Buffer asks a video post to carry, so the first reel is built the way Buffer wants. Nothing is posted.</div>
+  <form method="post" action="/buffer/video" class="inline"><button class="small" type="submit">Check the video format</button></form>
+  {% if b.video %}<div class="muted" style="margin-top:6px">{% for f in b.video.fields %}{{ f.name }}{{ ' (required)' if f.required else '' }}{{ ', ' if not loop.last else '' }}{% endfor %}{% if b.video.problem %}<br><span class="rule block">{{ b.video.problem }}</span>{% endif %}</div>{% endif %}
+</div>
+{% endif %}
+{% endblock %}
