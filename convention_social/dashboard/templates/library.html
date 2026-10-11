@@ -5,6 +5,15 @@
 <div class="row" style="margin-bottom:12px">
   <a class="btn" href="/library?show=events">Event folders</a><a class="btn" href="/library?show=cleared">Cleared</a><a class="btn" href="/library?show=all">All folders</a>
 </div>
+{% if msg %}<div class="msg">{{ msg }}</div>{% endif %}
+<div class="card">
+  <strong>Design samples</strong>
+  <div class="row" style="margin-top:8px">
+    {% if design %}<a class="btn primary" href="/library/design">Design samples</a>{% endif %}
+    <form method="post" action="/library/design" class="inline"><button class="small" type="submit">Make design samples</button></form>
+  </div>
+  <div class="muted">Every new post design and both reels, made on the strongest photos in your library. For review only: nothing is posted.</div>
+</div>
 <div class="card">
   <strong>Library report</strong>
   {% if renders.report %}

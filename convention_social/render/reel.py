@@ -386,15 +386,17 @@ def make(clips: Sequence[Clip], copy: ReelCopy, *, out: Path, montage: Optional[
                 img.save(Path(frames_dir) / f"f{i:03d}.jpg", quality=85)
             yield img
 
-    if encoder:
-        encoder(frames(), out)
-        return out
-    cmd = [ffmpeg_path(), "-y", "-loglevel", "error", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{FW}x{FH}",
-           "-r", str(FPS), "-i", "-", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "20", "-preset", "medium",
+    return (encoder or encode)(frames(), out)
+
+
+def encode(frames, out: Path, size=(FW, FH), fps: int = FPS) -> Path:
+    """Pipe RGB frames to ffmpeg: H.264, yuv420p, faststart, what Instagram and Facebook take."""
+    cmd = [ffmpeg_path(), "-y", "-loglevel", "error", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{size[0]}x{size[1]}",
+           "-r", str(fps), "-i", "-", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "20", "-preset", "medium",
            "-movflags", "+faststart", str(out)]
     proc = subprocess.Popen(cmd, stdin=subprocess.PIPE)
     try:
-        for img in frames():
+        for img in frames:
             proc.stdin.write(img.tobytes())
     finally:
         proc.stdin.close()
