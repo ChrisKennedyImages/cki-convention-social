@@ -195,3 +195,26 @@ class Dashboard(IsolatedCase):
         pid_file = config.get_config().locks_dir / "dashboard.pid"
         self.assertEqual(pid_file.read_text(), str(os.getpid()))
 
+    def test_each_photo_has_use_and_dont_use_and_comes_back_to_itself(self):
+        """Chris, 2026-10-11: "It dosent let me deny any images". Block worked, but every tap reloaded
+        the folder at the top, so in a folder of hundreds the change was out of sight."""
+        pid = self.seed_library()
+        fid = db.one(self.conn, "SELECT folder_id FROM photos WHERE id=?", (pid,))["folder_id"]
+        c = self.signed_in()
+        page = c.get(f"/library/folder/{fid}").text
+        self.assertIn(f'id="p{pid}"', page)
+        self.assertIn(">Use<", page)
+        self.assertIn("Don&#39;t use", page)
+        r = c.post(f"/library/photo/{pid}/clearance", data={"state": "blocked", "back": f"/library/folder/{fid}#p{pid}"},
+                   follow_redirects=False)
+        self.assertEqual(r.headers["location"], f"/library/folder/{fid}#p{pid}")
+        self.assertEqual(db.one(self.conn, "SELECT clearance FROM photos WHERE id=?", (pid,))["clearance"], "blocked")
+        page = c.get(f"/library/folder/{fid}").text
+        self.assertIn('class="card off"', page)
+        self.assertIn("Chris blocked this photo", page)
+        self.assertIn(">Unblock<", page)
+        c.post(f"/library/photo/{pid}/clearance", data={"state": "cleared", "back": f"/library/folder/{fid}#p{pid}"})
+        self.assertEqual(db.one(self.conn, "SELECT clearance FROM photos WHERE id=?", (pid,))["clearance"], "cleared")
+        page = c.get(f"/library/folder/{fid}").text
+        self.assertIn(">Undo use<", page)
+        self.assertNotIn('class="card off"', page)

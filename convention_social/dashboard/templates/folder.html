@@ -4,15 +4,21 @@
 <div class="muted" style="margin-bottom:10px">{{ folder.path or '' }}</div>
 <div class="grid">
 {% for p in items %}
-  <div class="card" style="padding:8px;margin:0">
+  {# each tap comes back to this same photo (#p<id>), never to the top of a long folder #}
+  <div class="card{% if p.clearance == 'blocked' %} off{% endif %}" id="p{{ p.id }}" style="padding:8px;margin:0">
     <img src="/media/thumb/{{ p.id }}" loading="lazy" alt="">
     <div class="muted" style="margin-top:6px">{{ (p.shot_type or '').replace('_',' ') }}{% if p.quality %} q{{ p.quality }}{% endif %}</div>
     <span class="badge {{ 'ok' if p.eligible[0] else 'blocked' }}">{{ 'ready to pick' if p.eligible[0] else p.eligible[1] }}</span>
-    <form method="post" action="/library/photo/{{ p.id }}/clearance" style="margin-top:6px">
-      <input type="hidden" name="back" value="/library/folder/{{ folder.drive_id }}">
-      {% if p.clearance == 'blocked' %}<input type="hidden" name="state" value="inherit"><button class="small" type="submit">Unblock</button>
-      {% else %}<input type="hidden" name="state" value="blocked"><button class="small danger" type="submit">Block this photo</button>{% endif %}
-    </form>
+    <div class="row" style="margin-top:6px">
+    {% for state, label, cls in ([('inherit', 'Unblock', '')] if p.clearance == 'blocked'
+                                 else [('inherit', 'Undo use', ''), ('blocked', "Don't use", 'danger')] if p.clearance == 'cleared'
+                                 else [('cleared', 'Use', 'ok'), ('blocked', "Don't use", 'danger')]) %}
+      <form method="post" action="/library/photo/{{ p.id }}/clearance" class="inline">
+        <input type="hidden" name="back" value="/library/folder/{{ folder.drive_id }}#p{{ p.id }}">
+        <input type="hidden" name="state" value="{{ state }}"><button class="small {{ cls }}" type="submit">{{ label }}</button>
+      </form>
+    {% endfor %}
+    </div>
   </div>
 {% endfor %}
 </div>
