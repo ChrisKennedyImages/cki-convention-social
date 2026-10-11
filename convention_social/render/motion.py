@@ -332,6 +332,37 @@ def grain_still(img: Image.Image) -> Image.Image:
     return grain(img, 0.22)
 
 
+POST_SIZES = {"4:5": (1080, 1350), "2:3": (1000, 1500)}
+
+
+def single_post(shot: Shot, copy: MotionCopy, *, out: Path, aspect: str = "4:5", kicker: str = "", official: bool = False,
+                meta: Optional[ImageMeta] = None) -> Path:
+    """One photo as one card in depth (Chris, 2026-10-11: "it's ok to use 1 photo too sometimes"):
+    turned a little toward you over a glossy floor, its room and line under it, the ask."""
+    _check([shot], copy, official)
+    check_copy(kicker, official=official)
+    w, h = POST_SIZES[aspect]
+    s = w / 1080
+    img = backdrop(w, h, floor=h * 0.66)
+    src = open_photo(shot.photo) if shot.photo is not None else None
+    ratio = max(0.66, min(1.6, (src.width / src.height) if src is not None else 1.5))
+    cap_top = h - 120 * s - 270 * s                 # the caption and the ask are set from the bottom up
+    area_top, area_bot = 140 * s, cap_top - 60 * s  # the card takes what is left above them
+    area_h = area_bot - area_top
+    fh = area_h * 0.86
+    fw = fh * ratio
+    if fw > 900 * s:
+        fw, fh = 900 * s, 900 * s / ratio
+    face_img = card_face(shot, int(fw), int(fh), 0, label=False, radius=int(26 * s))
+    cy = (area_top + area_bot) / 2
+    card = stage.Card(face_img, x=0, y=0, z=0, yaw=-9, pitch=4, reflect=0.32, shadow=0.85)
+    stage.draw(img, [card], cy=cy, floor=fh / 2 + 40 * s)
+    corner_marks(img, s)
+    caption(img, 70 * s, cap_top, kicker, shot.room, shot.line, width=w - 140 * s, s=s, title_size=84)
+    ask_strip(img, h - 120 * s, copy, s)
+    return save(grain_still(img), out, meta)
+
+
 def spotlight_post(shots: Sequence[Shot], copy: MotionCopy, *, out: Path, index: int = 2, official: bool = False,
                    meta: Optional[ImageMeta] = None, counter: str = "") -> Path:
     _check(shots, copy, official)

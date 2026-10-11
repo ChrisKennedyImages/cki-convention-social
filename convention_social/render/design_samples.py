@@ -37,6 +37,9 @@ ROOMS = {
     "crowd": ("THE CROWD", "The people who make the event, in the moment."),
     "candid": ("THE CROWD", "The people who make the event, in the moment."),
     "group": ("THE CROWD", "The people who make the event, in the moment."),
+    "venue": ("THE VENUE", "The building, shot as carefully as the people in it."),
+    "building_exterior": ("THE VENUE", "The building, shot as carefully as the people in it."),
+    "building_interior": ("THE VENUE", "The building, shot as carefully as the people in it."),
 }
 OTHER = ("ON THE FLOOR", "Every room of the event, covered.")
 FOLDER_PREFIX = "design-"

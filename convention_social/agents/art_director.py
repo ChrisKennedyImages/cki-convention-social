@@ -35,7 +35,7 @@ MODEL = "claude-opus-5"
 MAX_REDOS = 2
 EDGE = 900
 
-SYSTEM = """You are the art director for a photography company's social posts. You see the same post rendered at two aspect ratios.
+SYSTEM = """You are the art director for a photography company's social posts. You see the post as rendered: one design at two aspect ratios, one design built from several photos, or the first slides of a carousel.
 Judge only what you see, as a picky photo editor would:
 1. Crop: is anyone's head, face, hands or feet cut awkwardly, or is the subject jammed against an edge?
 2. Placement: is the main subject well placed for the format?
@@ -97,22 +97,26 @@ def look(conn: sqlite3.Connection, paths: list[Path], *, client=None, agent: str
 
 
 def direct(conn: sqlite3.Connection, render: Callable[[tuple], dict], *, dry_run: bool, client=None,
-           agent: str = "content") -> tuple[dict, dict]:
+           agent: str = "content", allow_redo: bool = True, max_files: Optional[int] = None) -> tuple[dict, dict]:
     """Render, look, and rework the crop until it passes (or MAX_REDOS). `render(focus)` returns
-    {aspect: [path]}. Returns (render_paths, verdict)."""
+    {aspect: [path]}. Returns (render_paths, verdict). A design built from several photos has no
+    single crop to move (allow_redo False): a "redo" there passes with its notes for Chris.
+    `max_files` caps how many of the rendered files are looked at (a carousel's first slides)."""
     focus = (0.5, 0.42)
     paths = render(focus)
     if dry_run:
         return paths, {"verdict": "not reviewed", "notes": "Dry run: the art director did not look.", "rounds": 0}
     rounds, last = 0, None
     while True:
-        files = [Path(p) for ps in paths.values() for p in ps]
+        files = [Path(p) for ps in paths.values() for p in ps][:max_files]
         verdict = look(conn, files, client=client, agent=agent)
         rounds += 1
         if verdict is None:
             out = last or {"verdict": "not reviewed", "notes": "The art director could not look this time."}
             return paths, {**out, "rounds": rounds}
         last = verdict
+        if verdict["verdict"] == "redo" and not allow_redo:
+            return paths, {**verdict, "verdict": "pass", "rounds": rounds}
         if verdict["verdict"] != "redo" or rounds > MAX_REDOS:
             return paths, {**verdict, "rounds": rounds, "focus": list(focus)}
         focus = (verdict["focus_x"], verdict["focus_y"])

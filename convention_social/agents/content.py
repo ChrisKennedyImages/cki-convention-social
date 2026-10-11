@@ -10,8 +10,8 @@
    VARIETY_DAYS. Best quality first.
 3. The final check: the full-size photo is downloaded (read only) and Claude
    looks once more; a photo that fails is skipped and the next one is tried.
-4. Captions (ai/claude.py), the Lens designs at 4:5 and 2:3 (render/posts.py),
-   and a draft row. Nothing leaves: the publisher sends only what Chris
+4. Captions (ai/claude.py), the day's design from the motion set (render/motion.py:
+   spotlight, single, carousel, fan or face match; see DESIGNS), and a draft row. Nothing leaves: the publisher sends only what Chris
    approves.
 
 Dry run (the default): no paid call at all. The draft gets template captions
@@ -33,7 +33,7 @@ from PIL import Image
 from ..ai import claude, copy_rules
 from ..core import config, db, runner
 from ..library import classify, eligibility
-from ..render import brand, posts
+
 from . import art_director, learner
 from ..render import meta as image_meta
 
@@ -106,8 +106,37 @@ def kicker_for(row: dict) -> str:
     return " ".join(x for x in ((row.get("convention_name") or "").strip(), year if year.isdigit() else "") if x) or "On assignment"
 
 
+# Chris, 2026-10-11: "Switch to new designs and it's ok to use 1 photo too sometimes." One design a
+# day from the motion set (render/motion.py); a building day is always a single photo. A day whose
+# design needs more approved photos than pass the final check falls back to a single photo.
+DESIGNS = {"monday": "spotlight", "tuesday": "single", "wednesday": "single", "thursday": "carousel",
+           "friday": "fan", "saturday": "single", "sunday": "facematch"}
+NEEDS = {"single": 1, "facematch": 1, "spotlight": 3, "carousel": 4, "fan": 5}      # fewest photos the design takes
+TAKES = {"single": 1, "facematch": 1, "spotlight": 5, "carousel": 6, "fan": 7}      # most
+
+
+def design_for(day: date, subject: str) -> str:
+    return "single" if subject == "architecture" else DESIGNS[WEEKDAYS[day.weekday()]]
+
+
+def shot_for(row: dict, image: Image.Image, focus=(0.5, 0.45)):
+    from ..render import design_samples, motion
+    room, line = design_samples.ROOMS.get(row.get("shot_type") or "", design_samples.OTHER)
+    if row.get("subject") == "architecture":
+        room, line = design_samples.ROOMS["venue"]
+    return motion.Shot(image, room, line, focus)
+
+
+def middle_first(items: list, hero) -> list:
+    """The hero in the middle of the rest, where the fan and the rail put the eye."""
+    rest = [x for x in items if x is not hero]
+    k = len(rest) // 2
+    return rest[:k] + [hero] + rest[k:]
+
+
 def draft_one(ctx: runner.Context, fetch: Callable[[dict], bytes], *, now: Optional[datetime] = None,
               check_client=None, drafter=None, art_client=None, _depth: int = 0) -> str:
+    from ..render import motion
     day = target_day(ctx.cfg, now)
     if already_drafted(ctx.conn, day):
         return f"a post for {day} is already drafted"
@@ -119,67 +148,96 @@ def draft_one(ctx: runner.Context, fetch: Callable[[dict], bytes], *, now: Optio
         pool = candidates(ctx.conn, kind_used)
     if not pool:
         return f"no photo ready for {day}: clear folders on the Library page (nothing drafted)"
-    chosen, image_bytes = None, None
-    for row in pool[:MAX_TRIES]:
+    design = design_for(day, kind_used)
+    chosen: list[tuple[dict, bytes]] = []
+    for row in pool[:TAKES[design] + MAX_TRIES - 1]:
         data = fetch(row)
-        if ctx.dry_run:
-            chosen, image_bytes = row, data
+        if not ctx.dry_run:
+            verdict = classify.final_check(ctx.conn, row["id"], data, client=check_client, agent=ctx.agent)
+            if not (verdict and eligibility.is_eligible(ctx.conn, row["id"])[0]):
+                continue
+        chosen.append((row, data))
+        if len(chosen) >= TAKES[design]:
             break
-        verdict = classify.final_check(ctx.conn, row["id"], data, client=check_client, agent=ctx.agent)
-        if verdict and eligibility.is_eligible(ctx.conn, row["id"])[0]:
-            chosen, image_bytes = row, data
-            break
-    if chosen is None:
+    if not chosen:
         return f"no photo passed the final check for {day} (tried {min(len(pool), MAX_TRIES)})"
-    cache = ctx.cfg.data_root / "photos" / f"{chosen['drive_id']}.img"
-    cache.parent.mkdir(parents=True, exist_ok=True)
-    if not cache.exists():
-        cache.write_bytes(image_bytes)
-    ctx.conn.execute("UPDATE photos SET local_path=? WHERE id=?", (str(cache), chosen["id"]))
-    facts = claude.PostFacts(brand_name=ctx.cfg.brand_name, event_name=chosen.get("convention_name") or "",
-                             event_kind=chosen.get("event_kind") or "unknown", credit=chosen["credit"],
-                             shot_type=chosen.get("shot_type") or "", subject=chosen["subject"],
+    asked = design
+    if len(chosen) < NEEDS[design]:
+        design, chosen = "single", chosen[:1]
+    for row, data in chosen:
+        cache = ctx.cfg.data_root / "photos" / f"{row['drive_id']}.img"
+        cache.parent.mkdir(parents=True, exist_ok=True)
+        if not cache.exists():
+            cache.write_bytes(data)
+        ctx.conn.execute("UPDATE photos SET local_path=? WHERE id=?", (str(cache), row["id"]))
+    hero = chosen[0][0]
+    credits = " ".join(dict.fromkeys(c for r, _ in chosen for c in (r["credit"] or "").split()))
+    facts = claude.PostFacts(brand_name=ctx.cfg.brand_name, event_name=hero.get("convention_name") or "",
+                             event_kind=hero.get("event_kind") or "unknown", credit=credits,
+                             shot_type=hero.get("shot_type") or "", subject=hero["subject"],
                              quote_link=f"{ctx.cfg.brand_domain}/book" if ctx.cfg.brand_domain else "",
                              services=("full event coverage", "backstage and green rooms", "breakouts and panels",
                                        "evening events and dinners", "portraits", "exhibition halls and vendors",
                                        "every photo a guest is in, sent to them by face match"))
     drafter = drafter or (claude.TemplateDrafter() if ctx.dry_run else claude.get_drafter(ctx.conn, agent=ctx.agent))
-    draft = drafter.draft(facts, cache)
+    draft = drafter.draft(facts, ctx.cfg.data_root / "photos" / f"{hero['drive_id']}.img")
     reports = {n: copy_rules.check(t).as_dict() for n, t in draft.captions.items()}
-    image = Image.open(io.BytesIO(image_bytes))
-    direction = brand.current() or brand.DIRECTIONS["lens"]
+    images = {r["id"]: Image.open(io.BytesIO(d)) for r, d in chosen}
     out_dir = ctx.cfg.data_root / "renders" / "posts" / day.isoformat()
-    text = posts.PostText(kicker=kicker_for(chosen), credit=chosen["credit"])
-    seo = image_meta.for_photo(ctx.conn, chosen)
+    seo = image_meta.for_photo(ctx.conn, hero)
+    copy = motion.MotionCopy()
+    kicker = "  ·  ".join(x for x in (kicker_for(hero), hero["credit"]) if x).upper()
+    try:
+        copy_rules_ok = copy_rules.check(kicker).ok
+    except Exception:  # noqa: BLE001
+        copy_rules_ok = False
+    kicker = kicker if copy_rules_ok else ""                 # a name read off a photo never stops the draft
+    tag = f"{hero['id']}-{design}"
 
     def render(focus):
-        return {aspect: [str(posts.render("photo", [image], text, direction, aspect=aspect, meta=seo, focus=focus,
-                                          out=out_dir / f"{chosen['id']}-{aspect.replace(':', '')}.jpg"))]
-                for aspect in ("4:5", "2:3")}
+        if design == "single":
+            shot = shot_for(hero, images[hero["id"]], focus)
+            return {a: [str(motion.single_post(shot, copy, out=out_dir / f"{tag}-{a.replace(':', '')}.jpg", aspect=a,
+                                               kicker=kicker, meta=seo))] for a in ("4:5", "2:3")}
+        shots = [shot_for(r, images[r["id"]]) for r, _ in chosen]
+        if design == "facematch":
+            return {"4:5": [str(motion.facematch_post(shots, copy, out=out_dir / f"{tag}.jpg", meta=seo))]}
+        if design == "carousel":
+            return {"4:5": [str(p) for p in motion.carousel(shots, copy, out_dir=out_dir / tag, meta=seo)]}
+        ordered = middle_first(shots, shots[0])
+        mid = ordered.index(shots[0])
+        if design == "fan":
+            return {"4:5": [str(motion.fan_post(ordered, copy, out=out_dir / f"{tag}.jpg", focus=mid, meta=seo))]}
+        return {"4:5": [str(motion.spotlight_post(ordered, copy, out=out_dir / f"{tag}.jpg", index=mid, meta=seo))]}
 
-    render_paths, art = art_director.direct(ctx.conn, render, dry_run=ctx.dry_run, client=art_client, agent=ctx.agent)
+    render_paths, art = art_director.direct(ctx.conn, render, dry_run=ctx.dry_run, client=art_client, agent=ctx.agent,
+                                            allow_redo=design == "single", max_files=4)
+    photo_ids = [r["id"] for r, _ in chosen]
     if art.get("verdict") == "reject":
-        # the photo does not hold up: it sits out like a used one, and the next run drafts another
+        # the photos do not hold up: they sit out like used ones, and the next run drafts again
         now_r = db.utcnow()
-        db.insert(ctx.conn, "content_queue", kind="photo", photo_ids=json.dumps([chosen["id"]]), targets=json.dumps(list(TARGETS)),
+        db.insert(ctx.conn, "content_queue", kind="photo", photo_ids=json.dumps(photo_ids), targets=json.dumps(list(TARGETS)),
                   caption=json.dumps(draft.captions), render_paths=json.dumps(render_paths), status="rejected",
                   last_error=f"Art director: {art.get('notes', '')}",
-                  rule_report=json.dumps({"for_day": "turned back", "art": art, "subject": chosen["subject"]}),
+                  rule_report=json.dumps({"for_day": "turned back", "art": art, "subject": hero["subject"], "design": design}),
                   created_at=now_r, updated_at=now_r)
-        note = f"art director turned back photo {chosen['id']}: {art.get('notes', '')}"
+        note = f"art director turned back photo {hero['id']}: {art.get('notes', '')}"
         if _depth + 1 >= MAX_TRIES:
             return f"{note}; no photo passed for {day} after {MAX_TRIES} tries"
         return note + "; " + draft_one(ctx, fetch, now=now, check_client=check_client, drafter=drafter,
                                        art_client=art_client, _depth=_depth + 1)
-    meta = {"for_day": day.isoformat(), "subject": chosen["subject"], "event": chosen.get("convention_name") or "",
-            "people": chosen["credit"].split(), "model": draft.model, "rules": reports, "wanted": want, "art": art}
+    people = [c for r, _ in chosen for c in (r["credit"] or "").split()]
+    meta = {"for_day": day.isoformat(), "subject": hero["subject"], "event": hero.get("convention_name") or "",
+            "people": people, "model": draft.model, "rules": reports, "wanted": want, "art": art, "design": design,
+            "design_wanted": asked}
     now_s = db.utcnow()
-    qid = db.insert(ctx.conn, "content_queue", kind="photo", photo_ids=json.dumps([chosen["id"]]), targets=json.dumps(list(TARGETS)),
+    qid = db.insert(ctx.conn, "content_queue", kind="photo", photo_ids=json.dumps(photo_ids), targets=json.dumps(list(TARGETS)),
                     caption=json.dumps(draft.captions), render_paths=json.dumps(render_paths), rule_report=json.dumps(meta),
                     created_at=now_s, updated_at=now_s)
+    fell = f", {asked} wanted but too few photos passed" if asked != design else ""
     return (f"{'DRY RUN ' if ctx.dry_run else ''}drafted post #{qid} for {day} ({kind_used}"
-            f"{', instead of ' + want if kind_used != want else ''}): photo {chosen['id']}, captions by {draft.model}, "
-            f"art director: {art.get('verdict')}")
+            f"{', instead of ' + want if kind_used != want else ''}): {design} with {len(photo_ids)} photo(s){fell}, "
+            f"photo {hero['id']} first, captions by {draft.model}, art director: {art.get('verdict')}")
 
 
 def run(ctx: runner.Context, fetch: Optional[Callable[[dict], bytes]] = None) -> str:

@@ -160,6 +160,18 @@ only when Chris says so.
   back to the folder list and can clear or exclude the whole folder in place
   (`dashboard/app.py` `SECTIONS`).
 
+## 2026-10-11: the daily post uses the new designs
+
+- "Switch to new designs and it's ok to use 1 photo too sometimes." The daily
+  draft rotates through the motion set: Monday spotlight (3 or more photos),
+  Tuesday single, Wednesday (the building day) single, Thursday carousel (4 or
+  more), Friday fan (5 or more), Saturday single, Sunday face match. A day whose
+  design needs more approved photos than pass the final check is a single photo
+  day. Every photo on a post is approved and passes the final check
+  (`agents/content.py` `DESIGNS`).
+- Reels stay in the design samples until a music track is added and one real
+  video post has been checked through Buffer.
+
 ## Standing rules from the brief
 
 - Nothing publishes without Chris's Approve on the dashboard, until he says
