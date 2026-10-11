@@ -130,10 +130,11 @@ def write_captions(drafter, facts: claude.PostFacts, photo: Path, known_names) -
 
 def kicker_for(row: dict) -> str:
     """The small line printed on the post: the kind of work, never which event or who is in it.
-    Chris, 2026-10-11: "i want to make sure the captions don't say the specific event or person"."""
+    Chris, 2026-10-11: "i want to make sure the captions don't say the specific event or person", and on
+    the cards: "It should say photography somewhere. Something in the middle"."""
     if row["subject"] == "architecture":
-        return "Venues and buildings"
-    return {"fan": "Fan conventions", "business": "Conferences"}.get(row.get("event_kind") or "", "Events")
+        return "Venue photography"
+    return {"fan": "Convention photography", "business": "Conference photography"}.get(row.get("event_kind") or "", "Event photography")
 
 
 # Chris, 2026-10-11: "Switch to new designs and it's ok to use 1 photo too sometimes." One design a
