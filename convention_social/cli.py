@@ -261,6 +261,37 @@ def cmd_samples(_args) -> int:
     return 0
 
 
+def cmd_design(args) -> int:
+    """Every motion design on the strongest frames of the library, for the dashboard's Library page.
+    Reads Drive's previews only; posts nothing."""
+    from .core import runner
+    from .drive import oauth
+    from .drive.api import DriveReader
+    from .render import design_samples
+    conn = db.connect()
+    lock = runner.Lock("designer")
+    if not lock.acquire():
+        print("design samples are already being made; they show on the Library page when done")
+        return 2
+    try:
+        try:
+            oauth.access_token(conn)
+        except oauth.DriveAuthError as e:
+            print(str(e))
+            return 2
+        reader = DriveReader(lambda: oauth.access_token(conn), conn=conn, agent="designer")
+        try:
+            out = design_samples.make(conn, lambda fid: reader.thumbnail_for(fid, 1600), reels=not args.no_reels)
+        except RuntimeError as e:
+            print(str(e))
+            return 2
+        print(f"design samples: {out / 'index.html'}")
+        return 0
+    finally:
+        lock.release()
+        conn.close()
+
+
 def cmd_site(args) -> int:
     if args.what == "check":
         return cmd_site_check(args)
@@ -355,6 +386,8 @@ def build_parser() -> argparse.ArgumentParser:
     dv.set_defaults(fn=cmd_drive)
     sub.add_parser("fonts").set_defaults(fn=cmd_fonts)
     sub.add_parser("samples").set_defaults(fn=cmd_samples)
+    dz = sub.add_parser("design", help="motion design samples on your own photos, shown on the Library page")
+    dz.add_argument("--no-reels", action="store_true"); dz.set_defaults(fn=cmd_design)
     st = sub.add_parser("site"); st.add_argument("what", choices=["build", "check"]); st.add_argument("--preview", action="store_true")
     st.add_argument("--wait", type=float, default=0, help="check: keep retrying this many seconds until everything passes")
     st.set_defaults(fn=cmd_site)

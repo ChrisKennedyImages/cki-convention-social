@@ -165,6 +165,20 @@ def latest_renders() -> dict:
     return found
 
 
+DESIGN_DIR = re.compile(r"design-\d{8}-\d{4}")
+DESIGN_FILE = re.compile(r"(index\.html|about\.json|[a-z]+-post\.jpg|slide-\d{2}\.jpg|[a-z]+-reel\.mp4)")
+DESIGN_TYPES = {".html": "text/html", ".json": "application/json", ".jpg": "image/jpeg", ".mp4": "video/mp4"}
+
+
+def latest_design() -> Optional[str]:
+    """The newest folder of design samples in DATA_ROOT/renders that has its page."""
+    renders = config.get_config().data_root / "renders"
+    if not renders.is_dir():
+        return None
+    names = sorted(p.name for p in renders.iterdir() if DESIGN_DIR.fullmatch(p.name) and (p / "index.html").is_file())
+    return names[-1] if names else None
+
+
 def create_app() -> FastAPI:
     app = FastAPI(title="review", docs_url=None, redoc_url=None, openapi_url=None)
 
@@ -311,7 +325,7 @@ def create_app() -> FastAPI:
             if rows:
                 note = "No folder has been recognised as event work yet, so every folder with photos is shown."
         return render(request, "library.html", folders=rows, show=show, msg=request.query_params.get("msg", ""),
-                      note=note, renders=latest_renders())
+                      note=note, renders=latest_renders(), design=latest_design())
 
     @app.get("/library/report")
     def library_report(user: str = Depends(require_user)):
@@ -319,6 +333,36 @@ def create_app() -> FastAPI:
         if not latest:
             return RedirectResponse("/library?msg=No+report+yet:+the+scanner+makes+one+after+its+next+pass", status_code=303)
         return RedirectResponse(f"/library/renders/{latest}", status_code=303)
+
+    @app.post("/library/design")
+    def library_design_make(user: str = Depends(require_user)):
+        """Start `ccs design` (its own lock; a second press while one runs does nothing). It reads
+        Drive's previews and writes only under DATA_ROOT/renders; nothing is posted."""
+        cfg = config.get_config()
+        cfg.ensure_dirs()
+        log = open(cfg.data_root / "logs" / "designer.manual.log", "ab")
+        subprocess.Popen([sys.executable, "-m", "convention_social.cli", "design"], cwd=str(config.REPO_ROOT),
+                         stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
+        log.close()
+        return RedirectResponse("/library?msg=Making+design+samples+on+your+photos.+Give+it+about+five+minutes,+then+open+Design+samples.",
+                                status_code=303)
+
+    @app.get("/library/design")
+    def library_design(user: str = Depends(require_user)):
+        latest = latest_design()
+        if not latest:
+            return RedirectResponse("/library?msg=No+design+samples+yet:+press+Make+design+samples", status_code=303)
+        return RedirectResponse(f"/library/design/{latest}/index.html", status_code=303)
+
+    @app.get("/library/design/{folder}/{name}")
+    def library_design_file(folder: str, name: str, user: str = Depends(require_user)):
+        # only a design folder and only the files the designer writes, by exact name
+        if not DESIGN_DIR.fullmatch(folder) or not DESIGN_FILE.fullmatch(name):
+            raise HTTPException(404)
+        path = config.get_config().data_root / "renders" / folder / name
+        if not path.is_file():
+            raise HTTPException(404)
+        return FileResponse(path, media_type=DESIGN_TYPES[Path(name).suffix])
 
     @app.get("/library/renders/{name}")
     def library_render(name: str, user: str = Depends(require_user)):
