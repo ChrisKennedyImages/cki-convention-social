@@ -31,6 +31,9 @@ SCHEMA = {
     "AssetInput": [field("image", "ImageAssetInput"), field("video", "VideoAssetInput"), field("document", "DocumentAssetInput")],
     "VideoAssetInput": [field("url", "String", True, "SCALAR"), field("thumbnailUrl", "String", False, "SCALAR"),
                         field("metadata", "VideoMetadataInput")],
+    "ImageAssetInput": [field("url", "String", True, "SCALAR"), field("thumbnailUrl", "String", False, "SCALAR"),
+                        field("metadata", "ImageMetadataInput")],
+    "ImageMetadataInput": [field("altText", "String", False, "SCALAR")],
 }
 
 

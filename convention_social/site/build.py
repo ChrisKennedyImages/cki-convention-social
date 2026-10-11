@@ -158,7 +158,7 @@ def home_body(t: dict, hero: str, frames: list[tuple[str, str]], stack: list[str
     steps = "".join(f'<div class="rv"><div class="n">{i:02d}</div><h3>{e(h)}</h3><p>{e(p)}</p></div>'
                     for i, (h, p) in enumerate(t["steps"], start=1))
     short = ["Backstage", "Green rooms", "Breakouts", "Main stage", "Evening events", "Dinners", "Portraits",
-             "Cosplay", "Exhibition halls", "Vendors", "Delivered on site"]
+             "Exhibition halls", "Vendors", "Delivered on site"]
     return f"""
 <section class="hero"><div class="img">{hero}</div>
 <div class="vf" aria-hidden="true"><i></i><i></i><i></i><i></i><span class="cross"></span><span class="focus"></span></div>

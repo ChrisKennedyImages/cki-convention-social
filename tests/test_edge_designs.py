@@ -91,7 +91,7 @@ class Carousel(IsolatedCase):
 class Reel(IsolatedCase):
     def clips(self, line="One plain line about this part of the event."):
         return [reel.Clip(photo(i, (1600, 2400) if i % 2 else (2400, 1600)), word, line, af=(0.5, 0.3 if i % 2 else 0.7))
-                for i, word in enumerate(("MAIN STAGE", "BACKSTAGE", "PANELS", "PORTRAITS", "EXPO FLOOR", "COSPLAY"))]
+                for i, word in enumerate(("MAIN STAGE", "BACKSTAGE", "PANELS", "PORTRAITS", "EXPO FLOOR", "AFTER DARK"))]
 
     def test_fifteen_seconds_of_vertical_frames(self):
         self.assertEqual(reel.total_frames(), 15 * reel.FPS)

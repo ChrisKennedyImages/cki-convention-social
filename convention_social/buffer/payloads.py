@@ -61,8 +61,10 @@ def pinterest_board_id() -> str:
 
 
 def pinterest_link() -> str:
-    """Optional: the page a pin opens (the quote page, once the site exists)."""
-    return config.getenv("PINTEREST_LINK", "") or ""
+    """The page a pin opens: PINTEREST_LINK, else the site's quote page (a pin with a link is what sends
+    searchers to the site; 2026-10-11)."""
+    domain = config.get_config().brand_domain
+    return config.getenv("PINTEREST_LINK", "") or (f"https://{domain}/book/" if domain else "")
 
 
 _HASHTAG = re.compile(r"(?:^|\s)#\w+")
@@ -79,9 +81,21 @@ def pin_title(text: str, fallback: str = "") -> str:
     return first or (fallback or "")[:PIN_TITLE_MAX]
 
 
+def image_asset(url: str, alt_text: str = "", alt_path: Optional[list[str]] = None) -> dict:
+    """{"image": {...}}: the url, and the alt text where the live schema put its field (alt_path)."""
+    asset: dict = {"url": url}
+    if alt_text and alt_path:
+        node = asset
+        for name in alt_path[:-1]:
+            node = node.setdefault(name, {})
+        node[alt_path[-1]] = alt_text
+    return {"image": asset}
+
+
 def build(network: str, channel_id: str, text: str, image_urls: list[str], *,
           scheduled_for: Optional[str] = None, board_id: Optional[str] = None,
-          title: Optional[str] = None, link: Optional[str] = None) -> dict:
+          title: Optional[str] = None, link: Optional[str] = None, alt_text: str = "",
+          alt_path: Optional[list[str]] = None) -> dict:
     """One CreatePostInput. `scheduled_for` is local 'YYYY-MM-DDTHH:MM'; with none the post goes now."""
     if network not in NETWORKS:
         raise PayloadError(f"unknown network {network!r}")
@@ -92,7 +106,7 @@ def build(network: str, channel_id: str, text: str, image_urls: list[str], *,
     inp: dict = {
         "channelId": channel_id,
         "text": text,
-        "assets": [{"image": {"url": u}} for u in urls],
+        "assets": [image_asset(u, alt_text, alt_path) for u in urls],
         "schedulingType": "automatic",
         "mode": "customScheduled" if due else "shareNow",
         "tagIds": [],

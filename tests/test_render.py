@@ -47,11 +47,11 @@ class Render(IsolatedCase):
         self.assertIn("gps", meta.is_clean(src_path))               # the checker sees a real original's GPS
         out = posts.render("photo", [photo()], posts.PostText(kicker="Katsucon 2025"), brand.DIRECTIONS["lens"],
                            out=self.root / "seo.jpg",
-                           meta=meta.ImageMeta(title="Cosplay portrait at Katsucon 2025", description="A cosplayer in the main hall.",
-                                               keywords=("cosplay", "convention photography"), credit="Cosplay: @ann_cos"))
+                           meta=meta.ImageMeta(title="Portrait at a fan convention", description="A speaker in the main hall.",
+                                               keywords=("portraits", "convention photography"), credit="Photo: Event Caliber"))
         raw = out.read_bytes()
         self.assertTrue(raw)
-        for needle in (b"Cosplay portrait at Katsucon 2025", b"convention photography", b"@ann_cos", b"Event Caliber", b"CKI, LLC",
+        for needle in (b"Portrait at a fan convention", b"convention photography", b"Photo: Event Caliber", b"Event Caliber", b"CKI, LLC",
                        b"eventcaliber.com/privacy/"):
             self.assertIn(needle, raw)
         self.assertEqual(meta.is_clean(out), [])

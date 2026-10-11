@@ -23,10 +23,10 @@ BASE = "https://eventcaliber.com"
 NS = "{http://www.sitemaps.org/schemas/sitemap/0.9}"
 IMG = "{http://www.google.com/schemas/sitemap-image/1.1}"
 # Chris, 2026-10-11: no public text names the event or anyone in the photo (ai/names.py)
-GOOD = {"title": "Cosplay portrait at a fan convention",
-        "alt": "Cosplayer in a red cape posing by a tall window",
-        "description": "A cosplay portrait at a fan convention. Event and convention photography by Event Caliber.",
-        "keywords": ["event photography", "cosplay portrait", "fan convention photography", "anime convention photography"]}
+GOOD = {"title": "Portrait at a fan convention",
+        "alt": "Speaker in a red jacket posing by a tall window",
+        "description": "A portrait at a fan convention. Event and convention photography by Event Caliber.",
+        "keywords": ["event photography", "portrait", "fan convention photography", "anime convention photography"]}
 
 
 class Recorder:
@@ -64,8 +64,8 @@ class SeoCase(AgentCase):
     def ctx(self, dry_run=False):
         return make_ctx(self.conn, agent="seo", dry_run=dry_run)
 
-    def photo(self, *, subject="event", shot="cosplay_portrait", event="Katsucon", kind="fan", taken="2025-02-15T12:00:00",
-              view=None, summary="A cosplayer in a red cape poses by a tall window.", final=True, folder="fcon"):
+    def photo(self, *, subject="event", shot="portrait", event="Katsucon", kind="fan", taken="2025-02-15T12:00:00",
+              view=None, summary="A speaker in a red jacket poses by a tall window.", final=True, folder="fcon"):
         self.n += 1
         now = db.utcnow()
         if not db.one(self.conn, "SELECT 1 FROM drive_folders WHERE drive_id=?", (folder,)):
@@ -117,7 +117,7 @@ class SeoCase(AgentCase):
 class Markup(SeoCase):
     def test_sitemap_lists_pages_and_images(self):
         xml = seo.sitemap_xml(BASE, ["/", "/book/", "/"], {
-            "/": [{"loc": "/assets/hero-1600.jpg", "title": "Cosplay portrait & friends", "caption": "Katsucon 2025 hall"}],
+            "/": [{"loc": "/assets/hero-1600.jpg", "title": "Portrait & friends", "caption": "Katsucon 2025 hall"}],
             "/work/": [{"loc": "https://eventcaliber.com/assets/w.jpg"}]})
         self.assertTrue(xml.startswith('<?xml version="1.0" encoding="UTF-8"?>'))
         root = ET.fromstring(xml.encode())
@@ -127,7 +127,7 @@ class Markup(SeoCase):
         images = root.findall(f"{NS}url/{IMG}image")
         self.assertEqual(len(images), 2)
         self.assertEqual(images[0].find(f"{IMG}loc").text, f"{BASE}/assets/hero-1600.jpg")
-        self.assertEqual(images[0].find(f"{IMG}title").text, "Cosplay portrait & friends")
+        self.assertEqual(images[0].find(f"{IMG}title").text, "Portrait & friends")
         self.assertEqual(images[0].find(f"{IMG}caption").text, "Katsucon 2025 hall")
         self.assertIsNone(images[1].find(f"{IMG}title"))
 
@@ -189,19 +189,19 @@ class Template(SeoCase):
         r = self.row(pid)
         self.assert_public(r)
         self.assertEqual(r["model"], "template")
-        self.assertEqual(r["slug"], "cosplay-portrait-2025")
-        self.assertEqual(r["title"], "Cosplay portrait at a fan convention")
-        self.assertEqual(r["alt"], "Cosplay portrait at a fan convention")
+        self.assertEqual(r["slug"], "portrait-2025")
+        self.assertEqual(r["title"], "Portrait at a fan convention")
+        self.assertEqual(r["alt"], "Portrait at a fan convention")
         everything = (r["slug"] + r["alt"] + r["title"] + r["description"] + r["keywords"]).lower()
         for name in ("katsucon", "kat.cos", "jordan"):
             self.assertNotIn(name, everything, "never which event, never who")
         kws = json.loads(r["keywords"])
-        for k in ("event photography", "convention photography", "fan convention photography", "cosplay portrait",
+        for k in ("event photography", "convention photography", "fan convention photography", "portrait",
                   "national harbor event photography"):
             self.assertIn(k, kws)
 
     def test_the_city_comes_only_from_the_calendar(self):
-        pid = self.photo(summary="A cosplayer outside the Gaylord in National Harbor.")
+        pid = self.photo(summary="A speaker outside the Gaylord in National Harbor.")
         photo_text.write_all(self.conn, dry_run=True)
         r = self.row(pid)
         self.assertIsNotNone(r)
@@ -222,14 +222,14 @@ class Template(SeoCase):
     def test_slugs_are_unique_and_never_change(self):
         a, b = self.photo(), self.photo()
         photo_text.write_all(self.conn, dry_run=True)
-        self.assertEqual(self.row(a)["slug"], "cosplay-portrait-2025")
-        self.assertEqual(self.row(b)["slug"], f"cosplay-portrait-2025-{b}")
+        self.assertEqual(self.row(a)["slug"], "portrait-2025")
+        self.assertEqual(self.row(b)["slug"], f"portrait-2025-{b}")
         photo_text.write_all(self.conn, dry_run=False, client=FakeClaude())
         self.assertEqual(self.row(a)["model"], "claude-haiku-4-5")
-        self.assertEqual(self.row(a)["slug"], "cosplay-portrait-2025")
+        self.assertEqual(self.row(a)["slug"], "portrait-2025")
 
     def test_slugify(self):
-        self.assertEqual(photo_text.slugify("Cosplay Portrait: Katsucon 2025!"), "cosplay-portrait-katsucon-2025")
+        self.assertEqual(photo_text.slugify("Stage Portrait: Katsucon 2025!"), "stage-portrait-katsucon-2025")
         self.assertEqual(photo_text.slugify("Café Con — Day 2"), "cafe-con-day-2")
         long = photo_text.slugify("word " * 40)
         self.assertTrue(long)
@@ -291,15 +291,15 @@ class Writer(SeoCase):
 
     def test_answers_that_break_a_rule_are_replaced_by_the_template(self):
         bad = {
-            "long alt": {"alt": "A cosplayer " + "in a long red cape " * 8},
+            "long alt": {"alt": "A speaker " + "in a long red jacket " * 8},
             "price": {"description": "Portraits from $150 per hour at Katsucon."},
             "affiliation": {"title": "Official photographer of Katsucon 2025"},
-            "address": {"alt": "Cosplayer outside 123 Main Street at Katsucon 2025"},
-            "a name": {"alt": "Cosplayer Jane Doe posing at Katsucon 2025"},
-            "a stranger's handle": {"alt": "Cosplay portrait of @someone.else at Katsucon 2025"},
-            "the event's name": {"title": "Cosplay portrait at Katsucon"},
+            "address": {"alt": "Speaker outside 123 Main Street at Katsucon 2025"},
+            "a name": {"alt": "Speaker Jane Doe posing at Katsucon 2025"},
+            "a stranger's handle": {"alt": "Portrait of @someone.else at Katsucon 2025"},
+            "the event's name": {"title": "Portrait at Katsucon"},
             "the conference Chris named": {"alt": "A speaker on the CPAC main stage"},
-            "a credited handle": {"alt": "Cosplay portrait of @kat.cos"},
+            "a credited handle": {"alt": "Portrait of @kat.cos"},
         }
         for why, change in bad.items():
             with self.subTest(why):
@@ -315,15 +315,15 @@ class Writer(SeoCase):
     def test_a_dash_is_tidied_into_a_comma(self):
         pid = self.photo()
         photo_text.write_all(self.conn, dry_run=False,
-                             client=FakeClaude(answer={**GOOD, "title": "Cosplay portrait — fan convention"}))
+                             client=FakeClaude(answer={**GOOD, "title": "Portrait — fan convention"}))
         r = self.row(pid)
         self.assert_public(r)
-        self.assertEqual(r["title"], "Cosplay portrait, fan convention")
+        self.assertEqual(r["title"], "Portrait, fan convention")
 
     def test_keywords_cannot_bring_in_a_city_or_a_name(self):
         pid = self.photo()
         photo_text.write_all(self.conn, dry_run=False, client=FakeClaude(answer={
-            **GOOD, "keywords": ["baltimore cosplay", "jane doe", "katsucon 2025", "anime convention photography", "cosplay portrait"]}))
+            **GOOD, "keywords": ["baltimore events", "jane doe", "katsucon 2025", "anime convention photography", "portrait"]}))
         kws = json.loads(self.row(pid)["keywords"])
         self.assertTrue(kws)
         self.assertFalse([k for k in kws if "katsucon" in k], "the event never comes back in through a keyword")
@@ -357,36 +357,36 @@ class Writer(SeoCase):
     def test_a_row_chris_corrected_is_never_rewritten(self):
         pid = self.photo()
         photo_text.write_all(self.conn, dry_run=True)
-        self.assertIsNone(photo_text.edit(self.conn, pid, alt="Cosplayer with a red cape by the window"))
+        self.assertIsNone(photo_text.edit(self.conn, pid, alt="Speaker with a red jacket by the window"))
         fake = FakeClaude()
         stats = photo_text.write_all(self.conn, dry_run=False, client=fake)
         self.assertEqual(fake.calls, [])
         self.assertEqual(stats["edited"], 1)
         r = self.row(pid)
-        self.assertEqual(r["alt"], "Cosplayer with a red cape by the window")
+        self.assertEqual(r["alt"], "Speaker with a red jacket by the window")
         self.assertIsNotNone(r["edited_at"])
         photo_text.save(self.conn, pid, {**GOOD, "alt": "overwritten"}, "claude-haiku-4-5")
-        self.assertEqual(self.row(pid)["alt"], "Cosplayer with a red cape by the window")
+        self.assertEqual(self.row(pid)["alt"], "Speaker with a red jacket by the window")
 
     def test_chris_edits_pass_the_hard_rules(self):
         pid = self.photo()
         self.credit(pid, handle="@kat.cos")
         photo_text.write_all(self.conn, dry_run=True)
         before = self.row(pid)["alt"]
-        for bad in ("Cosplay portrait, $40 prints", "Cosplay portrait — Katsucon", "x" * 130, "Cosplayer at 12 Oak Street",
-                    "Cosplay portrait of @nobody", "", "Cosplay portrait of @kat.cos in the Grand Ballroom",
-                    "Cosplay portrait at Katsucon", "Backstage at CPAC"):
+        for bad in ("Portrait, $40 prints", "Portrait — Katsucon", "x" * 130, "Speaker at 12 Oak Street",
+                    "Portrait of @nobody", "", "Portrait of @kat.cos in the Grand Ballroom",
+                    "Portrait at Katsucon", "Backstage at CPAC"):
             with self.subTest(bad):
                 self.assertTrue(photo_text.edit(self.conn, pid, alt=bad))
                 self.assertEqual(self.row(pid)["alt"], before)
-        self.assertIsNone(photo_text.edit(self.conn, pid, alt="Cosplay portrait in the Grand Ballroom"))
+        self.assertIsNone(photo_text.edit(self.conn, pid, alt="Portrait in the Grand Ballroom"))
 
 
 # ------------------------------------------------------------------ the agent and the site check
 
 def pages(**override):
     good = ('<!doctype html><html><head><title>Event Caliber</title><meta name="description" content="Event photography.">'
-            '</head><body><h1>Every room</h1><img src="/a.jpg" alt="Cosplay portrait"></body></html>')
+            '</head><body><h1>Every room</h1><img src="/a.jpg" alt="Portrait"></body></html>')
     out = {f"{BASE}{p}": (200, good) for p in site_check.HTML_PATHS}
     out[f"{BASE}/sitemap.xml"] = (200, seo.sitemap_xml(BASE, seo.DEFAULT_PAGES))
     out[f"{BASE}/robots.txt"] = (200, seo.robots_txt(BASE))
@@ -497,18 +497,18 @@ class Dashboard(SeoCase):
         r = self.client.get("/seo")
         self.assertEqual(r.status_code, 200)
         self.assertIn("<main>", r.text)
-        self.assertIn("cosplay-portrait-2025", r.text)
+        self.assertIn("portrait-2025", r.text)
         self.assertIn("answered 500", r.text)
-        ok = self.client.post(f"/seo/{pid}", data={"alt": "Cosplayer with a red cape by a tall window"}, follow_redirects=False)
+        ok = self.client.post(f"/seo/{pid}", data={"alt": "Speaker with a red jacket by a tall window"}, follow_redirects=False)
         self.assertEqual(ok.status_code, 303)
         self.assertIn("msg=saved", ok.headers["location"])
         row = self.row(pid)
-        self.assertEqual(row["alt"], "Cosplayer with a red cape by a tall window")
+        self.assertEqual(row["alt"], "Speaker with a red jacket by a tall window")
         self.assertIsNotNone(row["edited_at"])
-        self.assertEqual(row["title"], "Cosplay portrait at a fan convention", "a blank title keeps the old one")
+        self.assertEqual(row["title"], "Portrait at a fan convention", "a blank title keeps the old one")
         refused = self.client.post(f"/seo/{pid}", data={"alt": "Prints from $40"}, follow_redirects=False)
         self.assertIn("msg=refused", refused.headers["location"])
-        self.assertEqual(self.row(pid)["alt"], "Cosplayer with a red cape by a tall window")
+        self.assertEqual(self.row(pid)["alt"], "Speaker with a red jacket by a tall window")
         shown = self.client.get(refused.headers["location"])
         self.assertIn("Not saved", shown.text)
         self.assertEqual(self.client.post("/seo/999", data={"alt": "x"}).status_code, 404)
@@ -532,8 +532,8 @@ class NoNames(SeoCase):
     def test_text_written_before_the_rule_is_written_again_with_a_new_address(self):
         named, kept, edited = self.photo(), self.photo(), self.photo()
         now = db.utcnow()
-        for pid, slug, title in ((named, "cosplay-portrait-katsucon-2025", "Cosplay portrait at Katsucon 2025"),
-                                 (kept, "cosplay-portrait-2025-x", "Cosplay portrait at a fan convention")):
+        for pid, slug, title in ((named, "portrait-katsucon-2025", "Portrait at Katsucon 2025"),
+                                 (kept, "portrait-2025-x", "Portrait at a fan convention")):
             db.insert(self.conn, "photo_seo", photo_id=pid, slug=slug, title=title, alt=title, description=title,
                       keywords=json.dumps(["event photography"] * 5), model="claude-haiku-4-5", written_at=now)
         db.insert(self.conn, "photo_seo", photo_id=edited, slug="his-own-words", title="Chris wrote this", alt="Chris wrote this",
@@ -542,7 +542,7 @@ class NoNames(SeoCase):
         self.assertEqual(stats["renamed"], 1)
         r = self.row(named)
         self.assertNotIn("katsucon", (r["slug"] + r["title"] + r["alt"]).lower())
-        self.assertEqual(self.row(kept)["slug"], "cosplay-portrait-2025-x", "text without a name keeps its address")
+        self.assertEqual(self.row(kept)["slug"], "portrait-2025-x", "text without a name keeps its address")
         self.assertEqual(self.row(edited)["title"], "Chris wrote this")
 
     def test_the_conference_chris_named_is_never_in_the_search_text(self):

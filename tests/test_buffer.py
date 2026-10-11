@@ -94,14 +94,14 @@ class Payloads(AgentCase):
             self.assertEqual((p["schedulingType"], p["needsApproval"], p["tagIds"]), ("automatic", False, []))
 
     def test_pinterest_shape_board_title_and_link(self):
-        text = "Cosplay portraits in the vendor hall, early on day one. More to come. #cosplay #eventphotography"
+        text = "Portraits in the vendor hall, early on day one. More to come. #portraits #eventphotography"
         p = payloads.build("pinterest", "ch-pin", text, URLS, scheduled_for="2026-12-05T20:30",
                            board_id="board-123", link="https://quote.example/")
         self.assertTrue(p["metadata"])
         pin = p["metadata"]["pinterest"]
         self.assertEqual(set(pin), {"boardServiceId", "title", "url"})
         self.assertEqual(pin["boardServiceId"], "board-123")
-        self.assertEqual(pin["title"], "Cosplay portraits in the vendor hall, early on day one.")
+        self.assertEqual(pin["title"], "Portraits in the vendor hall, early on day one.")
         self.assertEqual(pin["url"], "https://quote.example/")
         self.assertEqual(len(p["assets"]), 1, "one image per pin")
         self.assertEqual(p["dueAt"], "2026-12-06T01:30:00Z")  # EST in December

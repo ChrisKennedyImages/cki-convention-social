@@ -60,7 +60,7 @@ class Times(LearnerCase):
         summary = learner.run(self.ctx(), now=NOW)
         self.assertIn("0 time move(s)", summary)
         self.assertEqual(self.ig(), time(11, 30))
-        self.assertEqual(learner.weight_for(self.conn, "cosplay_portrait", "fan"), 1.0)
+        self.assertEqual(learner.weight_for(self.conn, "headshot", "fan"), 1.0)
         note = settings.get(self.conn, learner.NOTE_KEY)
         self.assertTrue(note)
         self.assertIn("0 of the 8 posts", note)
@@ -158,34 +158,34 @@ class Times(LearnerCase):
 class Weights(LearnerCase):
     def test_kinds_that_do_better_weigh_more_inside_the_bounds(self):
         for net, hi, lo, mid in (("instagram", 30, 10, 20), ("pinterest", 3, 1, 2)):
-            self.posts(net, 11, 30, 3, hi, ours=True, shot="cosplay_portrait", kind="fan")
+            self.posts(net, 11, 30, 3, hi, ours=True, shot="headshot", kind="fan")
             self.posts(net, 11, 30, 3, lo, ours=True, shot="candid", kind="business")
             self.post(net, 11, 30, mid, ours=True, shot="stage_panel", kind="fan")
         learner.run(self.ctx(), now=NOW)
         w = json.loads(settings.get(self.conn, learner.WEIGHTS_KEY))
         self.assertTrue(w["shot_type"])
         # per network first: pinterest's small numbers count as much as instagram's big ones
-        self.assertEqual(sorted(w["shot_type"]), ["candid", "cosplay_portrait"])
-        self.assertEqual(w["shot_type"]["cosplay_portrait"], 1.27)       # (6 x 1.5 + 5) / 11
+        self.assertEqual(sorted(w["shot_type"]), ["candid", "headshot"])
+        self.assertEqual(w["shot_type"]["headshot"], 1.27)       # (6 x 1.5 + 5) / 11
         self.assertEqual(w["shot_type"]["candid"], 0.73)                 # (6 x 0.5 + 5) / 11
         self.assertNotIn("stage_panel", w["shot_type"], "2 posts are not enough to weigh")
         self.assertEqual(w["event_kind"], {"fan": 1.23, "business": 0.73})  # fan: (6 x 1.5 + 2 x 1.0 + 5) / 13
         self.assertEqual(learner.weight_for(self.conn, "stage_panel", "fan"), 1.23)
-        self.assertEqual(learner.weight_for(self.conn, "cosplay_portrait", "fan"), 1.5, "the product is held to 1.5")
+        self.assertEqual(learner.weight_for(self.conn, "headshot", "fan"), 1.5, "the product is held to 1.5")
         self.assertEqual(learner.weight_for(self.conn, "candid", "business"), 0.5329)
         self.assertEqual(learner.weight_for(self.conn, None, None), 1.0)
         detail = json.loads(db.one(self.conn, "SELECT detail FROM learner_history ORDER BY id DESC")["detail"])
         self.assertEqual(sorted(detail["photos"]["per_network"]), ["instagram", "pinterest"])
-        self.assertIn("Cosplay portrait photos now weigh 1.27, was 1.00", settings.get(self.conn, learner.NOTE_KEY))
+        self.assertIn("Headshot photos now weigh 1.27, was 1.00", settings.get(self.conn, learner.NOTE_KEY))
 
     def test_every_weight_is_held_between_half_and_one_and_a_half(self):
-        self.posts("instagram", 11, 30, 10, 100, ours=True, shot="cosplay_portrait", kind="fan")
+        self.posts("instagram", 11, 30, 10, 100, ours=True, shot="headshot", kind="fan")
         self.posts("instagram", 11, 30, 10, 0, ours=True, shot="candid", kind="business")
         learner.run(self.ctx(), now=NOW)
         w = json.loads(settings.get(self.conn, learner.WEIGHTS_KEY))
         values = [v for table in w.values() for v in table.values()]
         self.assertEqual(len(values), 4)
-        self.assertEqual(w["shot_type"], {"cosplay_portrait": 1.5, "candid": 0.5})
+        self.assertEqual(w["shot_type"], {"headshot": 1.5, "candid": 0.5})
         self.assertTrue(all(0.5 <= v <= 1.5 for v in values), values)
 
     def test_buildings_are_reported_never_weighted(self):
@@ -210,7 +210,7 @@ class Safety(LearnerCase):
 
     def test_live_run_touches_only_its_own_keys_and_table(self):
         self.posts("instagram", 11, 30, 6, 10, ours=True, shot="candid", kind="fan")
-        self.posts("instagram", 14, 0, 6, 40, ours=True, shot="cosplay_portrait", kind="fan")
+        self.posts("instagram", 14, 0, 6, 40, ours=True, shot="headshot", kind="fan")
         for agent in ("publisher", "content", "learner"):
             settings.set_dry_run(self.conn, agent, True)
         settings.set(self.conn, "watchdog.digest_sent_on", "2026-10-09")
@@ -226,7 +226,7 @@ class Safety(LearnerCase):
 
     def test_dry_run_suggests_and_applies_nothing(self):
         self.posts("instagram", 11, 30, 6, 10, ours=True, shot="candid", kind="fan")
-        self.posts("instagram", 14, 0, 6, 40, ours=True, shot="cosplay_portrait", kind="fan")
+        self.posts("instagram", 14, 0, 6, 40, ours=True, shot="headshot", kind="fan")
         summary = learner.run(self.ctx(dry_run=True), now=NOW)
         self.assertIn("DRY RUN suggested: 1 time move(s)", summary)
         s = json.loads(settings.get(self.conn, learner.SUGGESTION_KEY))
@@ -236,7 +236,7 @@ class Safety(LearnerCase):
         self.assertIsNone(settings.get(self.conn, learner.TIMES_KEY))
         self.assertIsNone(settings.get(self.conn, learner.WEIGHTS_KEY))
         self.assertEqual(self.ig(), time(11, 30))
-        self.assertEqual(learner.weight_for(self.conn, "cosplay_portrait", "fan"), 1.0)
+        self.assertEqual(learner.weight_for(self.conn, "headshot", "fan"), 1.0)
         h = db.one(self.conn, "SELECT status, applied, note FROM learner_history")
         self.assertEqual((h["status"], h["applied"]), ("suggested", 0))
         self.assertTrue(h["note"].startswith("Suggested, not applied"))
@@ -303,12 +303,12 @@ class Running(LearnerCase):
         client = TestClient(app)
         self.assertEqual(client.get("/learner", follow_redirects=False).status_code, 307)
         self.posts("instagram", 11, 30, 6, 10, ours=True, shot="candid", kind="fan")
-        self.posts("instagram", 14, 0, 6, 40, ours=True, shot="cosplay_portrait", kind="fan")
+        self.posts("instagram", 14, 0, 6, 40, ours=True, shot="headshot", kind="fan")
         learner.run(self.ctx(dry_run=False), now=NOW)
         client.cookies.set(COOKIE, make_token("chris"))
         r = client.get("/learner")
         self.assertEqual(r.status_code, 200)
         self.assertIn("<main>", r.text)
         self.assertIn("12:30 pm weekdays, 11:00 am weekends", r.text)
-        self.assertIn("cosplay portrait", r.text)
+        self.assertIn("headshot", r.text)
         self.assertIn("Instagram moves from 11:30 am", r.text)

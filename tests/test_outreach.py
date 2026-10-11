@@ -34,7 +34,7 @@ class FakeClaude:
         self.subject = subject
         self.body = body if body is not None else (
             "Hello,\n\nI saw that Sample Con 2027 is coming to Baltimore on March 5. Do you have a photographer lined up yet?\n\n"
-            "I cover cosplay portraits, the main stage and the exhibition hall, and can deliver approved images on site.\n\n"
+            "I cover portraits, the main stage and the exhibition hall, and can deliver approved images on site.\n\n"
             "Chris\nEvent Caliber")
         self.stop = stop
         self.calls = []
@@ -127,7 +127,7 @@ class Drafting(OutreachCase):
         d = draft.template_first(FACTS)
         self.assertTrue(d.body)
         self.assertEqual(d.subject, "Photography for Sample Con 2027")
-        for words in ("Sample Con 2027", "March 5 to 7, 2027", "Baltimore", "photographer lined up", "Cosplay portraits",
+        for words in ("Sample Con 2027", "March 5 to 7, 2027", "Baltimore", "photographer lined up", "Exhibition halls",
                       "every photo they are in", "kept to your staff", "quote"):
             self.assertIn(words.lower(), d.body.lower(), words)
         self.assertTrue(d.body.endswith("Chris\nEvent Caliber"))
@@ -152,7 +152,7 @@ class Drafting(OutreachCase):
         self.assertEqual(kw["output_config"]["format"]["type"], "json_schema")
         self.assertEqual(kw["output_config"]["effort"], "medium")
         self.assertIn("Sample Con 2027", kw["messages"][0]["content"])
-        self.assertIn("Cosplay portraits", kw["messages"][0]["content"])      # coverage comes from offer.json
+        self.assertIn("Exhibition halls", kw["messages"][0]["content"])      # coverage comes from offer.json
         self.assertGreater(spend.month_to_date(self.conn), 0)
 
     def test_a_draft_that_breaks_a_rule_is_thrown_away(self):

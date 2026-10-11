@@ -43,6 +43,7 @@ VIDEO_ASPECT = "9:16"
 # page's Check, or the last live run), or else with the two a video asset is expected to carry and says
 # so on the row. A live run reads the real fields from Buffer before anything is uploaded.
 VIDEO_FIELDS_KEY = "buffer.video_fields"
+IMAGE_ALT_KEY = "buffer.image_alt"
 ASSUMED_VIDEO_FIELDS = [{"name": "url", "type": "String", "required": True},
                         {"name": "thumbnailUrl", "type": "String", "required": False}]
 DRY_REEL_NOTE = ("Dry run: the reel was built without asking Buffer for its video fields (url and thumbnailUrl "
@@ -290,19 +291,25 @@ def usable_networks(ctx: runner.Context, row) -> tuple[dict[str, dict], dict[str
     return active, skipped
 
 
+def alt_text_of(row) -> str:
+    """The alt text the content agent wrote for the post (rule_report alt_text), never a name."""
+    meta = _json(row["rule_report"], {}) if "rule_report" in row.keys() else {}
+    return (meta or {}).get("alt_text") or "" if isinstance(meta, dict) else ""
+
+
 def build_payloads(ctx: runner.Context, row, channels: dict[str, dict], urls: dict[str, list[str]],
-                   when: dict[str, Optional[str]]) -> dict[str, dict]:
+                   when: dict[str, Optional[str]], alt_path: Optional[list[str]] = None) -> dict[str, dict]:
     captions = captions_of(row) or {}
     built = {}
     for net, ch in channels.items():
         built[net] = payloads.build(net, ch["buffer_channel_id"], captions.get(net, ""), urls[net],
                                     scheduled_for=when.get(net), board_id=payloads.pinterest_board_id() or None,
-                                    link=payloads.pinterest_link() or None)
+                                    link=payloads.pinterest_link() or None, alt_text=alt_text_of(row), alt_path=alt_path)
     return built
 
 
 def build_all(ctx: runner.Context, row, channels: dict[str, dict], when: dict[str, Optional[str]], *, live: bool,
-              uploader=None, video_fields=None) -> dict[str, dict]:
+              uploader=None, video_fields=None, alt_path=None) -> dict[str, dict]:
     """Every network's CreatePostInput, in channel order. On a reel row Instagram and Facebook get the
     video; `video_fields()` returns the video asset's fields (live: read from Buffer) and is asked before
     any upload, so a schema this code cannot fill stops the post with nothing uploaded."""
@@ -312,7 +319,7 @@ def build_all(ctx: runner.Context, row, channels: dict[str, dict], when: dict[st
         fields = video_fields()
         video_url, cover_url = reel_urls(row, fields, live=live, uploader=uploader)
     built = build_payloads(ctx, row, image_nets, media_urls(ctx, row, list(image_nets), live=live, uploader=uploader),
-                           when) if image_nets else {}
+                           when, alt_path() if alt_path else None) if image_nets else {}
     if reel_nets:
         captions = captions_of(row) or {}
         for net in reel_nets:
@@ -356,6 +363,23 @@ def publish_ready(ctx: runner.Context, client: Optional[BufferClient] = None, up
                 fields_read.append(known or ASSUMED_VIDEO_FIELDS)
         return fields_read[0]
 
+    alt_read: list = []
+
+    def alt_path() -> Optional[list[str]]:
+        """Where Buffer takes an image's alt text: read live once a run (and kept for dry runs and the
+        Buffer page), else the last reading. None: Buffer offers no field, so no alt text is sent."""
+        if not alt_read:
+            if live:
+                path = client.image_alt_path()
+                settings.set(ctx.conn, IMAGE_ALT_KEY, json.dumps({"path": path, "checked_at": db.utcnow()}))
+                alt_read.append(path)
+            else:
+                try:
+                    alt_read.append((json.loads(settings.get(ctx.conn, IMAGE_ALT_KEY) or "null") or {}).get("path"))
+                except (ValueError, AttributeError):
+                    alt_read.append(None)
+        return alt_read[0]
+
     for row in rows:
         stop = door(ctx, row)
         if stop:
@@ -387,7 +411,8 @@ def publish_ready(ctx: runner.Context, client: Optional[BufferClient] = None, up
         post_ids: dict[str, str] = {}
         built: dict[str, dict] = {}
         try:
-            built = build_all(ctx, row, channels, when, live=live, uploader=uploader, video_fields=video_fields)
+            built = build_all(ctx, row, channels, when, live=live, uploader=uploader, video_fields=video_fields,
+                              alt_path=alt_path)
             if not live:
                 note = " ".join(x for x in (skip_note, DRY_REEL_NOTE if assumed and reel_files(row)
                                             and any(n in payloads.REEL_NETWORKS for n in built) else None) if x) or None

@@ -238,6 +238,7 @@ VIEWS = {
     # Sorted photos Chris has not decided on that could ever be used: nobody who may be under 18,
     # no readable personal detail (temp.hidden_photo). Strongest first.
     "review": (f"p.trashed = 0 AND {SORTED} AND c.possible_minor = 0 AND {DECISION} = 'not_cleared' "
+               "AND COALESCE(c.shot_type, '') NOT IN ('cosplay_portrait') "
                "AND p.id NOT IN (SELECT id FROM temp.hidden_photo)",
                f"({STRENGTH}) DESC, p.id"),
     # Everything Chris cleared, by the photo itself or by its folder. Sorted ones first, strongest first.
@@ -318,6 +319,7 @@ def buffer_state(conn) -> dict:
             "linked_ids": {r["buffer_channel_id"] for r in linked.values()},
             "boards": _setting_json(conn, "buffer.pinterest_boards", []), "board": config.getenv("PINTEREST_BOARD_ID", "") or "",
             "video": _setting_json(conn, "buffer.video_fields", None),
+            "image_alt": _setting_json(conn, "buffer.image_alt", None),
             "media": bool(config.getenv("MEDIA_BASE_URL") and secrets.get_secret("MEDIA_UPLOAD_TOKEN")),
             "publisher_live": not settings.dry_run(conn, "publisher"), "networks": buffer_payloads.NETWORKS}
 
@@ -941,6 +943,8 @@ def create_app() -> FastAPI:
         if client is None:
             return back("Paste the Buffer API key on the Keys page first.")
         try:
+            alt = client.image_alt_path()
+            settings.set(conn, "buffer.image_alt", json.dumps({"path": alt, "checked_at": db.utcnow()}))
             fields = client.video_asset_fields()
             buffer_payloads.video_asset(fields, "https://check.invalid/v.mp4", "https://check.invalid/c.jpg")
         except buffer_payloads.PayloadError as e:
@@ -949,7 +953,8 @@ def create_app() -> FastAPI:
         except BUFFER_ERRORS as e:
             return back(f"Buffer said: {e}")
         settings.set(conn, "buffer.video_fields", json.dumps({"fields": fields, "checked_at": db.utcnow()}))
-        return back("Buffer's video format read and understood. Reels can post.")
+        return back("Buffer's post formats read. Reels can post; " + (f"alt text goes in {'.'.join(alt)}."
+                     if alt else "Buffer offers no alt text field, so posts go without it."))
 
     # ------------------------------------------------------------------ keys
     def key_groups() -> list[dict]:
@@ -963,7 +968,8 @@ def create_app() -> FastAPI:
             {"title": "Company", "note": "The public name can change here at any time.",
              "fields": [f("BRAND_NAME", "Company name"), f("BRAND_DOMAIN", "Website domain"),
                         f("BRAND_FROM_EMAIL", "Mail sent from"), f("BRAND_POSTAL_ADDRESS", "Postal address on emails"),
-                        f("ALERT_EMAIL", "Alerts and the daily summary go to")]},
+                        f("ALERT_EMAIL", "Alerts and the daily summary go to"),
+                        f("SERVICE_AREA", "Where you work, for search (for example: Washington DC)")]},
             {"title": "Google Drive", "note": "From this company's own Google Cloud project. Read only.",
              "fields": [f("GOOGLE_OAUTH_CLIENT_ID", "OAuth client id"), f("GOOGLE_OAUTH_CLIENT_SECRET", "OAuth client secret", secret=True),
                         f("CREDITS_SHEET_ID", "Credits sheet (link or id)")]},

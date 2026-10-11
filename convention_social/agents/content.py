@@ -30,7 +30,7 @@ from zoneinfo import ZoneInfo
 
 from PIL import Image
 
-from ..ai import claude, copy_rules, names
+from ..ai import claude, copy_rules, names, seo_plan
 from ..core import config, db, runner
 from ..library import classify, eligibility
 
@@ -98,6 +98,34 @@ def candidates(conn: sqlite3.Connection, subject: str) -> list[dict]:
     # what the learner found works, inside the founder's bounds; a stable sort, so ties keep quality order
     out.sort(key=lambda r: (r.get("quality") or 0) * learner.weight_for(conn, r.get("shot_type"), r.get("event_kind")), reverse=True)
     return out
+
+
+def write_captions(drafter, facts: claude.PostFacts, photo: Path, known_names) -> tuple[dict, str, dict, str]:
+    """(captions, alt text, what happened, who wrote them). Chris, 2026-10-11: "Make sure the captions are SEO
+    optimized painstakingly". The writer gets the post's search plan (ai/seo_plan.py); the hashtags and the
+    link are put in place for it; a draft that misses the plan or breaks a rule is written once more with
+    the misses named, and after a second miss the template, which meets the plan by construction, stands in."""
+    plan, link = facts.plan, facts.quote_link
+    tries, notes, draft, caps, misses = [], (), None, {}, []
+    for _ in range(2):
+        draft = drafter.draft(facts, photo, notes=notes)
+        caps = seo_plan.finish(draft.captions, plan, link)
+        misses = seo_plan.problems(caps, plan) + [f"the {n} caption {b.message}" for n, t in caps.items()
+                                                  for b in copy_rules.check(t, names=known_names).blocks]
+        tries.append({"by": draft.model, "missed": misses})
+        if not misses or draft.model == "template":
+            break
+        notes = misses
+    writer = draft.model
+    if misses:
+        caps, writer = seo_plan.template_captions(plan, link, facts.brand_name), "template"
+    from ..seo.photo_text import SHOT_WORDS
+    alt = draft.alt_text
+    if not alt or len(alt) > 125 or not copy_rules.check(alt, names=known_names).ok:
+        alt = seo_plan.alt_text(plan, SHOT_WORDS.get(facts.shot_type, ""), facts.brand_name)
+    record = {"primary": plan.primary, "related": list(plan.related), "hashtags": list(plan.hashtags), "area": plan.area,
+              "tries": tries, "fell_back": bool(misses)}
+    return caps, alt, record, writer
 
 
 def kicker_for(row: dict) -> str:
@@ -205,9 +233,13 @@ def draft_one(ctx: runner.Context, fetch: Callable[[dict], bytes], *, now: Optio
                                        "evening events and dinners", "portraits", "exhibition halls and vendors",
                                        "every photo a guest is in, sent to them by face match"))
     drafter = drafter or (claude.TemplateDrafter() if ctx.dry_run else claude.get_drafter(ctx.conn, agent=ctx.agent))
-    draft = drafter.draft(facts, ctx.cfg.data_root / "photos" / f"{hero['drive_id']}.img")
     known_names = names.public_names(ctx.conn)
-    reports = {n: copy_rules.check(t, names=known_names).as_dict() for n, t in draft.captions.items()}
+    plan = seo_plan.plan_for(subject=hero["subject"], event_kind=hero.get("event_kind"), shot_type=hero.get("shot_type"),
+                             design=design)
+    facts.plan = plan
+    captions, alt, seo_record, writer = write_captions(drafter, facts, ctx.cfg.data_root / "photos" / f"{hero['drive_id']}.img",
+                                                       known_names)
+    reports = {n: copy_rules.check(t, names=known_names).as_dict() for n, t in captions.items()}
     images = {r["id"]: Image.open(io.BytesIO(d)) for r, d in chosen}
     out_dir = ctx.cfg.data_root / "renders" / "posts" / day.isoformat()
     seo = image_meta.for_photo(ctx.conn, hero)
@@ -258,7 +290,7 @@ def draft_one(ctx: runner.Context, fetch: Callable[[dict], bytes], *, now: Optio
         # the photos do not hold up: they sit out like used ones, and the next run drafts again
         now_r = db.utcnow()
         db.insert(ctx.conn, "content_queue", kind="photo", photo_ids=json.dumps(photo_ids), targets=json.dumps(list(TARGETS)),
-                  caption=json.dumps(draft.captions), render_paths=json.dumps(render_paths), status="rejected",
+                  caption=json.dumps(captions), render_paths=json.dumps(render_paths), status="rejected",
                   last_error=f"Art director: {art.get('notes', '')}",
                   rule_report=json.dumps({"for_day": "turned back", "art": art, "subject": hero["subject"], "design": design}),
                   created_at=now_r, updated_at=now_r)
@@ -269,21 +301,21 @@ def draft_one(ctx: runner.Context, fetch: Callable[[dict], bytes], *, now: Optio
                                        art_client=art_client, _depth=_depth + 1)
     people = [c for r, _ in chosen for c in (r["credit"] or "").split()]
     meta = {"for_day": day.isoformat(), "subject": hero["subject"], "event": hero.get("convention_name") or "",
-            "people": people, "model": draft.model, "rules": reports, "wanted": want, "art": art, "design": design,
-            "design_wanted": asked}
+            "people": people, "model": writer, "rules": reports, "wanted": want, "art": art, "design": design,
+            "design_wanted": asked, "seo": seo_record, "alt_text": alt}
     if design == "reel":
         meta.update(reel=reel_kind(day), music=track.name)
     if reel_failed:
         meta["reel_failed"] = reel_failed[0]
     now_s = db.utcnow()
     qid = db.insert(ctx.conn, "content_queue", kind="photo", photo_ids=json.dumps(photo_ids), targets=json.dumps(list(TARGETS)),
-                    caption=json.dumps(draft.captions), render_paths=json.dumps(render_paths), rule_report=json.dumps(meta),
+                    caption=json.dumps(captions), render_paths=json.dumps(render_paths), rule_report=json.dumps(meta),
                     created_at=now_s, updated_at=now_s)
     fell = (f", the reel could not be made ({reel_failed[0]})" if reel_failed
             else f", {asked} wanted but too few photos passed" if asked != design else "")
     return (f"{'DRY RUN ' if ctx.dry_run else ''}drafted post #{qid} for {day} ({kind_used}"
             f"{', instead of ' + want if kind_used != want else ''}): {design} with {len(photo_ids)} photo(s){fell}, "
-            f"photo {hero['id']} first, captions by {draft.model}, art director: {art.get('verdict')}")
+            f"photo {hero['id']} first, captions by {writer} for \"{plan.primary}\", art director: {art.get('verdict')}")
 
 
 def run(ctx: runner.Context, fetch: Optional[Callable[[dict], bytes]] = None) -> str:
