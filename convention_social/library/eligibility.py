@@ -111,8 +111,8 @@ def building_blocked(cls: sqlite3.Row) -> str:
         return "a building frame may not show somebody's home"
     if space in classify.BANNED_SPACES:
         return f"a building frame may not show a {space.replace('_', ' ')}"
-    if space == "not_a_building":
-        return "sorted as architecture but the frame shows no building"
+    if space == "none":
+        return "sorted as architecture but the frame names no part of a building"
     if cls["empty_room"] != 0:
         return "an empty room is not a building frame"
     return ""

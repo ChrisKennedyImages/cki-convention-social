@@ -431,7 +431,7 @@ class ArchitectureSheet(IsolatedCase):
                               (dict(BUILDING, space="bathroom"), False),
                               (dict(BUILDING, space="closet_or_utility"), False),
                               (dict(BUILDING, space="office", empty_room=True), False),
-                              (dict(BUILDING, space="not_a_building"), False)):
+                              (dict(BUILDING, space="none", shot_type="other", view="interior"), False)):
             classify.save_sort(conn, photo, data, "ollama", "m")
             conn.commit()
             got = "b1" in {r["drive_id"] for r in report.best(conn, 30, subject="architecture")}
@@ -444,6 +444,30 @@ class ArchitectureSheet(IsolatedCase):
                      "(SELECT id FROM photos WHERE drive_id='b1')")
         conn.commit()
         self.assertNotIn("b1", {r["drive_id"] for r in report.best(conn, 30, subject="architecture")})
+
+
+class SpaceAnswer(IsolatedCase):
+    """qwen called two plain apartment exteriors "building_exterior" and then answered that the
+    space was not a building at all, which blocked every building photo (2026-10-10)."""
+
+    def test_an_exterior_the_model_already_named_is_not_thrown_away(self):
+        for data in ({**BUILDING, "space": "none", "shot_type": "building_exterior"},
+                     {**BUILDING, "space": "none", "shot_type": "other", "view": "exterior"}):
+            self.assertEqual(classify.space_of(data, "architecture"), "exterior")
+
+    def test_the_correction_only_ever_makes_an_exterior(self):
+        """It must never be able to turn a blocked interior into an allowed one."""
+        for shot in ("building_interior", "other", "portrait"):
+            data = {**BUILDING, "space": "none", "shot_type": shot, "view": "interior"}
+            self.assertEqual(classify.space_of(data, "architecture"), "none")
+
+    def test_a_named_space_is_left_alone(self):
+        for space in ("bathroom", "closet_or_utility", "lobby", "bar"):
+            data = {**BUILDING, "space": space, "shot_type": "building_exterior"}
+            self.assertEqual(classify.space_of(data, "architecture"), space)
+
+    def test_an_event_photo_keeps_none(self):
+        self.assertEqual(classify.space_of({**ADULTS, "space": "none"}, "event"), "none")
 
 
 class SortQueue(IsolatedCase):
