@@ -5,11 +5,14 @@
 
 {% if view in ('review', 'approved') %}
 <h1>{{ 'To review' if view == 'review' else 'Approved' }} <span class="muted">{{ total }}</span></h1>
+<div class="row" style="margin-bottom:12px">
+  {% for key, label in subject_words %}<a class="btn{{ ' primary' if subject == key else '' }}" href="/library?view={{ view }}&subject={{ key }}">{{ label }} ({{ subject_counts[key] }})</a>{% endfor %}
+</div>
 <div class="card muted">
   {% if view == 'review' %}Only what you approve is ever used. These are the sorted photos you have not decided on yet, strongest first. Use approves one; Don't use keeps it out for good. Photos where someone may be under 18, or with a readable name badge, plate or screen, never show here and are never used.
   {% else %}Everything you approved, one photo at a time or by its folder. Only these are ever used: in posts, on the website and in the design samples. Undo puts a photo back to review; Don't use keeps it out for good.{% endif %}
 </div>
-{% if not items %}<div class="card muted">{{ 'Nothing to review right now.' if view == 'review' else 'Nothing approved yet. Tap Use on a photo in To review, or Clear a whole folder in Folders.' }}</div>{% endif %}
+{% if not items %}<div class="card muted">{{ ('No event photos to review right now.' if subject == 'event' else 'No building photos to review right now.') if view == 'review' else ('No event photos approved yet. Tap Use on a photo in To review, or Clear a whole folder in Folders.' if subject == 'event' else 'No building photos approved yet.') }}</div>{% endif %}
 <div class="grid">
 {% for p in items %}
   <div class="card{% if p.clearance == 'blocked' %} off{% endif %}" id="p{{ p.id }}" style="padding:8px;margin:0">
@@ -30,9 +33,9 @@
 {% endfor %}
 </div>
 {% if pages > 1 %}<div class="row" style="margin-top:14px">
-  {% if page > 1 %}<a class="btn" href="/library?view={{ view }}&page={{ page - 1 }}">Previous</a>{% endif %}
+  {% if page > 1 %}<a class="btn" href="/library?view={{ view }}&subject={{ subject }}&page={{ page - 1 }}">Previous</a>{% endif %}
   <span class="muted">Page {{ page }} of {{ pages }}</span>
-  {% if page < pages %}<a class="btn" href="/library?view={{ view }}&page={{ page + 1 }}">Next</a>{% endif %}
+  {% if page < pages %}<a class="btn" href="/library?view={{ view }}&subject={{ subject }}&page={{ page + 1 }}">Next</a>{% endif %}
 </div>{% endif %}
 
 {% elif view == 'folders' %}

@@ -7,6 +7,7 @@ import json
 import os
 import random
 import time
+from pathlib import Path
 
 from fastapi.testclient import TestClient
 
@@ -139,3 +140,49 @@ class Visible(IsolatedCase):
         self.assertIn("signed out (the sign-in expired)", self.client.get("/library?view=approved").text)
         settings.set(self.conn, "drive.auth_state", "ok")
         self.assertNotIn("The pictures cannot load", self.client.get("/library").text)
+
+
+class Subjects(IsolatedCase):
+    """Chris, 2026-10-11: "Architecture images should be separated from event/convention photos"."""
+
+    def setUp(self):
+        super().setUp()
+        os.environ["DASHBOARD_PASSWORD_HASH"] = auth.hash_password("correct horse")
+        config.reset()
+        self.conn = db.connect()
+        self.addCleanup(self.conn.close)
+        self.client = TestClient(create_app())
+        self.client.cookies.set(COOKIE, make_token("chris"))
+        now = db.utcnow()
+        db.insert(self.conn, "drive_folders", drive_id="f", name="F", clearance="not_cleared", first_seen_at=now, last_seen_at=now)
+        for i, subject in enumerate(("event", "event", "architecture", None), start=1):
+            db.insert(self.conn, "photos", id=i, drive_id=f"d{i}", name=f"{i}.jpg", folder_id="f", first_seen_at=now, last_seen_at=now,
+                      clearance="cleared" if i == 4 else "inherit")
+            db.insert(self.conn, "classifications", photo_id=i, method="ollama" if subject else "folder", subject=subject, quality=3,
+                      possible_minor=0, personal_details="[]", space="exterior", residential=0, empty_room=0, classified_at=now)
+
+    def test_each_list_is_shown_as_events_and_buildings(self):
+        dash.prepare_photo_views(self.conn, eligibility.folder_decisions(self.conn))
+        self.assertEqual((dash.count_photos(self.conn, "review", "event"), dash.count_photos(self.conn, "review", "architecture")), (2, 1))
+        self.assertEqual(dash.count_photos(self.conn, "review"), 3, "no subject: the whole list, as before")
+        self.assertEqual([p["id"] for p in dash.photo_page(self.conn, "review", 1, subject="architecture")], [3])
+        self.assertEqual(dash.count_photos(self.conn, "approved", "event"), 1, "an approved photo the sorter has not placed counts as event work")
+        page = self.client.get("/library").text
+        self.assertIn("Events (2)", page)
+        self.assertIn("Buildings (1)", page)
+        self.assertIn("/media/thumb/1", page)
+        self.assertNotIn("/media/thumb/3", page)
+        buildings = self.client.get("/library?view=review&subject=architecture").text
+        self.assertIn("/media/thumb/3", buildings)
+        self.assertNotIn("/media/thumb/1", buildings)
+        self.assertIn("subject=architecture&amp;page=1#p3", buildings, "a tap comes back to the same list")
+        self.assertIn("No building photos approved yet", self.client.get("/library?view=approved&subject=architecture").text)
+        self.assertEqual(self.client.get("/library?subject=nonsense").status_code, 200)
+
+
+class Schedule(IsolatedCase):
+    def test_the_daily_draft_is_at_eight(self):
+        from convention_social.agents import AGENTS
+        self.assertEqual(AGENTS["content"]["schedule"], "daily 08:00")
+        plist = (Path(config.REPO_ROOT) / "launchd" / "com.chriskennedyimages.conventionsocial.content.plist.template").read_text()
+        self.assertIn("<key>Hour</key><integer>8</integer>", plist)

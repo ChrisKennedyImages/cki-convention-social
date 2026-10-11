@@ -9,7 +9,7 @@ from __future__ import annotations
 AGENTS: dict[str, dict] = {
     "scanner":   {"schedule": "hourly",                "module": "convention_social.agents.scanner",
                   "job": "inventory the Drive photo library (read-only), then follow its changes; classify new photos"},
-    "content":   {"schedule": "daily 06:00",           "module": "convention_social.agents.content",
+    "content":   {"schedule": "daily 08:00",           "module": "convention_social.agents.content",
                   "job": "pick tomorrow's photo from cleared photos, draft captions and designs into the review queue"},
     "publisher": {"schedule": "every 10 min",          "module": "convention_social.agents.publisher",
                   "job": "schedule approved posts through Buffer, verify they were sent"},
