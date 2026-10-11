@@ -330,6 +330,22 @@ only when Chris says so.
   draft and its ping arrive (`launchd/…content.plist.template`, one
   `scripts/go-live.sh` on the Mini to take effect).
 
+## 2026-10-11: nothing includes anything
+
+- On a draft that said conference photography "includes portraits like this
+  one, shot on site in a few minutes. Colored gradient background, one chair,
+  and a short line of attendees who all leave with a new headshot": "Suite
+  wide - NOTHING INCLUDES ANYTHING!!!!! Don't ever say something you don't
+  know or don't ask me about my own company!!!!" Public text says only what
+  `offer.json` and Chris have stated. Nothing about what a service includes
+  or comes with, how a shoot is set up, how long anything takes, what anyone
+  leaves with, packages or turnaround. A detail the suite does not have is a
+  question to him, never a sentence. The gate (`ai/copy_rules.py`, rule
+  `claims`) blocks it on every surface: captions, the publisher door, the
+  dashboard, outreach mail, quote replies, the site and the photo text; the
+  writer is told the rule and the template describes only the coverage he
+  listed.
+
 ## Standing rules from the brief
 
 - Nothing publishes without Chris's Approve on the dashboard, until he says

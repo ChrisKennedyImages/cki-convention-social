@@ -60,10 +60,12 @@ HASHTAGS = {
     "architecture": ("#venuephotography", "#architecturalphotography", "#eventvenue", "#eventprofs", "#eventphotography"),
     "facematch": ("#eventtech", "#eventprofs", "#eventphotography", "#eventphotographer", "#conferencephotography"),
 }
-# a phrase for the room, for the template's first line
-ROOM_WORDS = {"stage": "from the keynote to the last panel", "backstage": "from the green room to the side of the stage",
-              "portrait": "made between sessions in good light", "floor": "across the exhibit floor and every booth",
-              "evening": "through the dinners and receptions", "crowd": "in every room of the event"}
+# a phrase for the room, for the template's first line: the coverage offer.json names, nothing about how it is done
+# (Chris, 2026-10-11: "NOTHING INCLUDES ANYTHING")
+ROOM_WORDS = {"stage": "covering the main stage, the keynotes, the breakouts and the panels",
+              "backstage": "covering backstage and the green rooms", "portrait": "portraits and headshots made at the event",
+              "floor": "covering the exhibition hall, the vendors and the booths",
+              "evening": "covering the dinners, the receptions and the evening events", "crowd": "covering every room of the event"}
 KIND_WORDS = {"business": "conference", "fan": "fan convention"}
 HASHTAG = re.compile(r"(?<!\w)#\w+")
 SENTENCE_END = re.compile(r"(?<=[.!?])\s+")

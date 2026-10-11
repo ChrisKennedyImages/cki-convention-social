@@ -146,6 +146,12 @@ class Door(PublisherCase):
         _, qid = self.rendered_post(captions={"instagram": "Event coverage from $500 a day.", "facebook": "Fine.", "pinterest": "Fine."})
         self.assert_back(qid, self.publish(make_ctx(self.conn)), "price")
 
+    def test_a_caption_that_says_what_the_company_includes_goes_back(self):
+        """Chris, 2026-10-11: "NOTHING INCLUDES ANYTHING": an approved post is still refused at the door."""
+        _, qid = self.rendered_post(captions={"instagram": "Conference photography includes portraits, shot in a few minutes.",
+                                              "facebook": "Fine.", "pinterest": "Fine."})
+        self.assert_back(qid, self.publish(make_ctx(self.conn)), "nothing includes anything")
+
     def test_a_caption_with_a_dash_goes_back(self):
         _, qid = self.rendered_post(captions={"instagram": "Fine.", "facebook": "Backstage, calm.", "pinterest": "Backstage — calm."})
         self.assert_back(qid, self.publish(make_ctx(self.conn)), "pinterest caption")

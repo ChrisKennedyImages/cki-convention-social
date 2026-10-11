@@ -13,6 +13,12 @@ Blocks:
   promise     a claim the suite cannot stand behind ("guaranteed", "#1", "best in")
   names       public copy only (callers pass `names`): the name of an event, the company behind it
               or a person, or any @handle (Chris, 2026-10-11; ai/names.py)
+  claims      anything about how the company works that Chris has not stated: what a service
+              includes or comes with, what anyone leaves with, how long anything takes, packages,
+              turnaround. Chris, 2026-10-11, on a draft that said conference photography "includes
+              portraits like this one, shot on site in a few minutes": "Suite wide - NOTHING
+              INCLUDES ANYTHING! Don't ever say something you don't know or don't ask me about my
+              own company." The facts come from offer.json and him; everything else is a question.
 """
 from __future__ import annotations
 
@@ -34,6 +40,12 @@ AFFILIATION = re.compile(
     re.IGNORECASE,
 )
 PROMISE = re.compile(r"\bguarantee(?:d|s)?\b|#1\b|\bnumber one\b|\bbest in\b|\baward[- ]winning\b", re.IGNORECASE)
+CLAIMS = re.compile(
+    r"\binclud(?:e|es|ed|ing|ive)\b|\bcomes?\s+with\b|\bcame\s+with\b|\bleaves?\s+with\b|\bleft\s+with\b|\bwalks?\s+away\s+with\b"
+    r"|\bpackages?\b|\bbundles?\b|\badd[- ]ons?\b|\bturnaround\b|\bunlimited\b|\b(?:same|next)[- ]day\b"
+    r"|\bwithin\s+(?:minutes|hours|an?\s+(?:hour|day|week)|\d+)\b|\bin\s+(?:a\s+few\s+|just\s+|under\s+)?minutes\b",
+    re.IGNORECASE,
+)
 
 
 @dataclass
@@ -70,6 +82,10 @@ def check(text: str, *, official: bool = False, allow_price: bool = False, names
     m = PROMISE.search(text)
     if m:
         report.blocks.append(Block("promise", f"makes a claim the company cannot back ({m.group(0)!r})"))
+    m = CLAIMS.search(text)
+    if m:
+        report.blocks.append(Block("claims", f"says something about the company Chris has not stated ({m.group(0)!r}); nothing includes "
+                                             "anything, and nothing about how the work is done, what comes with it or when"))
     if names is not None:
         from .names import mentions
         hit = mentions(text, names)

@@ -282,7 +282,7 @@ fetch("/api/availability").then(r=>r.json()).then(j=>draw(j.booked||[])).catch((
     pages["privacy/index.html"] = ("Privacy and photo removal", "How quote requests are handled, and how to have a photo taken down.", f"""
 <section class="page"><div class="kick mono c">Privacy</div><h1>Privacy<b>.</b></h1><div class="prose">
 <h3>The quote form</h3><p>What you send through the form is used only to reply to you and to prepare your quote.
-It is never sold or shared. The website holds it only until it is collected, usually within minutes.</p>
+It is never sold or shared. The website holds it only until the booking inbox collects it, which it does every ten minutes.</p>
 <h3>Photos of you</h3><p>If you appear in a photo shared by {e(brand)} and want it taken down, email
 <a class="c" href="mailto:{e(contact_email())}">{e(contact_email())}</a> with a link to it. It comes down, and it stays out of anything shared after that.</p>
 <h3>Who we are</h3><p>{e(brand)} is a brand of {e(cfg.legal_name)}.</p></div></section>""")

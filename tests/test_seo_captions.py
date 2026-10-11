@@ -145,6 +145,21 @@ class DailyDraft(IsolatedCase):
         self.assertTrue(caps["facebook"].startswith("Conference photography"))
         self.assertEqual([len(t["missed"]) > 0 for t in meta["seo"]["tries"]], [True, False])
 
+    def test_a_claim_about_the_company_is_never_used(self):
+        """The real draft of 2026-10-11: "Suite wide - NOTHING INCLUDES ANYTHING!"."""
+        claim = {n: ("Conference photography includes portraits like this one, shot on site in a few minutes. Colored gradient "
+                     "background, one chair, and a short line of attendees who all leave with a new headshot. As an event "
+                     "photographer I also cover the sessions. Request a quote for your event.") for n in self.GOOD}
+        writer = Writer([claim, claim])
+        _, caps, meta = self.run_draft(writer)
+        self.assertEqual(len(writer.calls), 2)
+        self.assertTrue(any("nothing includes anything" in n and "'includes'" in n for n in writer.calls[1]["notes"]), writer.calls[1]["notes"])
+        self.assertEqual((meta["model"], meta["seo"]["fell_back"]), ("template", True))
+        for net, text in caps.items():
+            self.assertTrue(copy_rules.check(text).ok, (net, text))
+            self.assertNotIn("includ", text.lower())
+        self.assertTrue(all(r["ok"] for r in meta["rules"].values()))
+
     def test_two_misses_or_a_name_and_the_template_stands_in(self):
         named = {n: "Conference photography at CPAC, your event photographer. Request a quote." for n in self.GOOD}
         writer = Writer([named, named], alt="Speaker at the CPAC podium")
@@ -157,6 +172,10 @@ class DailyDraft(IsolatedCase):
 
 
 class Prompt(IsolatedCase):
+    def test_the_writer_is_told_nothing_includes_anything(self):
+        self.assertIn("The word include never appears.", claude.SYSTEM_PROMPT)
+        self.assertIn("say nothing about how the company works that the facts do not state", claude.SYSTEM_PROMPT)
+
     def test_the_writer_is_given_the_plan_and_asked_for_alt_text(self):
         plan = seo_plan.plan_for(subject="event", event_kind="business", shot_type="stage_panel")
         text = claude.user_text(claude.PostFacts(brand_name="Event Caliber", event_kind="business", plan=plan))
