@@ -48,7 +48,7 @@ DETAILS = ("badge_name", "vehicle_plate", "screen", "document", "house_number", 
 # real estate photography of apartments, so empty rooms, bathrooms, closets and residential
 # interiors all have to be named to be kept out.
 SPACES = ("exterior", "lobby", "atrium", "ballroom_or_event_space", "office", "retail", "bar",
-          "corridor", "bathroom", "closet_or_utility", "not_a_building")
+          "corridor", "bathroom", "closet_or_utility", "none")
 # Chris, 2026-10-10: nothing residential, and no empty rooms. Bars are fine anywhere. A bathroom
 # or a closet is not a building frame wherever it is, so those two go by space; everything else
 # turns on the `residential` answer, which catches a flat's hallway as surely as its bedroom.
@@ -63,8 +63,10 @@ facades, street signs, name badges, screens and papers. house_number means any s
 building, however small. street_sign means any road or street name. Report them whenever they are
 readable; what is done with them is decided later.
 
-space says what an architecture frame shows. Use "exterior" for a building from outside, and
-"not_a_building" when the photo is not architecture at all.
+space says which part of a building the photo shows, and it matters only when subject is
+"architecture". When subject is "architecture" you must pick a real space and never "none": use
+"exterior" for a building seen from outside, which is what most building photos are, and
+otherwise name the room you are standing in. Use "none" only when subject is not "architecture".
 residential: true when the space is somebody's home: a flat or house, inside or its own private
 rooms. A hotel, an office, a shop, a bar or a venue is not residential.
 empty_room: true when a room has no people in it and is unfurnished or nearly so.
@@ -313,10 +315,28 @@ def _flag(value, default: bool) -> int:
     return 1 if (default if not isinstance(value, bool) else value) else 0
 
 
+def space_of(data: dict, subject: Optional[str]) -> Optional[str]:
+    """Which part of a building the frame shows.
+
+    The model answers shot_type reliably and space badly: asked both, it called two plain
+    apartment exteriors "building_exterior" and then said the space was not a building at all
+    (2026-10-10). Where shot_type and view agree that this is an outside view of a building, that
+    is taken over a "none" from the space question. The correction only ever produces "exterior",
+    which cannot smuggle in a bathroom, a closet or a living room: those still have to be named,
+    and `residential` is asked separately anyway.
+    """
+    space = data.get("space") if data.get("space") in SPACES else None
+    if subject != "architecture" or (space and space != "none"):
+        return space
+    if data.get("shot_type") == "building_exterior" or data.get("view") == "exterior":
+        return "exterior"
+    return space
+
+
 def save_sort(conn: sqlite3.Connection, photo: sqlite3.Row, data: dict, method: str, model: str) -> None:
     subject = data.get("subject") if data.get("subject") in ("event", "architecture", "other") else None
     view = data.get("view") if data.get("view") in ("exterior", "interior") else None
-    space = data.get("space") if data.get("space") in SPACES else None
+    space = space_of(data, subject)
     conn.execute(
         "UPDATE classifications SET method=?, is_convention=?, subject=?, view=?, "
         "convention_name=COALESCE(?, convention_name), "
