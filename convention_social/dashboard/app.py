@@ -517,8 +517,9 @@ def create_app() -> FastAPI:
                     note = "No folder has been recognised as event work yet, so every folder with photos is shown."
             return render(request, "library.html", folders=rows, show=show, note=note, **common)
         if view == "design":
+            from ..render import design_samples
             return render(request, "library.html", renders=latest_renders(), design=latest_design(), tracks=music.tracks(conn),
-                          **common)
+                          design_status=design_samples.read_status(), readiness=design_samples.readiness(conn), **common)
         view = "approved" if view == "approved" else "review"
         total = count_photos(conn, view)
         pages = max(1, (total + PAGE - 1) // PAGE)
@@ -566,13 +567,10 @@ def create_app() -> FastAPI:
     def library_design_make(user: str = Depends(require_user)):
         """Start `ccs design` (its own lock; a second press while one runs does nothing). It reads
         Drive's previews and writes only under DATA_ROOT/renders; nothing is posted."""
-        cfg = config.get_config()
-        cfg.ensure_dirs()
-        log = open(cfg.data_root / "logs" / "designer.manual.log", "ab")
-        subprocess.Popen([sys.executable, "-m", "convention_social.cli", "design"], cwd=str(config.REPO_ROOT),
-                         stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
-        log.close()
-        return RedirectResponse("/library?msg=Making+design+samples+on+your+photos.+Give+it+about+five+minutes,+then+open+Design+samples.",
+        from ..render import design_samples
+        design_samples.write_status("running", "being made on your approved photos")
+        design_samples.start_in_background()
+        return RedirectResponse("/library?view=design&msg=Making+design+samples+on+your+approved+photos.+This+card+says+when+they+are+ready.",
                                 status_code=303)
 
     @app.get("/library/design")

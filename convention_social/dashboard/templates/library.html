@@ -66,7 +66,11 @@
     {% if design %}<a class="btn primary" href="/library/design">Design samples</a>{% endif %}
     <form method="post" action="/library/design" class="inline"><button class="small" type="submit">Make design samples</button></form>
   </div>
-  <div class="muted">Every post design and both reels, made only from photos you approved ({{ counts.approved }} so far). For review: nothing is posted.</div>
+  {% set st = design_status %}
+  {% if st.state == 'running' %}<div class="msg">Being made now (started {{ st.at[11:16] }}). This card says when they are ready; it takes a few minutes.</div>
+  {% elif st.state == 'done' %}<div class="msg">Ready: {{ st.message }}, {{ st.at[:10] }} {{ st.at[11:16] }}.{% if st.failed %} {{ st.failed|join('; ') }}{% endif %}</div>
+  {% elif st.state == 'failed' %}<div class="msg bad">Not made: {{ st.message }}.</div>{% endif %}
+  <div class="muted">Every post design and both reels, made only from photos you approved: {{ readiness.ready }} ready for designs{% if readiness.waiting %}, {{ readiness.waiting }} still being sorted (approved photos are sorted first){% endif %}. They are made again by themselves whenever your approved photos change. For review: nothing is posted.</div>
 </div>
 <div class="card">
   <strong>Music for reels</strong>

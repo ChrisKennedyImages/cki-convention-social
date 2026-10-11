@@ -22,6 +22,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import getpass
 import importlib
 import sys
@@ -274,18 +275,27 @@ def cmd_design(args) -> int:
     if not lock.acquire():
         print("design samples are already being made; they show on the Library page when done")
         return 2
+
+    def failed(why: str) -> int:
+        """Said on the Design card and on the Agents page, never only in a log."""
+        design_samples.write_status("failed", why)
+        runner.record_error_once(conn, "designer", "design_samples", f"Design samples not made: {why}")
+        print(why)
+        return 2
     try:
+        design_samples.write_status("running", "being made on your approved photos")
         try:
             oauth.access_token(conn)
         except oauth.DriveAuthError as e:
-            print(str(e))
-            return 2
+            return failed(f"Google Drive is signed out ({e}); sign in on the Drive page")
         reader = DriveReader(lambda: oauth.access_token(conn), conn=conn, agent="designer")
         try:
             out = design_samples.make(conn, lambda fid: reader.thumbnail_for(fid, 1600), reels=not args.no_reels)
-        except RuntimeError as e:
-            print(str(e))
-            return 2
+        except Exception as e:  # noqa: BLE001  whatever stopped it is said where Chris looks
+            return failed(str(e) if isinstance(e, RuntimeError) else f"{type(e).__name__}: {e}")
+        about = json.loads((out / "about.json").read_text())
+        design_samples.write_status("done", f"made on {len(about['photos'])} of your approved photos", folder=out.name,
+                                    failed=about.get("failed") or [])
         print(f"design samples: {out / 'index.html'}")
         return 0
     finally:
