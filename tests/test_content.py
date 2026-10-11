@@ -189,3 +189,89 @@ class ArtDirector(Content):
         content.draft_one(self.ctx(), self.fetch, now=MONDAY_6AM)
         self.assertEqual(json.loads(self.queue()[0]["rule_report"])["art"]["verdict"], "not reviewed")
         self.assertEqual(db.one(self.conn, "SELECT COUNT(*) n FROM api_usage")["n"], 0)
+
+
+SUNDAY = datetime(2026, 10, 18, 10, 0, tzinfo=timezone.utc)         # tomorrow is Monday: spotlight
+WEDNESDAY = datetime(2026, 10, 14, 10, 0, tzinfo=timezone.utc)      # tomorrow is Thursday: carousel
+THURSDAY = datetime(2026, 10, 15, 10, 0, tzinfo=timezone.utc)       # tomorrow is Friday: fan
+SATURDAY = datetime(2026, 10, 17, 10, 0, tzinfo=timezone.utc)       # tomorrow is Sunday: face match
+
+
+class NewDesigns(Content):
+    """Chris, 2026-10-11: "Switch to new designs and it's ok to use 1 photo too sometimes." """
+
+    def add_event_photo(self, did, event, q=3):
+        now = db.utcnow()
+        pid = db.insert(self.conn, "photos", drive_id=did, name=f"{did}.jpg", folder_id="fe", width=3000, height=2000,
+                        first_seen_at=now, last_seen_at=now)
+        db.insert(self.conn, "classifications", photo_id=pid, method="ollama", subject="event", convention_name=event, is_convention=1,
+                  quality=q, possible_minor=0, personal_details="[]", space="exterior", residential=0, empty_room=0, sharp=1,
+                  light=4, moment=4, shot_type="portrait", classified_at=now)
+        self.ids[did] = pid
+
+    def last(self):
+        row = self.queue()[-1]
+        return row, json.loads(row["rule_report"]), json.loads(row["render_paths"]), json.loads(row["photo_ids"])
+
+    def test_monday_is_the_spotlight_with_the_best_photo_first(self):
+        line = content.draft_one(self.ctx(), self.fetch, now=SUNDAY)
+        self.assertIn("spotlight with 3 photo(s)", line)
+        _, meta_, renders, ids = self.last()
+        self.assertEqual(meta_["design"], "spotlight")
+        self.assertEqual(ids[0], self.ids["e1"])
+        self.assertEqual(sorted(ids), sorted([self.ids["e1"], self.ids["e2"], self.ids["e3"]]))
+        self.assertEqual(list(renders), ["4:5"])
+        with Image.open(renders["4:5"][0]) as im:
+            self.assertEqual(im.size, (1080, 1350))
+        self.assertEqual(meta.is_clean(Path(renders["4:5"][0])), [])
+
+    def test_thursday_is_a_carousel_once_four_photos_are_ready(self):
+        self.add_event_photo("e4", "Awesome Con")
+        content.draft_one(self.ctx(), self.fetch, now=WEDNESDAY)
+        _, meta_, renders, ids = self.last()
+        self.assertEqual(meta_["design"], "carousel")
+        self.assertEqual(len(ids), 4)
+        self.assertEqual(len(renders["4:5"]), 4 + 3)                       # cover, a slide per photo, face match, the ask
+
+    def test_too_few_photos_for_the_fan_is_a_single_photo_day(self):
+        line = content.draft_one(self.ctx(), self.fetch, now=THURSDAY)
+        self.assertIn("fan wanted but too few photos passed", line)
+        _, meta_, renders, ids = self.last()
+        self.assertEqual((meta_["design"], meta_["design_wanted"]), ("single", "fan"))
+        self.assertEqual(ids, [self.ids["e1"]])
+        self.assertEqual(sorted(renders), ["2:3", "4:5"])
+
+    def test_sunday_is_face_match(self):
+        content.draft_one(self.ctx(), self.fetch, now=SATURDAY)
+        _, meta_, renders, ids = self.last()
+        self.assertEqual((meta_["design"], ids), ("facematch", [self.ids["e1"]]))
+
+    def test_live_every_photo_on_the_post_passes_the_final_check(self):
+        os.environ["AI_MONTHLY_CAP_USD"] = "5"
+        os.environ["AI_MODEL"] = "template"
+        config.reset()
+        self.add_event_photo("e4", "Awesome Con")
+        client = FinalClient({"e2": True})
+        orig = self.fetch
+
+        def fetch(row):
+            client.current = row["drive_id"]
+            return orig(row)
+        art = ArtClientAny([say("redo", notes="Tighten the left card.")])
+        content.draft_one(self.ctx(dry=False), fetch, now=SUNDAY, check_client=client, art_client=art)
+        _, meta_, _, ids = self.last()
+        self.assertEqual(meta_["design"], "spotlight")
+        self.assertNotIn(self.ids["e2"], ids)                              # may be under 18: never on the post
+        self.assertEqual(len(ids), 3)
+        from convention_social.library import eligibility
+        self.assertTrue(all(eligibility.is_eligible(self.conn, i)[0] for i in ids))
+        self.assertEqual((art.calls, meta_["art"]["verdict"]), (1, "pass"))  # several photos: no crop to redo
+
+
+class ArtClientAny(ArtClient):
+    def create(self, **kw):
+        self.calls += 1
+        a = self.answers.pop(0)
+        t = types.SimpleNamespace(type="text", text=json.dumps(a))
+        return types.SimpleNamespace(content=[t], stop_reason="end_turn", model=kw["model"],
+                                     usage=types.SimpleNamespace(input_tokens=2500, output_tokens=150))
