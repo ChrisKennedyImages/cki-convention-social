@@ -85,13 +85,40 @@ class Plan:
                  f"Related search phrases: {'; '.join(self.related)}. Use one or two of them, word for word and naturally, "
                  "in each caption."]
         if self.area:
-            lines.append(f"Place: {self.area}. Say once, naturally, that the work covers events in {self.area}.")
+            lines.append(f"Place: say once, naturally, that {place_phrase(self.area)[0].lower() + place_phrase(self.area)[1:]}")
         lines.append("Write no hashtags and no links: the suite adds them.")
         return lines
 
 
 def service_area() -> str:
     return " ".join((config.getenv("SERVICE_AREA", "") or "").split())
+
+
+NATIONWIDE = {"nationwide", "everywhere", "anywhere", "national", "us", "usa", "the us", "united states", "the united states"}
+
+
+def place_parts(area: str) -> tuple[str, bool]:
+    """SERVICE_AREA as (home base, nationwide). "Washington DC" is a base; "nationwide" is the flag;
+    "Washington DC, nationwide" is both (Chris, 2026-10-11: "Where I work is everywhere")."""
+    parts = [p.strip() for p in (area or "").split(",") if p.strip()]
+    nationwide = any(p.lower() in NATIONWIDE for p in parts)
+    base = ", ".join(p for p in parts if p.lower() not in NATIONWIDE)
+    return base, nationwide
+
+
+def place_phrase(area: str) -> str:
+    base, nationwide = place_parts(area)
+    if base and nationwide:
+        return f"Based in {base}, covering events nationwide."
+    if nationwide:
+        return "Covering events nationwide, wherever yours is."
+    return f"Covering events in {base} and beyond."
+
+
+def place_words(area: str) -> list[str]:
+    """What a caption must carry for the place: the base, and the word nationwide when it is said."""
+    base, nationwide = place_parts(area)
+    return [w for w in (base, "nationwide" if nationwide else "") if w]
 
 
 def plan_for(*, subject: str, event_kind: Optional[str], shot_type: Optional[str], design: str = "single") -> Plan:
@@ -146,8 +173,9 @@ def problems(captions: dict, plan: Plan) -> list[str]:
             out.append(f"the {net} caption's first sentence does not say \"{plan.primary}\"")
         if not any(r.lower() in body.lower() for r in plan.related):
             out.append(f"the {net} caption uses none of the related phrases ({'; '.join(plan.related)})")
-        if plan.area and plan.area.lower() not in body.lower():
-            out.append(f"the {net} caption does not mention {plan.area}")
+        for word in place_words(plan.area):
+            if word.lower() not in body.lower():
+                out.append(f"the {net} caption does not mention {word}")
         if net == "instagram":
             if p not in body[:IG_FOLD].lower():
                 out.append(f"on Instagram \"{plan.primary}\" falls below the fold (the first {IG_FOLD} characters)")
@@ -184,7 +212,7 @@ def template_captions(plan: Plan, link: str, brand: str) -> dict:
     else:
         first = f"{cap}, {ROOM_WORDS.get(plan.room, ROOM_WORDS['crowd'])}."
         second = "Your event photographer for every room you need, with photo delivery by face match while the event is on."
-    place = f" Covering events in {plan.area} and beyond." if plan.area else ""
+    place = f" {place_phrase(plan.area)}" if plan.area else ""
     ask = f" Request a quote at {link}." if link else " Request a quote for your event."
     body = f"{first} {second}{place}{ask}".strip()
     return finish({"instagram": body, "facebook": body, "pinterest": body}, plan, link)

@@ -289,6 +289,24 @@ only when Chris says so.
   `NTFY_TOPIC` on the Keys page and the agent live; the watchdog still pings
   failures within the hour.
 
+## 2026-10-11: what a photo shows is Claude's word, and Chris's
+
+- "It calls a stage shot a portrait which, never can happen!" The free local
+  sorter's shot type is a guess that reached the captions, the alt text and the
+  image's search fields. Claude's final check, which already looks at every
+  photo picked for a post in full, now says what the photo shows (a stage shot
+  is stage_panel however close the framing) and that word replaces the guess
+  everywhere it is read. On a draft each photo shows its word with a "Wrong?
+  Fix and draft again" control: Chris's word is written everywhere, the draft
+  is set aside and a new one is made at once (`library/classify.py`
+  `final_check`, `set_shot_type`; `dashboard/app.py`).
+- The learner weighs kinds of photo by what the post numbers say once Buffer
+  reports them; it does not learn from corrections. A correction is applied,
+  not learned.
+- "Where I work is everywhere": `SERVICE_AREA` takes `nationwide`, a home base
+  such as `Washington DC`, or both as `Washington DC, nationwide` ("Based in
+  Washington DC, covering events nationwide.") (`ai/seo_plan.py`).
+
 ## Standing rules from the brief
 
 - Nothing publishes without Chris's Approve on the dashboard, until he says
