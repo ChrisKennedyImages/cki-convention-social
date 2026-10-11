@@ -17,6 +17,11 @@ errors, which the watchdog pushes to Chris. New service files (`launchd/` templa
 `scripts/go-live.sh` on the Mini with his Mac password: that is flagged, never attempted.
 
 Dry run (the default, like every agent) fetches and reports what it would do, and changes nothing.
+
+`ccs sync` is the same update run once, live, waiting for a running updater: scripts/go-live.sh's
+first step, so a go-live never installs an older checkout (2026-10-11: one did, and said LIVE).
+`ccs launchd installed`, which go-live runs after the installer, clears the flag and its error.
+`ccs status` prints where the code stands against GitHub main (`code_line`).
 """
 from __future__ import annotations
 
@@ -24,6 +29,7 @@ import os
 import shutil
 import signal
 import subprocess
+import time
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -232,6 +238,94 @@ def update(ctx: runner.Context, repo: Path, *, suite: Callable[[Path], tuple[boo
                                  "(it asks for your Mac password) to install them.")
     return f"updated {head[:7]} -> {target[:7]} ({len(changed)} file(s)); tests passed" + (
         "; new service files need scripts/go-live.sh" if install else "")
+
+
+# ------------------------------------------------------------------ where the code stands
+
+def code_state(repo: Optional[Path] = None) -> dict:
+    """This checkout against GitHub's main as of the last fetch: head, branch, target (origin/main),
+    how many commits behind, and whether tracked files were changed locally. Nothing is fetched."""
+    repo = Path(repo or config.REPO_ROOT)
+    state = {"head": "", "branch": "", "target": "", "behind": None, "dirty": False}
+    try:
+        if _git(repo, "rev-parse", "--is-inside-work-tree").returncode != 0:
+            return state
+        state["head"] = _out(repo, "rev-parse", "HEAD")
+        state["branch"] = _out(repo, "rev-parse", "--abbrev-ref", "HEAD")
+        target = _git(repo, "rev-parse", "--verify", "--quiet", "origin/main")
+        state["target"] = target.stdout.strip() if target.returncode == 0 else ""
+        if state["target"]:
+            state["behind"] = int(_out(repo, "rev-list", "--count", f"{state['head']}..{state['target']}"))
+        state["dirty"] = bool(_out(repo, "status", "--porcelain", "--untracked-files=no"))
+    except (RuntimeError, ValueError, OSError):
+        pass
+    return state
+
+
+def code_line(state: dict) -> str:
+    """One line for `ccs status` and go-live. A Mini on older code than GitHub says so in capitals
+    (2026-10-11: a go-live run on a checkout from before the last merge installed the old schedule
+    and nothing on screen said the code was old)."""
+    head, target = state["head"], state["target"]
+    if not head:
+        return "code: not a git checkout"
+    where = f"{head[:7]} on {state['branch']}" + (" (with local changes)" if state["dirty"] else "")
+    if not target:
+        return f"code: {where}; GitHub main not fetched yet"
+    if head == target:
+        return f"code: {where}, the same as GitHub main as of the last fetch"
+    if state["behind"]:
+        return (f"code: {where}, {state['behind']} commit(s) BEHIND GitHub main {target[:7]}: "
+                "the updater brings it over within 10 minutes, or scripts/go-live.sh does now")
+    return f"code: {where}, not GitHub main {target[:7]} (ahead of it, or the two have diverged)"
+
+
+def mark_installed(conn, repo: Optional[Path] = None) -> str:
+    """go-live ran scripts/install-daemons.sh from this checkout, so the service files it brought are
+    in place: the flag and the open needs_install error clear, and the Agents page stops asking."""
+    head = code_state(repo)["head"][:7] or "this checkout"
+    waiting = settings.get(conn, NEEDS_INSTALL_KEY) or ""
+    cleared = conn.execute("UPDATE errors SET alerted=1 WHERE agent='updater' AND kind='needs_install' AND alerted=0").rowcount
+    settings.set(conn, NEEDS_INSTALL_KEY, "")
+    if waiting or cleared:
+        return f"services installed from {head}; the Agents page no longer asks for scripts/go-live.sh"
+    return f"services installed from {head}; nothing was waiting on it"
+
+
+def sync(*, sleep: Optional[Callable[[float], None]] = None, say: Callable[[str], None] = print,
+         wait_seconds: int = 30 * 60) -> int:
+    """`ccs sync`, go-live's first step: bring this checkout up to date with GitHub main now, the
+    updater's own way (tested first in a worktree, fast-forward only), and say where the code stands.
+    0 only when the checkout IS GitHub's main afterwards; 1 with the reason otherwise. While the
+    10-minute updater holds the lock (it is testing new code), this waits for it."""
+    sleep = sleep or time.sleep
+    said: list[str] = []
+
+    def once(ctx: runner.Context) -> str:
+        summary = run(ctx)
+        said.append(summary)
+        return summary
+
+    waited = 0
+    code = runner.run("updater", once, force_dry_run=False)
+    while code == runner.EXIT_LOCKED and waited < wait_seconds:
+        if not waited:
+            say("the updater is running now (it tests new code before switching to it); waiting for it")
+        sleep(15)
+        waited += 15
+        code = runner.run("updater", once, force_dry_run=False)
+    state = code_state()
+    say(code_line(state))
+    if code == runner.EXIT_LOCKED:
+        say("the updater is still running; run this again when it has finished (the Agents page shows it)")
+        return 1
+    if code != runner.EXIT_OK:
+        say("the updater failed; the Agents page has the error")
+        return 1
+    if state["head"] != state["target"]:
+        say(f"not brought up to date: {said[-1] if said else 'the updater did not run'}")
+        return 1
+    return 0
 
 
 if __name__ == "__main__":

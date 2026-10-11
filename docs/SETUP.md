@@ -151,7 +151,8 @@ scripts/go-live.sh
 It asks, the first time only, for your Mac password (installing the agents
 as system services), a dashboard password of your choosing, and the
 Cloudflare sign-in. It ends with `LIVE` when the site and the dashboard both
-pass, or `STOP` with the reason. Later, after `git pull`, run it again: it
+pass, or `STOP` with the reason. Later, run it again: it first brings the
+checkout up to date with GitHub (tested first, the updater's way), then
 skips what is done and refreshes the rest. It needs Python 3.13 and Node
 (`brew install python@3.13 node`); it says so if either is missing.
 
