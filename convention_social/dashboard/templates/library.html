@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block body %}
 {% if msg %}<div class="msg">{{ msg }}</div>{% endif %}
+{% if drive_state != 'ok' and view in ('review', 'approved') %}<div class="msg bad">The pictures cannot load: Google Drive is {{ 'not signed in yet' if drive_state == 'missing' else 'signed out (the sign-in expired)' }}. Sign in on the <a href="/drive">Drive page</a>; the photos and your choices are all still here.</div>{% endif %}
 
 {% if view in ('review', 'approved') %}
 <h1>{{ 'To review' if view == 'review' else 'Approved' }} <span class="muted">{{ total }}</span></h1>
@@ -78,7 +79,7 @@
   </div>
   {% endfor %}
   <form method="post" action="/library/music" enctype="multipart/form-data" style="margin-top:10px">
-    <label>Track (mp3, m4a, aac or wav, up to 25 MB)</label><input type="file" name="file" accept=".mp3,.m4a,.aac,.wav,audio/*" required>
+    <label>Track (mp3, m4a, aac, wav or an audio mp4, up to 25 MB)</label><input type="file" name="file" accept=".mp3,.m4a,.aac,.wav,.mp4,audio/*" required>
     <label>Title</label><input type="text" name="title" required>
     <label>Artist</label><input type="text" name="artist" required>
     <label>Where it came from (a link or the library's name)</label><input type="text" name="source" required>

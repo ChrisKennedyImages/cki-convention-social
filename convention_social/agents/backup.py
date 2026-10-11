@@ -8,6 +8,9 @@ goes to the company's own bucket through its Worker under private/backups/
 (the Worker never serves private/), one file per weekday so there are always
 seven and the bucket does not grow.
 
+Every night it also keeps the Mini's disk small (storage.py): full-size copies, previews and old
+renders that nothing needs any more are deleted; Drive keeps every original.
+
 Restore: stop the agents, copy a backup over DATA_ROOT/db/convention_social.sqlite3,
 start them again.
 """
@@ -91,8 +94,10 @@ def run(ctx: runner.Context, *, now: datetime | None = None, put=None) -> str:
     copied = copy_out(target)
     away = offsite(ctx, target, now, put)
     size_kb = target.stat().st_size // 1024
+    from .. import storage
+    disk = storage.summary(storage.sweep(ctx.conn))
     return (f"backup {target.name} ({size_kb} KB); pruned {removed}; copy: {copied or 'none (BACKUP_COPY_DIR unset)'}; "
-            f"off the machine: {away or 'no'}")
+            f"off the machine: {away or 'no'}; {disk}")
 
 
 if __name__ == "__main__":
