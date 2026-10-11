@@ -125,6 +125,28 @@ only when Chris says so.
 - Every agent has a Run now button on the Agents page, so nothing day to day
   needs a terminal.
 
+## 2026-10-11: face match delivery, the photos, the look
+
+- **Face match delivery is a lead selling point.** Chris: attendees scan the
+  barcode on their lanyard or on posters around the event, fill in three
+  short fields and take a quick selfie; every photo any of the photographers
+  takes with their face anywhere in it is sent to them right away, with no
+  wires. The convention staff or head decides before the event whether to
+  offer that to attendees, or to keep it to staff, tailored so each staff
+  member receives only the photos of the people they need, internally. The
+  offer file, the caption brief, the outreach note, the quote reply and the
+  site say it in those plain terms (`offer.json` `on_site_delivery`,
+  `ai/claude.py`, `outreach/draft.py`, `site/build.py`).
+- **The photos are original, no AI at all.** Every photo in the library is an
+  original photograph; Chris and his brother own the rights to all of them.
+  The suite never makes, alters or shows a generated image as if it were a
+  photograph, samples included: design samples use his real photos.
+- **The look moves.** After the first round of post designs ("You just made a
+  fucking grid"), Chris sent the direction: photos as physical cards in depth
+  and motion (a hand of cards fanned across the frame with the focused one
+  lifted out, a spinning ring, a spotlight rail where the middle frame opens
+  out with its caption, numbered folders), not flat tiles.
+
 ## Standing rules from the brief
 
 - Nothing publishes without Chris's Approve on the dashboard, until he says

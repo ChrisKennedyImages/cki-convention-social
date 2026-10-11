@@ -142,7 +142,7 @@ def draft_one(ctx: runner.Context, fetch: Callable[[dict], bytes], *, now: Optio
                              quote_link=f"{ctx.cfg.brand_domain}/book" if ctx.cfg.brand_domain else "",
                              services=("full event coverage", "backstage and green rooms", "breakouts and panels",
                                        "evening events and dinners", "portraits", "exhibition halls and vendors",
-                                       "approved images delivered on site"))
+                                       "every photo a guest is in, sent to them by face match"))
     drafter = drafter or (claude.TemplateDrafter() if ctx.dry_run else claude.get_drafter(ctx.conn, agent=ctx.agent))
     draft = drafter.draft(facts, cache)
     reports = {n: copy_rules.check(t).as_dict() for n, t in draft.captions.items()}

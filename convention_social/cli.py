@@ -329,7 +329,7 @@ def cmd_site(args) -> int:
 
 
 SERVICES_FOR_COPY = ("full event coverage", "backstage and green rooms", "breakouts", "evening events and dinners",
-                     "portraits", "exhibition halls and vendors", "same day delivery of approved images")
+                     "portraits", "exhibition halls and vendors", "every photo a guest is in, sent to them by face match")
 
 
 def cmd_site_check(args) -> int:

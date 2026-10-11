@@ -97,13 +97,14 @@ def copy_text() -> dict:
     return {
         "title": f"{o['company']}: {o['tagline']}",
         "lede": ("Fan conventions, conferences, galas and award dinners, photographed room by room. "
-                 "Approved images reach your attendees, staff, speakers and presenters while the event is still on."),
+                 "Attendees scan their badge, add a selfie, and every photo they are in comes straight to them."),
         "coverage_p": "Tell us which rooms matter. Coverage is planned around your schedule, and every event is quoted on its own.",
-        "deliver_p": ("Approved images go to attendees, staff, speakers and presenters during the event, "
-                      "so they share them while the moment is still happening."),
+        "deliver_p": ("Attendees scan the code on their badge or on a poster, fill in three short fields and take a quick selfie. "
+                      "Every photo they are in is sent to them right away, from every photographer, with no wires. "
+                      "You decide before the event: open to every attendee, or kept to staff, each getting only the photos they need."),
         "steps": [("Tell us about your event", "Dates, venue, the rooms and moments that matter, and who needs images."),
                   ("Get a quote for your dates", "A clear quote for the coverage you need, nothing bundled you did not ask for."),
-                  ("Images while it is still on", "Approved images reach your attendees, staff, speakers and presenters during the event.")],
+                  ("Photos find their people", "Guests scan, add a selfie, and get every photo they are in while the event is still on.")],
         "venues_p": ("Years of architectural work mean the venue gets shot as carefully as the people in it: "
                      "exteriors, lobbies, halls and ballrooms."),
         "cta_p": "Send the dates and the details. A quote comes back for your event, with the coverage you asked for.",
@@ -163,9 +164,9 @@ def home_body(t: dict, hero: str, frames: list[tuple[str, str]], stack: list[str
 <h2>From the green room<br><span class="o">to the last</span> reception.</h2></div><p>{e(t['coverage_p'])}</p></div>
 <div class="list rv">{rows}</div><div class="peek" aria-hidden="true"><img alt=""></div></section>
 {f'<section id="work" class="reel"><div class="pin"><div class="bar"><div class="kick mono c" style="margin:0">02 / Work</div><span class="mono g">Scroll</span></div><div class="track">{reel}</div><div class="sprocket" style="margin-top:22px"></div></div></section>' if reel else ''}
-<section class="deliver"><div class="rv"><div class="kick mono c">On site delivery</div>
-<div class="lines"><div>Approved.</div><div>Delivered.</div><div>While it is still on.</div></div><p>{e(t['deliver_p'])}</p></div>
-{f'<div class="stack rv">{stack_html}<span class="stamp mono">Approved</span></div>' if stack_html else ''}</section>
+<section class="deliver"><div class="rv"><div class="kick mono c">Face match delivery</div>
+<div class="lines"><div>Scan.</div><div>Selfie.</div><div>Sent.</div></div><p>{e(t['deliver_p'])}</p></div>
+{f'<div class="stack rv">{stack_html}<span class="stamp mono">Sent</span></div>' if stack_html else ''}</section>
 {f'<section id="venues" class="venues"><div class="head rv"><div><div class="kick mono c">03 / Venues</div><h2>The building is <span class="o">part of</span> the story.</h2></div><p>{e(t["venues_p"])}</p></div><div class="grid">{venue_html}</div></section>' if venue_html else ''}
 <section><div class="kick mono c rv">How it works</div><h2 class="rv">Three steps.</h2><div class="steps">{steps}</div></section>
 {_ticker(list(reversed(short)), rev=True)}
@@ -219,7 +220,7 @@ def build(conn: Optional[sqlite3.Connection], photos: SitePhotos, *, out: Path =
                        "Exterior" if i % 2 == 0 else "Interior"))
     base = f"https://{cfg.brand_domain}"
     pages = {"index.html": (t["title"], t["lede"], home_body(t, hero, frames, stack, venues, peeks))}
-    chips = "".join(f'<label><input type="checkbox" name="coverage" value="{e(c["key"])}"><span>{e(c["label"] if len(c["label"]) < 40 else "Approved images delivered on site")}</span></label>'
+    chips = "".join(f'<label><input type="checkbox" name="coverage" value="{e(c["key"])}"><span>{e(c["label"] if len(c["label"]) < 40 else "Instant delivery by face match")}</span></label>'
                     for c in o["coverage"])
     site_key = config.getenv("TURNSTILE_SITE_KEY") or ""
     turnstile = (f'<div class="full"><div class="cf-turnstile" data-sitekey="{e(site_key)}" data-theme="dark"></div></div>'
