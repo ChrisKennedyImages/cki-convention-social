@@ -290,3 +290,10 @@ class Dashboard(IsolatedCase):
         self.assertNotIn("Switch everything live", page)
         c.post("/agents/all/dry-run", data={"state": "on"})
         self.assertTrue(all(settings.dry_run(self.conn, a) for a in settings.AGENTS_WITH_DRY_RUN))
+
+    def test_healthz_says_which_commit_this_dashboard_runs_without_a_login(self):
+        import subprocess
+        head = subprocess.run(["git", "-C", str(config.REPO_ROOT), "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
+        self.assertTrue(head)
+        r = self.client.get("/healthz")
+        self.assertEqual((r.status_code, r.json()), (200, {"ok": True, "commit": head}))

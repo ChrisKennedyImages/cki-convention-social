@@ -22,7 +22,7 @@ DATA_SUBDIRS = ("db", "logs", "photos", "thumbs", "renders", "backups", "outbox-
 DEFAULT_PORT = 4610          # taken on the Mini: 4000, 8090, 8443, 8710, 8765, 11434
 
 _ENV_FILE_CACHE: dict[str, str] | None = None
-_ENV_FILE_PATH: Path | None = None
+_ENV_FILE_PATH: tuple | None = None    # (path, modification time) the cache was read at
 
 
 def env_file_path() -> Path:
@@ -32,12 +32,17 @@ def env_file_path() -> Path:
 
 
 def env_values() -> dict[str, str]:
-    """Values from the .env file only (cached per path). Missing file -> {}."""
+    """Values from the .env file only (cached per path and modification time, so the always-on
+    dashboard sees a key saved from the command line). Missing file -> {}."""
     global _ENV_FILE_CACHE, _ENV_FILE_PATH
     path = env_file_path()
-    if _ENV_FILE_CACHE is None or _ENV_FILE_PATH != path:
-        _ENV_FILE_PATH = path
-        if path.exists():
+    try:
+        stamp = path.stat().st_mtime_ns
+    except OSError:
+        stamp = None
+    if _ENV_FILE_CACHE is None or _ENV_FILE_PATH != (path, stamp):
+        _ENV_FILE_PATH = (path, stamp)
+        if stamp is not None:
             _ENV_FILE_CACHE = {k: v for k, v in dotenv_values(path).items() if v is not None}
         else:
             _ENV_FILE_CACHE = {}

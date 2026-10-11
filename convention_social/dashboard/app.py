@@ -22,6 +22,7 @@ import sys
 import time
 from pathlib import Path
 from typing import Optional
+from urllib.parse import quote_plus
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile, status
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
@@ -30,7 +31,9 @@ from fastapi.templating import Jinja2Templates
 from ..agents import AGENTS, is_built
 from ..ai import copy_rules, spend
 from ..ai.claude import NETWORKS
-from ..core import auth, config, db, secrets, settings
+from ..buffer import payloads as buffer_payloads
+from ..buffer.client import BufferBudgetExceeded, BufferClient, BufferError, BufferRateLimited
+from ..core import auth, config, db, secrets, settings, state_io
 from .. import music
 from ..library import eligibility, report
 
@@ -107,9 +110,9 @@ SECTIONS = (
       ("Design", "/library?view=design"), ("Do not use", "/donotuse"), ("Drive", "/drive"))),
     ("Bookings", "/inquiries", ("/inquiries", "/bookings", "/calendar"),
      (("Requests", "/inquiries"), ("Bookings", "/bookings"), ("Calendar", "/calendar"))),
-    ("More", "/more", ("/more", "/outreach", "/scout", "/seo", "/learner", "/agents", "/keys", "/errors"),
+    ("More", "/more", ("/more", "/outreach", "/scout", "/seo", "/learner", "/agents", "/buffer", "/keys", "/errors"),
      (("Outreach", "/outreach"), ("Scout", "/scout"), ("Search", "/seo"), ("Learner", "/learner"),
-      ("Agents", "/agents"), ("Keys", "/keys"))),
+      ("Agents", "/agents"), ("Buffer", "/buffer"), ("Keys", "/keys"))),
 )
 
 
@@ -250,6 +253,48 @@ def approved_photos(conn, decisions) -> list[dict]:
     return out
 
 
+def running_commit() -> str:
+    """The commit of the code this process loaded ("" when git cannot say; never stops the dashboard)."""
+    try:
+        r = subprocess.run(["git", "-C", str(config.REPO_ROOT), "rev-parse", "HEAD"], capture_output=True, text=True, timeout=10)
+        return r.stdout.strip() if r.returncode == 0 else ""
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+RUNNING_COMMIT = running_commit()        # read once, when this process loads the code
+
+BUFFER_ERRORS = (BufferError, BufferBudgetExceeded, BufferRateLimited)
+
+
+def buffer_client(conn) -> Optional[BufferClient]:
+    """The Buffer page's client (None until the key is set). Tests stand in for it."""
+    return BufferClient.from_config(conn, agent="dashboard")
+
+
+def _setting_json(conn, key: str, default):
+    try:
+        return json.loads(settings.get(conn, key) or "null") or default
+    except ValueError:
+        return default
+
+
+def buffer_state(conn) -> dict:
+    """Everything the Buffer page shows, read from this Mini only (no call to Buffer)."""
+    cached = state_io.load_json(BufferClient.cache_path(), {}) or {}
+    chosen = config.getenv("BUFFER_ORGANIZATION_ID", "") or ""
+    same_org = not chosen or cached.get("organizationId") == chosen
+    linked = {r["service"]: dict(r) for r in db.rows(conn, "SELECT * FROM channels ORDER BY id")}
+    return {"key": bool(secrets.get_secret("BUFFER_API_KEY")), "orgs": _setting_json(conn, "buffer.organizations", []),
+            "org": chosen, "found": (cached.get("channels") or []) if same_org else [],
+            "fetched_at": cached.get("fetched_at") if same_org else None, "linked": linked,
+            "linked_ids": {r["buffer_channel_id"] for r in linked.values()},
+            "boards": _setting_json(conn, "buffer.pinterest_boards", []), "board": config.getenv("PINTEREST_BOARD_ID", "") or "",
+            "video": _setting_json(conn, "buffer.video_fields", None),
+            "media": bool(config.getenv("MEDIA_BASE_URL") and secrets.get_secret("MEDIA_UPLOAD_TOKEN")),
+            "publisher_live": not settings.dry_run(conn, "publisher"), "networks": buffer_payloads.NETWORKS}
+
+
 def create_app() -> FastAPI:
     app = FastAPI(title="review", docs_url=None, redoc_url=None, openapi_url=None)
 
@@ -278,6 +323,11 @@ def create_app() -> FastAPI:
         resp = RedirectResponse(next if next.startswith("/") and not next.startswith("//") else "/", status_code=303)
         resp.set_cookie(COOKIE, make_token("chris"), max_age=SESSION_DAYS * 86400, httponly=True, samesite="lax")
         return resp
+
+    @app.get("/healthz")
+    def healthz():
+        """For the updater on this Mini: which commit this running dashboard was started on."""
+        return {"ok": True, "commit": RUNNING_COMMIT}
 
     @app.post("/logout")
     def logout():
@@ -741,6 +791,109 @@ def create_app() -> FastAPI:
         conn.execute("UPDATE errors SET alerted=1 WHERE id=?", (eid,))
         return RedirectResponse("/agents", status_code=303)
 
+    # ------------------------------------------------------------------ buffer
+    # Chris, 2026-10-11: "A Buffer channel is not set up for this yet, but definitely get the plumbing in
+    # so we can just add it quickly when I do." Key on the Keys page, then here: find the channels, tap
+    # Use on this company's own, pick the Pinterest board, check the video format. Nothing is linked by
+    # itself: a key that also sees another company's channels must never post to them.
+    def back(msg: str) -> RedirectResponse:
+        return RedirectResponse("/buffer?msg=" + quote_plus(msg.strip()[:300]), status_code=303)
+
+    @app.get("/buffer", response_class=HTMLResponse)
+    def buffer_page(request: Request, user: str = Depends(require_user), conn=Depends(conn_dep), msg: str = ""):
+        return render(request, "buffer.html", b=buffer_state(conn), msg=msg.replace("+", " "))
+
+    @app.post("/buffer/find")
+    def buffer_find(user: str = Depends(require_user), conn=Depends(conn_dep)):
+        client = buffer_client(conn)
+        if client is None:
+            return back("Paste the Buffer API key on the Keys page first.")
+        try:
+            orgs = client.organizations()
+            settings.set(conn, "buffer.organizations", json.dumps(orgs))
+            chosen = config.getenv("BUFFER_ORGANIZATION_ID", "") or ""
+            if chosen and chosen not in {o["id"] for o in orgs}:
+                config.write_env({"BUFFER_ORGANIZATION_ID": ""})
+                conn.execute("DELETE FROM channels")
+                return back("The organization chosen before is not visible to this key any more. Choose again below.")
+            if not orgs:
+                return back("This Buffer key sees no organization.")
+            if not chosen and len(orgs) > 1:
+                return back(f"This key sees {len(orgs)} Buffer organizations. Choose this company's below, then Find channels again.")
+            client._org = chosen or orgs[0]["id"]
+            found = client.channels(refresh=True)
+        except BUFFER_ERRORS as e:
+            return back(f"Buffer said: {e}")
+        now = db.utcnow()
+        for ch in found:
+            conn.execute("UPDATE channels SET connected=?, display_name=?, last_checked_at=? WHERE buffer_channel_id=?",
+                         (0 if ch.get("isDisconnected") or ch.get("isLocked") else 1, ch.get("displayName") or ch.get("name"), now, ch.get("id")))
+        return back(f"Found {len(found)} channel(s) in Buffer.")
+
+    @app.post("/buffer/org")
+    def buffer_org(user: str = Depends(require_user), conn=Depends(conn_dep), org_id: str = Form(...)):
+        orgs = {o["id"]: o for o in buffer_state(conn)["orgs"]}
+        if org_id not in orgs:
+            return back("That organization is not one this key sees. Tap Find channels.")
+        if org_id != (config.getenv("BUFFER_ORGANIZATION_ID", "") or ""):
+            config.write_env({"BUFFER_ORGANIZATION_ID": org_id})
+            conn.execute("DELETE FROM channels")          # channels linked from another organization are unlinked
+        return back(f"Using {orgs[org_id].get('name') or org_id}. Tap Find channels.")
+
+    @app.post("/buffer/link")
+    def buffer_link(user: str = Depends(require_user), conn=Depends(conn_dep), channel_id: str = Form(...)):
+        ch = next((c for c in buffer_state(conn)["found"] if c.get("id") == channel_id), None)
+        if ch is None or ch.get("service") not in buffer_payloads.NETWORKS:
+            return back("That channel is not one Buffer listed for this suite. Tap Find channels.")
+        name = ch.get("displayName") or ch.get("name") or channel_id
+        conn.execute("DELETE FROM channels WHERE service=? OR buffer_channel_id=?", (ch["service"], channel_id))
+        db.insert(conn, "channels", buffer_channel_id=channel_id, service=ch["service"], display_name=name,
+                  connected=0 if ch.get("isDisconnected") or ch.get("isLocked") else 1, last_checked_at=db.utcnow())
+        if ch["service"] == "pinterest":
+            settings.set(conn, "buffer.pinterest_boards", "[]")
+        return back(f"{ch['service'].capitalize()} posts go to {name}.")
+
+    @app.post("/buffer/unlink")
+    def buffer_unlink(user: str = Depends(require_user), conn=Depends(conn_dep), service: str = Form(...)):
+        conn.execute("DELETE FROM channels WHERE service=?", (service,))
+        return back(f"Nothing goes to {service} now.")
+
+    @app.post("/buffer/boards")
+    def buffer_boards(user: str = Depends(require_user), conn=Depends(conn_dep)):
+        client, pin = buffer_client(conn), buffer_state(conn)["linked"].get("pinterest")
+        if client is None or pin is None:
+            return back("Link a Pinterest channel first.")
+        try:
+            boards = client.pinterest_boards(pin["buffer_channel_id"])
+        except BUFFER_ERRORS as e:
+            return back(f"Buffer said: {e}")
+        settings.set(conn, "buffer.pinterest_boards", json.dumps(boards))
+        return back(f"Found {len(boards)} board(s). Tap Use on the one pins go to.")
+
+    @app.post("/buffer/board")
+    def buffer_board(user: str = Depends(require_user), conn=Depends(conn_dep), board_id: str = Form(...)):
+        board = next((b for b in buffer_state(conn)["boards"] if b.get("serviceId") == board_id), None)
+        if board is None:
+            return back("That board is not one Buffer listed. Tap Find boards.")
+        config.write_env({"PINTEREST_BOARD_ID": board_id})
+        return back(f"Pins go to the board {board.get('name') or board_id}.")
+
+    @app.post("/buffer/video")
+    def buffer_video(user: str = Depends(require_user), conn=Depends(conn_dep)):
+        client = buffer_client(conn)
+        if client is None:
+            return back("Paste the Buffer API key on the Keys page first.")
+        try:
+            fields = client.video_asset_fields()
+            buffer_payloads.video_asset(fields, "https://check.invalid/v.mp4", "https://check.invalid/c.jpg")
+        except buffer_payloads.PayloadError as e:
+            settings.set(conn, "buffer.video_fields", json.dumps({"fields": fields, "checked_at": db.utcnow(), "problem": str(e)}))
+            return back(f"Buffer's video format needs something this suite does not fill yet: {e}")
+        except BUFFER_ERRORS as e:
+            return back(f"Buffer said: {e}")
+        settings.set(conn, "buffer.video_fields", json.dumps({"fields": fields, "checked_at": db.utcnow()}))
+        return back("Buffer's video format read and understood. Reels can post.")
+
     # ------------------------------------------------------------------ keys
     def key_groups() -> list[dict]:
         have = secrets.present()
@@ -759,9 +912,11 @@ def create_app() -> FastAPI:
                         f("CREDITS_SHEET_ID", "Credits sheet (link or id)")]},
             {"title": "Mail", "note": "The company mailbox. An app password, never the account password.",
              "fields": [f("SMTP_HOST", "Mail server"), f("SMTP_USER", "Mailbox login"), f("SMTP_PASSWORD", "App password", secret=True)]},
-            {"title": "AI", "note": "This company's own Anthropic key.",
+            {"title": "AI", "note": "Chris's Anthropic key, the one his other suite uses (his choice, 2026-10-11): "
+                                    "bin/ccs copy-key ANTHROPIC_API_KEY --from <that .env> copies it without showing it. "
+                                    "This suite stops at its own monthly cap below.",
              "fields": [f("ANTHROPIC_API_KEY", "Anthropic API key", secret=True), f("AI_MONTHLY_CAP_USD", "Monthly cap, USD")]},
-            {"title": "Buffer", "note": "This company's own Buffer account.",
+            {"title": "Buffer", "note": "This company's own Buffer account. After the key, link the channels on the Buffer page.",
              "fields": [f("BUFFER_API_KEY", "Buffer API key", secret=True), f("BUFFER_PLAN", "Buffer plan", choices=["free", "essentials", "team"]),
                         f("PINTEREST_BOARD_ID", "Pinterest board id")]},
             {"title": "Image hosting", "note": "Where Buffer fetches post images from.",

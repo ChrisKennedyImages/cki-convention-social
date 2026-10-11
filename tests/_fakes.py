@@ -38,8 +38,10 @@ class FakeBuffer:
     """Canned GraphQL responses keyed by operation name; records every request."""
 
     def __init__(self, *, status_sequence=None, reject_at=(), http_status=200, retry_after=None,
-                 disconnected=(), error_message="Image could not be fetched", schema=None):
+                 disconnected=(), error_message="Image could not be fetched", schema=None, orgs=None, channels=None):
         self.schema = schema if schema is not None else SCHEMA
+        self.orgs = orgs if orgs is not None else [{"id": "org-1", "name": "Event Caliber"}]
+        self.channels = channels if channels is not None else [(svc, cid, f"Event Caliber {svc}") for svc, cid in CHANNEL_IDS.items()]
         self.calls = []
         self.created = []
         self.status_sequence = list(status_sequence or ["scheduled", "sent"])
@@ -66,16 +68,16 @@ class FakeBuffer:
             fields = self.schema.get(name)
             return Response(200, {}, {"data": {"__type": None if fields is None else {"name": name, "inputFields": fields}}})
         if "Organizations" in op:
-            return Response(200, {}, {"data": {"account": {"organizations": [{"id": "org-1", "name": "Event Caliber"}]}}})
+            return Response(200, {}, {"data": {"account": {"organizations": self.orgs}}})
         if "PinterestBoards" in op:
             return Response(200, {}, {"data": {"channel": {"id": payload["variables"]["input"]["id"], "service": "pinterest",
                                                            "metadata": {"__typename": "PinterestMetadata",
                                                                         "boards": [{"serviceId": "board-123", "name": "Conventions"}]}}}})
         if "Channels" in op:
             return Response(200, {}, {"data": {"channels": [
-                {"id": cid, "name": svc, "service": svc, "displayName": f"Event Caliber {svc}",
+                {"id": cid, "name": svc, "service": svc, "displayName": name,
                  "isDisconnected": svc in self.disconnected, "isLocked": False, "isQueuePaused": False}
-                for svc, cid in CHANNEL_IDS.items()]}})
+                for svc, cid, name in self.channels]}})
         if "CreatePost" in op:
             self.n_create += 1
             if self.n_create in self.reject_at:
