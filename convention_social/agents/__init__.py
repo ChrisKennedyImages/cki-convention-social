@@ -31,6 +31,8 @@ AGENTS: dict[str, dict] = {
                   "job": "Drive sign-in, channels, failed posts, spend, missed runs; daily digest email"},
     "backup":    {"schedule": "nightly 02:30",         "module": "convention_social.agents.backup",
                   "job": "SQLite online backup to DATA_ROOT/backups (14 kept), a copy off the machine"},
+    "updater":   {"schedule": "every 10 min",          "module": "convention_social.agents.updater",
+                  "job": "keep the Mini on the latest main: test a new commit first, then switch and restart the dashboard"},
     "dashboard": {"schedule": "always on (KeepAlive)", "module": "convention_social.dashboard.app",
                   "job": "review UI on 127.0.0.1:DASHBOARD_PORT"},
 }

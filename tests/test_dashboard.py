@@ -168,3 +168,30 @@ class Dashboard(IsolatedCase):
         anon = TestClient(create_app())
         self.assertNotEqual(anon.get("/library/renders/library-report-20261011.html", follow_redirects=False).status_code, 200)
 
+    def test_run_now_starts_one_agent_run(self):
+        from unittest import mock
+        import sys
+        from convention_social.dashboard import app as app_module
+        with mock.patch.object(app_module.subprocess, "Popen") as popen:
+            r = self.signed_in().post("/agents/scanner/run", follow_redirects=False)
+            self.assertEqual(r.status_code, 303)
+            self.assertIn("scanner+started", r.headers["location"])
+            args = popen.call_args[0][0]
+            self.assertEqual(args, [sys.executable, "-m", "convention_social.cli", "run", "scanner"])
+            for bad in ("dashboard", "art_director", "nonsense"):
+                self.assertEqual(self.client.post(f"/agents/{bad}/run").status_code, 404, bad)
+            self.assertEqual(popen.call_count, 1)
+            self.assertIn("Run now", self.client.get("/agents").text)
+            anon = TestClient(create_app())
+            self.assertNotEqual(anon.post("/agents/scanner/run", follow_redirects=False).status_code, 303)
+            self.assertEqual(popen.call_count, 1)
+
+    def test_the_dashboard_records_its_pid_for_the_updater(self):
+        from unittest import mock
+        from convention_social import cli
+        with mock.patch("uvicorn.run") as served:
+            cli.main(["dashboard"])
+        served.assert_called_once()
+        pid_file = config.get_config().locks_dir / "dashboard.pid"
+        self.assertEqual(pid_file.read_text(), str(os.getpid()))
+

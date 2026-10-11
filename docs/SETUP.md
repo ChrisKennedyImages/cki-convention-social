@@ -144,6 +144,14 @@ pass, or `STOP` with the reason. Later, after `git pull`, run it again: it
 skips what is done and refreshes the rest. It needs Python 3.13 and Node
 (`brew install python@3.13 node`); it says so if either is missing.
 
+After this first run you should not need a terminal again. The **updater**
+agent checks GitHub every 10 minutes and, once you switch it from dry run to
+LIVE on the dashboard's Agents page, tests anything new with the full suite
+and only then updates the Mini and restarts the dashboard. Every agent also
+has a **Run now** button there. The only exception: when an update brings new
+service files, the Agents page says so, and `scripts/go-live.sh` has to run
+once more for your Mac password.
+
 The dashboard listens on 127.0.0.1:4610. From your phone, reach it over
 Tailscale on port 8443, never 443 (another dashboard on this Mini uses 443):
 `tailscale serve --bg --https=8443 http://127.0.0.1:4610` on the Mini, then open the address it
