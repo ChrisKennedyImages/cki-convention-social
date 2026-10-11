@@ -312,14 +312,11 @@ def fan_post(shots: Sequence[Shot], copy: MotionCopy, *, out: Path, focus: int =
     w, h = 1080, 1350
     img = backdrop(w, h, floor=h * 0.86)
     faces = [card_face(sh, 400, 540, i) for i, sh in enumerate(shots)]
-    stage.draw(img, fan(faces, focus=focus, lift=1.0, y0=60, scale=0.6, spread=11, radius=1000, lift_y=170),
-               cy=h * 0.52, floor=420)
+    stage.draw(img, fan(faces, focus=focus, lift=1.0, y0=40, scale=0.62, spread=10, radius=1000, lift_y=150),
+               cy=h * 0.6, floor=420)
     corner_marks(img, 1.0)
     y = caption(img, 70, 170, "EVENT CALIBER  ·  FULL COVERAGE", copy.hook[0], "", width=940, title_size=88)
     caption(img, 70, y - 20, "", copy.hook[1], "", width=940, title_size=88)
-    sh = shots[focus]
-    caption(img, w / 2, h - 270, f"N°{focus + 1:02d}  ·  {len(shots):02d} ROOMS", sh.room, sh.line, width=900, title_size=58,
-            align="center")
     ask_strip(img, h - 120, copy)
     return save(grain_still(img), out, meta)
 
@@ -437,14 +434,15 @@ def rooms_reel(shots: Sequence[Shot], copy: MotionCopy, *, out: Path, official: 
         cy = RH * 0.6
         if i < DEAL:
             deal = [clamp((i - 3 * k) / 14) for k in range(n)]
-            stage.draw(img, fan(faces, focus=0, lift=0.0, deal=deal, center=(n - 1) / 2, **HAND), cy=cy, floor=floor_y, fast=True)
+            turn = lerp((n - 1) / 2, 0, ease_io((i - 24) / 16))       # the hand turns to the first room as it lands
+            stage.draw(img, fan(faces, focus=0, lift=0.0, deal=deal, center=turn, **HAND), cy=cy, floor=floor_y, fast=True)
             for j, t in enumerate(copy.hook):
                 tf = fit(ImageDraw.Draw(img), list(copy.hook), DISPLAY, 920, 110, 60)
                 _slam(img, t, tf, 76, 360 + j * int(tf.size * 1.05), (i - 16 - 5 * j) / 6)
         elif i < DEAL + ROOM * n:
             k, f = divmod(i - DEAL, ROOM)
             prev = max(0, k - 1)
-            fpos = lerp(prev, k, ease_io(f / 10)) if k > 0 else lerp((n - 1) / 2, 0, ease_io(f / 12))
+            fpos = lerp(prev, k, ease_io(f / 10))
             lift = ease_out(f / 8) if k == 0 else 1.0
             stage.draw(img, fan(faces, focus=fpos, lift=lift, center=fpos, **HAND), cy=cy, floor=floor_y, fast=True)
             sh = shots[k]
