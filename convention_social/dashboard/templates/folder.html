@@ -1,7 +1,16 @@
 {% extends "base.html" %}
 {% block body %}
+<a class="back" href="/library?view=folders#f-{{ folder.drive_id }}">&larr; All folders</a>
 <h1>{{ folder.name }} <span class="badge {{ folder.clearance }}">{{ folder.clearance.replace('_',' ') }}</span></h1>
 <div class="muted" style="margin-bottom:10px">{{ folder.path or '' }}</div>
+<div class="card">
+  <div class="muted">{% if folder.clearance == 'cleared' %}Every photo in this folder is approved, except any you mark Don't use.{% elif folder.clearance == 'excluded' %}This whole folder is kept out.{% else %}Nothing here is used until you approve it: clear the whole folder, or tap Use on single photos.{% endif %}</div>
+  <div class="row" style="margin-top:8px">
+  {% for state, label, cls in [('cleared', 'Clear this folder', 'ok'), ('excluded', 'Exclude this folder', 'danger'), ('not_cleared', 'Undecided', '')] if state != folder.clearance %}
+    <form method="post" action="/library/folder/{{ folder.drive_id }}/clearance" class="inline"><input type="hidden" name="state" value="{{ state }}"><input type="hidden" name="back" value="/library/folder/{{ folder.drive_id }}"><button class="small {{ cls }}" type="submit">{{ label }}</button></form>
+  {% endfor %}
+  </div>
+</div>
 <div class="grid">
 {% for p in items %}
   {# each tap comes back to this same photo (#p<id>), never to the top of a long folder #}

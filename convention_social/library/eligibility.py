@@ -58,6 +58,33 @@ def clearance_of(conn: sqlite3.Connection, photo: sqlite3.Row) -> str:
     return "not_cleared"
 
 
+def folder_decisions(conn: sqlite3.Connection) -> dict[str, str]:
+    """For every folder, the decision that reaches it: its own 'cleared' or 'excluded', else the
+    nearest folder above with one, else 'not_cleared'. One pass for the whole library, the same
+    rule clearance_of follows photo by photo."""
+    rows = {r["drive_id"]: (r["parent_id"], r["clearance"]) for r in db.rows(conn, "SELECT drive_id, parent_id, clearance FROM drive_folders")}
+    out: dict[str, str] = {}
+
+    def resolve(fid, depth=0):
+        if fid is None or fid not in rows or depth > MAX_DEPTH:
+            return "not_cleared"
+        if fid in out:
+            return out[fid]
+        parent, own = rows[fid]
+        out[fid] = own if own in ("cleared", "excluded") else resolve(parent, depth + 1)
+        return out[fid]
+    for fid in rows:
+        resolve(fid)
+    return out
+
+
+def decision_of(photo, decisions: dict[str, str]) -> str:
+    """'cleared' | 'blocked' | 'excluded' | 'not_cleared', as clearance_of, from folder_decisions."""
+    if photo["clearance"] in ("blocked", "cleared"):
+        return photo["clearance"]
+    return decisions.get(photo["folder_id"], "not_cleared")
+
+
 def credits_for(conn: sqlite3.Connection, photo: sqlite3.Row) -> list[sqlite3.Row]:
     folder_ids = [f["drive_id"] for f in folder_chain(conn, photo["folder_id"])]
     rows = db.rows(conn, "SELECT * FROM credits WHERE scope='photo' AND drive_id=?", (photo["drive_id"],))

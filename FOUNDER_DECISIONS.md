@@ -147,6 +147,19 @@ only when Chris says so.
   lifted out, a spinning ring, a spotlight rail where the middle frame opens
   out with its caption, numbered folders), not flat tiles.
 
+## 2026-10-11: only what Chris approves, and a dashboard he can find his way round
+
+- **Only approved photos are ever used.** Chris: "When I go to the library, I
+  only want to choose what I approve and if it's not approved then don't use it
+  yet or at all." A photo is approved when he taps Use on it or clears its
+  folder. Posts, the website and the design samples take approved photos only
+  (`library/eligibility.py`, `render/design_samples.py`); unapproved photos show
+  only where he chooses: Photos, To review, and the library report sheets.
+- **Four tabs.** "The navigation is not intuitive or smart!" Today, Photos,
+  Bookings and More, each with one row of its own pages; every folder page links
+  back to the folder list and can clear or exclude the whole folder in place
+  (`dashboard/app.py` `SECTIONS`).
+
 ## Standing rules from the brief
 
 - Nothing publishes without Chris's Approve on the dashboard, until he says
