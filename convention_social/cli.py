@@ -8,7 +8,9 @@
   ccs run <agent> [--dry-run|--live]   run one agent once (flag overrides the setting)
   ccs hash-password [--save]  read a password from the terminal; print the hash for .env, or save it there
   ccs dashboard               serve the review dashboard on 127.0.0.1:DASHBOARD_PORT
+  ccs sync                    bring this checkout up to date with GitHub main now, tested first (go-live's first step)
   ccs launchd status          which launchd services of this suite are loaded
+  ccs launchd installed       record that the services were installed from this checkout (go-live runs it)
   ccs drive login [--wait N]  sign in to Google Drive as Chris, read only
   ccs drive scan [--classify N]   inventory the library now; optionally sort N photos with Claude
   ccs drive report [--sheet N]    write the library report and a contact sheet of the best N
@@ -52,6 +54,8 @@ def cmd_status(_args) -> int:
         return 1
     conn = db.connect()
     print(f"{cfg.brand_name}  data={cfg.data_root}")
+    from .agents import updater
+    print(updater.code_line(updater.code_state()))
     print(f"{'agent':<10} {'built':<6} {'dry_run':<8} {'last run':<26} {'ok':<4} schedule")
     for name, meta in AGENTS.items():
         last = db.one(conn, "SELECT started_at, ok FROM agent_runs WHERE agent=? ORDER BY id DESC LIMIT 1", (name,))
@@ -65,6 +69,11 @@ def cmd_status(_args) -> int:
     print(f"open errors: {open_errors}")
     conn.close()
     return 0
+
+
+def cmd_sync(_args) -> int:
+    from .agents import updater
+    return updater.sync()
 
 
 def cmd_env_check(_args) -> int:
@@ -143,7 +152,15 @@ def cmd_dashboard(_args) -> int:
     return 0
 
 
-def cmd_launchd(_args) -> int:
+def cmd_launchd(args) -> int:
+    if args.what == "installed":
+        from .agents import updater
+        conn = db.connect()
+        try:
+            print(updater.mark_installed(conn))
+        finally:
+            conn.close()
+        return 0
     import glob
     import subprocess
     from pathlib import Path
@@ -445,7 +462,8 @@ def build_parser() -> argparse.ArgumentParser:
     hp = sub.add_parser("hash-password"); hp.add_argument("--save", action="store_true", help="write the hash into .env")
     hp.set_defaults(fn=cmd_hash_password)
     sub.add_parser("dashboard").set_defaults(fn=cmd_dashboard)
-    l = sub.add_parser("launchd"); l.add_argument("what", choices=["status"]); l.set_defaults(fn=cmd_launchd)
+    sub.add_parser("sync").set_defaults(fn=cmd_sync)
+    l = sub.add_parser("launchd"); l.add_argument("what", choices=["status", "installed"]); l.set_defaults(fn=cmd_launchd)
     dv = sub.add_parser("drive"); dv.add_argument("what", choices=["login", "scan", "report"])
     dv.add_argument("--wait", type=float, default=0, help="login: seconds to wait for the browser to return here")
     dv.add_argument("--classify", type=int, default=0, help="scan: sort this many photos (Ollama free; Claude under the cap)")

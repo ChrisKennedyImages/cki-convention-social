@@ -183,6 +183,23 @@ class GoLiveScript(IsolatedCase):
             self.assertNotIn(">/dev/null", line)          # any question wrangler still asks stays visible
         self.assertIn("git show HEAD:wrangler.jsonc | py", self.text)
 
+    def test_brings_the_checkout_up_to_date_before_anything_else(self):
+        """2026-10-11: a run on a checkout from before the last merge installed the old 6:00 schedule
+        and said LIVE. Now the script's first step is `ccs sync`, and it starts over on itself when
+        the code moved (git replaces the file; the running shell keeps the old one)."""
+        sync = self.text.index("bin/ccs sync || stop")
+        self.assertLess(self.text.index('[[ $EUID -ne 0 ]] || stop'), sync)
+        self.assertLess(sync, self.text.index('say "1/4'))
+        self.assertIn('-x .venv/bin/python', self.text[:sync])           # a first run has no venv: the clone is current
+        self.assertIn('CCS_GO_LIVE_SYNCED=1 exec "$HERE/go-live.sh" "$@"', self.text)
+        self.assertIn('[[ -z "${CCS_GO_LIVE_SYNCED:-}"', self.text)       # never a loop
+        self.assertNotIn("after `git pull`", self.text)
+
+    def test_the_installer_is_followed_by_the_record_that_it_ran(self):
+        install = self.text.index('sudo "$REPO/scripts/install-daemons.sh"')
+        self.assertLess(install, self.text.index("bin/ccs launchd installed"))
+        self.assertIn("sudo -n true", self.text[:install])               # says when the password will not be asked
+
     def test_deploys_the_untracked_live_config_and_ends_on_the_live_check(self):
         self.assertIn('LIVE=(-c wrangler.live.jsonc)', self.text)
         self.assertIn('"${WR[@]}" deploy "${LIVE[@]}"', self.text)

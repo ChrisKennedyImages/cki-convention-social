@@ -124,6 +124,13 @@ only when Chris says so.
   Agents page, never attempted.
 - Every agent has a Run now button on the Agents page, so nothing day to day
   needs a terminal.
+- `scripts/go-live.sh` brings the checkout up to date with GitHub itself before
+  it installs anything (`bin/ccs sync`, the updater's way: tested first,
+  fast-forward only) and clears the Agents page's ask once the services are
+  installed (`bin/ccs launchd installed`). The evening of 2026-10-11 a go-live
+  run on a checkout from before the last merge installed the old 6:00 draft
+  schedule and said LIVE; `ccs status` now prints where the code stands against
+  GitHub main, in capitals when it is behind.
 
 ## 2026-10-11: face match delivery, the photos, the look
 
