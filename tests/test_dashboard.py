@@ -136,3 +136,35 @@ class Dashboard(IsolatedCase):
         page = c.get("/keys").text
         self.assertNotIn("sk-secret-value", page)
         self.assertIn("New Name", page)
+
+    def test_library_never_opens_empty_when_folders_exist(self):
+        d = FakeDrive()
+        d.folder("fmisc", "Phone dump")
+        d.image("m1", "IMG_1.jpg", "fmisc")
+        scan.full_inventory(self.conn, DriveReader("t", conn=self.conn, transport=d))
+        page = self.signed_in().get("/library").text
+        self.assertIn("Phone dump", page)
+        self.assertIn("No folder has been recognised as event work yet", page)
+
+    def test_library_report_and_sheets_are_on_the_dashboard(self):
+        renders = config.get_config().data_root / "renders"
+        renders.mkdir(parents=True, exist_ok=True)
+        (renders / "library-report-20261010.html").write_text("<p>old</p>")
+        (renders / "library-report-20261011.html").write_text("<p>new report</p>")
+        (renders / "contact-sheet-20261011.jpg").write_bytes(b"\xff\xd8jpeg")
+        (renders / "building-sheet-20261011.jpg").write_bytes(b"\xff\xd8jpeg")
+        (renders / "notes.txt").write_text("not for the web")
+        page = self.signed_in().get("/library").text
+        for name in ("library-report-20261011.html", "contact-sheet-20261011.jpg", "building-sheet-20261011.jpg"):
+            self.assertIn(f"/library/renders/{name}", page)
+        r = self.client.get("/library/report", follow_redirects=False)
+        self.assertEqual(r.headers["location"], "/library/renders/library-report-20261011.html")
+        got = self.client.get("/library/renders/library-report-20261011.html")
+        self.assertEqual(got.status_code, 200)
+        self.assertIn("new report", got.text)
+        self.assertEqual(self.client.get("/library/renders/contact-sheet-20261011.jpg").headers["content-type"], "image/jpeg")
+        for bad in ("notes.txt", "contact-sheet-2026.jpg", "..%2F..%2F.env", "library-report-20261011.html.bak"):
+            self.assertEqual(self.client.get(f"/library/renders/{bad}").status_code, 404, bad)
+        anon = TestClient(create_app())
+        self.assertNotEqual(anon.get("/library/renders/library-report-20261011.html", follow_redirects=False).status_code, 200)
+

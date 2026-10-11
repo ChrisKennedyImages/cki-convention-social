@@ -5,6 +5,20 @@
 <div class="row" style="margin-bottom:12px">
   <a class="btn" href="/library?show=events">Event folders</a><a class="btn" href="/library?show=cleared">Cleared</a><a class="btn" href="/library?show=all">All folders</a>
 </div>
+<div class="card">
+  <strong>Library report</strong>
+  {% if renders.report %}
+  <div class="row" style="margin-top:8px">
+    <a class="btn" href="/library/renders/{{ renders.report }}">Report</a>
+    {% if renders.sheet %}<a class="btn" href="/library/renders/{{ renders.sheet }}">Best 30 event photos</a>{% endif %}
+    {% if renders.buildings %}<a class="btn" href="/library/renders/{{ renders.buildings }}">Best 30 building photos</a>{% endif %}
+  </div>
+  <div class="muted">Made by the scanner after its last pass that found or sorted photos. For review only: nothing here is cleared or posted.</div>
+  {% else %}
+  <div class="muted">Not made yet. The scanner makes it after its next pass that finds or sorts photos.</div>
+  {% endif %}
+</div>
+{% if note %}<div class="card muted">{{ note }}</div>{% endif %}
 {% if not folders %}<div class="card muted">No folders yet. The scanner fills this in once Google Drive is signed in.</div>{% endif %}
 {% for f in folders %}
 <div class="card">
