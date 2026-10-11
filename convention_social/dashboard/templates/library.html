@@ -36,7 +36,7 @@
 
 {% elif view == 'folders' %}
 <h1>Folders</h1>
-<div class="card muted">Clear approves every photo in a folder, and the folders inside it unless you exclude one. Exclude keeps a whole folder out. Open a folder to pick photo by photo.</div>
+<div class="card muted">Approve all approves every photo in a folder (and the folders inside it), not only ones you picked; photos you marked Don't use stay out. To approve only some, open the folder and tap Use on each. Exclude keeps a whole folder out.</div>
 <div class="row" style="margin-bottom:12px">
   {% for key, label in [('events', 'Event folders'), ('cleared', 'Cleared'), ('all', 'All folders')] %}<a class="btn{{ ' primary' if show == key else '' }}" href="/library?view=folders&show={{ key }}">{{ label }}</a>{% endfor %}
 </div>
@@ -49,7 +49,7 @@
   <div class="muted">{{ f.path or '' }}</div>
   <div class="muted">{{ f.conv or 0 }} look like event photos, {{ f.image_count }} photos in all{% if f.minors %}, {{ f.minors }} set aside (may be under 18){% endif %}</div>
   <div class="row" style="margin-top:8px">
-    {% for state, label, cls in [('cleared', 'Clear', 'ok'), ('excluded', 'Exclude', 'danger'), ('not_cleared', 'Undecided', '')] if state != f.clearance %}
+    {% for state, label, cls in [('cleared', 'Approve all', 'ok'), ('excluded', 'Exclude', 'danger'), ('not_cleared', 'Undecided', '')] if state != f.clearance %}
     <form method="post" action="/library/folder/{{ f.drive_id }}/clearance" class="inline"><input type="hidden" name="state" value="{{ state }}"><input type="hidden" name="back" value="/library?view=folders&show={{ show }}#f-{{ f.drive_id }}"><button class="small {{ cls }}" type="submit">{{ label }}</button></form>
     {% endfor %}
     <a class="btn small" style="padding:6px 10px;min-height:0;font-size:14px" href="/library/folder/{{ f.drive_id }}">Open</a>

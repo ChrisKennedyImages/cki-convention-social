@@ -259,7 +259,8 @@ class Dashboard(IsolatedCase):
         self.assertIn(">Undo<", approved)
         folder = c.get(f"/library/folder/{fid}").text
         self.assertIn(f'href="/library?view=folders#f-{fid}"', folder)
-        self.assertIn("Clear this folder", folder)
+        self.assertIn("Approve all 1 photos", folder)
+        self.assertIn("not only the ones you picked", folder)
         c.post(f"/library/folder/{fid}/clearance", data={"state": "cleared", "back": f"/library/folder/{fid}"})
         self.assertEqual(db.one(self.conn, "SELECT clearance FROM drive_folders WHERE drive_id=?", (fid,))["clearance"], "cleared")
         r = c.post(f"/library/photo/{pid}/clearance", data={"state": "inherit", "back": "//elsewhere.example/x"}, follow_redirects=False)
@@ -275,3 +276,17 @@ class Dashboard(IsolatedCase):
             self.assertIn(f'class="on">{tab}</a>', tabs, path)
             if chip:
                 self.assertRegex(page, rf'<div class="chips">.*class="on">{chip}</a>', path)
+
+    def test_everything_live_in_one_tap_and_back(self):
+        """Chris, 2026-10-11: "Everything should be live now too so we can see the damn thing work!" """
+        from convention_social.core import settings
+        c = self.signed_in()
+        self.assertIn("Switch everything live", c.get("/agents").text)
+        r = c.post("/agents/all/dry-run", data={"state": "off"}, follow_redirects=False)
+        self.assertIn("now+LIVE", r.headers["location"])
+        self.assertTrue(all(not settings.dry_run(self.conn, a) for a in settings.AGENTS_WITH_DRY_RUN))
+        page = c.get("/agents").text
+        self.assertIn(f"{len(settings.AGENTS_WITH_DRY_RUN)} of {len(settings.AGENTS_WITH_DRY_RUN)} agents live", page)
+        self.assertNotIn("Switch everything live", page)
+        c.post("/agents/all/dry-run", data={"state": "on"})
+        self.assertTrue(all(settings.dry_run(self.conn, a) for a in settings.AGENTS_WITH_DRY_RUN))

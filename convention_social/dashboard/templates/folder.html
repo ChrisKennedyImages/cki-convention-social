@@ -4,9 +4,10 @@
 <h1>{{ folder.name }} <span class="badge {{ folder.clearance }}">{{ folder.clearance.replace('_',' ') }}</span></h1>
 <div class="muted" style="margin-bottom:10px">{{ folder.path or '' }}</div>
 <div class="card">
-  <div class="muted">{% if folder.clearance == 'cleared' %}Every photo in this folder is approved, except any you mark Don't use.{% elif folder.clearance == 'excluded' %}This whole folder is kept out.{% else %}Nothing here is used until you approve it: clear the whole folder, or tap Use on single photos.{% endif %}</div>
+  <div class="muted">{% if folder.clearance == 'cleared' %}Every photo in this folder is approved, except any you marked Don't use.{% elif folder.clearance == 'excluded' %}This whole folder is kept out, even photos you tapped Use on.{% else %}Nothing here is used until you approve it. To approve only some photos, tap Use on each and leave the folder as it is. Approve all approves every photo in the folder, not only the ones you picked; photos you marked Don't use stay out.{% endif %}</div>
+  {% if picked %}<div class="muted" style="margin-top:6px">You approved {{ picked }} photo{{ '' if picked == 1 else 's' }} here one by one.</div>{% endif %}
   <div class="row" style="margin-top:8px">
-  {% for state, label, cls in [('cleared', 'Clear this folder', 'ok'), ('excluded', 'Exclude this folder', 'danger'), ('not_cleared', 'Undecided', '')] if state != folder.clearance %}
+  {% for state, label, cls in [('cleared', 'Approve all ' ~ items|length ~ ' photos', 'ok'), ('excluded', 'Exclude this folder', 'danger'), ('not_cleared', 'Undecided', '')] if state != folder.clearance %}
     <form method="post" action="/library/folder/{{ folder.drive_id }}/clearance" class="inline"><input type="hidden" name="state" value="{{ state }}"><input type="hidden" name="back" value="/library/folder/{{ folder.drive_id }}"><button class="small {{ cls }}" type="submit">{{ label }}</button></form>
   {% endfor %}
   </div>

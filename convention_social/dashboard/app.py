@@ -503,7 +503,8 @@ def create_app() -> FastAPI:
                                "LEFT JOIN classifications c ON c.photo_id=p.id WHERE p.folder_id=? AND p.trashed=0 "
                                "ORDER BY COALESCE(c.quality,0) DESC, p.taken_at LIMIT 300", (fid,))
         items = [{**dict(p), "eligible": eligibility.is_candidate(conn, p["id"])} for p in photos]
-        return render(request, "folder.html", folder=f, items=items)
+        picked = sum(1 for p in photos if p["clearance"] == "cleared")
+        return render(request, "folder.html", folder=f, items=items, picked=picked)
 
     @app.post("/library/photo/{pid}/clearance")
     def photo_clearance(pid: int, user: str = Depends(require_user), conn=Depends(conn_dep), state: str = Form(...),
@@ -686,7 +687,9 @@ def create_app() -> FastAPI:
                          "last": dict(last) if last else None})
         errors = [dict(e) for e in db.rows(conn, "SELECT * FROM errors WHERE alerted=0 ORDER BY id DESC LIMIT 50")]
         kinds = [dict(k) for k in db.rows(conn, "SELECT kind, COUNT(*) AS n FROM errors WHERE alerted=0 GROUP BY kind ORDER BY n DESC")]
+        switches = [r for r in rows if r["dry_run"] is not None]
         return render(request, "agents.html", agents=rows, errors=errors, kinds=kinds, msg=request.query_params.get("msg", ""),
+                      live_n=sum(1 for r in switches if not r["dry_run"]), switch_n=len(switches),
                       ai_mtd=spend.month_to_date(conn), ai_cap=config.get_config().ai_monthly_cap_usd)
 
     @app.post("/agents/{name}/run")
@@ -702,6 +705,15 @@ def create_app() -> FastAPI:
                          stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
         log.close()
         return RedirectResponse(f"/agents?msg={name}+started.+Its+result+shows+here+when+it+ends.", status_code=303)
+
+    @app.post("/agents/all/dry-run")
+    def all_dry_run(user: str = Depends(require_user), conn=Depends(conn_dep), state: str = Form(...)):
+        """Chris, 2026-10-11: "Everything should be live now too so we can see the damn thing work!"
+        Every switch at once. Approve still gates every post, email and reply; the AI cap still holds."""
+        for name in settings.AGENTS_WITH_DRY_RUN:
+            settings.set_dry_run(conn, name, state != "off")
+        word = "dry+run" if state != "off" else "LIVE"
+        return RedirectResponse(f"/agents?msg=Every+agent+is+now+{word}.", status_code=303)
 
     @app.post("/agents/{name}/dry-run")
     def toggle_dry_run(name: str, user: str = Depends(require_user), conn=Depends(conn_dep), state: str = Form(...)):
