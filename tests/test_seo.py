@@ -22,10 +22,11 @@ from tests.test_banned_words import BANNED
 BASE = "https://eventcaliber.com"
 NS = "{http://www.sitemaps.org/schemas/sitemap/0.9}"
 IMG = "{http://www.google.com/schemas/sitemap-image/1.1}"
-GOOD = {"title": "Cosplay portrait at Katsucon 2025",
-        "alt": "Cosplayer in a red cape posing by a tall window at Katsucon 2025",
-        "description": "A cosplay portrait at Katsucon 2025. Event and convention photography by Event Caliber.",
-        "keywords": ["event photography", "cosplay portrait", "katsucon 2025", "anime convention photography"]}
+# Chris, 2026-10-11: no public text names the event or anyone in the photo (ai/names.py)
+GOOD = {"title": "Cosplay portrait at a fan convention",
+        "alt": "Cosplayer in a red cape posing by a tall window",
+        "description": "A cosplay portrait at a fan convention. Event and convention photography by Event Caliber.",
+        "keywords": ["event photography", "cosplay portrait", "fan convention photography", "anime convention photography"]}
 
 
 class Recorder:
@@ -188,10 +189,12 @@ class Template(SeoCase):
         r = self.row(pid)
         self.assert_public(r)
         self.assertEqual(r["model"], "template")
-        self.assertEqual(r["slug"], "cosplay-portrait-katsucon-2025")
-        self.assertEqual(r["title"], "Cosplay portrait at Katsucon 2025")
-        self.assertEqual(r["alt"], "Cosplay portrait of @kat.cos at Katsucon 2025")
-        self.assertNotIn("Jordan", r["alt"] + r["title"] + r["description"])
+        self.assertEqual(r["slug"], "cosplay-portrait-2025")
+        self.assertEqual(r["title"], "Cosplay portrait at a fan convention")
+        self.assertEqual(r["alt"], "Cosplay portrait at a fan convention")
+        everything = (r["slug"] + r["alt"] + r["title"] + r["description"] + r["keywords"]).lower()
+        for name in ("katsucon", "kat.cos", "jordan"):
+            self.assertNotIn(name, everything, "never which event, never who")
         kws = json.loads(r["keywords"])
         for k in ("event photography", "convention photography", "fan convention photography", "cosplay portrait",
                   "national harbor event photography"):
@@ -219,11 +222,11 @@ class Template(SeoCase):
     def test_slugs_are_unique_and_never_change(self):
         a, b = self.photo(), self.photo()
         photo_text.write_all(self.conn, dry_run=True)
-        self.assertEqual(self.row(a)["slug"], "cosplay-portrait-katsucon-2025")
-        self.assertEqual(self.row(b)["slug"], f"cosplay-portrait-katsucon-2025-{b}")
+        self.assertEqual(self.row(a)["slug"], "cosplay-portrait-2025")
+        self.assertEqual(self.row(b)["slug"], f"cosplay-portrait-2025-{b}")
         photo_text.write_all(self.conn, dry_run=False, client=FakeClaude())
         self.assertEqual(self.row(a)["model"], "claude-haiku-4-5")
-        self.assertEqual(self.row(a)["slug"], "cosplay-portrait-katsucon-2025")
+        self.assertEqual(self.row(a)["slug"], "cosplay-portrait-2025")
 
     def test_slugify(self):
         self.assertEqual(photo_text.slugify("Cosplay Portrait: Katsucon 2025!"), "cosplay-portrait-katsucon-2025")
@@ -268,7 +271,8 @@ class Writer(SeoCase):
         self.assertEqual(kw["model"], "claude-haiku-4-5")
         self.assertNotIn("thinking", kw)
         self.assertEqual(kw["output_config"]["format"]["type"], "json_schema")
-        self.assertIn("Event: Katsucon", kw["messages"][0]["content"])
+        self.assertIn("Kind of event: fan convention", kw["messages"][0]["content"])
+        self.assertNotIn("Katsucon", kw["messages"][0]["content"], "the writer is never told which event")
         usage = db.one(self.conn, "SELECT agent, cost_usd, detail FROM api_usage WHERE provider='anthropic'")
         self.assertIsNotNone(usage)
         self.assertEqual(usage["agent"], "seo")
@@ -293,6 +297,9 @@ class Writer(SeoCase):
             "address": {"alt": "Cosplayer outside 123 Main Street at Katsucon 2025"},
             "a name": {"alt": "Cosplayer Jane Doe posing at Katsucon 2025"},
             "a stranger's handle": {"alt": "Cosplay portrait of @someone.else at Katsucon 2025"},
+            "the event's name": {"title": "Cosplay portrait at Katsucon"},
+            "the conference Chris named": {"alt": "A speaker on the CPAC main stage"},
+            "a credited handle": {"alt": "Cosplay portrait of @kat.cos"},
         }
         for why, change in bad.items():
             with self.subTest(why):
@@ -308,10 +315,10 @@ class Writer(SeoCase):
     def test_a_dash_is_tidied_into_a_comma(self):
         pid = self.photo()
         photo_text.write_all(self.conn, dry_run=False,
-                             client=FakeClaude(answer={**GOOD, "title": "Cosplay portrait — Katsucon 2025"}))
+                             client=FakeClaude(answer={**GOOD, "title": "Cosplay portrait — fan convention"}))
         r = self.row(pid)
         self.assert_public(r)
-        self.assertEqual(r["title"], "Cosplay portrait, Katsucon 2025")
+        self.assertEqual(r["title"], "Cosplay portrait, fan convention")
 
     def test_keywords_cannot_bring_in_a_city_or_a_name(self):
         pid = self.photo()
@@ -319,7 +326,7 @@ class Writer(SeoCase):
             **GOOD, "keywords": ["baltimore cosplay", "jane doe", "katsucon 2025", "anime convention photography", "cosplay portrait"]}))
         kws = json.loads(self.row(pid)["keywords"])
         self.assertTrue(kws)
-        self.assertIn("katsucon 2025", kws)
+        self.assertFalse([k for k in kws if "katsucon" in k], "the event never comes back in through a keyword")
         self.assertIn("anime convention photography", kws)
         self.assertFalse([k for k in kws if "baltimore" in k or "jane" in k], kws)
         few = photo_text.merge_keywords(["event photography"], photo_text.gather(self.conn, pid))
@@ -367,11 +374,12 @@ class Writer(SeoCase):
         photo_text.write_all(self.conn, dry_run=True)
         before = self.row(pid)["alt"]
         for bad in ("Cosplay portrait, $40 prints", "Cosplay portrait — Katsucon", "x" * 130, "Cosplayer at 12 Oak Street",
-                    "Cosplay portrait of @nobody", ""):
+                    "Cosplay portrait of @nobody", "", "Cosplay portrait of @kat.cos in the Grand Ballroom",
+                    "Cosplay portrait at Katsucon", "Backstage at CPAC"):
             with self.subTest(bad):
                 self.assertTrue(photo_text.edit(self.conn, pid, alt=bad))
                 self.assertEqual(self.row(pid)["alt"], before)
-        self.assertIsNone(photo_text.edit(self.conn, pid, alt="Cosplay portrait of @kat.cos in the Grand Ballroom"))
+        self.assertIsNone(photo_text.edit(self.conn, pid, alt="Cosplay portrait in the Grand Ballroom"))
 
 
 # ------------------------------------------------------------------ the agent and the site check
@@ -489,7 +497,7 @@ class Dashboard(SeoCase):
         r = self.client.get("/seo")
         self.assertEqual(r.status_code, 200)
         self.assertIn("<main>", r.text)
-        self.assertIn("cosplay-portrait-katsucon-2025", r.text)
+        self.assertIn("cosplay-portrait-2025", r.text)
         self.assertIn("answered 500", r.text)
         ok = self.client.post(f"/seo/{pid}", data={"alt": "Cosplayer with a red cape by a tall window"}, follow_redirects=False)
         self.assertEqual(ok.status_code, 303)
@@ -497,7 +505,7 @@ class Dashboard(SeoCase):
         row = self.row(pid)
         self.assertEqual(row["alt"], "Cosplayer with a red cape by a tall window")
         self.assertIsNotNone(row["edited_at"])
-        self.assertEqual(row["title"], "Cosplay portrait at Katsucon 2025", "a blank title keeps the old one")
+        self.assertEqual(row["title"], "Cosplay portrait at a fan convention", "a blank title keeps the old one")
         refused = self.client.post(f"/seo/{pid}", data={"alt": "Prints from $40"}, follow_redirects=False)
         self.assertIn("msg=refused", refused.headers["location"])
         self.assertEqual(self.row(pid)["alt"], "Cosplayer with a red cape by a tall window")
@@ -516,3 +524,34 @@ class Dashboard(SeoCase):
 if __name__ == "__main__":
     import unittest
     unittest.main()
+
+
+class NoNames(SeoCase):
+    """Chris, 2026-10-11: "i want to make sure the captions don't say the specific event or person"."""
+
+    def test_text_written_before_the_rule_is_written_again_with_a_new_address(self):
+        named, kept, edited = self.photo(), self.photo(), self.photo()
+        now = db.utcnow()
+        for pid, slug, title in ((named, "cosplay-portrait-katsucon-2025", "Cosplay portrait at Katsucon 2025"),
+                                 (kept, "cosplay-portrait-2025-x", "Cosplay portrait at a fan convention")):
+            db.insert(self.conn, "photo_seo", photo_id=pid, slug=slug, title=title, alt=title, description=title,
+                      keywords=json.dumps(["event photography"] * 5), model="claude-haiku-4-5", written_at=now)
+        db.insert(self.conn, "photo_seo", photo_id=edited, slug="his-own-words", title="Chris wrote this", alt="Chris wrote this",
+                  description="Chris wrote this", keywords="[]", model="template", written_at=now, edited_at=now)
+        stats = photo_text.write_all(self.conn, dry_run=True)
+        self.assertEqual(stats["renamed"], 1)
+        r = self.row(named)
+        self.assertNotIn("katsucon", (r["slug"] + r["title"] + r["alt"]).lower())
+        self.assertEqual(self.row(kept)["slug"], "cosplay-portrait-2025-x", "text without a name keeps its address")
+        self.assertEqual(self.row(edited)["title"], "Chris wrote this")
+
+    def test_the_conference_chris_named_is_never_in_the_search_text(self):
+        pid = self.photo(event="CPAC 2025", kind="business", shot="stage_panel",
+                         summary="A speaker at the CPAC podium in front of an ACU banner.")
+        photo_text.write_all(self.conn, dry_run=False, client=FakeClaude(answer={
+            **GOOD, "alt": "A speaker at the CPAC podium", "keywords": ["cpac 2025", "conference photography", "stage and panel"]}))
+        r = self.row(pid)
+        everything = (r["slug"] + r["title"] + r["alt"] + r["description"] + r["keywords"]).lower()
+        self.assertTrue(everything)
+        for name in ("cpac", "acu", "conservative"):
+            self.assertNotIn(name, everything)

@@ -61,10 +61,19 @@ def pick_photos(conn: sqlite3.Connection, fetch: Callable[[dict], Image.Image]) 
     land = [r for r in events if (r["width"] or 0) > (r["height"] or 0)]
     out = SitePhotos()
     if land:
-        out.hero = [(fetch(land[0]), land[0]["summary"] or "Event photography")]
-    out.coverage = [(fetch(r), r["summary"] or "Event photography") for r in events[1:7]]
-    out.venues = [(fetch(r), r["summary"] or "Venue") for r in venues[:4]]
+        out.hero = [(fetch(land[0]), site_alt(land[0]))]
+    out.coverage = [(fetch(r), site_alt(r)) for r in events[1:7]]
+    out.venues = [(fetch(r), site_alt(r)) for r in venues[:4]]
     return out
+
+
+def site_alt(row: dict) -> str:
+    """Alt text from the kind of shot, never the sorter's own description, which may name the event or
+    a person (Chris, 2026-10-11: no public words say which event or who; ai/names.py)."""
+    from ..seo.photo_text import SHOT_WORDS
+    if row.get("subject") == "architecture":
+        return "Venue and architecture photography"
+    return SHOT_WORDS.get(row.get("shot_type") or "", "Event photography")
 
 
 def save_web(im: Image.Image, out_dir: Path, stem: str, meta: Optional[ImageMeta] = None) -> dict:

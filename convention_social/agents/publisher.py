@@ -27,7 +27,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
-from ..ai import copy_rules
+from ..ai import copy_rules, names
 from ..buffer import budget, media, payloads
 from ..buffer.client import BufferBudgetExceeded, BufferClient, BufferError, BufferRateLimited
 from ..core import db, runner, settings
@@ -149,8 +149,9 @@ def door(ctx: runner.Context, row) -> Optional[tuple[str, str]]:
     if captions is None:
         return "back", "The caption could not be read. Open the draft, fix it and approve again."
     official = is_official(ctx.conn, row["convention_id"])
+    known_names = names.public_names(ctx.conn)          # no event or person is named (ai/names.py)
     for net in targets_of(row):
-        report = copy_rules.check(captions.get(net, ""), official=official)
+        report = copy_rules.check(captions.get(net, ""), official=official, names=known_names)
         if not report.ok:
             return "back", f"The {net} caption no longer passes the rules: {report.blocks[0].message}. Fix it and approve again."
     ids = photo_ids_of(row)

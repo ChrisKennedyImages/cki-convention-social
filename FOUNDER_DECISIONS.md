@@ -231,6 +231,22 @@ only when Chris says so.
 - **Music in an .mp4.** An audio-only .mp4 is taken as a track; a file with no
   sound is refused (`music.py`).
 
+## 2026-10-11: never which event, never who
+
+- "Because A LOT of the images are ACU and CPAC (the same company) i want to
+  make sure the captions don't say the specific event or person." No public
+  word names the event, the organization behind it or any person, and no
+  @handle tags anyone: not the captions, not the line printed on the post
+  image, not the search fields inside the image files, not the website's photo
+  text. They say the kind of event (a conference, a fan convention) and what
+  the photo shows. The writers are never given the event's name or a credit;
+  the copy rules block every name the suite knows (the two Chris named, every
+  event name the sorting or the calendar recorded, everyone on the credits
+  sheet), and both Approve and the publisher's last check enforce it
+  (`ai/names.py`, `ai/copy_rules.py` rule `names`). Website text written
+  before this is written again. Private mail to an organizer about their own
+  event is not public copy and is not covered.
+
 ## Standing rules from the brief
 
 - Nothing publishes without Chris's Approve on the dashboard, until he says

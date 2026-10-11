@@ -80,7 +80,9 @@ class Content(IsolatedCase):
         self.assertEqual(sorted(renders), ["2:3", "4:5"])
         for paths in renders.values():
             self.assertEqual(meta.is_clean(Path(paths[0])), [])
-            self.assertIn(b"at Katsucon", Path(paths[0]).read_bytes())          # our SEO title travels in the file
+            data = Path(paths[0]).read_bytes()
+            self.assertIn(b"Event photography", data)                         # our SEO title travels in the file
+            self.assertNotIn(b"Katsucon", data)                               # never which event (2026-10-11)
         self.assertEqual(db.one(self.conn, "SELECT COUNT(*) n FROM api_usage WHERE provider='anthropic'")["n"], 0)
         from convention_social.library import eligibility
         self.assertEqual(eligibility.is_eligible(self.conn, self.ids["e1"]), (False, "not given the final check yet"))

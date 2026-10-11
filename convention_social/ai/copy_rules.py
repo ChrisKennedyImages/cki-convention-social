@@ -11,6 +11,8 @@ Blocks:
               "affiliated with", "trusted by", "clients include" and the like,
               unless the event is confirmed official (none are, 2026-10-09)
   promise     a claim the suite cannot stand behind ("guaranteed", "#1", "best in")
+  names       public copy only (callers pass `names`): the name of an event, the company behind it
+              or a person, or any @handle (Chris, 2026-10-11; ai/names.py)
 """
 from __future__ import annotations
 
@@ -52,8 +54,9 @@ class Report:
         return {"ok": self.ok, "blocks": [{"rule": b.rule, "message": b.message} for b in self.blocks]}
 
 
-def check(text: str, *, official: bool = False, allow_price: bool = False) -> Report:
-    """`allow_price` only for a private quote reply Chris wrote the price into himself; never for public copy."""
+def check(text: str, *, official: bool = False, allow_price: bool = False, names=None) -> Report:
+    """`allow_price` only for a private quote reply Chris wrote the price into himself; never for public copy.
+    `names` (ai/names.public_names) for public copy: no event, company or person is named in it."""
     report = Report()
     text = text or ""
     m = None if allow_price else PRICE.search(text)
@@ -67,4 +70,9 @@ def check(text: str, *, official: bool = False, allow_price: bool = False) -> Re
     m = PROMISE.search(text)
     if m:
         report.blocks.append(Block("promise", f"makes a claim the company cannot back ({m.group(0)!r})"))
+    if names is not None:
+        from .names import mentions
+        hit = mentions(text, names)
+        if hit:
+            report.blocks.append(Block("names", f"names {hit[0]!r}; say what kind of event it was, never which one or who is in it"))
     return report

@@ -30,6 +30,7 @@ from fastapi.templating import Jinja2Templates
 
 from ..agents import AGENTS, is_built
 from ..ai import copy_rules, spend
+from ..ai import names as ai_names
 from ..ai.claude import NETWORKS
 from ..buffer import payloads as buffer_payloads
 from ..buffer.client import BufferBudgetExceeded, BufferClient, BufferError, BufferRateLimited
@@ -159,7 +160,8 @@ def queue_view(conn, row) -> dict:
     captions = json.loads(row["caption"] or "{}")
     targets = json.loads(row["targets"] or "[]")
     official = official_for(conn, row)
-    reports = {n: copy_rules.check(captions.get(n, ""), official=official) for n in NETWORKS}
+    known_names = ai_names.public_names(conn)
+    reports = {n: copy_rules.check(captions.get(n, ""), official=official, names=known_names) for n in NETWORKS}
     photo_ids = json.loads(row["photo_ids"] or "[]")
     photo_checks = [(pid, *eligibility.is_eligible(conn, int(pid))) for pid in photo_ids]
     renders = json.loads(row["render_paths"] or "{}")
