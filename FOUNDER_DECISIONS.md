@@ -268,6 +268,17 @@ only when Chris says so.
   template, which meets the plan by construction, stands in (`ai/seo_plan.py`,
   `agents/content.py` `write_captions`). Pins link to the quote page.
 
+## 2026-10-11: the mock ups make themselves
+
+- "Where are the mock ups with the approved images". The design samples on
+  Chris's approved photos are made by themselves: the hourly scanner starts
+  them whenever the approved photos they would use change. The Design card
+  (Photos, Design) always says what happened: being made, ready, or not made
+  and why, with how many approved photos are ready and how many the sorter
+  still has to look at (it does approved photos first). A failure is also on
+  the Agents page. The samples use every approved photo, not four per event
+  (`render/design_samples.py` `auto`, `cli.py` `cmd_design`).
+
 ## Standing rules from the brief
 
 - Nothing publishes without Chris's Approve on the dashboard, until he says

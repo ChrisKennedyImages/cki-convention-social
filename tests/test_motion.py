@@ -24,6 +24,8 @@ def shots(photos=True):
                         "One plain line about this room.") for i, room in enumerate(ROOMS)]
 
 
+REAL_START = design_samples.start_in_background       # the real one; the test base stubs it in every test
+
 class Stage(IsolatedCase):
     def test_a_flat_card_lands_where_it_is_placed_at_its_own_size(self):
         face = Image.new("RGBA", (200, 300), (255, 0, 0, 255))
@@ -190,10 +192,14 @@ class LibraryPage(IsolatedCase):
 
     def test_the_button_starts_the_designer_and_the_page_serves_only_its_files(self):
         self.assertIn("Make design samples", self.client.get("/library?view=design").text)
-        with mock.patch("convention_social.dashboard.app.subprocess.Popen") as popen:
+        with mock.patch.object(design_samples, "start_in_background") as start:
             r = self.client.post("/library/design", follow_redirects=False)
-        self.assertEqual(r.status_code, 303)
+        self.assertEqual((r.status_code, start.call_count), (303, 1))
+        self.assertIn("Being made now", self.client.get(r.headers["location"]).text)
+        with mock.patch("subprocess.Popen") as popen:
+            REAL_START()
         self.assertEqual(popen.call_args[0][0][-2:], ["convention_social.cli", "design"])
+        self.assertTrue(popen.call_args[1]["start_new_session"])
         folder = config.get_config().data_root / "renders" / "design-20261011-1800"
         folder.mkdir(parents=True)
         (folder / "index.html").write_text("<p>samples</p>")

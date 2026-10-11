@@ -94,7 +94,7 @@ def strength(r) -> float:
     return max(0.0, score * 10 / 15)
 
 
-def best(conn: sqlite3.Connection, n: int = 30, *, subject: str = "event") -> list[sqlite3.Row]:
+def best(conn: sqlite3.Connection, n: int = 30, *, subject: str = "event", cap: int | None = PER_EVENT_CAP) -> list[sqlite3.Row]:
     """The strongest frames, at most PER_EVENT_CAP per event, never a possible minor.
 
     `subject` is "event" for convention work or "architecture" for Chris's building work. The
@@ -111,7 +111,7 @@ def best(conn: sqlite3.Connection, n: int = 30, *, subject: str = "event") -> li
     picked, per = [], Counter()
     for r in rows:
         key = (r["convention_name"] if subject != "architecture" else None) or r["folder_id"]
-        if per[key] >= PER_EVENT_CAP:
+        if cap is not None and per[key] >= cap:
             continue
         per[key] += 1
         picked.append(r)

@@ -24,8 +24,10 @@ class IsolatedCase(unittest.TestCase):
             os.environ.pop(key, None)
         config.reset()
         # the Mini keeps real keys in the Keychain and runs a real Ollama: no test may reach either
+        # nor may a test start the designer in the background (each test that means to watch it patches it again)
         for target, value in (("convention_social.core.secrets._keychain", None),
-                              ("convention_social.library.classify.ollama_model", None)):
+                              ("convention_social.library.classify.ollama_model", None),
+                              ("convention_social.render.design_samples.start_in_background", None)):
             patcher = mock.patch(target, return_value=value)
             patcher.start()
             self.addCleanup(patcher.stop)

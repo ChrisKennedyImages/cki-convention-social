@@ -55,9 +55,14 @@ def run(ctx: runner.Context, reader: DriveReader | None = None) -> str:
         credit_note = f"credits: {res.matched}/{res.rows} matched"
         if res.unmatched:
             settings.set(ctx.conn, "credits.unmatched", "; ".join(res.unmatched)[:2000])
+    try:
+        from ..render import design_samples
+        design_note = design_samples.auto(ctx.conn)
+    except Exception as e:  # noqa: BLE001  the samples never fail the scan
+        design_note = f"design samples: {type(e).__name__}: {e}"
     return (f"{'full' if full else 'changes'}: {stats.line()}; folder-sorted {sorted_free}; "
             f"vision {vision.done} done {vision.failed} failed{(' (' + vision.stopped + ')') if vision.stopped else ''}; "
-            f"{report_note}; {credit_note}")
+            f"{report_note}; {credit_note}; {design_note}")
 
 
 def refresh_report(conn, reader: DriveReader, *, changed: bool, log=None) -> str:

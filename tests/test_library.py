@@ -678,6 +678,7 @@ class ScannerAgent(IsolatedCase):
         reports = sorted((config.get_config().data_root / "renders").glob("library-report-*.html"))
         self.assertEqual(len(reports), 1, line)
         self.assertIn(f"report: {reports[0].name}", line)
+        self.assertIn("design samples:", line, "the scanner also looks after the design samples")
         self.assertTrue(reports[0].read_text().strip())
         line2 = scanner.run(ctx, reader=DriveReader("tok", conn=conn, transport=drive))
         self.assertIn("report: up to date", line2)

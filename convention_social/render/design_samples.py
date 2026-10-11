@@ -20,7 +20,7 @@ from typing import Callable, Optional
 
 from PIL import Image
 
-from ..core import config, db
+from ..core import config, db, settings
 from ..library import eligibility, report
 from .. import music
 from . import motion
@@ -42,6 +42,90 @@ ROOMS = {
 }
 OTHER = ("ON THE FLOOR", "Every room of the event, covered.")
 FOLDER_PREFIX = "design-"
+STATUS_FILE = "design-status.json"       # in DATA_ROOT/renders: what the designer did last, for the Design card
+LAST_SET_KEY = "designer.last_set"
+STALE_RUNNING = 45 * 60                  # a "running" status older than this was a run that died
+MIN_PHOTOS = 3
+
+
+# ------------------------------------------------------------------ what Chris sees on the Design card
+# Chris, 2026-10-11: "Where are the mock ups with the approved images". The samples are made by
+# themselves whenever the approved photos they would use change (the hourly scanner starts them), and
+# the Design card always says what happened: being made, ready, or why not.
+
+def _status_path() -> Path:
+    return config.get_config().data_root / "renders" / STATUS_FILE
+
+
+def write_status(state: str, message: str, **extra) -> None:
+    path = _status_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"state": state, "message": message, "at": datetime.now().isoformat(timespec="seconds"), **extra}))
+
+
+def read_status() -> dict:
+    try:
+        st = json.loads(_status_path().read_text())
+    except (OSError, ValueError):
+        return {}
+    if st.get("state") == "running":
+        try:
+            if (datetime.now() - datetime.fromisoformat(st["at"])).total_seconds() > STALE_RUNNING:
+                return {**st, "state": "failed", "message": "the last run stopped before it finished; it starts again on its own"}
+        except (KeyError, ValueError):
+            pass
+    return st
+
+
+def waiting_for_sort(conn) -> int:
+    """Approved photos (by the photo or its folder) the sorter has not looked at yet; it does these first."""
+    cleared = [(fid,) for fid, d in eligibility.folder_decisions(conn).items() if d == "cleared"]
+    conn.execute("CREATE TEMP TABLE IF NOT EXISTS cleared_folder (drive_id TEXT PRIMARY KEY)")
+    conn.execute("DELETE FROM temp.cleared_folder")
+    conn.executemany("INSERT INTO temp.cleared_folder VALUES (?)", cleared)
+    return db.one(conn, """SELECT COUNT(*) AS n FROM photos p LEFT JOIN classifications c ON c.photo_id = p.id
+                           WHERE p.trashed = 0 AND COALESCE(c.method, '') NOT IN ('ollama', 'vision')
+                             AND (p.clearance = 'cleared'
+                                  OR (p.clearance = 'inherit' AND p.folder_id IN (SELECT drive_id FROM temp.cleared_folder)))""")["n"]
+
+
+def readiness(conn) -> dict:
+    """{ready: approved photos the designs can use now, waiting: approved photos still to be sorted}."""
+    return {"ready": len(pick(conn, 400)), "waiting": waiting_for_sort(conn)}
+
+
+def too_few(r: dict) -> str:
+    more = f"; {r['waiting']} more approved are waiting for the sorter, which does approved photos first" if r["waiting"] else \
+        "; approve more on the Photos page"
+    return f"only {r['ready']} approved photo(s) are ready for designs (sorted, nobody who may be under 18), {MIN_PHOTOS} are needed{more}"
+
+
+def start_in_background() -> None:
+    """`ccs design` on its own (its own lock: a second start while one runs does nothing). The output
+    goes to logs/designer.log; what happened goes to the status file the Design card reads."""
+    import subprocess
+    import sys
+    cfg = config.get_config()
+    cfg.ensure_dirs()
+    with open(cfg.data_root / "logs" / "designer.log", "ab") as log:
+        subprocess.Popen([sys.executable, "-m", "convention_social.cli", "design"], cwd=str(config.REPO_ROOT),
+                         stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
+
+
+def auto(conn) -> str:
+    """For the hourly scanner: new samples whenever the approved photos they would use have changed."""
+    rows = pick(conn, 6)
+    if len(rows) < MIN_PHOTOS:
+        return "design samples: " + too_few(readiness(conn))
+    if read_status().get("state") == "running":
+        return "design samples: being made"
+    key = ",".join(sorted(r["drive_id"] for r in rows))
+    if settings.get(conn, LAST_SET_KEY) == key:
+        return "design samples: up to date"
+    settings.set(conn, LAST_SET_KEY, key)
+    write_status("running", "being made on your newest approved photos")
+    start_in_background()
+    return "design samples: started on the newest approved photos"
 
 
 def usable(conn, row) -> bool:
@@ -60,7 +144,8 @@ def usable(conn, row) -> bool:
 def pick(conn, n: int = 6) -> list:
     """Up to n of the frames Chris approved, one per room first so the samples show the range.
     Chris, 2026-10-11: "if it's not approved then don't use it yet or at all"."""
-    rows = [r for r in report.best(conn, 400) if eligibility.clearance_of(conn, r) == "cleared" and usable(conn, r)]
+    # every approved photo counts here, not four per event: most of the work Chris approved can be from one
+    rows = [r for r in report.best(conn, 400, cap=None) if eligibility.clearance_of(conn, r) == "cleared" and usable(conn, r)]
     picked, rooms = [], set()
     for r in rows:
         room = ROOMS.get(r["shot_type"] or "", OTHER)[0]
@@ -80,9 +165,8 @@ def pick(conn, n: int = 6) -> list:
 def make(conn, fetch: Callable[[str], bytes], *, out_root: Optional[Path] = None, n: int = 6,
          reels: bool = True, log: Callable[[str], None] = print) -> Path:
     rows = pick(conn, n)
-    if len(rows) < 3:
-        raise RuntimeError(f"only {len(rows)} approved photo(s) are ready (sorted, nobody who may be under 18); "
-                           "approve at least 3 on the Photos page")
+    if len(rows) < MIN_PHOTOS:
+        raise RuntimeError(too_few(readiness(conn)))
     shots = []
     for r in rows:
         room, line = ROOMS.get(r["shot_type"] or "", OTHER)
