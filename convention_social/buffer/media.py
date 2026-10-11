@@ -58,6 +58,11 @@ def card_key(queue_id: int, aspect: str, index: int = 1) -> str:
     return f"{KEY_PREFIX}/cards/{queue_id}-{aspect.replace(':', '')}-{index}.jpg"
 
 
+def reel_key(queue_id: int, what: str = "video") -> str:
+    """A draft's reel (mp4) or its cover (jpg)."""
+    return f"{KEY_PREFIX}/reels/{queue_id}-{what}{'.mp4' if what == 'video' else '.jpg'}"
+
+
 def public_url(key: str) -> str:
     base = worker()["base"] or settings()["public_base"] or PLACEHOLDER_BASE
     return f"{base}/{key}"

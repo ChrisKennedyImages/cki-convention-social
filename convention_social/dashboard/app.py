@@ -149,6 +149,9 @@ def official_for(conn, row) -> bool:
     return bool(c and c["official"])
 
 
+NOT_THUMBS = ("9:16", "cover", "stills")   # a reel plays as a video with its cover; the stills are for the art director
+
+
 def queue_view(conn, row) -> dict:
     captions = json.loads(row["caption"] or "{}")
     targets = json.loads(row["targets"] or "[]")
@@ -164,7 +167,11 @@ def queue_view(conn, row) -> dict:
     return {**dict(row), "art": art, "captions": captions, "targets": targets, "reports": reports, "official": official,
             "blocked_networks": [n for n in targets if not reports[n].ok],
             "photo_checks": photo_checks, "ineligible": [c for c in photo_checks if not c[1]],
-            "renders": {a: list(range(1, len(ps) + 1)) for a, ps in renders.items()}}
+            "video": any(str(x).lower().endswith(".mp4") for x in renders.get("9:16") or []), "cover": bool(renders.get("cover")),
+            "renders": {a: list(range(1, len(ps) + 1)) for a, ps in renders.items() if a not in NOT_THUMBS}}
+
+
+MEDIA_TYPES = {".mp4": "video/mp4", ".png": "image/png"}
 
 
 def load_queue_row(conn, qid: int):
@@ -347,7 +354,7 @@ def create_app() -> FastAPI:
         paths = json.loads(row["render_paths"] or "{}").get(aspect.replace("x", ":"), [])
         if not 1 <= index <= len(paths) or not inside_data_root(Path(paths[index - 1])):
             raise HTTPException(404)
-        return FileResponse(paths[index - 1], media_type="image/jpeg")
+        return FileResponse(paths[index - 1], media_type=MEDIA_TYPES.get(Path(paths[index - 1]).suffix.lower(), "image/jpeg"))
 
     @app.get("/media/thumb/{photo_id}")
     def media_thumb(photo_id: int, user: str = Depends(require_user), conn=Depends(conn_dep)):

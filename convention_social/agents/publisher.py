@@ -7,7 +7,10 @@ For each targeted network there must be a connected row in `channels`
 PINTEREST_BOARD_ID. Each network gets its own time from pacing.py unless
 Chris chose one on the draft. Media: the rendered design for the network's
 aspect (render_paths {aspect: [paths]}: instagram and facebook 4:5,
-pinterest 2:3), else the photo's own local copy.
+pinterest 2:3), else the photo's own local copy. A reel (render_paths "9:16"
+holds an mp4, "cover" its cover) goes to Instagram and Facebook as a video
+post whose fields are read from Buffer's live schema first
+(BufferClient.video_asset_fields); Pinterest still gets the 2:3 card.
 
 Dry run (the default): the exact payloads are stored on the row, status
 becomes 'would_publish', nothing is uploaded or sent. Live: media uploaded,
@@ -35,6 +38,13 @@ TERMINAL_OK = {"sent"}
 TERMINAL_BAD = {"error"}
 ASPECT_FOR = {"instagram": "4:5", "facebook": "4:5", "pinterest": "2:3"}
 POSTABLE_SUFFIXES = {".jpg", ".jpeg", ".png"}
+VIDEO_ASPECT = "9:16"
+# A dry run asks Buffer nothing, so it builds the reel with the two fields a video asset is expected to
+# carry and says so on the row; a live run reads the real fields from Buffer before anything is uploaded.
+ASSUMED_VIDEO_FIELDS = [{"name": "url", "type": "String", "required": True},
+                        {"name": "thumbnailUrl", "type": "String", "required": False}]
+DRY_REEL_NOTE = ("Dry run: the reel was built without asking Buffer for its video fields (url and thumbnailUrl "
+                 "assumed). A live run reads them from Buffer before anything is uploaded.")
 ELIGIBILITY_MODULE = "convention_social.library.eligibility"
 
 NO_CHANNELS = "No connected Buffer channel for any network on this post. Connect them in Buffer, then this goes out on the next run."
@@ -230,6 +240,33 @@ def media_urls(ctx: runner.Context, row, networks: list[str], *, live: bool, upl
     return out
 
 
+def reel_files(row) -> Optional[tuple[Path, Optional[Path]]]:
+    """(the reel's mp4, its cover or None) when the row is a reel, else None."""
+    rendered = render_paths_of(row)
+    videos = [p for p in rendered.get(VIDEO_ASPECT) or [] if isinstance(p, str) and p.lower().endswith(".mp4")]
+    if not videos:
+        return None
+    covers = [p for p in rendered.get("cover") or [] if isinstance(p, str)]
+    return Path(videos[0]), (Path(covers[0]) if covers else None)
+
+
+def reel_urls(row, fields: list[dict], *, live: bool, uploader=None) -> tuple[str, str]:
+    """(video url, cover url or ""): uploaded when live, else the URLs a live run would produce. The
+    asset is checked against `fields` with those URLs first, so a refusal uploads nothing."""
+    video, cover = reel_files(row)
+    if not video.exists():
+        raise media.MediaError(f"the reel's video is missing ({video.name}); draft it again")
+    if cover is not None and not cover.exists():
+        cover = None
+    keys = (media.reel_key(row["id"], "video"), media.reel_key(row["id"], "cover"))
+    would = (media.public_url(keys[0]), media.public_url(keys[1]) if cover else "")
+    payloads.video_asset(fields, *would)
+    if not live:
+        return would
+    up = uploader or media.upload
+    return up(video, keys[0]), (up(cover, keys[1]) if cover else "")
+
+
 # ------------------------------------------------------------------ publishing
 
 def usable_networks(ctx: runner.Context, row) -> tuple[dict[str, dict], dict[str, str]]:
@@ -261,6 +298,26 @@ def build_payloads(ctx: runner.Context, row, channels: dict[str, dict], urls: di
     return built
 
 
+def build_all(ctx: runner.Context, row, channels: dict[str, dict], when: dict[str, Optional[str]], *, live: bool,
+              uploader=None, video_fields=None) -> dict[str, dict]:
+    """Every network's CreatePostInput, in channel order. On a reel row Instagram and Facebook get the
+    video; `video_fields()` returns the video asset's fields (live: read from Buffer) and is asked before
+    any upload, so a schema this code cannot fill stops the post with nothing uploaded."""
+    reel_nets = [n for n in channels if n in payloads.REEL_NETWORKS] if reel_files(row) else []
+    image_nets = {n: ch for n, ch in channels.items() if n not in reel_nets}
+    if reel_nets:
+        fields = video_fields() if live else ASSUMED_VIDEO_FIELDS
+        video_url, cover_url = reel_urls(row, fields, live=live, uploader=uploader)
+    built = build_payloads(ctx, row, image_nets, media_urls(ctx, row, list(image_nets), live=live, uploader=uploader),
+                           when) if image_nets else {}
+    if reel_nets:
+        captions = captions_of(row) or {}
+        for net in reel_nets:
+            built[net] = payloads.build_reel(net, channels[net]["buffer_channel_id"], captions.get(net, ""),
+                                             video_url, cover_url, fields, scheduled_for=when.get(net))
+    return {n: built[n] for n in channels}
+
+
 def publish_ready(ctx: runner.Context, client: Optional[BufferClient] = None, uploader=None,
                   now: Optional[datetime] = None) -> dict:
     live = not ctx.dry_run
@@ -276,6 +333,14 @@ def publish_ready(ctx: runner.Context, client: Optional[BufferClient] = None, up
         if uploader is None and not media.configured():
             record_once(ctx.conn, ctx.agent, "media_missing", "publisher is LIVE but image hosting is not configured; nothing sent")
             return stats
+    fields_read: list = []
+
+    def video_fields() -> list[dict]:
+        """Buffer's video asset fields, read once per run (two schema requests)."""
+        if not fields_read:
+            fields_read.append(client.video_asset_fields())
+        return fields_read[0]
+
     for row in rows:
         stop = door(ctx, row)
         if stop:
@@ -307,11 +372,12 @@ def publish_ready(ctx: runner.Context, client: Optional[BufferClient] = None, up
         post_ids: dict[str, str] = {}
         built: dict[str, dict] = {}
         try:
-            urls = media_urls(ctx, row, list(channels), live=live, uploader=uploader)
-            built = build_payloads(ctx, row, channels, urls, when)
+            built = build_all(ctx, row, channels, when, live=live, uploader=uploader, video_fields=video_fields)
             if not live:
+                note = " ".join(x for x in (skip_note, DRY_REEL_NOTE if any(n in payloads.REEL_NETWORKS for n in built)
+                                            and reel_files(row) else None) if x) or None
                 ctx.conn.execute("UPDATE content_queue SET status='would_publish', payload=?, dry_run=1, last_error=?, updated_at=? WHERE id=?",
-                                 (json.dumps(built), skip_note, db.utcnow(), row["id"]))
+                                 (json.dumps(built), note, db.utcnow(), row["id"]))
                 stats["would_publish"] += 1
                 ctx.log.info("DRY RUN post %s -> %s (not sent)", row["id"], ", ".join(built))
                 continue

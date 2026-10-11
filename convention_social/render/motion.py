@@ -18,7 +18,8 @@ Pieces built from them:
   fan_post         a hook post: the hand of photos
   facematch_post   the three folders
 
-Every word passes ai.copy_rules first. Nothing here is wired to an agent until Chris approves it.
+Every word passes ai.copy_rules first. The daily draft (agents/content.py) uses these; a reel only once
+a music track is on (music.py), and nothing leaves without Chris's Approve.
 """
 from __future__ import annotations
 
@@ -693,7 +694,10 @@ def _render(frame: Callable[[int], Image.Image], total: int, out: Path, encoder,
                 img.save(Path(frames_dir) / f"f{i:03d}.jpg", quality=85)
             yield img
 
-    return (encoder or encode)(frames(), out)
+    if encoder:
+        return encoder(frames(), out)
+    # the track rides the reel: faded out over the reel's own last second and a half, not a fixed 15 s
+    return encode(frames(), out, audio=audio, seconds=(len(only) if only is not None else total) / FPS)
 
 
 ROOMS_TIMING = (40, 30, 24, 66, 140)                   # deal, each room, fan to ring, spin, end card
@@ -706,3 +710,33 @@ def total_frames(kind: str, n: int = 6) -> int:
         deal, room, morph, spin, end = ROOMS_TIMING
         return deal + room * n + morph + spin + end
     return sum(FACEMATCH_TIMING)
+
+
+REELS = {"rooms": rooms_reel, "facematch": facematch_reel}
+
+
+def still_frames(kind: str, n: int) -> tuple[int, ...]:
+    """The cover first (the first room opened out; the photos landing on one person), then the
+    stills the art director looks at: the second room and the ring, or the organizer's choice."""
+    if kind == "rooms":
+        deal, room, morph, spin, _ = ROOMS_TIMING
+        return (deal + 20, deal + room + 20, deal + room * n + morph + spin - 10)
+    badge, scan, fields, selfie, stream, _, _ = FACEMATCH_TIMING
+    return (badge + scan + fields + selfie + 100, badge + scan + fields + selfie + stream + 40)
+
+
+def reel_stills(kind: str, shots: Sequence[Shot], copy: MotionCopy, *, out_dir: Path, official: bool = False,
+                meta: Optional[ImageMeta] = None) -> list[Path]:
+    """The reel's cover and stills, drawn by the reel's own frame code (not cut from the mp4), saved
+    as JPEGs with the company's metadata. The cover is first."""
+    picks = still_frames(kind, len(shots))
+    out_dir = Path(out_dir)
+    saved: list[Path] = []
+
+    def keep(frames, _out):
+        for i, img in zip(picks, frames):
+            saved.append(save(img, out_dir / f"{kind}-{i:03d}.jpg", meta))
+        return _out
+
+    REELS[kind](shots, copy, out=out_dir / "unused.mp4", official=official, only=picks, encoder=keep)
+    return saved

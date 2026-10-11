@@ -11,7 +11,7 @@
 3. The final check: the full-size photo is downloaded (read only) and Claude
    looks once more; a photo that fails is skipped and the next one is tried.
 4. Captions (ai/claude.py), the day's design from the motion set (render/motion.py:
-   spotlight, single, carousel, fan or face match; see DESIGNS), and a draft row. Nothing leaves: the publisher sends only what Chris
+   spotlight, single, carousel, fan, face match or a reel; see DESIGNS), and a draft row. Nothing leaves: the publisher sends only what Chris
    approves.
 
 Dry run (the default): no paid call at all. The draft gets template captions
@@ -35,6 +35,7 @@ from ..core import config, db, runner
 from ..library import classify, eligibility
 
 from . import art_director, learner
+from .. import music
 from ..render import meta as image_meta
 
 try:                                    # HEIC originals from a phone
@@ -109,14 +110,36 @@ def kicker_for(row: dict) -> str:
 # Chris, 2026-10-11: "Switch to new designs and it's ok to use 1 photo too sometimes." One design a
 # day from the motion set (render/motion.py); a building day is always a single photo. A day whose
 # design needs more approved photos than pass the final check falls back to a single photo.
+# "Let's get the music and everything working (video format too)": Saturday is a reel once a music
+# track is on (music.py); with none it stays a single photo, never a silent reel.
 DESIGNS = {"monday": "spotlight", "tuesday": "single", "wednesday": "single", "thursday": "carousel",
-           "friday": "fan", "saturday": "single", "sunday": "facematch"}
-NEEDS = {"single": 1, "facematch": 1, "spotlight": 3, "carousel": 4, "fan": 5}      # fewest photos the design takes
-TAKES = {"single": 1, "facematch": 1, "spotlight": 5, "carousel": 6, "fan": 7}      # most
+           "friday": "fan", "saturday": "reel", "sunday": "facematch"}
+NEEDS = {"single": 1, "facematch": 1, "spotlight": 3, "carousel": 4, "fan": 5, "reel": 4}      # fewest photos
+TAKES = {"single": 1, "facematch": 1, "spotlight": 5, "carousel": 6, "fan": 7, "reel": 6}      # most
 
 
-def design_for(day: date, subject: str) -> str:
-    return "single" if subject == "architecture" else DESIGNS[WEEKDAYS[day.weekday()]]
+def design_for(day: date, subject: str, has_music: bool = False) -> str:
+    if subject == "architecture":
+        return "single"
+    design = DESIGNS[WEEKDAYS[day.weekday()]]
+    return "single" if design == "reel" and not has_music else design
+
+
+def reel_kind(day: date) -> str:
+    """The two reels take turns by week: the rooms one week, face match the next."""
+    return "rooms" if day.isocalendar()[1] % 2 else "facematch"
+
+
+def rooms_first(pool: list) -> list:
+    """Best first, but one photo per room before any room repeats, so a post of several photos
+    shows the range of the coverage (the rooms reel names a room per photo)."""
+    from ..render import design_samples
+    seen, first, rest = set(), [], []
+    for r in pool:
+        room = design_samples.ROOMS.get(r.get("shot_type") or "", design_samples.OTHER)[0]
+        (rest if room in seen else first).append(r)
+        seen.add(room)
+    return first + rest
 
 
 def shot_for(row: dict, image: Image.Image, focus=(0.5, 0.45)):
@@ -148,7 +171,10 @@ def draft_one(ctx: runner.Context, fetch: Callable[[dict], bytes], *, now: Optio
         pool = candidates(ctx.conn, kind_used)
     if not pool:
         return f"no photo ready for {day}: clear folders on the Library page (nothing drafted)"
-    design = design_for(day, kind_used)
+    track = music.current(ctx.conn)
+    design = design_for(day, kind_used, track is not None)
+    if TAKES[design] > 1:
+        pool = rooms_first(pool)
     chosen: list[tuple[dict, bytes]] = []
     for row in pool[:TAKES[design] + MAX_TRIES - 1]:
         data = fetch(row)
@@ -194,15 +220,33 @@ def draft_one(ctx: runner.Context, fetch: Callable[[dict], bytes], *, now: Optio
     kicker = kicker if copy_rules_ok else ""                 # a name read off a photo never stops the draft
     tag = f"{hero['id']}-{design}"
 
+    reel_failed: list[str] = []
+
+    def single(focus, aspects=("4:5", "2:3")):
+        shot = shot_for(hero, images[hero["id"]], focus)
+        return {a: [str(motion.single_post(shot, copy, out=out_dir / f"{tag}-{a.replace(':', '')}.jpg", aspect=a,
+                                           kicker=kicker, meta=seo))] for a in aspects}
+
     def render(focus):
         if design == "single":
-            shot = shot_for(hero, images[hero["id"]], focus)
-            return {a: [str(motion.single_post(shot, copy, out=out_dir / f"{tag}-{a.replace(':', '')}.jpg", aspect=a,
-                                               kicker=kicker, meta=seo))] for a in ("4:5", "2:3")}
+            return single(focus)
         shots = [shot_for(r, images[r["id"]]) for r, _ in chosen]
+        if design == "reel" and not reel_failed:
+            # Instagram and Facebook get the reel (render_paths "9:16"), with its cover; Pinterest the
+            # hero as a 2:3 card; the art director looks at the cover and the stills, never the mp4
+            kind = reel_kind(day)
+            try:
+                video = motion.REELS[kind](shots, copy, out=out_dir / f"{tag}-{kind}.mp4", audio=track)
+                stills = motion.reel_stills(kind, shots, copy, out_dir=out_dir / f"{tag}-stills", meta=seo)
+            except Exception as e:  # noqa: BLE001  a reel that cannot be made leaves a carousel of the same photos, said why
+                reel_failed.append(f"{type(e).__name__}: {e}")
+                runner.record_error(ctx.conn, ctx.agent, "reel", f"the {kind} reel for {day} was not made: {e}")
+            else:
+                return {"9:16": [str(video)], "cover": [str(stills[0])], **single(focus, ("2:3",)),
+                        "stills": [str(p) for p in stills[1:]]}
         if design == "facematch":
             return {"4:5": [str(motion.facematch_post(shots, copy, out=out_dir / f"{tag}.jpg", meta=seo))]}
-        if design == "carousel":
+        if design in ("carousel", "reel"):        # the reel's fallback takes the same 4 to 6 photos
             return {"4:5": [str(p) for p in motion.carousel(shots, copy, out_dir=out_dir / tag, meta=seo)]}
         ordered = middle_first(shots, shots[0])
         mid = ordered.index(shots[0])
@@ -212,6 +256,8 @@ def draft_one(ctx: runner.Context, fetch: Callable[[dict], bytes], *, now: Optio
 
     render_paths, art = art_director.direct(ctx.conn, render, dry_run=ctx.dry_run, client=art_client, agent=ctx.agent,
                                             allow_redo=design == "single", max_files=4)
+    if reel_failed:
+        design = "carousel"
     photo_ids = [r["id"] for r, _ in chosen]
     if art.get("verdict") == "reject":
         # the photos do not hold up: they sit out like used ones, and the next run drafts again
@@ -230,11 +276,16 @@ def draft_one(ctx: runner.Context, fetch: Callable[[dict], bytes], *, now: Optio
     meta = {"for_day": day.isoformat(), "subject": hero["subject"], "event": hero.get("convention_name") or "",
             "people": people, "model": draft.model, "rules": reports, "wanted": want, "art": art, "design": design,
             "design_wanted": asked}
+    if design == "reel":
+        meta.update(reel=reel_kind(day), music=track.name)
+    if reel_failed:
+        meta["reel_failed"] = reel_failed[0]
     now_s = db.utcnow()
     qid = db.insert(ctx.conn, "content_queue", kind="photo", photo_ids=json.dumps(photo_ids), targets=json.dumps(list(TARGETS)),
                     caption=json.dumps(draft.captions), render_paths=json.dumps(render_paths), rule_report=json.dumps(meta),
                     created_at=now_s, updated_at=now_s)
-    fell = f", {asked} wanted but too few photos passed" if asked != design else ""
+    fell = (f", the reel could not be made ({reel_failed[0]})" if reel_failed
+            else f", {asked} wanted but too few photos passed" if asked != design else "")
     return (f"{'DRY RUN ' if ctx.dry_run else ''}drafted post #{qid} for {day} ({kind_used}"
             f"{', instead of ' + want if kind_used != want else ''}): {design} with {len(photo_ids)} photo(s){fell}, "
             f"photo {hero['id']} first, captions by {draft.model}, art director: {art.get('verdict')}")

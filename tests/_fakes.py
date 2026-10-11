@@ -20,11 +20,26 @@ from tests._photos import jpeg_bytes
 CHANNEL_IDS = {"instagram": "ch-ig", "facebook": "ch-fb", "pinterest": "ch-pin"}
 
 
+def field(name, type_name, required=False, kind="INPUT_OBJECT"):
+    """One inputField as GraphQL introspection gives it (a required field is wrapped in NON_NULL)."""
+    named = {"kind": kind, "name": type_name, "ofType": None}
+    return {"name": name, "type": {"kind": "NON_NULL", "name": None, "ofType": named} if required else named}
+
+
+# A stand-in for Buffer's schema, for the tests only: the live one is read by BufferClient.video_asset_fields.
+SCHEMA = {
+    "AssetInput": [field("image", "ImageAssetInput"), field("video", "VideoAssetInput"), field("document", "DocumentAssetInput")],
+    "VideoAssetInput": [field("url", "String", True, "SCALAR"), field("thumbnailUrl", "String", False, "SCALAR"),
+                        field("metadata", "VideoMetadataInput")],
+}
+
+
 class FakeBuffer:
     """Canned GraphQL responses keyed by operation name; records every request."""
 
     def __init__(self, *, status_sequence=None, reject_at=(), http_status=200, retry_after=None,
-                 disconnected=(), error_message="Image could not be fetched"):
+                 disconnected=(), error_message="Image could not be fetched", schema=None):
+        self.schema = schema if schema is not None else SCHEMA
         self.calls = []
         self.created = []
         self.status_sequence = list(status_sequence or ["scheduled", "sent"])
@@ -46,6 +61,10 @@ class FakeBuffer:
             return Response(429, {"Retry-After": str(self.retry_after or 42)}, {})
         if self.http_status >= 400:
             return Response(self.http_status, {}, {"message": "boom"})
+        if "InputType" in op:
+            name = payload["variables"]["name"]
+            fields = self.schema.get(name)
+            return Response(200, {}, {"data": {"__type": None if fields is None else {"name": name, "inputFields": fields}}})
         if "Organizations" in op:
             return Response(200, {}, {"data": {"account": {"organizations": [{"id": "org-1", "name": "Event Caliber"}]}}})
         if "PinterestBoards" in op:

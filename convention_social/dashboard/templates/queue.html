@@ -17,6 +17,7 @@
     <span class="badge {{ it.status }}">{{ it.status.replace('_',' ') }}</span>
     {% if it.scheduled_for %}<span class="muted">{{ it.scheduled_for.replace('T',' ') }}</span>{% endif %}
   </div>
+  {% if it.video %}<video class="reel" src="/media/render/{{ it.id }}/9x16/1"{% if it.cover %} poster="/media/render/{{ it.id }}/cover/1"{% endif %} controls playsinline muted loop preload="metadata"></video>{% endif %}
   {% if it.renders %}<div class="thumbs" style="margin:10px 0">{% for aspect, idx in it.renders.items() %}{% for i in idx %}<img src="/media/render/{{ it.id }}/{{ aspect.replace(':','x') }}/{{ i }}" alt="">{% endfor %}{% endfor %}</div>{% endif %}
   <div class="caption">{{ it.captions.get('instagram') or (it.captions.values()|list)[0] if it.captions else '' }}</div>
   <div class="row" style="margin-top:10px">

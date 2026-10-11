@@ -16,6 +16,11 @@ on 2026-10-09 (schema only; no post was created):
   channel (PinterestMetadata.boards); BufferClient.pinterest_boards(channel_id)
   reads it, and it goes in PINTEREST_BOARD_ID.
 
+REELS (2026-10-11): a reel is assets [{video: {...}}] with metadata type "reel" on Instagram and
+Facebook. The video asset's fields are not written here from memory: the publisher asks the live
+schema (BufferClient.video_asset_fields) before building one, and build_reel refuses any required
+field it does not know how to fill. Pinterest gets the reel's cover as an image pin.
+
 BEFORE ARMING PINTEREST: the field NAMES above match the live schema, but no pin
 has been created through this code yet. Whether Buffer requires boardServiceId
 in practice, how it treats a title over Pinterest's 100 characters, and whether
@@ -108,4 +113,46 @@ def build(network: str, channel_id: str, text: str, image_urls: list[str], *,
         if link:
             pin["url"] = link
         inp["metadata"] = {"pinterest": pin}
+    return inp
+
+
+REEL_NETWORKS = ("instagram", "facebook")
+# what this code can fill in a video asset, by the field names the live schema uses
+VIDEO_FILLS = {"url": "video", "thumbnailUrl": "cover", "thumbnail": "cover", "coverUrl": "cover"}
+
+
+def video_asset(fields: list[dict], video_url: str, cover_url: str) -> dict:
+    """The video asset, filled by the field names the live schema gives ([{name, required}]). A
+    required field this code cannot fill, or no url field at all, stops the reel."""
+    names = {f["name"]: f for f in fields}
+    if "url" not in names:
+        raise PayloadError("Buffer's video asset has no url field; no reel can be built")
+    asset = {}
+    for name, f in names.items():
+        what = VIDEO_FILLS.get(name)
+        if what == "video":
+            asset[name] = video_url
+        elif what == "cover" and cover_url:
+            asset[name] = cover_url
+        elif f.get("required"):
+            raise PayloadError(f"Buffer's video asset needs {name!r}, which this code does not fill; the reel stays unposted")
+    return asset
+
+
+def build_reel(network: str, channel_id: str, text: str, video_url: str, cover_url: str, fields: list[dict], *,
+               scheduled_for: Optional[str] = None) -> dict:
+    """One CreatePostInput for a reel. `fields` is the video asset's input type as the live schema
+    gives it (BufferClient.video_asset_fields)."""
+    if network not in REEL_NETWORKS:
+        raise PayloadError(f"{network} takes no reel here")
+    asset = video_asset(fields, video_url, cover_url)
+    due = due_at_utc(scheduled_for)
+    inp: dict = {"channelId": channel_id, "text": text, "assets": [{"video": asset}], "schedulingType": "automatic",
+                 "mode": "customScheduled" if due else "shareNow", "tagIds": [], "needsApproval": False}
+    if due:
+        inp["dueAt"] = due
+    if network == "instagram":
+        inp["metadata"] = {"instagram": {"type": "reel", "shouldShareToFeed": True}}
+    else:
+        inp["metadata"] = {"facebook": {"type": "reel"}}
     return inp
