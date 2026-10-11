@@ -141,6 +141,8 @@ def usable(conn, row) -> bool:
         return False
     if (row["shot_type"] if "shot_type" in row.keys() else None) in eligibility.NOT_OFFERED:
         return False                     # a costume photo, which Event Caliber does not offer
+    if (row["event_kind"] if "event_kind" in row.keys() else None) in eligibility.NOT_OFFERED_KINDS:
+        return False                     # a wedding or a private occasion (Chris, 2026-10-11)
     return not any(c["consent"] == "no" for c in eligibility.credits_for(conn, photo))
 
 

@@ -49,21 +49,51 @@ class SiteCopyRefused(ValueError):
     pass
 
 
-def pick_photos(conn: sqlite3.Connection, fetch: Callable[[dict], Image.Image]) -> SitePhotos:
-    """Postable photos only: event work for the hero and the grid, building work for venues."""
+HERO_ROWS, COVERAGE_ROWS, VENUE_ROWS = 1, 6, 4
+RECHECKS = 12                 # Claude calls one site build may spend asking what kind of occasion a photo is from
+
+
+def pick_photos(conn: sqlite3.Connection, fetch: Callable[[dict], Image.Image],
+                recheck: Optional[Callable[[dict, Image.Image], Optional[dict]]] = None) -> SitePhotos:
+    """Postable photos only: event work for the hero and the grid, building work for venues. Each photo
+    is judged on its own: the strongest frame first (sharp, lit, a moment), a known conference or
+    convention before an unknown kind, and never a wedding or a private occasion (Chris, 2026-10-11:
+    "The main photo when you open the website is from a damn wedding! That one needs to be the best of
+    the best"). `recheck` gives Claude's final check to a photo it has not yet judged for that, up to
+    RECHECKS per build; without it such a photo waits."""
+    from ..library import report
     rows = db.rows(conn, """
-        SELECT p.*, c.subject, c.quality, c.shot_type, c.convention_name, c.summary FROM photos p
-        JOIN classifications c ON c.photo_id=p.id WHERE p.trashed=0 AND c.subject IN ('event','architecture')
-        ORDER BY COALESCE(c.quality,0) DESC, p.width DESC LIMIT 400""")
-    ok = [dict(r) for r in rows if eligibility.is_eligible(conn, r["id"])[0]]
-    events = [r for r in ok if r["subject"] == "event"]
-    venues = [r for r in ok if r["subject"] == "architecture"]
+        SELECT p.*, c.subject, c.quality, c.sharp, c.light, c.moment, c.event_kind, c.shot_type, c.convention_name, c.summary
+        FROM photos p JOIN classifications c ON c.photo_id=p.id WHERE p.trashed=0 AND c.subject IN ('event','architecture')
+        ORDER BY COALESCE(c.quality,0) DESC, p.width DESC LIMIT 600""")
+    rows = sorted((dict(r) for r in rows), key=lambda r: (0 if r["event_kind"] in ("fan", "business") else 1,
+                                                          -report.strength(r), -(r["width"] or 0)))
+    out, images, rechecks = SitePhotos(), {}, 0
+    events: list[dict] = []
+    venues: list[dict] = []
+    for r in rows:
+        if len(events) >= HERO_ROWS + COVERAGE_ROWS and len(venues) >= VENUE_ROWS:
+            break
+        if (r["subject"] == "event" and len(events) >= HERO_ROWS + COVERAGE_ROWS) or \
+           (r["subject"] == "architecture" and len(venues) >= VENUE_ROWS):
+            continue
+        if not eligibility.is_candidate(conn, r["id"])[0]:
+            continue
+        if recheck is not None and rechecks < RECHECKS and eligibility.needs_kind_check(conn, r["id"]):
+            rechecks += 1
+            images[r["id"]] = fetch(r)
+            if recheck(r, images[r["id"]]) is None:
+                continue                                    # Claude could not look: not used
+        if not eligibility.is_eligible(conn, r["id"])[0]:
+            continue
+        (events if r["subject"] == "event" else venues).append(r)
     land = [r for r in events if (r["width"] or 0) > (r["height"] or 0)]
-    out = SitePhotos()
     if land:
-        out.hero = [(fetch(land[0]), site_alt(land[0]))]
-    out.coverage = [(fetch(r), site_alt(r)) for r in events[1:7]]
-    out.venues = [(fetch(r), site_alt(r)) for r in venues[:4]]
+        hero = land[0]
+        out.hero = [(images.get(hero["id"]) or fetch(hero), site_alt(hero))]
+        events = [r for r in events if r is not hero]
+    out.coverage = [(images.get(r["id"]) or fetch(r), site_alt(r)) for r in events[:COVERAGE_ROWS]]
+    out.venues = [(images.get(r["id"]) or fetch(r), site_alt(r)) for r in venues[:VENUE_ROWS]]
     return out
 
 

@@ -365,6 +365,22 @@ only when Chris says so.
   the Saturday reel is the rooms reel. The website keeps the coverage list
   from `offer.json` that he saw go live; whether that stays is his to say.
 
+## 2026-10-11: never a wedding; every photo judged on its own
+
+- "The main photo when you open the website is from a damn wedding! That one
+  needs to be the best of the best and not a wedding! Don't get stuck on
+  certain photos. They get judge individually not against anything but
+  itself." The local sorter had called a wedding reception an event. Now the
+  sorter and Claude's final check both say what kind of occasion a photo is
+  from (fan, business, wedding, private, unknown); a wedding or a private
+  occasion is never a candidate, never eligible, never in the samples, never
+  offered for review. The website picks each photo on its own merit: the
+  strongest frame first (sharp, lit, a moment), a known conference or
+  convention before an unknown kind; a photo Claude has not yet judged for
+  its kind gets that check during the site build, up to twelve a build. The
+  live daily draft re-checks every photo it picks, so a wedding never reaches
+  a post either.
+
 ## Standing rules from the brief
 
 - Nothing publishes without Chris's Approve on the dashboard, until he says

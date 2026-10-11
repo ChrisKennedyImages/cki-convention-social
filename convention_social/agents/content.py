@@ -216,6 +216,8 @@ def draft_one(ctx: runner.Context, fetch: Callable[[dict], bytes], *, now: Optio
                 continue
             if verdict.get("shot_type") in classify.SHOT_TYPES:
                 row["shot_type"] = verdict["shot_type"]       # what the photo shows, by the model that looked at it in full
+            if verdict.get("event_kind") in classify.KINDS and verdict["event_kind"] != "unknown":
+                row["event_kind"] = verdict["event_kind"]     # and what kind of occasion, likewise
         chosen.append((row, data))
         if len(chosen) >= TAKES[design]:
             break

@@ -49,6 +49,8 @@ def folder_chain(conn: sqlite3.Connection, folder_id: str | None) -> list[sqlite
 # Chris, 2026-10-11: "We are going to NOT do ANY COSPLAY ... erase that from everything". The sorter still
 # tells costume photos apart, only so that none is ever used or offered for review.
 NOT_OFFERED = ("cosplay_portrait",)
+NOT_OFFERED_KINDS = ("wedding", "private")     # Chris, 2026-10-11: "not a wedding!"; Event Caliber does conventions and conferences
+NOT_OFFERED_KIND_WHY = "a wedding or a private occasion: Event Caliber photographs conventions and conferences"
 
 
 def clearance_of(conn: sqlite3.Connection, photo: sqlite3.Row) -> str:
@@ -166,12 +168,14 @@ def is_candidate(conn: sqlite3.Connection, photo_id: int) -> tuple[bool, str]:
     for c in credits_for(conn, photo):
         if c["consent"] == "no":
             return False, "the credits sheet says no consent"
-    cls = db.one(conn, "SELECT possible_minor, personal_details, subject, space, residential, empty_room, shot_type "
+    cls = db.one(conn, "SELECT possible_minor, personal_details, subject, space, residential, empty_room, shot_type, event_kind "
                        "FROM classifications WHERE photo_id=?", (photo_id,))
     if cls is None or cls["possible_minor"] is None:
         return False, "not checked for minors yet"
     if cls["shot_type"] in NOT_OFFERED:
         return False, "a costume photo: Event Caliber does no cosplay"
+    if cls["event_kind"] in NOT_OFFERED_KINDS:
+        return False, NOT_OFFERED_KIND_WHY
     if cls["subject"] == "architecture":
         why = building_blocked(cls)
         if why:
@@ -192,11 +196,13 @@ def is_eligible(conn: sqlite3.Connection, photo_id: int) -> tuple[bool, str]:
     ok, why = is_candidate(conn, photo_id)
     if not ok:
         return ok, why
-    fc = db.one(conn, "SELECT possible_minor, personal_details FROM final_checks WHERE photo_id=?", (photo_id,))
+    fc = db.one(conn, "SELECT possible_minor, personal_details, event_kind FROM final_checks WHERE photo_id=?", (photo_id,))
     if fc is None:
         return False, "not given the final check yet"
     if fc["possible_minor"] != 0:
         return False, "the final check says someone may be under 18"
+    if fc["event_kind"] in NOT_OFFERED_KINDS:
+        return False, "the final check says " + NOT_OFFERED_KIND_WHY
     try:
         details = json.loads(fc["personal_details"] or "[]")
     except ValueError:
@@ -206,6 +212,14 @@ def is_eligible(conn: sqlite3.Connection, photo_id: int) -> tuple[bool, str]:
     if details:
         return False, "the final check found personal details: " + ", ".join(map(str, details))
     return True, "ok"
+
+
+def needs_kind_check(conn: sqlite3.Connection, photo_id: int) -> bool:
+    """True when Claude has not yet said what kind of occasion this event photo is from: no final check,
+    or one from before the question existed (2026-10-11). The site build and every live draft ask then."""
+    row = db.one(conn, "SELECT c.subject, f.event_kind FROM classifications c LEFT JOIN final_checks f ON f.photo_id = c.photo_id "
+                       "WHERE c.photo_id=?", (photo_id,))
+    return bool(row) and row["subject"] != "architecture" and row["event_kind"] is None
 
 
 def eligible_photo_ids(conn: sqlite3.Connection, ids) -> list[int]:

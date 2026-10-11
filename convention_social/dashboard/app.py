@@ -271,6 +271,7 @@ VIEWS = {
     # no readable personal detail (temp.hidden_photo). Strongest first.
     "review": (f"p.trashed = 0 AND {SORTED} AND c.possible_minor = 0 AND {DECISION} = 'not_cleared' "
                "AND COALESCE(c.shot_type, '') NOT IN ('cosplay_portrait') "
+               "AND COALESCE(c.event_kind, '') NOT IN ('wedding', 'private') "
                "AND p.id NOT IN (SELECT id FROM temp.hidden_photo)",
                f"({STRENGTH}) DESC, p.id"),
     # Everything Chris cleared, by the photo itself or by its folder. Sorted ones first, strongest first.
