@@ -2,6 +2,11 @@
 
 Only fires when NTFY_TOPIC is set and the caller is live; dry runs and test
 processes never reach the network. Email remains the alert of record.
+
+What pings Chris (2026-10-11, "I haven't received any ntfy"): a post ready to
+approve (the content agent), a post that went out (the publisher), the
+watchdog's alerts, the morning brief, and the test button on the Keys page.
+Each one opens the right dashboard page when tapped.
 """
 from __future__ import annotations
 
@@ -17,12 +22,24 @@ def _ascii(text: str) -> str:
     return text.replace("·", "-").replace("–", "-").replace("—", "-").encode("ascii", "ignore").decode().strip()
 
 
-def push(title: str, message: str, *, dry_run: bool = True, priority: str = "high", transport=None,
-         click: str | None = None) -> bool:
-    """`click` is the address the phone opens when the notification is tapped."""
+def link(path: str = "/") -> str:
+    """The dashboard address Chris opens from his phone (DASHBOARD_PUBLIC_URL), else the Mini's own."""
     cfg = config.get_config()
-    if not cfg.ntfy_topic or dry_run or ("unittest" in sys.modules and transport is None):
-        return False
+    base = cfg.dashboard_public_url or f"http://127.0.0.1:{cfg.dashboard_port}"
+    return base + path
+
+
+def push_result(title: str, message: str, *, dry_run: bool = True, priority: str = "high", transport=None,
+                click: str | None = None) -> str:
+    """Sends, and says what happened: "sent", or why nothing was. `click` is the address the phone
+    opens when the notification is tapped."""
+    cfg = config.get_config()
+    if not cfg.ntfy_topic:
+        return "no ntfy topic is set (Keys page, Phone alerts)"
+    if dry_run:
+        return "dry run: nothing sent"
+    if "unittest" in sys.modules and transport is None:
+        return "no push from a test"
     try:
         if transport is None:
             import requests
@@ -31,6 +48,12 @@ def push(title: str, message: str, *, dry_run: bool = True, priority: str = "hig
         if click:
             headers["Click"] = click
         r = transport(f"{NTFY_URL}/{cfg.ntfy_topic}", data=message.encode("utf-8"), headers=headers)
-        return getattr(r, "status_code", 200) < 300
-    except Exception:  # noqa: BLE001
-        return False
+        code = getattr(r, "status_code", 200)
+        return "sent" if code < 300 else f"ntfy answered {code}"
+    except Exception as e:  # noqa: BLE001
+        return f"could not reach ntfy ({type(e).__name__}: {e})"
+
+
+def push(title: str, message: str, *, dry_run: bool = True, priority: str = "high", transport=None,
+         click: str | None = None) -> bool:
+    return push_result(title, message, dry_run=dry_run, priority=priority, transport=transport, click=click) == "sent"

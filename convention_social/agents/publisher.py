@@ -30,7 +30,7 @@ from typing import Optional
 from ..ai import copy_rules, names
 from ..buffer import budget, media, payloads
 from ..buffer.client import BufferBudgetExceeded, BufferClient, BufferError, BufferRateLimited
-from ..core import db, runner, settings
+from ..core import db, notify, runner, settings
 from . import pacing
 
 READY_SQL = "SELECT * FROM content_queue WHERE status = 'approved' ORDER BY COALESCE(approved_at, created_at), id"
@@ -491,6 +491,8 @@ def verify_scheduled(ctx: runner.Context, client: Optional[BufferClient] = None)
         else:
             ctx.conn.execute("UPDATE content_queue SET status='published', published_at=?, updated_at=? WHERE id=?", (now, now, row["id"]))
             stats["published"] += 1
+            notify.push(f"{ctx.cfg.brand_name}: posted", f"Post {row['id']} went out on {', '.join(infos)}. Tap to see it.",
+                        dry_run=ctx.dry_run, priority="default", click=notify.link(f"/queue/{row['id']}"))
     return stats
 
 

@@ -279,6 +279,15 @@ only when Chris says so.
   the Agents page. The samples use every approved photo, not four per event
   (`render/design_samples.py` `auto`, `cli.py` `cmd_design`).
 
+## 2026-10-11: what pings the phone
+
+- "I haven't received any ntfy." Until now only the watchdog's alerts and the
+  morning brief pinged. Now a post ready to approve pings with a link to the
+  draft, a post that went out pings with a link to it, and the Keys page has a
+  Send a test ping button that says whether the ping was sent or why not
+  (`core/notify.py`, `agents/content.py`, `agents/publisher.py`). A ping needs
+  `NTFY_TOPIC` on the Keys page and the agent live; the watchdog still pings
+  failures within the hour.
 ## 2026-10-11: what the first real alerts found
 
 - The watchdog's first pings (4:38 PM) named two faults. The dashboard ran out
