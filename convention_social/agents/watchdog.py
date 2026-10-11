@@ -160,14 +160,19 @@ def check_agents(ctx: runner.Context, f: Findings, now: datetime) -> None:
     for name, gap in MAX_GAP.items():
         if name == ctx.agent or not is_built(name):
             continue
-        last = db.one(ctx.conn, "SELECT started_at, ok FROM agent_runs WHERE agent=? ORDER BY id DESC LIMIT 1", (name,))
+        last = db.one(ctx.conn, "SELECT started_at, finished_at, ok FROM agent_runs WHERE agent=? ORDER BY id DESC LIMIT 1", (name,))
         if not last:
             f.note(f"{name} has never run.")
             continue
         started = parse_ts(last["started_at"])
         if started and now - started > gap:
-            f.alert(f"agent_missed:{name}", f"{name} last ran {started.astimezone(ZoneInfo(ctx.cfg.timezone)).strftime('%b %d %H:%M')}. "
-                                            f"It should run {AGENTS[name]['schedule']}.")
+            when = started.astimezone(ZoneInfo(ctx.cfg.timezone)).strftime('%b %d %H:%M')
+            if last["finished_at"] is None and last["ok"] is None:
+                # still going, or died without finishing: either way the hourly work is not happening
+                f.alert(f"agent_stuck:{name}", f"{name} started {when} and has not finished. It should run {AGENTS[name]['schedule']}; "
+                                               "a run this long is stuck or has far too much to do.")
+            else:
+                f.alert(f"agent_missed:{name}", f"{name} last ran {when}. It should run {AGENTS[name]['schedule']}.")
         elif last["ok"] == 0:
             f.note(f"{name} failed on its last run. See the errors list.")
 

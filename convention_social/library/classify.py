@@ -25,6 +25,7 @@ import base64
 import io
 import json
 import sqlite3
+import time
 from dataclasses import dataclass
 from typing import Callable, Optional
 
@@ -358,16 +359,24 @@ save_vision = lambda conn, photo, data, model: save_sort(conn, photo, data, "vis
 
 
 def sort_pass(conn: sqlite3.Connection, fetch_thumb: Callable[[str], bytes], *, limit: int = 200,
-              sorter=None, classifier=None, log=None) -> PassStats:
+              sorter=None, classifier=None, log=None, budget_seconds: Optional[float] = None,
+              clock: Callable[[], float] = time.monotonic) -> PassStats:
+    """`budget_seconds` ends the pass in time for the next hourly run (the free sorter takes about
+    half a minute a photo, so 500 photos was four hours in which nothing else of the scanner's ran,
+    2026-10-11); what is left is sorted next hour, approved folders first."""
     stats = PassStats()
     sorter = sorter or classifier or pick_sorter(conn)
     if sorter is None:
         stats.stopped = "no sorter: Ollama has no vision model and no ANTHROPIC_API_KEY is set"
         return stats
     stats.sorter = f"{sorter.method}:{sorter.model}"
+    started = clock()
     for photo in queue(conn, limit):
         if sorter.paid() and spend.cap_reached(conn):
             stats.stopped = "monthly AI spend cap reached"
+            break
+        if budget_seconds is not None and clock() - started >= budget_seconds:
+            stats.stopped = f"the {int(budget_seconds // 60)} minute budget for this run; the rest next hour"
             break
         hint = (f"Folder suggests: {photo['folder_subject'] or 'nothing'}, "
                 f"{photo['folder_event'] or 'no event name'} ({photo['folder_kind'] or 'unknown'}).")

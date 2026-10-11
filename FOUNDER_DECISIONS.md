@@ -279,6 +279,20 @@ only when Chris says so.
   the Agents page. The samples use every approved photo, not four per event
   (`render/design_samples.py` `auto`, `cli.py` `cmd_design`).
 
+## 2026-10-11: what the first real alerts found
+
+- The watchdog's first pings (4:38 PM) named two faults. The dashboard ran out
+  of file handles on the Photos tab (macOS gives a background process 256; 48
+  previews at once need more): every process now raises its own limit at
+  start, a preview is fetched from Drive once however many requests ask, at
+  most six fetches run at a time, and the file is written whole before anyone
+  reads it (`core/limits.py`, `dashboard/app.py` `cached_thumb`). The scanner's
+  free sort pass ran for hours (about half a minute a photo, 500 a run) and
+  nothing else of its hourly work happened meanwhile: a run now stops after
+  `SCAN_BUDGET_MINUTES` (45) and sorts the rest next hour, approved folders
+  first; the watchdog says "started … and has not finished" for a run still
+  going, not "last ran" (`library/classify.py` `sort_pass`, `agents/watchdog.py`).
+
 ## Standing rules from the brief
 
 - Nothing publishes without Chris's Approve on the dashboard, until he says
