@@ -114,7 +114,9 @@ class Site(IsolatedCase):
             self.assertNotIn("political", page.lower(), rel)
         for rel in ("index.html", "about/index.html"):            # the quote form's kind-of-event choice may still say it
             self.assertNotIn("fan convention", (out / rel).read_text().lower(), rel)
-        self.assertIn("what moves the quote".title().lower(), (out / "book/index.html").read_text().lower())
+        book = (out / "book/index.html").read_text()
+        self.assertIn("What moves the quote", book)
+        self.assertLess(book.index('<option value="business">'), book.index('<option value="fan">'), "a conference is the first choice, never a fan convention")
         js = (out / "assets/site.js").read_text()
         self.assertIn("setTimeout(()=>{web.style.transition='opacity 1.6s ease';web.style.opacity='0'", js, "the web fades after six seconds")
         self.assertIn("live=!done&&es[0].isIntersecting", js)
