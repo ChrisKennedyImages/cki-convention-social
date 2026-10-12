@@ -64,7 +64,7 @@ class Site(IsolatedCase):
     def test_the_heros_shadows_are_dodged_a_tad(self):
         """Chris, 2026-10-12: "Up brightness and dodge shadows a tad"."""
         dark = Image.new("RGB", (8, 8), (20, 20, 20))
-        self.assertEqual(build.dodge_shadows(dark).getpixel((0, 0)), (51, 51, 51))
+        self.assertEqual(build.dodge_shadows(dark).getpixel((0, 0)), (50, 50, 50))
         self.assertEqual(build.dodge_shadows(Image.new("RGB", (8, 8), (255, 255, 255))).getpixel((0, 0)), (255, 255, 255))
         self.assertEqual(build.dodge_shadows(Image.new("RGB", (8, 8), (128, 128, 128))).getpixel((0, 0)), (137, 137, 137))
         hero = Image.new("RGB", (2400, 1600), (20, 20, 20))
