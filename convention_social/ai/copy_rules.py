@@ -13,7 +13,8 @@ Blocks:
   promise     a claim the suite cannot stand behind ("guaranteed", "#1", "best in")
   names       public copy only (callers pass `names`): the name of an event, the company behind it
               or a person, or any @handle (Chris, 2026-10-11; ai/names.py)
-  claims      anything about how the company works that Chris has not stated: what a service
+  claims      anything about how the company works that Chris has not stated ("within 24 hours" is his
+              stated reply promise, 2026-10-12, and passes): what a service
               includes or comes with, what anyone leaves with, how long anything takes, packages,
               turnaround. Chris, 2026-10-11, on a draft that said conference photography "includes
               portraits like this one, shot on site in a few minutes": "Suite wide - NOTHING
@@ -48,7 +49,7 @@ PROMISE = re.compile(r"\bguarantee(?:d|s)?\b|#1\b|\bnumber one\b|\bbest in\b|\ba
 CLAIMS = re.compile(
     r"\binclud(?:e|es|ed|ing|ive)\b|\bcomes?\s+with\b|\bcame\s+with\b|\bleaves?\s+with\b|\bleft\s+with\b|\bwalks?\s+away\s+with\b"
     r"|\bpackages?\b|\bbundles?\b|\badd[- ]ons?\b|\bturnaround\b|\bunlimited\b|\b(?:same|next)[- ]day\b"
-    r"|\bwithin\s+(?:minutes|hours|an?\s+(?:hour|day|week)|\d+)\b|\bin\s+(?:a\s+few\s+|just\s+|under\s+)?minutes\b",
+    r"|\bwithin\s+(?!24\s+hours\b)(?:minutes|hours|an?\s+(?:hour|day|week)|\d+)\b|\bin\s+(?:a\s+few\s+|just\s+|under\s+)?minutes\b",
     re.IGNORECASE,
 )
 OFFER = re.compile(

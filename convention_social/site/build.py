@@ -235,18 +235,28 @@ def copy_text() -> dict:
     o = offer.load()
     return {
         "title": f"{o['company']}: {o['tagline']}",
-        # Chris, 2026-10-12: no "fan conventions" on the main page; instant delivery is never front and center
-        "lede": "Conventions, conferences, galas and award dinners, photographed room by room.",
+        # Chris, 2026-10-12: the site is the two of them, in their own voice; no "fan conventions" on the main page;
+        # instant delivery is never front and center; one of them writes back within 24 hours
+        "lede": ("We've photographed conventions, conferences, galas and award dinners for more than thirty years each, "
+                 "room by room, across the country. Tell us about your event and one of us will write back within 24 hours."),
+        "who": "One of us is at every event. The event is staffed with our photographers, and we shoot when we're needed.",
+        "about": ("We're Chris and Nic Kennedy, brothers, and we have photographed events for more than thirty years each.\n\n"
+                  "We learned on film. Both of us studied photography at the Corcoran in Washington, DC, where our father taught "
+                  "and had graduated before us. Nic finished in 1999, Chris in 2002. Many of the events in our early years were "
+                  "shot on film, and we developed and printed our own black-and-white work in a large darkroom at home.\n\n"
+                  "Today we photograph conventions, conferences, galas and award dinners across the country, room by room. "
+                  "We are based in Washington, DC and travel wherever the event is.\n\n"
+                  "Tell us about your event and one of us will write back within 24 hours."),
         "coverage_p": "Tell us which rooms matter. Coverage is planned around your schedule, and every event is quoted on its own.",
         "deliver_p": ("Attendees scan the code on their badge or on a poster, fill in three short fields and take a quick selfie. "
                       "Every photo they are in is sent to them right away, from every photographer, with no wires. "
                       "You decide before the event: open to every attendee, or kept to staff, each getting only the photos they need."),
         "steps": [("Tell us about your event", "Dates, venue, the rooms and moments that matter, and who needs images."),
-                  ("Get a quote for your dates", "A clear quote for the coverage you need, nothing bundled you did not ask for."),
-                  ("Photos find their people", "Guests scan, add a selfie, and get every photo they are in while the event is still on.")],
+                  ("A quote within 24 hours", "One of us writes back with a clear quote for the coverage you need, nothing bundled you did not ask for."),
+                  ("Photos during the event, the full set after", "Selects go out while the event is on, and the finished set follows.")],
         "venues_p": ("Years of architectural work mean the venue gets shot as carefully as the people in it: "
                      "exteriors, lobbies, halls and ballrooms."),
-        "cta_p": "Send the dates and the details. A quote comes back for your event, with the coverage you asked for.",
+        "cta_p": "Send the dates and the details. One of us writes back within 24 hours with a quote for the coverage you asked for.",
     }
 
 
@@ -291,20 +301,20 @@ def home_body(t: dict, hero: str, frames: list[tuple[str, str]], stack: list[str
              "Exhibition halls", "Vendors", "Delivered on site"]
     return f"""
 <section class="hero"><div class="img">{hero}</div><canvas class="web" aria-hidden="true"></canvas>
-<div class="vf" aria-hidden="true"><i></i><i></i><i></i><i></i><span class="cross"></span><span class="focus"></span></div>
-<div class="hud tl mono"><span class="rec">Rec</span> <span id="tc">00:00:00:00</span></div>
-<div class="hud tr mono">ISO 3200 &nbsp; 1/250 &nbsp; F2.8 &nbsp; AWB</div>
-<div class="hud br mono">FR <span id="fr">0001</span></div>
+<div class="vf" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
 <div class="copy"><div class="kick mono c">Event and convention photography</div>
-<h1 class="mega"><span><em>Every</em></span><span class="o"><em>room,</em></span><span><em>covered<b>.</b></em></span></h1>
+<h1 class="mega"><span><em>Two</em></span><span class="o"><em>brothers,</em></span><span><em>every room<b>.</b></em></span></h1>
 <div class="row"><p class="lede">{e(t['lede'])}</p><a class="btn fill" href="/book/">Request a quote <span class="arr">&#8599;</span></a></div></div></section>
 {_ticker(short)}
 <section id="coverage" class="index"><div class="head rv"><div><div class="kick mono c">01 / Coverage</div>
 <h2>From the green room<br><span class="o">to the last</span> reception.</h2></div><p>{e(t['coverage_p'])}</p></div>
 <div class="list rv">{rows}</div><div class="peek" aria-hidden="true"><img alt=""></div></section>
 {f'<section id="work" class="reel"><div class="pin"><div class="bar"><div class="kick mono c" style="margin:0">02 / Work</div><span class="mono g">Scroll</span></div><div class="track">{reel}</div><div class="sprocket" style="margin-top:22px"></div></div></section>' if reel else ''}
-<section class="deliver"><div class="rv"><div class="kick mono c">Face match delivery</div>
-<div class="lines"><div>Scan.</div><div>Selfie.</div><div>Sent.</div></div><p>{e(t['deliver_p'])}</p></div>
+<section><div class="rv"><div class="kick mono c">Who will be at your event</div><h2>One of us, <span class="o">every</span> time.</h2>
+<p class="g" style="max-width:640px;margin-top:22px">{e(t['who'])}</p>
+<p class="mono g" style="margin-top:14px">References available on request. <a class="c" href="/about/">About the two of us &#8599;</a></p></div></section>
+<section class="deliver"><div class="rv"><div class="kick mono c">Photos during the event</div>
+<h2>Photos find <span class="o">their</span> people.</h2><p>{e(t['deliver_p'])}</p></div>
 {f'<div class="stack rv">{stack_html}<span class="stamp mono">Sent</span></div>' if stack_html else ''}</section>
 {f'<section id="venues" class="venues"><div class="head rv"><div><div class="kick mono c">03 / Venues</div><h2>The building is <span class="o">part of</span> the story.</h2></div><p>{e(t["venues_p"])}</p></div><div class="grid">{venue_html}</div></section>' if venue_html else ''}
 <section><div class="kick mono c rv">How it works</div><h2 class="rv">Three steps.</h2><div class="steps">{steps}</div></section>
@@ -367,6 +377,8 @@ def build(conn: Optional[sqlite3.Connection], photos: SitePhotos, *, out: Path =
     questions = "".join(f"<li>{e(q)}</li>" for q in (o.get("quote_questions") or [])[:4])
     pages["book/index.html"] = ("Request a quote", "Tell us about your event and get a quote for your dates.", f"""
 <section class="page"><div class="kick mono c">Request a quote</div><h1>Tell us about<br><span class="o">your</span> event<b>.</b></h1>
+<p class="g" style="max-width:640px;margin:18px 0 30px">Send the dates, the venue and the rooms that matter, and one of us writes back within 24 hours.
+What moves the quote: the days and hours, the rooms covered at the same time, how many photographers, how fast you need selects, and where the images will be used.</p>
 <div class="split2"><aside class="side"><div class="mono c">What helps the quote</div><ol>{questions}</ol>
 <p class="mono g" style="margin-top:22px">Every event is quoted on its own.</p></aside>
 <div><div id="err"></div><form class="book" method="post" action="/api/quote">
@@ -375,8 +387,8 @@ def build(conn: Optional[sqlite3.Connection], photos: SitePhotos, *, out: Path =
 <div class="f"><label class="mono" for="phone">Phone, optional</label><input id="phone" name="phone" maxlength="40" autocomplete="tel"></div>
 <div class="f"><label class="mono" for="organization">Organization</label><input id="organization" name="organization" maxlength="160" autocomplete="organization"></div>
 <div class="f full"><label class="mono" for="event_name">Event name</label><input id="event_name" name="event_name" maxlength="200"></div>
-<div class="f"><label class="mono" for="event_kind">Kind of event</label><select id="event_kind" name="event_kind"><option value="fan">Fan convention</option>
-<option value="business">Conference, convention or corporate event</option><option value="other">Gala, reception or something else</option></select></div>
+<div class="f"><label class="mono" for="event_kind">Kind of event</label><select id="event_kind" name="event_kind"><option value="business">Conference, convention or corporate event</option>
+<option value="other">Gala, reception or something else</option><option value="fan">Fan convention</option></select></div>
 <div class="f"><label class="mono" for="attendance">Expected attendance</label><input id="attendance" name="attendance" maxlength="40"></div>
 <div class="f"><label class="mono" for="start_date">First day</label><input id="start_date" name="start_date" type="date"></div>
 <div class="f"><label class="mono" for="end_date">Last day</label><input id="end_date" name="end_date" type="date"></div>
@@ -390,6 +402,14 @@ def build(conn: Optional[sqlite3.Connection], photos: SitePhotos, *, out: Path =
 </form></div></div></section>
 <script>const q=new URLSearchParams(location.search).get("error");const m={{missing:"Please add your name and a working email.",busy:"A few requests just came from here. Please try again in an hour, or email us.",check:"The spam check did not pass. Please try again.",unreadable:"Something went wrong. Please try again."}};
 if(q)document.getElementById("err").innerHTML='<div class="err mono">'+(m[q]||m.unreadable)+'</div>';</script>""")
+    about_photos = "".join(f"<figure>{img}</figure>" for img, _ in frames[:2])
+    about_paras = "".join(f"<p>{e(p)}</p>" for p in t["about"].split("\n\n"))
+    pages["about/index.html"] = ("About us", "Chris and Nic Kennedy, brothers, more than thirty years each behind the camera.", f"""
+<section class="page"><div class="kick mono c">05 / About</div><h1>Two<br><span class="o">brothers</span><b>.</b></h1>
+<div class="prose" style="max-width:640px;margin-top:30px">{about_paras}
+<h3>Who will be at your event</h3><p>{e(t['who'])}</p><p>References available on request.</p></div>
+{f'<div class="grid" style="margin-top:50px">{about_photos}</div>' if about_photos else ''}
+<p style="margin-top:50px"><a class="btn fill" href="/book/">Request a quote <span class="arr">&#8599;</span></a></p></section>""")
     pages["thanks/index.html"] = ("Thank you", "Your request is in.", """<section class="page" style="min-height:70vh">
 <div class="kick mono c">Request received</div><h1>Thank<br><span class="o">you</span><b>.</b></h1>
 <p class="g" style="max-width:560px;margin-top:30px">Your request is in. A reply comes back to you by email.</p>
@@ -437,7 +457,7 @@ It is never sold or shared. The website holds it only until the booking inbox co
     # a preview is never crawled; the live site lists its public pages and every photo on them
     (out / "robots.txt").write_text("User-agent: *\nDisallow: /\n" if preview else markup.robots_txt(base))
     (out / "sitemap.xml").write_text(markup.sitemap_xml(
-        base, ["/", "/book/", "/availability/", "/privacy/"],
+        base, ["/", "/about/", "/book/", "/availability/", "/privacy/"],
         {"/": [{"loc": loc, "title": m.title or alt, "caption": m.description or alt} for loc, alt, m in shown]}))
     (out / "build.json").write_text(json.dumps({"preview": preview, "hero": len(photos.hero), "coverage": len(photos.coverage),
                                                 "venues": len(photos.venues), "mark": mark_key}))

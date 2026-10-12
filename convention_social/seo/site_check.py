@@ -20,7 +20,7 @@ from typing import Callable, Optional
 
 from ..core import config, db, runner
 
-HTML_PATHS = ("/", "/book/", "/availability/", "/privacy/")
+HTML_PATHS = ("/", "/about/", "/book/", "/availability/", "/privacy/")
 PATHS = HTML_PATHS + ("/sitemap.xml", "/robots.txt")
 USER_AGENT = "cki-convention-social/0.1 (weekly site check)"
 TIMEOUT = 20
