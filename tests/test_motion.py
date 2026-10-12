@@ -131,7 +131,7 @@ class Pieces(IsolatedCase):
             for word in ("your", "we ", "get ", "lit ", "properly", "every", "covered", "too"):
                 self.assertNotIn(word, line.lower(), (room, line))
             self.assertLessEqual(len(line.split()), 6, (room, line))
-        self.assertEqual(design_samples.ROOMS["portrait"], ("PORTRAITS", "Made at the event."))
+        self.assertEqual(design_samples.ROOMS["portrait"], ("PORTRAITS", "Speakers and guests, backstage."))
         motion.check_copy(*design_samples.OTHER, motion.MotionCopy().words(), social=True)
         self.assertFalse((self.root / "x.jpg").exists())
 

@@ -136,6 +136,10 @@ def user_text(facts: PostFacts) -> str:
         ("Subject: a building or venue from the photographer's architecture work. Say what the building shows, never name "
          "the owner, the address or the client."
          if facts.subject == "architecture" else "Subject: event photography"),
+        # Chris, 2026-10-12: portraits are backstage, for the speakers and the people the event is about, lit on site
+        *(["A portrait here is made backstage, for a speaker or a guest of honor, lit on site with professional lights and "
+           "color gels and finished in the camera. Say that plainly when it fits the photo; never say that every attendee gets one."]
+          if facts.shot_type in ("portrait", "headshot") else []),
         *(facts.plan.prompt_lines() if facts.plan else []),
         "Write one caption per network: instagram (a first line under 125 characters that carries the search phrase, then "
         "two or three short sentences), facebook (one or two short paragraphs), pinterest (a first sentence under 100 "

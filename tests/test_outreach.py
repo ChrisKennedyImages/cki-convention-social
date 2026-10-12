@@ -128,8 +128,10 @@ class Drafting(OutreachCase):
         self.assertTrue(d.body)
         self.assertEqual(d.subject, "Photography for Sample Con 2027")
         for words in ("Sample Con 2027", "March 5 to 7, 2027", "Baltimore", "photographer lined up", "Exhibition halls",
-                      "every photo they are in", "kept to your staff", "quote"):
+                      "while the event is still on", "kept to your staff", "quote"):
             self.assertIn(words.lower(), d.body.lower(), words)
+        for word in ("face match", "facematch", "selfie", "badge", "every photo they are in"):
+            self.assertNotIn(word, d.body.lower(), "Chris, 2026-10-12: delivery is a feature, never the name or the steps")
         self.assertTrue(d.body.endswith("Chris\nEvent Caliber"))
         self.assertTrue(copy_rules.check(d.subject + "\n" + d.body).ok)
         self.assertEqual(compliance.text_problems(d.subject, d.body), [])

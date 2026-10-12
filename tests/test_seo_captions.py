@@ -199,6 +199,20 @@ class Prompt(IsolatedCase):
         self.assertIn("alt_text", claude.OUTPUT_SCHEMA["required"])
         self.assertIn("first sentence under 100 characters", claude.SYSTEM_PROMPT)
 
+    def test_the_writer_is_told_portraits_are_backstage_and_never_for_every_attendee(self):
+        """Chris, 2026-10-12: portraits are backstage for the speakers and VIPs, lit on site with our own lights and
+        color gels; portraits for every attendee are a different product, never advertised."""
+        portrait = claude.user_text(claude.PostFacts(brand_name="Event Caliber", event_kind="business", shot_type="portrait"))
+        for words in ("made backstage", "lit on site with professional lights", "color gels", "finished in the camera",
+                      "never say that every attendee gets one"):
+            self.assertIn(words, portrait, words)
+        self.assertIn("made backstage", claude.user_text(claude.PostFacts(brand_name="Event Caliber", shot_type="headshot")))
+        self.assertNotIn("backstage", claude.user_text(claude.PostFacts(brand_name="Event Caliber", shot_type="stage_panel")))
+        plan = seo_plan.plan_for(subject="event", event_kind="business", shot_type="portrait")
+        caps = seo_plan.template_captions(plan, "eventcaliber.com/book", "Event Caliber")
+        self.assertIn(": a portrait lit on site, backstage.", caps["instagram"])
+        self.assertNotIn("every attendee", caps["instagram"].lower())
+
 
 class AltTextAndPins(AgentCase):
     def setUp(self):
