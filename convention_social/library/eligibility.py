@@ -5,7 +5,8 @@ Two answers, both failing closed:
   is_candidate()  may the daily picker consider it? (rules 1 to 6, with the
                   sorter's minor and details answer, Ollama or Claude)
   is_eligible()   may it be POSTED? A candidate that also passed Claude's final
-                  check (final_checks: possible_minor 0, no personal details).
+                  check (final_checks: possible_minor 0, no blocking personal
+                  detail; a name badge or a name in the photo is fine, 2026-10-12).
                   The dashboard's Approve and the publisher's door ask this one.
 
 A photo is a candidate only when ALL of these hold:
@@ -118,14 +119,20 @@ def blocked_by_list(conn: sqlite3.Connection, photo: sqlite3.Row) -> str | None:
 # they are public buildings and he holds releases for them (Chris, 2026-10-10). On a photo of
 # people it still blocks, because there the number says where somebody lives.
 ADDRESS_DETAILS = frozenset({"house_number", "street_sign"})
+# Chris, 2026-10-12: "If they're wearing a name badge or there's a name in the photo it's fine to
+# use." A name badge, and the screens and documents the sorter flags at an event (a book cover, a
+# program, a slide, signage: a name or a title), never keep a photo out. A plate, a house number or
+# a street sign on a photo of people still does: those say where somebody lives.
+NAME_DETAILS = frozenset({"badge_name", "document", "screen"})
 
 
 def blocking_details(details: list, subject: str | None) -> list:
-    """The readable details that stop this photo. Addresses are kept out of the answer for
-    architecture, and only for architecture."""
+    """The readable details that stop this photo: never a name (NAME_DETAILS); addresses are kept
+    out of the answer for architecture, and only for architecture."""
+    out = [d for d in details if d not in NAME_DETAILS]
     if subject != "architecture":
-        return list(details)
-    return [d for d in details if d not in ADDRESS_DETAILS]
+        return out
+    return [d for d in out if d not in ADDRESS_DETAILS]
 
 
 def building_blocked(cls: sqlite3.Row) -> str:

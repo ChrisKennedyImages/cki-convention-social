@@ -172,10 +172,17 @@ class Eligibility(IsolatedCase):
         self.conn.execute("UPDATE photos SET clearance='cleared' WHERE drive_id='p1'")
         self.assertFalse(eligibility.is_eligible(self.conn, self.pid("p1"))[0])
 
-    def test_personal_details_block(self):
+    def test_personal_details_block_but_never_a_name(self):
+        # Chris, 2026-10-12: "If they're wearing a name badge or there's a name in the photo it's fine to use"
         self.conn.execute("UPDATE drive_folders SET clearance='cleared' WHERE drive_id='fcon'")
-        self.vision({**ADULTS, "personal_details": ["badge_name"]})
-        self.assertIn("badge_name", eligibility.is_eligible(self.conn, self.pid("p1"))[1])
+        self.vision({**ADULTS, "personal_details": ["badge_name", "document", "screen"]})
+        why = eligibility.is_candidate(self.conn, self.pid("p1"))[1]
+        self.assertNotIn("personal details", why, why)
+        self.conn.execute("UPDATE classifications SET personal_details='[\"vehicle_plate\"]' WHERE photo_id=?", (self.pid("p1"),))
+        self.assertIn("vehicle_plate", eligibility.is_eligible(self.conn, self.pid("p1"))[1])
+        self.assertEqual(eligibility.blocking_details(["badge_name", "screen", "document", "vehicle_plate", "house_number"], "event"),
+                         ["vehicle_plate", "house_number"])
+        self.assertEqual(eligibility.blocking_details(["badge_name", "house_number", "street_sign"], "architecture"), [])
 
     def test_do_not_use_list_and_consent(self):
         self.conn.execute("UPDATE drive_folders SET clearance='cleared' WHERE drive_id='fcon'")
@@ -404,7 +411,7 @@ class ArchitectureSheet(IsolatedCase):
     def test_a_building_with_a_readable_detail_is_still_kept_out(self):
         conn, _, _ = self._sorted_library()
         photo = db.one(conn, "SELECT * FROM photos WHERE drive_id='b1'")
-        classify.save_sort(conn, photo, {**BUILDING, "personal_details": ["badge_name"]}, "ollama", "m")
+        classify.save_sort(conn, photo, {**BUILDING, "personal_details": ["vehicle_plate"]}, "ollama", "m")
         conn.commit()
         self.assertEqual({r["drive_id"] for r in report.best(conn, 30, subject="architecture")}, {"b2"})
 
