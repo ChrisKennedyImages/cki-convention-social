@@ -183,7 +183,7 @@ MEDIA_TYPES = {".mp4": "video/mp4", ".png": "image/png"}
 
 # what a photo shows, in plain words, for the draft page's correction (Chris, 2026-10-11: "it calls a
 # stage shot a portrait which, never can happen!")
-SHOT_CHOICES = [("stage_panel", "Stage and panel"), ("backstage", "Backstage"), ("portrait", "Portrait"), ("headshot", "Headshot"),
+SHOT_CHOICES = [("stage_panel", "Stage and panel"), ("backstage", "Backstage"), ("portrait", "Portrait or headshot"),
                 ("group", "Group photo"), ("candid", "Candid moment"), ("crowd", "Crowd"), ("vendor_hall", "Vendor hall"),
                 ("booth", "Exhibitor booth"), ("dinner_reception", "Dinner and reception"), ("venue", "Venue"),
                 ("building_exterior", "Building exterior"), ("building_interior", "Building interior"), ("other", "Other")]
@@ -630,9 +630,11 @@ def create_app() -> FastAPI:
             p["why"] = eligibility.is_candidate(conn, p["id"]) if view == "approved" else None
         common["view"] = view
         hero = settings.get(conn, "site.hero_photo_id")
+        from ..site import deploy
         from ..site import hero as hero_upload
+        site = {"status": deploy.read_status(), "ready": deploy.ready(), "deployed": (settings.get(conn, deploy.DEPLOYED_KEY) or "")[:7]}
         return render(request, "library.html", items=shown, page=page, pages=pages, total=total, subject=subject,
-                      subject_counts=subject_counts, subject_words=SUBJECT_WORDS,
+                      subject_counts=subject_counts, subject_words=SUBJECT_WORDS, site=site,
                       hero_id=int(hero) if hero and hero.isdigit() else None, hero_upload=hero_upload.status(conn), **common)
 
     @app.get("/more", response_class=HTMLResponse)
@@ -748,7 +750,24 @@ def create_app() -> FastAPI:
     def hero_upload_remove(user: str = Depends(require_user), conn=Depends(conn_dep)):
         from ..site import hero as hero_upload
         hero_upload.remove(conn)
-        return RedirectResponse("/library?view=approved&msg=Removed.+The+build+chooses+the+hero+again.", status_code=303)
+        msg = ("Removed.+The+photo+that+came+with+the+code+is+the+hero+again." if hero_upload.present()
+               else "Removed.+The+build+chooses+the+hero+again.")
+        return RedirectResponse(f"/library?view=approved&msg={msg}", status_code=303)
+
+    @app.post("/site/publish")
+    def site_publish(user: str = Depends(require_user)):
+        """Chris, 2026-10-12: the site goes live from a phone, with nobody at a terminal. `ccs site deploy`
+        runs on its own (one at a time); the Website card on the Approved page says what happened."""
+        from ..site import deploy
+        ready, why = deploy.ready()
+        if not ready:
+            return RedirectResponse("/library?view=approved&msg=" + quote_plus(f"Not published: {why}"), status_code=303)
+        if deploy.read_status().get("state") == "running":
+            return RedirectResponse("/library?view=approved&msg=A+publish+is+already+running.", status_code=303)
+        deploy.write_status("running", "starting")
+        deploy.start_in_background()
+        return RedirectResponse("/library?view=approved&msg=Publishing+the+site.+The+Website+card+says+when+it+is+live.",
+                                status_code=303)
 
     @app.post("/library/photo/{pid}/hero")
     def photo_hero(pid: int, user: str = Depends(require_user), conn=Depends(conn_dep), back: str = Form(default="/library")):

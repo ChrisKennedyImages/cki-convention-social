@@ -2,7 +2,7 @@
 
 Chris, 2026-10-11: "Because A LOT of the images are ACU and CPAC (the same company) i want to make
 sure the captions don't say the specific event or person." Captions say what kind of event it was
-(a conference, a fan convention), never which one, and never who is in the photo. The same holds for
+(a conference, a convention), never which one, and never who is in the photo. The same holds for
 the words printed on the post images, the search fields inside the image files and the website's
 photo text, since all of those are public too. Private mail to an organizer about their own event
 (outreach, quote replies) is not public copy and is not covered.

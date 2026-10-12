@@ -190,13 +190,13 @@ class Template(SeoCase):
         self.assert_public(r)
         self.assertEqual(r["model"], "template")
         self.assertEqual(r["slug"], "portrait-2025")
-        self.assertEqual(r["title"], "Portrait at a fan convention")
-        self.assertEqual(r["alt"], "Portrait at a fan convention")
+        self.assertEqual(r["title"], "Portrait at a convention")
+        self.assertEqual(r["alt"], "Portrait at a convention")
         everything = (r["slug"] + r["alt"] + r["title"] + r["description"] + r["keywords"]).lower()
         for name in ("katsucon", "kat.cos", "jordan"):
             self.assertNotIn(name, everything, "never which event, never who")
         kws = json.loads(r["keywords"])
-        for k in ("event photography", "convention photography", "fan convention photography", "portrait",
+        for k in ("event photography", "convention photography", "portrait",
                   "national harbor event photography"):
             self.assertIn(k, kws)
 
@@ -271,7 +271,8 @@ class Writer(SeoCase):
         self.assertEqual(kw["model"], "claude-haiku-4-5")
         self.assertNotIn("thinking", kw)
         self.assertEqual(kw["output_config"]["format"]["type"], "json_schema")
-        self.assertIn("Kind of event: fan convention", kw["messages"][0]["content"])
+        self.assertIn("Kind of event: convention", kw["messages"][0]["content"])
+        self.assertNotIn("fan convention", kw["messages"][0]["content"], "never 'fan convention', 2026-10-12")
         self.assertNotIn("Katsucon", kw["messages"][0]["content"], "the writer is never told which event")
         usage = db.one(self.conn, "SELECT agent, cost_usd, detail FROM api_usage WHERE provider='anthropic'")
         self.assertIsNotNone(usage)
@@ -505,7 +506,7 @@ class Dashboard(SeoCase):
         row = self.row(pid)
         self.assertEqual(row["alt"], "Speaker with a red jacket by a tall window")
         self.assertIsNotNone(row["edited_at"])
-        self.assertEqual(row["title"], "Portrait at a fan convention", "a blank title keeps the old one")
+        self.assertEqual(row["title"], "Portrait at a convention", "a blank title keeps the old one")
         refused = self.client.post(f"/seo/{pid}", data={"alt": "Prints from $40"}, follow_redirects=False)
         self.assertIn("msg=refused", refused.headers["location"])
         self.assertEqual(self.row(pid)["alt"], "Speaker with a red jacket by a tall window")

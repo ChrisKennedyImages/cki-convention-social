@@ -16,6 +16,12 @@ fast-forward leaves everything exactly as it is. A red run and a failed fetch ar
 errors, which the watchdog pushes to Chris. New service files (`launchd/` templates) need one
 `scripts/go-live.sh` on the Mini with his Mac password: that is flagged, never attempted.
 
+Every run also keeps eventcaliber.com on the code (Chris, 2026-10-12: "do what you can without needing
+me to respond or terminal anything"): when the site on Cloudflare was built from an older commit and
+a site file changed since, or the suite has never deployed it, `bin/ccs site deploy` runs from the
+checkout (`site/deploy.py`: build, wrangler, the check from outside). A failed deploy is an error
+and is not retried by itself for that commit; the Publish button on the Photos page is the retry.
+
 Dry run (the default, like every agent) fetches and reports what it would do, and changes nothing.
 
 `ccs sync` is the same update run once, live, waiting for a running updater: scripts/go-live.sh's
@@ -36,6 +42,7 @@ from typing import Callable, Optional
 from ..core import config, runner, settings
 
 FETCH_TIMEOUT = 120
+DEPLOY_TIMEOUT = 40 * 60        # build (Claude looks at up to 12 photos), wrangler, the check from outside
 TEST_TIMEOUT = 30 * 60
 NEEDS_INSTALL_KEY = "updater.needs_install"
 RESTARTED_KEY = "updater.dashboard_restarted_for"
@@ -174,17 +181,56 @@ def ensure_dashboard(ctx: runner.Context, head: str, *, probe: Callable[[], Opti
     return f"dashboard was on {was}; {note}"
 
 
+def deploy_site(repo: Path) -> tuple[bool, str]:
+    """`bin/ccs site deploy` from the checkout, so the NEW code builds and deploys the site (this
+    process runs the code it started with). (ok, the last lines it printed)."""
+    r = subprocess.run([str(repo / "bin" / "ccs"), "site", "deploy"], cwd=str(repo), capture_output=True, text=True,
+                       timeout=DEPLOY_TIMEOUT, stdin=subprocess.DEVNULL)
+    lines = [ln for ln in ((r.stdout or "") + "\n" + (r.stderr or "")).splitlines() if ln.strip()]
+    return r.returncode == 0, "\n".join(lines[-8:])
+
+
+def ensure_site(ctx: runner.Context, repo: Path, *, deploy: Callable[[Path], tuple[bool, str]] = deploy_site) -> str:
+    """Chris, 2026-10-12: "do what you can without needing me to respond or terminal anything". The site
+    on Cloudflare follows the code: when the commit it was built from is behind this one on a site
+    file (or the suite has never deployed it), deploy now. Every pass asks, not only the pass that
+    moved the code, so the first deploy after this arrives happens on the next pass even though an
+    older updater did that merge. A failed deploy is recorded once and not retried by itself for the
+    same commit (site/deploy.py); the Publish button on the Photos page tries again."""
+    from ..site import deploy as site_deploy
+    wanted, why = site_deploy.wanted(ctx.conn, repo)
+    if not wanted:
+        return f"site: {why}"
+    ready, hold = site_deploy.ready(repo)
+    if not ready:
+        runner.record_error_once(ctx.conn, ctx.agent, "site_deploy", f"The site is behind the code ({why}) and cannot be deployed from here: {hold}")
+        return f"site: behind the code, not deployable here ({hold})"
+    if ctx.dry_run:
+        return f"DRY RUN site: {why}; would deploy"
+    ok, tail = deploy(repo)
+    if not ok:
+        settings.set(ctx.conn, site_deploy.FAILED_KEY, _out(repo, "rev-parse", "HEAD"))   # the deploy sets it too, unless it died
+        runner.record_error(ctx.conn, ctx.agent, "site_deploy",
+                            f"The site did not go live ({why}). Press Publish on the Photos page to try again. {tail}"[:2000])
+        return f"site: deploy FAILED ({why})"
+    return f"site: deployed ({why})"
+
+
 def run(ctx: runner.Context, *, repo: Optional[Path] = None,
         suite: Callable[[Path], tuple[bool, str]] = run_suite,
         requirements: Callable[[Path, Path], None] = install_requirements,
         migrations: Callable[[Path], None] = migrate,
         restart: Callable[[], str] = restart_dashboard,
-        probe: Callable[[], Optional[str]] = dashboard_commit) -> str:
+        probe: Callable[[], Optional[str]] = dashboard_commit,
+        deploy: Callable[[Path], tuple[bool, str]] = deploy_site, site: bool = True) -> str:
     repo = Path(repo or config.REPO_ROOT)
     summary = update(ctx, repo, suite=suite, requirements=requirements, migrations=migrations)
     if summary == "fetch failed":
         return summary
-    return f"{summary}; {ensure_dashboard(ctx, _out(repo, 'rev-parse', 'HEAD'), probe=probe, restart=restart)}"
+    summary = f"{summary}; {ensure_dashboard(ctx, _out(repo, 'rev-parse', 'HEAD'), probe=probe, restart=restart)}"
+    if site:                 # go-live's sync step leaves the site to go-live's own deploy step
+        summary = f"{summary}; {ensure_site(ctx, repo, deploy=deploy)}"
+    return summary
 
 
 def update(ctx: runner.Context, repo: Path, *, suite: Callable[[Path], tuple[bool, str]],
@@ -302,7 +348,7 @@ def sync(*, sleep: Optional[Callable[[float], None]] = None, say: Callable[[str]
     said: list[str] = []
 
     def once(ctx: runner.Context) -> str:
-        summary = run(ctx)
+        summary = run(ctx, site=False)
         said.append(summary)
         return summary
 

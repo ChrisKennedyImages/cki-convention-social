@@ -38,7 +38,7 @@ FALLBACK_BETA = "server-side-fallback-2026-07-01"
 MAX_IMAGE_EDGE = 1024
 NETWORKS = ("instagram", "facebook", "pinterest")
 # what kind of event, said instead of which one (ai/names.py: no event or person is ever named)
-KIND_WORDS = {"fan": "a fan convention", "business": "a conference"}
+KIND_WORDS = {"fan": "a convention", "business": "a conference"}        # never "fan convention" in public (Chris, 2026-10-12)
 
 SYSTEM_PROMPT = """You write social posts for an event and convention photography company, in the photographer's own voice. A post is about the photo: what it shows, where in the event it was made, the moment. It is never about the company's services, what it offers, how it works or what a client gets; that is between the photographer and the client. The company photographs business, corporate and association conferences, conventions, galas and award dinners.
 

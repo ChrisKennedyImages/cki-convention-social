@@ -109,7 +109,7 @@ def is_clean(path: Path) -> list[str]:
 
 SHOT_WORDS = {"portrait": "Portrait", "group": "Group photo", "candid": "Candid moment",
               "stage_panel": "Stage and panel", "vendor_hall": "Vendor hall", "booth": "Booth", "backstage": "Backstage",
-              "dinner_reception": "Dinner and reception", "headshot": "Headshot", "crowd": "Crowd", "venue": "Venue",
+              "dinner_reception": "Dinner and reception", "headshot": "Portrait", "crowd": "Crowd", "venue": "Venue",
               "building_exterior": "Building exterior", "building_interior": "Building interior"}
 
 
@@ -139,8 +139,7 @@ def for_photo(conn, row) -> ImageMeta:
         title = f"{shot or 'Architecture'} photography"
         kws = ["architectural photography", "venue photography", "event venue", "building photography"]
     else:
-        kind = {"fan": "fan convention", "business": "conference"}.get(row.get("event_kind") or "", "event")
+        kind = {"fan": "convention", "business": "conference"}.get(row.get("event_kind") or "", "event")   # never "fan convention" (2026-10-12)
         title = f"{shot or 'Event photography'} at a {kind}" if kind != "event" else (shot or "Event photography")
-        kws = ["event photography", "convention photography"] + (["fan convention photography"] if row.get("event_kind") == "fan" else
-                                                                  ["conference photography"] if row.get("event_kind") == "business" else [])
+        kws = ["event photography", "convention photography"] + (["conference photography"] if row.get("event_kind") == "business" else [])
     return ImageMeta(title=title, description=title, keywords=kws)

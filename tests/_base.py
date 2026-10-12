@@ -20,6 +20,7 @@ class IsolatedCase(unittest.TestCase):
         self._old_env = dict(os.environ)
         os.environ["CCS_DATA_ROOT"] = str(self.root / "data")
         os.environ["CCS_ENV_FILE"] = str(self.root / "absent.env")
+        os.environ["SITE_HERO_SHIPPED"] = str(self.root / "no-shipped-hero.jpg")     # the repo's site/hero.jpg stays out of tests
         for key in SECRET_KEYS:
             os.environ.pop(key, None)
         config.reset()
@@ -27,7 +28,8 @@ class IsolatedCase(unittest.TestCase):
         # nor may a test start the designer in the background (each test that means to watch it patches it again)
         for target, value in (("convention_social.core.secrets._keychain", None),
                               ("convention_social.library.classify.ollama_model", None),
-                              ("convention_social.render.design_samples.start_in_background", None)):
+                              ("convention_social.render.design_samples.start_in_background", None),
+                              ("convention_social.site.deploy.start_in_background", None)):
             patcher = mock.patch(target, return_value=value)
             patcher.start()
             self.addCleanup(patcher.stop)

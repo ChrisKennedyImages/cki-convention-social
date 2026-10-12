@@ -29,7 +29,7 @@ MAX_WORDS = 160
 # what fits each kind of event, as offer.json keys; labels always come from offer.json
 COVERAGE_BY_KIND = {
     "fan": ("stage", "portraits", "exhibition_hall", "vendors"),
-    "business": ("stage", "breakouts", "headshots", "evening_events", "dinners"),
+    "business": ("stage", "breakouts", "portraits", "evening_events", "dinners"),
     "other": ("stage", "portraits", "evening_events", "dinners"),
 }
 
