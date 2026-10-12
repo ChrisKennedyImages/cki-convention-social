@@ -61,6 +61,19 @@ class Site(IsolatedCase):
         self.assertIn("pointer-events:none", css[css.index(".hero canvas.web{"):][:200])
         self.assertIn(".hero canvas.web{display:none}", css[css.index("prefers-reduced-motion"):])
 
+    def test_the_headline_fits_a_phone_on_three_lines(self):
+        """Chris, 2026-10-12: "Brothers is cut off on the website landing page". Each headline line is a block
+        that clips (the slide-up animation), so a line wider than the hero's text box loses its end. In Michroma
+        the longest line, EVERY ROOM., is 9.6 times the font size wide and BROTHERS, 8.08 (measured in Chromium
+        with the real font); the hero's text box on a phone is the viewport less 100 pixels. So on phones the
+        size is capped at that width over 9.9, and every line stays whole and on one line at every width."""
+        out = self.built()
+        css = (out / "assets/site.css").read_text()
+        phone = css[css.index("@media (max-width:900px)"):]
+        self.assertIn(".mega{font-size:min(clamp(30px,10.4vw,64px),calc((100vw - 100px) / 9.9))}", phone)
+        for width in (320, 375, 390, 430):
+            self.assertLessEqual(min(max(30, 0.104 * width), (width - 100) / 9.9) * 9.6, width - 100, width)
+
     def test_the_heros_shadows_are_dodged_a_tad(self):
         """Chris, 2026-10-12: "Up brightness and dodge shadows a tad"."""
         dark = Image.new("RGB", (8, 8), (20, 20, 20))
