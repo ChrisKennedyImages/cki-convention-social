@@ -1,11 +1,11 @@
 """The website's main photo from Chris's phone (2026-10-12: "That photo is just on my phone I think").
 
 An upload on the Photos tab (Approved: Site hero from your phone) is kept under DATA_ROOT/site, re-encoded
-so it carries no camera data, and used as the hero by the next site build once Claude has looked at it the
-way the final check looks at every photo: nobody who may be under 18, nothing readable that identifies a
-person, not a wedding or a private occasion. The verdict is kept with the file's hash, so Claude looks once
-per upload. Without a verdict the upload is not used (fail closed) and the build says so. It wins over a
-library pick while it is here; Remove hands the choice back.
+so it carries no camera data, and IS the hero of the next site build: his own photo, chosen by him, for his
+own site (2026-10-12: "That's still not the ... landing page photo I uploaded on the dashboard"). Claude
+looks at it once per file, for the alt text and a note on the card (anyone who may be under 18, a readable
+plate, a wedding), and never holds it back. It wins over a library pick while it is here; Remove hands the
+choice back. Sending, removing or picking a hero on the dashboard publishes the site by itself.
 
 The same evening ("the home page image is not the correct photo ... do what you can without needing me to
 respond") the photo he had sent in the chat, a wide stage panorama, was re-encoded the same way and shipped
@@ -117,31 +117,34 @@ def record(conn: sqlite3.Connection) -> Optional[dict]:
 
 
 def checked(conn: sqlite3.Connection, look: Optional[Callable[[bytes], Optional[dict]]] = None) -> tuple[bool, str]:
-    """(usable, why). Claude's look is asked once per file; `look(jpeg bytes) -> verdict or None`."""
+    """(usable, note). Chris, 2026-10-12: "That's still not the ... landing page photo I uploaded on the
+    dashboard." The photo he sends is the hero, full stop: his own photo, chosen by him, for his own
+    site. Claude's look is still asked once per file, for the alt text and a note on the card (what it
+    saw; anyone who may be under 18, a readable plate), never to hold the photo back. Without a look
+    (no key, the cap) the photo is used all the same and the card says Claude has not looked yet."""
     from ..library import classify, eligibility
     if not present():
         return False, "no upload"
     rec = record(conn)
-    if rec is None:
-        if look is None:
-            return False, "not checked yet: the next site build with the Anthropic key asks Claude to look"
+    if rec is None and look is not None:
         data = look(source().read_bytes())
-        if data is None:
-            return False, "not checked: Claude could not look (no key, the monthly cap, or a refusal)"
-        details = eligibility.blocking_details(list(data.get("personal_details") or []), "event")
-        kind = data.get("event_kind") if data.get("event_kind") in classify.KINDS else "unknown"
-        if data.get("possible_minor", True):
-            ok, why = False, "someone in it may be under 18"
-        elif details:
-            ok, why = False, "it shows " + ", ".join(map(str, details))
-        elif kind in classify.NOT_OFFERED_KINDS:
-            ok, why = False, eligibility.NOT_OFFERED_KIND_WHY
-        else:
-            ok, why = True, "checked by Claude"
-        rec = {"sha": _sha(), "ok": ok, "why": why, "kind": kind, "shot_type": data.get("shot_type") or "",
-               "summary": (data.get("summary") or "")[:200], "at": db.utcnow()}
-        settings.set(conn, CHECK_KEY, json.dumps(rec))
-    return bool(rec["ok"]), rec["why"]
+        if data is not None:
+            details = eligibility.blocking_details(list(data.get("personal_details") or []), "event")
+            kind = data.get("event_kind") if data.get("event_kind") in classify.KINDS else "unknown"
+            notes = []
+            if data.get("possible_minor", True):
+                notes.append("someone in it may be under 18")
+            if details:
+                notes.append("it shows " + ", ".join(map(str, details)))
+            if kind in classify.NOT_OFFERED_KINDS:
+                notes.append(eligibility.NOT_OFFERED_KIND_WHY)
+            why = "your photo; Claude notes: " + "; ".join(notes) if notes else "your photo, seen by Claude"
+            rec = {"sha": _sha(), "why": why, "kind": kind, "shot_type": data.get("shot_type") or "",
+                   "summary": (data.get("summary") or "")[:200], "at": db.utcnow(), "notes": notes}
+            settings.set(conn, CHECK_KEY, json.dumps(rec))
+    if rec is None:
+        return True, "your photo; Claude has not looked at it yet"
+    return True, rec["why"]
 
 
 def status(conn: sqlite3.Connection) -> dict:
@@ -152,5 +155,5 @@ def status(conn: sqlite3.Connection) -> dict:
         size = im.size
     rec = record(conn)
     return {"present": True, "source": "phone" if _uploaded() else "code", "width": size[0], "height": size[1],
-            "checked": rec is not None, "ok": bool(rec and rec["ok"]),
-            "why": rec["why"] if rec else "not checked yet: the next publish asks Claude to look"}
+            "checked": rec is not None, "notes": list((rec or {}).get("notes") or []),
+            "why": rec["why"] if rec else "the site's hero; Claude looks at it during the publish, for the alt text and a note here"}

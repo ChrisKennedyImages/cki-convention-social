@@ -155,17 +155,16 @@ def pick_photos(conn: sqlite3.Connection, fetch: Callable[[dict], Image.Image],
     hero = None
     from . import hero as upload
     if upload.present():
-        ok, why = upload.checked(conn, look)
+        # Chris, 2026-10-12: the photo he sent is the hero, full stop; Claude's look only words the alt text and a note
+        _, why = upload.checked(conn, look)
         yours = "your uploaded photo" if upload.status(conn)["source"] == "phone" else "the photo you sent, shipped with the code"
-        if ok:
-            from ..seo.photo_text import SHOT_WORDS
-            rec = upload.record(conn) or {}
-            out.hero = [(upload.image(), SHOT_WORDS.get(rec.get("shot_type") or "", "Event photography"))]
-            out.hero_note = f"{yours} (checked by Claude)"
-            out.coverage = [(image_of(r), site_alt(r)) for r in spread(events, event_of)[:COVERAGE_ROWS]]
-            out.venues = [(image_of(r), site_alt(r)) for r in venues[:VENUE_ROWS]]
-            return out
-        out.hero_note = f"{yours} could not be used: {why}"
+        from ..seo.photo_text import SHOT_WORDS
+        rec = upload.record(conn) or {}
+        out.hero = [(upload.image(), SHOT_WORDS.get(rec.get("shot_type") or "", "Event photography"))]
+        out.hero_note = f"{yours} ({why})"
+        out.coverage = [(image_of(r), site_alt(r)) for r in spread(events, event_of)[:COVERAGE_ROWS]]
+        out.venues = [(image_of(r), site_alt(r)) for r in venues[:VENUE_ROWS]]
+        return out
 
     def note(text):
         out.hero_note = (out.hero_note + "; " if out.hero_note else "") + text

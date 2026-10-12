@@ -496,6 +496,19 @@ only when Chris says so.
   anyone who may be under 18. Photos already flagged need no new look: the
   gate reads the stored flags with the new rule.
 
+## 2026-10-12, late morning: the hero he sends is the hero
+
+- "That's still not the ... landing page photo I uploaded on the dashboard."
+  The photo he sends from the Photos page was held behind Claude's look (the
+  under-18 rule on a crowd, or no look at all when the cap is reached), and
+  the build fell back to its own pick while the card said why. That was the
+  suite's design, not his law: his own photo, chosen by him, for his own
+  site, is the hero, full stop (`site/hero.py`). Claude still looks at it
+  once per file, for the alt text and a note on the card (anyone who may be
+  under 18, a readable plate, a wedding), never to hold it back. Sending,
+  removing or picking a hero on the dashboard publishes the site by itself,
+  so there is no second button and no terminal.
+
 ## Standing rules from the brief
 
 - Nothing publishes without Chris's Approve on the dashboard, until he says

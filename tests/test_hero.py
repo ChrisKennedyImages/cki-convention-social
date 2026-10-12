@@ -115,7 +115,8 @@ class ThePick(IsolatedCase):
         self.assertNotIn("site hero</span>", page)
         r = self.client.post(f"/library/photo/{self.pid}/hero", data={"back": f"/library?view=approved&page=1#p{self.pid}"}, follow_redirects=False)
         self.assertEqual(r.status_code, 303)
-        self.assertEqual(r.headers["location"], f"/library?view=approved&page=1&msg=Site+hero:+this+photo,+on+the+next+go-live#p{self.pid}")
+        self.assertTrue(r.headers["location"].startswith(f"/library?view=approved&page=1&msg=Site+hero%3A+this+photo."), r.headers["location"])
+        self.assertTrue(r.headers["location"].endswith(f"#p{self.pid}"))
         self.assertEqual(settings.get(self.conn, build.HERO_KEY), str(self.pid))
         page = self.client.get("/library?view=approved").text
         self.assertIn("Site hero: chosen", page)
