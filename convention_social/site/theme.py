@@ -41,7 +41,7 @@ a{color:inherit;text-decoration:none}img{display:block;max-width:100%}
 .btn.fill{background:var(--w);color:var(--k)}.btn.fill:hover{background:var(--c)}
 /* hero */
 .hero{position:relative;height:100svh;min-height:640px;overflow:hidden;display:flex;align-items:flex-end}
-.hero .img{position:absolute;inset:0}.hero .img img{width:100%;height:100%;object-fit:cover;animation:push 18s ease-out forwards;filter:brightness(1.18) saturate(1.35) contrast(1.06)}
+.hero .img{position:absolute;inset:0}.hero .img img{width:100%;height:100%;object-fit:cover;animation:push 18s ease-out forwards;filter:brightness(1.24) saturate(1.35) contrast(1.04)}
 @keyframes push{from{transform:scale(1.14)}to{transform:scale(1)}}
 .hero:after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(10,10,11,.3) 0%,rgba(10,10,11,0) 24%,rgba(10,10,11,.08) 55%,rgba(10,10,11,.92) 100%)}
 .hero canvas.web{position:absolute;inset:0;width:100%;height:100%;z-index:2;pointer-events:none;mix-blend-mode:screen;opacity:.7}

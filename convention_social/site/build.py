@@ -198,6 +198,13 @@ def site_alt(row: dict) -> str:
     return SHOT_WORDS.get(row.get("shot_type") or "", "Event photography")
 
 
+def dodge_shadows(im: Image.Image, amount: float = 0.14) -> Image.Image:
+    """Lift the shadows a touch, as a dodge would: the darkest values rise by up to `amount` of the
+    range, the mid tones a little, the highlights not at all (Chris, 2026-10-12: "dodge shadows a tad")."""
+    lut = [min(255, round(v + amount * 255 * (1 - v / 255) ** 2)) for v in range(256)]
+    return im.convert("RGB").point(lut * 3)
+
+
 def save_web(im: Image.Image, out_dir: Path, stem: str, meta: Optional[ImageMeta] = None) -> dict:
     """JPEGs at each width, from pixels only: no camera data or GPS, our SEO fields inside. {width: filename}."""
     im = ImageOps.exif_transpose(im).convert("RGB")
@@ -331,7 +338,7 @@ def build(conn: Optional[sqlite3.Connection], photos: SitePhotos, *, out: Path =
     shown: list[tuple[str, str, ImageMeta]] = []          # (published path, alt, meta) for the sitemap and JSON-LD
     if photos.hero:
         im, alt, m = _photo(photos.hero[0])
-        files = save_web(im, assets, "hero", m)
+        files = save_web(dodge_shadows(im), assets, "hero", m)
         hero = img_tag(files, alt, "100vw", eager=True)
         shown.append((f"/assets/{files[max(files)]}", alt, m))
     for i, entry in enumerate(photos.coverage):

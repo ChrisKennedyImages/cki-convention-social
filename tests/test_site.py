@@ -55,11 +55,22 @@ class Site(IsolatedCase):
         for word in ("mousemove", "touchmove", "IntersectionObserver(es=>{live=", "visibilitychange", "requestAnimationFrame(step)"):
             self.assertIn(word, js, word)
         css = (out / "assets/site.css").read_text()
-        self.assertIn("filter:brightness(1.18) saturate(1.35)", css[css.index(".hero .img img{"):][:300],
+        self.assertIn("filter:brightness(1.24) saturate(1.35)", css[css.index(".hero .img img{"):][:300],
                       "Chris, 2026-10-12: up the saturation, it was lost in the layer; up brightness too")
         self.assertIn(".hero canvas.web{position:absolute;inset:0", css)
         self.assertIn("pointer-events:none", css[css.index(".hero canvas.web{"):][:200])
         self.assertIn(".hero canvas.web{display:none}", css[css.index("prefers-reduced-motion"):])
+
+    def test_the_heros_shadows_are_dodged_a_tad(self):
+        """Chris, 2026-10-12: "Up brightness and dodge shadows a tad"."""
+        dark = Image.new("RGB", (8, 8), (20, 20, 20))
+        self.assertEqual(build.dodge_shadows(dark).getpixel((0, 0)), (51, 51, 51))
+        self.assertEqual(build.dodge_shadows(Image.new("RGB", (8, 8), (255, 255, 255))).getpixel((0, 0)), (255, 255, 255))
+        self.assertEqual(build.dodge_shadows(Image.new("RGB", (8, 8), (128, 128, 128))).getpixel((0, 0)), (137, 137, 137))
+        hero = Image.new("RGB", (2400, 1600), (20, 20, 20))
+        out = self.built(photos=build.SitePhotos(hero=[(hero, "a")]))
+        with Image.open(out / "assets/hero-800.jpg") as saved:
+            self.assertGreater(saved.getpixel((10, 10))[0], 40, "the saved hero carries the lift")
 
     def test_the_main_page_never_says_fan_conventions_and_keeps_delivery_out_of_the_hero(self):
         """Chris, 2026-10-12: "Get rid of 'fan conventions'... Don't put that on the main page"; instant delivery
