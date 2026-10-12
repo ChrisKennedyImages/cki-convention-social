@@ -53,14 +53,19 @@ def _x(text: str) -> str:
     return escape(text, {'"': "&quot;"})
 
 
-def sitemap_xml(base_url: str, pages: Iterable[str], images: Optional[dict[str, list[dict]]] = None) -> str:
+def sitemap_xml(base_url: str, pages: Iterable[str], images: Optional[dict[str, list[dict]]] = None,
+                lastmod: Optional[dict[str, str]] = None) -> str:
     """A sitemap with an image:image entry (loc, title, caption) for each image on each page.
 
     `pages` are paths ('/', '/book/') or absolute URLs, in the order to list them. `images` maps a
     page, written the same way, to [{"loc": ..., "title": ..., "caption": ...}]; an image's loc may
     be a path. A page that has images but is missing from `pages` is listed after them. Each page
-    is listed once. Titles and captions must pass the copy rules (SeoCopyRefused otherwise)."""
+    is listed once. Titles and captions must pass the copy rules (SeoCopyRefused otherwise).
+    `lastmod` maps a page to the date (YYYY-MM-DD) its content last changed; only a true date is
+    worth listing (Google ignores a sitemap whose dates move on every build), so site.build keeps a
+    record of each page's content and passes the date it last changed."""
     images = images or {}
+    lastmod = lastmod or {}
     order = list(pages) + [p for p in images if p not in list(pages)]
     seen: set[str] = set()
     lines = ['<?xml version="1.0" encoding="UTF-8"?>', f'<urlset xmlns="{SITEMAP_NS}" xmlns:image="{IMAGE_NS}">']
@@ -71,6 +76,8 @@ def sitemap_xml(base_url: str, pages: Iterable[str], images: Optional[dict[str, 
         seen.add(loc)
         lines.append("  <url>")
         lines.append(f"    <loc>{_x(loc)}</loc>")
+        if (lastmod.get(page) or "").strip():
+            lines.append(f"    <lastmod>{_x(lastmod[page].strip())}</lastmod>")
         for img in images.get(page) or []:
             if not isinstance(img, dict) or not (img.get("loc") or "").strip():
                 continue

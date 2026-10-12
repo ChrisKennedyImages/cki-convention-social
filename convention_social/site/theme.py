@@ -222,9 +222,10 @@ if(par.length&&!reduce){addEventListener('scroll',move,{passive:true});move()}
 
 def shell(*, title: str, description: str, body: str, mark_svg: str, brand: str, legal: str, email: str,
           preview: bool, canonical: str, jsonld: str = "", og_image: str = "",
-          sections: tuple = ("work", "venues")) -> str:
+          sections: tuple = ("work", "venues"), verification: str = "") -> str:
     """`sections`: the photo sections the home page has; the menu links only to those (a site built
-    before any photo is cleared has neither)."""
+    before any photo is cleared has neither). `verification`: the Google Search Console tag's content
+    value, on every page so the property stays verified whichever page Google reads."""
     links = [("/#coverage", "01", "Coverage"), ("/#work", "02", "Work"), ("/#venues", "03", "Venues"),
              ("/availability/", "04", "Availability"), ("/about/", "05", "About")]
     nav = "".join(f'<a href="{h}"><b>{n}</b> {label}</a>' for h, n, label in links
@@ -232,9 +233,10 @@ def shell(*, title: str, description: str, body: str, mark_svg: str, brand: str,
     stamp = '<div class="preview mono">Preview, not live</div>' if preview else ""
     robots = '<meta name="robots" content="noindex,nofollow">' if preview else ""
     og = f'<meta property="og:image" content="{og_image}">' if og_image else ""
+    verify = f'<meta name="google-site-verification" content="{verification}">' if verification and not preview else ""
     return f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>{title}</title>
-<meta name="description" content="{description}"><link rel="canonical" href="{canonical}">{robots}
+<meta name="description" content="{description}"><link rel="canonical" href="{canonical}">{robots}{verify}
 <meta property="og:title" content="{title}"><meta property="og:description" content="{description}"><meta property="og:type" content="website">{og}
 <meta name="theme-color" content="#0A0A0B"><link rel="icon" href="/assets/mark.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/assets/site.css"><script>document.documentElement.classList.add("js")</script>{jsonld}
