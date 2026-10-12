@@ -60,6 +60,17 @@ class Site(IsolatedCase):
         self.assertIn("pointer-events:none", css[css.index(".hero canvas.web{"):][:200])
         self.assertIn(".hero canvas.web{display:none}", css[css.index("prefers-reduced-motion"):])
 
+    def test_the_main_page_never_says_fan_conventions_and_keeps_delivery_out_of_the_hero(self):
+        """Chris, 2026-10-12: "Get rid of 'fan conventions'... Don't put that on the main page"; instant delivery
+        can be highlighted but never front and center."""
+        home = (self.built() / "index.html").read_text()
+        text = re.sub(r"<script.*?</script>|<style.*?</style>|<[^>]+>", " ", home, flags=re.S).lower()
+        self.assertNotIn("fan convention", text)
+        hero = home[home.index('<section class="hero">'):home.index("</section>")]
+        for word in ("selfie", "badge", "scan"):
+            self.assertNotIn(word, hero.lower(), word)
+        self.assertIn("Conventions, conferences, galas and award dinners, photographed room by room.", hero)
+
     def test_no_banned_copy_on_any_page(self):
         out = self.built()
         for page in out.rglob("*.html"):

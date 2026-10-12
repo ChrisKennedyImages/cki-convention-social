@@ -227,8 +227,8 @@ def copy_text() -> dict:
     o = offer.load()
     return {
         "title": f"{o['company']}: {o['tagline']}",
-        "lede": ("Fan conventions, conferences, galas and award dinners, photographed room by room. "
-                 "Attendees scan their badge, add a selfie, and every photo they are in comes straight to them."),
+        # Chris, 2026-10-12: no "fan conventions" on the main page; instant delivery is never front and center
+        "lede": "Conventions, conferences, galas and award dinners, photographed room by room.",
         "coverage_p": "Tell us which rooms matter. Coverage is planned around your schedule, and every event is quoted on its own.",
         "deliver_p": ("Attendees scan the code on their badge or on a poster, fill in three short fields and take a quick selfie. "
                       "Every photo they are in is sent to them right away, from every photographer, with no wires. "
