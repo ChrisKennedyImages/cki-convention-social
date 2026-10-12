@@ -49,12 +49,7 @@ a{color:inherit;text-decoration:none}img{display:block;max-width:100%}
 .vf i{position:absolute;width:44px;height:44px;border:0 solid var(--w)}
 .vf i:nth-child(1){left:0;top:0;border-width:2px 0 0 2px}.vf i:nth-child(2){right:0;top:0;border-width:2px 2px 0 0}
 .vf i:nth-child(3){left:0;bottom:0;border-width:0 0 2px 2px}.vf i:nth-child(4){right:0;bottom:0;border-width:0 2px 2px 0}
-.vf .cross{position:absolute;left:50%;top:42%;width:22px;height:22px;margin:-11px}
-.vf .cross:before,.vf .cross:after{content:"";position:absolute;background:rgba(243,243,241,.7)}.vf .cross:before{left:10px;top:0;width:2px;height:22px}.vf .cross:after{top:10px;left:0;height:2px;width:22px}
-.vf .focus{position:absolute;left:58%;top:22%;width:120px;height:86px;border:2px solid var(--c);animation:af 1.6s cubic-bezier(.2,.8,.2,1) .4s both}
 @keyframes af{0%{transform:scale(2.2);opacity:0}55%{transform:scale(.9);opacity:1}70%{transform:scale(1.04)}100%{transform:scale(1)}}
-.hud{position:absolute;z-index:3;color:var(--w)}.hud.tl{left:calc(var(--pad) + 60px);top:clamp(78px,10vh,118px)}.hud.tr{right:calc(var(--pad) + 60px);top:clamp(78px,10vh,118px);text-align:right}
-.hud.br{right:calc(var(--pad) + 60px);bottom:clamp(30px,5vh,52px)}
 .rec:before{content:"";display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--c);margin-right:10px;vertical-align:1px;animation:blink 1.2s steps(2) infinite}
 @keyframes blink{50%{opacity:0}}
 .hero .copy{position:relative;z-index:3;padding:0 calc(var(--pad) + 60px) clamp(64px,10vh,110px);width:100%}
@@ -168,7 +163,6 @@ form.book textarea{min-height:120px;resize:vertical}
 .steps>div{border-right:0;border-bottom:1px solid var(--g3)}.venues .grid{grid-template-columns:1fr}.venues figure:first-child{grid-row:auto}
 .reel .pin{position:relative;height:auto;padding:90px 0}.reel .track{overflow-x:auto;scroll-snap-type:x mandatory;transform:none!important}
 .frame{width:78vw;scroll-snap-align:start}.side{position:relative;top:0}form.book{grid-template-columns:1fr}.hud.tr{display:none}
-.vf .focus{left:60%;top:16%;width:70px;height:52px}.vf .cross,.hud.tl{display:none}
 .hero .copy{padding:0 calc(var(--pad) + 14px) 76px}.mega{font-size:clamp(30px,10.4vw,64px)}.hero .lede{font-size:16px}.hero .row{margin-top:18px;gap:20px}
 .vf i{width:28px;height:28px}.list a{grid-template-columns:44px 1fr auto}.top .btn{padding:12px 14px}}
 @media (prefers-reduced-motion:reduce){*,*:before,*:after{animation:none!important;transition:none!important}.mega span em{transform:none}.rv{opacity:1;transform:none}.hero canvas.web{display:none}}
@@ -192,7 +186,7 @@ document.querySelectorAll('a,button,.chips label').forEach(a=>{a.addEventListene
 // the magnetic web over the hero (Chris, 2026-10-11): a drifting mesh of points and lines in the brand cyan that
 // the pointer pulls toward itself; still under reduced motion, asleep while the hero is off screen or the tab hidden
 const web=document.querySelector('.hero canvas.web');
-if(web&&!reduce){const ctx=web.getContext('2d'),hero=web.parentElement;let W=0,H=0,pts=[],live=true,raf=0;const ptr={x:-1e4,y:-1e4,on:false};
+if(web&&!reduce){const ctx=web.getContext('2d'),hero=web.parentElement;let W=0,H=0,pts=[],live=true,raf=0,done=false;const ptr={x:-1e4,y:-1e4,on:false};
 const make=()=>{const r=hero.getBoundingClientRect(),dpr=Math.min(2,devicePixelRatio||1);W=r.width;H=r.height;web.width=W*dpr;web.height=H*dpr;ctx.setTransform(dpr,0,0,dpr,0,0);
 const n=Math.round(Math.min(150,Math.max(50,W*H/13000)));pts=Array.from({length:n},()=>({x:Math.random()*W,y:Math.random()*H,vx:(Math.random()-.5)*.35,vy:(Math.random()-.5)*.35,ox:0,oy:0,ovx:0,ovy:0}))};
 const step=()=>{raf=0;if(!live)return;ctx.clearRect(0,0,W,H);const R=200,L=130;
@@ -205,7 +199,9 @@ ctx.fillStyle='rgba(0,225,255,.8)';for(const p of pts){ctx.beginPath();ctx.arc(p
 const go=()=>{if(!raf&&live)raf=requestAnimationFrame(step)};const at=(cx,cy)=>{const r=hero.getBoundingClientRect();ptr.x=cx-r.left;ptr.y=cy-r.top;ptr.on=true};
 make();addEventListener('resize',make);hero.addEventListener('mousemove',e=>at(e.clientX,e.clientY),{passive:true});hero.addEventListener('mouseleave',()=>{ptr.on=false});
 hero.addEventListener('touchmove',e=>at(e.touches[0].clientX,e.touches[0].clientY),{passive:true});hero.addEventListener('touchend',()=>{ptr.on=false});
-new IntersectionObserver(es=>{live=es[0].isIntersecting&&!document.hidden;go()}).observe(hero);document.addEventListener('visibilitychange',()=>{live=!document.hidden;go()});go()}
+new IntersectionObserver(es=>{live=!done&&es[0].isIntersecting&&!document.hidden;go()}).observe(hero);document.addEventListener('visibilitychange',()=>{live=!done&&!document.hidden;go()});go();
+// a reveal, then stillness (2026-10-12): the web plays for six seconds and fades, so the photograph and the words stand alone
+setTimeout(()=>{web.style.transition='opacity 1.6s ease';web.style.opacity='0';setTimeout(()=>{done=true;live=false},1700)},6000)}
 // coverage peek
 const peek=document.querySelector('.peek');
 if(peek&&fine){const img=peek.querySelector('img');document.querySelectorAll('.list a').forEach(a=>{
@@ -230,7 +226,7 @@ def shell(*, title: str, description: str, body: str, mark_svg: str, brand: str,
     """`sections`: the photo sections the home page has; the menu links only to those (a site built
     before any photo is cleared has neither)."""
     links = [("/#coverage", "01", "Coverage"), ("/#work", "02", "Work"), ("/#venues", "03", "Venues"),
-             ("/availability/", "04", "Availability")]
+             ("/availability/", "04", "Availability"), ("/about/", "05", "About")]
     nav = "".join(f'<a href="{h}"><b>{n}</b> {label}</a>' for h, n, label in links
                   if not h.startswith("/#") or h[2:] == "coverage" or h[2:] in sections)
     stamp = '<div class="preview mono">Preview, not live</div>' if preview else ""

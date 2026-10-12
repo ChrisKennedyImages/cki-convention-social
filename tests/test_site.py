@@ -82,7 +82,44 @@ class Site(IsolatedCase):
         hero = home[home.index('<section class="hero">'):home.index("</section>")]
         for word in ("selfie", "badge", "scan"):
             self.assertNotIn(word, hero.lower(), word)
-        self.assertIn("Conventions, conferences, galas and award dinners, photographed room by room.", hero)
+        self.assertIn("conventions, conferences, galas and award dinners for more than thirty years each", hero)
+
+    def test_the_site_is_inhabited_by_the_two_brothers(self):
+        """Chris, 2026-10-12, after the research: the site is the two of them, in their voice, with the camera
+        readouts gone, an About page, who will be at your event, and one reply promise everywhere."""
+        out = self.built()
+        home = (out / "index.html").read_text()
+        hero = home[home.index('<section class="hero">'):home.index("</section>")]
+        for gone in ('id="tc"', "ISO 3200", 'id="fr"', 'class="cross"', 'class="focus"', 'class="hud'):
+            self.assertNotIn(gone, home, gone)
+        self.assertIn("<em>Two</em>", hero)
+        self.assertIn("<em>brothers,</em>", hero)
+        self.assertIn("<em>every room<b>.</b></em>", hero)
+        self.assertIn("one of us will write back within 24 hours", hero)
+        self.assertIn('<div class="vf" aria-hidden="true"><i></i><i></i><i></i><i></i></div>', hero, "the corner marks stay")
+        self.assertIn("Who will be at your event", home)
+        self.assertIn("One of us is at every event.", home)
+        self.assertIn("References available on request.", home)
+        self.assertIn('href="/about/"', home)
+        self.assertIn("<b>05</b> About", home)
+        self.assertNotIn("Scan.</div>", home)
+        about = (out / "about/index.html").read_text()
+        for word in ("Chris and Nic Kennedy, brothers", "Corcoran", "Nic finished in 1999, Chris in 2002", "darkroom at home",
+                     "our father taught and had graduated before us", "Who will be at your event", "within 24 hours"):
+            self.assertIn(word, about, word)
+        self.assertEqual(about.count("<figure>"), 2, "two of the work photos stand in until there are portraits")
+        for rel in ("index.html", "about/index.html", "book/index.html"):
+            page = (out / rel).read_text()
+            self.assertIn("within 24 hours", page, rel)
+            self.assertNotIn("political", page.lower(), rel)
+        for rel in ("index.html", "about/index.html"):            # the quote form's kind-of-event choice may still say it
+            self.assertNotIn("fan convention", (out / rel).read_text().lower(), rel)
+        self.assertIn("what moves the quote".title().lower(), (out / "book/index.html").read_text().lower())
+        js = (out / "assets/site.js").read_text()
+        self.assertIn("setTimeout(()=>{web.style.transition='opacity 1.6s ease';web.style.opacity='0'", js, "the web fades after six seconds")
+        self.assertIn("live=!done&&es[0].isIntersecting", js)
+        from convention_social.seo import site_check
+        self.assertIn("/about/", site_check.HTML_PATHS)
 
     def test_no_banned_copy_on_any_page(self):
         out = self.built()
@@ -102,7 +139,7 @@ class Site(IsolatedCase):
         self.assertNotIn("Disallow: /\n", robots)
         sitemap = (out / "sitemap.xml").read_text()
         locs = re.findall(r"<loc>([^<]+)</loc>", sitemap)
-        self.assertEqual(locs, ["https://eventcaliber.com/", "https://eventcaliber.com/book/",
+        self.assertEqual(locs, ["https://eventcaliber.com/", "https://eventcaliber.com/about/", "https://eventcaliber.com/book/",
                                 "https://eventcaliber.com/availability/", "https://eventcaliber.com/privacy/"])
         images = re.findall(r"<image:loc>([^<]+)</image:loc>", sitemap)
         self.assertEqual(len(images), 5)                          # hero, 3 coverage, 1 venue
