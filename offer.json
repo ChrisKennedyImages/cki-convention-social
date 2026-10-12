@@ -11,15 +11,16 @@
     {"key": "stage", "label": "Main stage and keynotes"},
     {"key": "evening_events", "label": "Before, during and evening events"},
     {"key": "dinners", "label": "Dinners and receptions"},
-    {"key": "portraits", "label": "Portraits"},
+    {"key": "portraits", "label": "Portraits",
+     "note": "Backstage, for the speakers and the people the event is about. Lit on site with our own lights and color gels, often lighting we build for the room, and finished in the camera."},
     {"key": "exhibition_hall", "label": "Exhibition halls"},
-    {"key": "on_site_delivery", "label": "Instant delivery by face match: guests scan their badge, add a selfie, and get every photo they are in"}
+    {"key": "on_site_delivery", "label": "Instant delivery during the event"}
   ],
   "quote_questions": [
     "Which days and hours you need covered",
     "Roughly how many attendees",
     "Which rooms or parts of the event matter most",
-    "Whether every attendee gets their photos by face match, or only staff, each with the photos they need",
+    "Whether photos go out during the event, and to whom",
     "Where the images will be used"
   ],
   "call_to_action": "Request a quote"

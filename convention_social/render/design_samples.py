@@ -30,8 +30,8 @@ from . import motion
 ROOMS = {
     "stage_panel": ("MAIN STAGE", "The keynote, from the room."),
     "backstage": ("BACKSTAGE", "The minutes before the doors open."),
-    "portrait": ("PORTRAITS", "Made at the event."),
-    "headshot": ("PORTRAITS", "Made at the event."),
+    "portrait": ("PORTRAITS", "Speakers and guests, backstage."),      # Chris, 2026-10-12: the speakers and VIPs, not the attendees
+    "headshot": ("PORTRAITS", "Speakers and guests, backstage."),
     "vendor_hall": ("EXPO FLOOR", "On the exhibition floor."),
     "booth": ("EXPO FLOOR", "On the exhibition floor."),
     "dinner_reception": ("AFTER DARK", "After the last session."),

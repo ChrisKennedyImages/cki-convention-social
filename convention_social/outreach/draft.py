@@ -98,8 +98,8 @@ def template_first(ev) -> OutreachDraft:
              "and I wanted to ask: do you have a photographer lined up yet?", "",
              f"We cover whole events. What we photograph at {event}:"]
     lines += [f"  {label}" for label in coverage_for(_get(ev, "event_kind"))]
-    lines += ["", "Attendees can also get every photo they are in, sent straight to their phone: they scan their badge, add a quick selfie, "
-              "and the photos find them. You decide whether that is open to everyone or kept to your staff.", "",
+    lines += ["", "Photos can also reach the people in them while the event is still on. You decide whether that is open to everyone "
+              "or kept to your staff.", "",
               "If that would help, reply with the days and the parts of the event that matter most, and I will put together a quote.",
               "", "Chris", cfg.brand_name]
     return OutreachDraft(subject=tidy(f"Photography for {event}"), body=tidy_lines(lines), model="template")

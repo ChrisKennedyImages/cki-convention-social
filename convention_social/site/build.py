@@ -254,9 +254,9 @@ def copy_text() -> dict:
                   "We are based in Washington, DC and travel wherever the event is.\n\n"
                   "Tell us about your event and one of us will write back within 24 hours."),
         "coverage_p": "Tell us which rooms matter. Coverage is planned around your schedule, and every event is quoted on its own.",
-        "deliver_p": ("Attendees scan the code on their badge or on a poster, fill in three short fields and take a quick selfie. "
-                      "Every photo they are in is sent to them right away, from every photographer, with no wires. "
-                      "You decide before the event: open to every attendee, or kept to staff, each getting only the photos they need."),
+        # Chris, 2026-10-12: never "face match", never the steps; it is a feature, not the product
+        "deliver_p": ("Photos can reach the people in them while the event is still on, from every photographer in the room. "
+                      "It is one part of how we work. The photography is the work."),
         "steps": [("Tell us about your event", "Dates, venue, the rooms and moments that matter, and who needs images."),
                   ("A quote within 24 hours", "One of us writes back with a clear quote for the coverage you need, nothing bundled you did not ask for."),
                   ("Photos during the event, the full set after", "Selects go out while the event is on, and the finished set follows.")],
@@ -292,11 +292,11 @@ def _ticker(labels: list[str], rev: bool = False) -> str:
 def home_body(t: dict, hero: str, frames: list[tuple[str, str]], stack: list[str], venues: list[tuple[str, str]],
               peeks: list[str]) -> str:
     e = html.escape
-    labels = [c["label"] for c in offer.load()["coverage"]]
+    coverage = offer.load()["coverage"]
     rows = "".join(
         f'<a href="/book/" data-img="{e(peeks[i % len(peeks)]) if peeks else ""}"><span class="mono g">{i + 1:02d}</span>'
-        f'<span class="t">{e(label if len(label) < 40 else label.split(" to ")[0])}</span><span class="mono">&#8599;</span></a>'
-        for i, label in enumerate(labels))
+        f'<span class="t">{e(c["label"])}{f"<em>{e(c["note"])}</em>" if c.get("note") else ""}</span><span class="mono">&#8599;</span></a>'
+        for i, c in enumerate(coverage))
     reel = "".join(f'<div class="frame"><div class="ph">{img}</div><div class="cap mono"><span>FR {i + 1:02d} / {len(frames):02d}</span>'
                    f'<span>{e(cap)}</span></div></div>' for i, (img, cap) in enumerate(frames))
     stack_html = "".join(f"<figure>{img}</figure>" for img in stack[:3])
@@ -304,7 +304,7 @@ def home_body(t: dict, hero: str, frames: list[tuple[str, str]], stack: list[str
     steps = "".join(f'<div class="rv"><div class="n">{i:02d}</div><h3>{e(h)}</h3><p>{e(p)}</p></div>'
                     for i, (h, p) in enumerate(t["steps"], start=1))
     short = ["Backstage", "Green rooms", "Breakouts", "Main stage", "Evening events", "Dinners", "Portraits",
-             "Exhibition halls", "Delivered on site"]
+             "Exhibition halls", "Instant delivery"]
     return f"""
 <section class="hero"><div class="img">{hero}</div><canvas class="web" aria-hidden="true"></canvas>
 <div class="vf" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
@@ -387,7 +387,8 @@ def build(conn: Optional[sqlite3.Connection], photos: SitePhotos, *, out: Path =
     brand = cfg.brand_name
     verification = verification_value()
     t = copy_text()
-    check_copy([v if isinstance(v, str) else " ".join(x for pair in v for x in pair) for v in t.values()] + offer.coverage_labels())
+    check_copy([v if isinstance(v, str) else " ".join(x for pair in v for x in pair) for v in t.values()] + offer.coverage_labels()
+               + [c["note"] for c in o["coverage"] if c.get("note")])
     if out.exists():
         shutil.rmtree(out)
     assets = out / "assets"
@@ -427,7 +428,7 @@ def build(conn: Optional[sqlite3.Connection], photos: SitePhotos, *, out: Path =
                        "Exterior" if i % 2 == 0 else "Interior"))
     base = f"https://{cfg.brand_domain}"
     pages = {"index.html": (t["title"], t["lede"], home_body(t, hero, frames, stack, venues, peeks))}
-    chips = "".join(f'<label><input type="checkbox" name="coverage" value="{e(c["key"])}"><span>{e(c["label"] if len(c["label"]) < 40 else "Instant delivery by face match")}</span></label>'
+    chips = "".join(f'<label><input type="checkbox" name="coverage" value="{e(c["key"])}"><span>{e(c["label"])}</span></label>'
                     for c in o["coverage"])
     site_key = config.getenv("TURNSTILE_SITE_KEY") or ""
     turnstile = (f'<div class="full"><div class="cf-turnstile" data-sitekey="{e(site_key)}" data-theme="dark"></div></div>'

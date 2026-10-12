@@ -517,6 +517,27 @@ only when Chris says so.
   0064), and every reader says Exhibition hall. Like portraits and headshots
   the same morning.
 
+## 2026-10-12, afternoon: delivery is a feature; portraits are backstage, lit on site
+
+- "Don't say instant delivery by 'facematch' and don't give the steps in
+  which they [need] to do in order to receive the instant delivery. Again,
+  too specific and it's a feature not the entire product." Nowhere public
+  (the site, the quote reply, the organizer email): no "face match", no
+  badge, no selfie, no steps. The site says photos can reach the people in
+  them while the event is on, and that the photography is the work; the
+  offer row is "Instant delivery during the event"; the quote question asks
+  whether photos go out during the event and to whom.
+- "A lot of the times the portraits are backstage for the event speakers and
+  VIP etc, not the attendees. Some conventions want portraits for all
+  attendees but that is kind of a different product. We do really stylized
+  and professional portraits: all the lighting and color is done with
+  onsite professional lighting (sometimes lighting we create or build
+  ourselves) and color gels; no post editing is needed, or very limited."
+  The site's Portraits row carries that in one line (the offer file's
+  `note`); the portrait card says "Speakers and guests, backstage."; the caption
+  writer is told the same and told never to say every attendee gets one.
+  Attendee portraits are not advertised.
+
 ## Standing rules from the brief
 
 - Nothing publishes without Chris's Approve on the dashboard, until he says

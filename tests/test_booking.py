@@ -72,7 +72,8 @@ class Inbox(IsolatedCase):
         r = rows[0]
         self.assertEqual((r["status"], r["reply_status"]), ("drafted", "draft"))
         self.assertIn(reply.QUOTE_MARK, r["reply_body"])
-        self.assertIn("Instant delivery by face match", r["reply_body"])
+        self.assertIn("Instant delivery during the event", r["reply_body"])
+        self.assertNotIn("face match", r["reply_body"].lower(), "Chris, 2026-10-12: never 'face match', never the steps")
         # only the stored request was acked; the bad one stays on the site
         self.assertEqual([i["id"] for i in site.items], ["r2"])
         # a second pull of the same id does not duplicate

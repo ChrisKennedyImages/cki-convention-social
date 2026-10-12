@@ -3,12 +3,13 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import re
 
 from PIL import Image
 
 from convention_social import offer
-from convention_social.core import db
+from convention_social.core import config, db
 from convention_social.site import build
 from convention_social.render import meta
 from convention_social.seo import site_check
@@ -96,6 +97,38 @@ class Site(IsolatedCase):
         for word in ("selfie", "badge", "scan"):
             self.assertNotIn(word, hero.lower(), word)
         self.assertIn("conventions, conferences, galas and award dinners for more than thirty years each", hero)
+
+    def test_delivery_is_a_feature_with_no_name_and_no_steps_and_portraits_are_backstage(self):
+        """Chris, 2026-10-12: "Don't say instant delivery by 'facematch' and don't give the steps ... it's a feature not the
+        entire product"; and portraits are backstage for the speakers, lit on site with our own lights and gels."""
+        out = self.built()
+        for rel in ("index.html", "about/index.html", "book/index.html", "availability/index.html", "privacy/index.html"):
+            text = re.sub(r"<script.*?</script>|<style.*?</style>|<[^>]+>", " ", (out / rel).read_text(), flags=re.S).lower()
+            for word in ("face match", "facematch", "selfie", "scan the code", "scan their badge", "three short fields", "add a selfie"):
+                self.assertNotIn(word, text, (rel, word))
+        home = (out / "index.html").read_text()
+        self.assertIn("Instant delivery during the event", home)
+        self.assertIn('<span class="">Instant delivery</span><span class="dot">', home, "the ticker says it the same way")
+        self.assertNotIn("Delivered on site", home)
+        self.assertIn("The photography is the work.", home)
+        self.assertIn("<em>Backstage, for the speakers and the people the event is about.", home)
+        self.assertIn("finished in the camera", home)
+        self.assertNotIn("every attendee", home.lower(), "attendee portraits are a different product, not advertised")
+        book = (out / "book/index.html").read_text()
+        self.assertIn("<span>Instant delivery during the event</span>", book)
+        self.assertIn("Whether photos go out during the event, and to whom", book)
+        self.assertIn(".list a .t em{display:block", (out / "assets/site.css").read_text())
+
+    def test_a_coverage_note_passes_the_same_gate_as_the_labels(self):
+        """The Portraits row's note is public copy: a price or a claim in it stops the build like one in a label would."""
+        bad = json.loads(json.dumps(offer.load()))
+        bad["coverage"][0]["note"] = "From $500 a day."
+        (self.root / "offer.json").write_text(json.dumps(bad))
+        os.environ["OFFER_FILE"] = str(self.root / "offer.json")
+        config.reset()
+        with self.assertRaises(build.SiteCopyRefused):
+            self.built()
+        self.assertFalse((self.root / "dist" / "index.html").exists())
 
     def test_the_site_is_inhabited_by_the_two_brothers(self):
         """Chris, 2026-10-12, after the research: the site is the two of them, in their voice, with the camera

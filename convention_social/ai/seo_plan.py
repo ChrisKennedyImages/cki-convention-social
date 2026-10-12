@@ -64,7 +64,7 @@ HASHTAGS = {
 # what the photo shows, by room, for the template's first line. Never a service, never what is covered
 # (Chris, 2026-10-11: "keep to specifics and not talk about what is offered or what is a service")
 SCENE = {"stage": "a speaker on the main stage", "backstage": "backstage, before the doors open",
-         "portrait": "a portrait made at the event", "floor": "the exhibition floor", "evening": "the dinner after the sessions",
+         "portrait": "a portrait lit on site, backstage", "floor": "the exhibition floor", "evening": "the dinner after the sessions",
          "crowd": "a moment between sessions", "venue": "the room before the event"}
 SET_SCENE = "moments from one event, room by room"
 KIND_WORDS = {"business": "conference", "fan": "convention"}            # never "fan convention" in public (Chris, 2026-10-12)
