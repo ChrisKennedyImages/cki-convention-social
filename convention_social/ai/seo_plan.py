@@ -67,7 +67,7 @@ SCENE = {"stage": "a speaker on the main stage", "backstage": "backstage, before
          "portrait": "a portrait made at the event", "floor": "the exhibition floor", "evening": "the dinner after the sessions",
          "crowd": "a moment between sessions", "venue": "the room before the event"}
 SET_SCENE = "moments from one event, room by room"
-KIND_WORDS = {"business": "conference", "fan": "fan convention"}
+KIND_WORDS = {"business": "conference", "fan": "convention"}            # never "fan convention" in public (Chris, 2026-10-12)
 HASHTAG = re.compile(r"(?<!\w)#\w+")
 SENTENCE_END = re.compile(r"(?<=[.!?])\s+")
 

@@ -202,7 +202,12 @@ class GoLiveScript(IsolatedCase):
 
     def test_deploys_the_untracked_live_config_and_ends_on_the_live_check(self):
         self.assertIn('LIVE=(-c wrangler.live.jsonc)', self.text)
-        self.assertIn('"${WR[@]}" deploy "${LIVE[@]}"', self.text)
+        # 2026-10-12: the suite's own deploy (site/deploy.py), the one the updater and the Publish button run too;
+        # go-live checks after the secrets, so the deploy itself skips the check
+        self.assertIn("bin/ccs site deploy --no-check || stop", self.text)
+        self.assertNotIn('"${WR[@]}" deploy', self.text)
+        self.assertLess(self.text.index("bin/ccs site deploy --no-check"), self.text.index("secret put UPLOAD_TOKEN"))
+        self.assertIn('setenv CLOUDFLARE_ACCOUNT_ID "$CLOUDFLARE_ACCOUNT_ID"', self.text, "a chosen account is kept for the suite's deploys")
         self.assertIn("wrangler.live.jsonc", (REPO / ".gitignore").read_text())
         self.assertIn("bin/ccs site check --wait 600", self.text)
         self.assertIn("SET_AFTER_d1_create", (REPO / "wrangler.jsonc").read_text())

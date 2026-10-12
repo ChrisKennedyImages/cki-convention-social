@@ -8,7 +8,7 @@ direction draws the company name from config, so a rename is one setting.
   press    editorial: a high-contrast serif wordmark, brass rule, navy and bone.
            Reads as conference and gala work.
   marquee  energy: an extra-condensed all-caps wordmark inside viewfinder
-           corners, signal orange on black. Reads as fan convention work.
+           corners, signal orange on black. Reads as convention-floor work.
   lens     modern: a ring monogram with an aperture tick, cobalt on graphite.
            Sits between the two.
 """

@@ -270,7 +270,7 @@ def cmd_samples(_args) -> int:
         if fmt != "photo":
             return {}
         facts = claude.PostFacts(brand_name=cfg.brand_name, event_kind=row.get("event_kind") or "unknown",
-                                 shot_type=row.get("shot_type") or "", services=tuple(SERVICES_FOR_COPY))
+                                 shot_type=row.get("shot_type") or "")
         return drafter.draft(facts, cache / f"{row['drive_id']}.img").captions
 
     nxt = db.one(conn, "SELECT * FROM conventions WHERE attending=1 AND COALESCE(end_date, start_date) >= date('now') ORDER BY start_date LIMIT 1")
@@ -325,6 +325,10 @@ def cmd_design(args) -> int:
 def cmd_site(args) -> int:
     if args.what == "check":
         return cmd_site_check(args)
+    if args.what == "deploy":
+        # Chris, 2026-10-12: the site goes live from the Mini with nobody at a terminal (site/deploy.py)
+        from .site import deploy
+        return deploy.run(with_check=not args.no_check)
     import io
     from PIL import Image
     from .drive import oauth
@@ -373,38 +377,15 @@ def cmd_site(args) -> int:
     return 0
 
 
-SERVICES_FOR_COPY = ("full event coverage", "backstage and green rooms", "breakouts", "evening events and dinners",
-                     "portraits", "exhibition halls and vendors", "every photo a guest is in, sent to them by face match")
-
 
 def cmd_site_check(args) -> int:
     """The live site, from the outside: every page, the sitemap and robots.txt, then the booking API
     with the Mini's token. With --wait it retries until everything passes or the time runs out (a new
     custom domain can take a few minutes to get its certificate). Writes nothing."""
-    import time as _time
-    from .booking import remote
-    from .seo import site_check
-    deadline = _time.monotonic() + max(0.0, args.wait)
-    while True:
-        results = site_check.check_all()
-        api_ok, api_note = True, ""
-        site = remote.SiteAPI.from_config()
-        if site is None:
-            api_ok, api_note = False, "no MEDIA_UPLOAD_TOKEN on this machine"
-        else:
-            try:
-                waiting = len(site.pull())
-                api_note = f"the Mini's token is accepted ({waiting} quote request(s) waiting)"
-            except Exception as e:  # noqa: BLE001  any failure is a failed check, said plainly
-                api_ok, api_note = False, f"the Mini could not read quote requests ({type(e).__name__}: {e})"
-        ok = api_ok and all(r["ok"] for r in results)
-        if ok or _time.monotonic() >= deadline:
-            break
-        print("not all passing yet; trying again in 20 seconds")
-        _time.sleep(20)
-    for r in results:
-        print(f"{'PASS' if r['ok'] else 'FAIL'}  {r['url']}" + ("" if r["ok"] else f"  ({'; '.join(r['problems'])})"))
-    print(f"{'PASS' if api_ok else 'FAIL'}  booking API: {api_note}")
+    from .site import deploy
+    ok, lines = deploy.check(args.wait, say=print)
+    for line in lines:
+        print(line)
     print("LIVE: every check passed" if ok else "NOT LIVE YET: see the FAIL lines above")
     return 0 if ok else 1
 
@@ -490,7 +471,8 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("samples").set_defaults(fn=cmd_samples)
     dz = sub.add_parser("design", help="motion design samples on your own photos, shown on the Library page")
     dz.add_argument("--no-reels", action="store_true"); dz.set_defaults(fn=cmd_design)
-    st = sub.add_parser("site"); st.add_argument("what", choices=["build", "check"]); st.add_argument("--preview", action="store_true")
+    st = sub.add_parser("site"); st.add_argument("what", choices=["build", "check", "deploy"]); st.add_argument("--preview", action="store_true")
+    st.add_argument("--no-check", action="store_true", help="deploy: skip the check from outside (go-live checks after the secrets)")
     st.add_argument("--wait", type=float, default=0, help="check: keep retrying this many seconds until everything passes")
     st.set_defaults(fn=cmd_site)
     ck = sub.add_parser("copy-key", help="copy one key from another .env file (only read) into this suite's .env")

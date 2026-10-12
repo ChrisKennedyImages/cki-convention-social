@@ -72,6 +72,9 @@ if ! "${WR[@]}" whoami --json >/dev/null 2>&1; then
   "${WR[@]}" whoami --json >/dev/null 2>&1 || stop "Cloudflare sign-in did not complete; run this again"
 fi
 
+if [[ -z "${CLOUDFLARE_ACCOUNT_ID:-}" ]] && have CLOUDFLARE_ACCOUNT_ID; then
+  export CLOUDFLARE_ACCOUNT_ID="$(value CLOUDFLARE_ACCOUNT_ID)"      # chosen on an earlier run, kept in .env
+fi
 if [[ -z "${CLOUDFLARE_ACCOUNT_ID:-}" ]]; then
   accounts=("${(@f)$("${WR[@]}" whoami --json 2>/dev/null | py '
 import json, sys
@@ -89,6 +92,7 @@ for a in json.loads(t[t.index("{"):]).get("accounts") or []:
     read "pick?number: "
     [[ "$pick" == <-> ]] && (( pick >= 1 && pick <= ${#accounts} )) || stop "not one of the numbers shown"
     export CLOUDFLARE_ACCOUNT_ID="${accounts[$pick]%%$'\t'*}"
+    setenv CLOUDFLARE_ACCOUNT_ID "$CLOUDFLARE_ACCOUNT_ID"            # so the suite's own deploys pick the same account
   fi
 fi
 
@@ -137,8 +141,10 @@ if ! have MEDIA_UPLOAD_TOKEN; then
 fi
 have MEDIA_BASE_URL || setenv MEDIA_BASE_URL "https://$DOMAIN/m"
 
-bin/ccs site build
-"${WR[@]}" deploy "${LIVE[@]}" || stop "the deploy did not go through. If it says the domain already has DNS
+# the suite's own deploy (site/deploy.py: build, wrangler deploy with wrangler.live.jsonc), the same one the
+# updater runs after a merge that changes the site and the Publish button runs from a phone; the check
+# from outside comes after the secrets below
+bin/ccs site deploy --no-check || stop "the deploy did not go through. If it says the domain already has DNS
      records: Cloudflare, $DOMAIN, DNS, delete the old A, AAAA or CNAME records for $DOMAIN and www (keep
      MX and TXT, they carry the mail), then run this again."
 value MEDIA_UPLOAD_TOKEN | "${WR[@]}" secret put UPLOAD_TOKEN "${LIVE[@]}" >/dev/null \

@@ -97,7 +97,7 @@ class Writers(IsolatedCase):
         conn.close()
 
     def test_the_template_says_the_kind_of_event_only(self):
-        for kind, want in (("business", "A moment from a conference."), ("fan", "A moment from a fan convention."),
+        for kind, want in (("business", "A moment from a conference."), ("fan", "A moment from a convention."),
                            ("unknown", "A moment from an event.")):
             d = claude.TemplateDrafter().draft(claude.PostFacts(brand_name="Event Caliber", event_kind=kind), Path("unused"))
             self.assertTrue(d.captions["facebook"].startswith(want))

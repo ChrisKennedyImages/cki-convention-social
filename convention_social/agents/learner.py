@@ -336,7 +336,7 @@ def decide_time(network: str, obs: list[Obs], base: tuple[time, time], entry: Op
 
 def kind_words(fieldname: str, value: str) -> str:
     if fieldname == "event_kind":
-        return {"fan": "fan convention photos", "business": "business event photos"}.get(value, f"{value} event photos")
+        return {"fan": "convention photos", "business": "business event photos"}.get(value, f"{value} event photos")
     return value.replace("_", " ") + " photos"
 
 

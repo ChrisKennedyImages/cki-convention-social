@@ -49,14 +49,15 @@ PER_RUN_DEFAULT = 300
 MAX_DEPTH = 64
 
 SHOT_WORDS = {
-    "portrait": "Portrait", "headshot": "Headshot", "group": "Group photo",
+    "portrait": "Portrait", "headshot": "Portrait", "group": "Group photo",      # headshot: rows sorted before 2026-10-12
     "candid": "Candid moment", "stage_panel": "Stage and panel", "stage": "Stage", "vendor_hall": "Vendor hall",
     "booth": "Exhibitor booth", "backstage": "Backstage", "dinner_reception": "Dinner and reception", "dinner": "Dinner",
     "crowd": "Crowd", "venue": "Venue",
 }
 PEOPLE_SHOTS = {"portrait", "headshot", "group"}
-KIND_WORDS = {"fan": "fan convention", "business": "business conference"}
-KIND_KEYWORDS = {"fan": "fan convention photography", "business": "conference photography"}
+# Chris, 2026-10-12: no "fan conventions" anywhere public; a convention is a convention
+KIND_WORDS = {"fan": "convention", "business": "business conference"}
+KIND_KEYWORDS = {"fan": "convention photography", "business": "conference photography"}
 # words that are never a person's name, so a Title Cased answer is not mistaken for one
 COMMON_WORDS = set("""
 a an the and or of at in on for with by from to into near during before after while

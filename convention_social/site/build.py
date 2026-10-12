@@ -150,15 +150,16 @@ def pick_photos(conn: sqlite3.Connection, fetch: Callable[[dict], Image.Image],
     from . import hero as upload
     if upload.present():
         ok, why = upload.checked(conn, look)
+        yours = "your uploaded photo" if upload.status(conn)["source"] == "phone" else "the photo you sent, shipped with the code"
         if ok:
             from ..seo.photo_text import SHOT_WORDS
             rec = upload.record(conn) or {}
             out.hero = [(upload.image(), SHOT_WORDS.get(rec.get("shot_type") or "", "Event photography"))]
-            out.hero_note = "your uploaded photo (checked by Claude)"
+            out.hero_note = f"{yours} (checked by Claude)"
             out.coverage = [(image_of(r), site_alt(r)) for r in spread(events, event_of)[:COVERAGE_ROWS]]
             out.venues = [(image_of(r), site_alt(r)) for r in venues[:VENUE_ROWS]]
             return out
-        out.hero_note = f"your uploaded photo could not be used: {why}"
+        out.hero_note = f"{yours} could not be used: {why}"
 
     def note(text):
         out.hero_note = (out.hero_note + "; " if out.hero_note else "") + text
@@ -388,7 +389,7 @@ What moves the quote: the days and hours, the rooms covered at the same time, ho
 <div class="f"><label class="mono" for="organization">Organization</label><input id="organization" name="organization" maxlength="160" autocomplete="organization"></div>
 <div class="f full"><label class="mono" for="event_name">Event name</label><input id="event_name" name="event_name" maxlength="200"></div>
 <div class="f"><label class="mono" for="event_kind">Kind of event</label><select id="event_kind" name="event_kind"><option value="business">Conference, convention or corporate event</option>
-<option value="other">Gala, reception or something else</option><option value="fan">Fan convention</option></select></div>
+<option value="other">Gala, reception or something else</option></select></div>
 <div class="f"><label class="mono" for="attendance">Expected attendance</label><input id="attendance" name="attendance" maxlength="40"></div>
 <div class="f"><label class="mono" for="start_date">First day</label><input id="start_date" name="start_date" type="date"></div>
 <div class="f"><label class="mono" for="end_date">Last day</label><input id="end_date" name="end_date" type="date"></div>

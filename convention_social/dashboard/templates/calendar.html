@@ -5,7 +5,7 @@
 <form method="post" action="/calendar/save" class="card">
   <input type="hidden" name="id" value="{{ current.id if current else '' }}">
   <label>Event name</label><input type="text" name="name" value="{{ current.name if current else '' }}" required>
-  <label>Kind</label><select name="kind">{% for k, l in [('fan','Fan convention'),('business','Business or political conference'),('unknown','Not sure')] %}<option value="{{ k }}" {{ 'selected' if current and current.kind == k else '' }}>{{ l }}</option>{% endfor %}</select>
+  <label>Kind</label><select name="kind">{% for k, l in [('business','Conference or convention'),('unknown','Not sure')] %}<option value="{{ k }}" {{ 'selected' if current and current.kind == k else '' }}>{{ l }}</option>{% endfor %}</select>
   <div class="row"><div style="flex:1"><label>Starts</label><input type="date" name="start_date" value="{{ current.start_date if current and current.start_date else '' }}"></div>
     <div style="flex:1"><label>Ends</label><input type="date" name="end_date" value="{{ current.end_date if current and current.end_date else '' }}"></div></div>
   <label>City</label><input type="text" name="city" value="{{ current.city if current and current.city else '' }}">

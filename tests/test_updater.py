@@ -15,6 +15,7 @@ from unittest import mock
 from convention_social import cli
 from convention_social.agents import updater
 from convention_social.core import config, db, runner, settings
+from convention_social.site import deploy as site_deploy
 from tests._base import IsolatedCase
 
 GIT_ID = ["-c", "user.name=t", "-c", "user.email=t@example.org"]
@@ -40,8 +41,10 @@ class Repos(IsolatedCase):
         self.repo = base / "checkout"
         subprocess.run(["git", "clone", "-q", str(self.origin), str(self.repo)], check=True)
         self.conn = db.connect()
-        self.calls = {"suite": [], "migrate": 0, "restart": 0, "requirements": 0}
+        self.calls = {"suite": [], "migrate": 0, "restart": 0, "requirements": 0, "deploy": []}
         self.dash = self.head()          # the commit the running dashboard serves (None: not answering)
+        self.deploy_ok = True
+        settings.set(self.conn, site_deploy.DEPLOYED_KEY, self.head())     # the site is on the code (SiteFollows sets its own)
 
     def tearDown(self):
         self.conn.close()
@@ -72,9 +75,15 @@ class Repos(IsolatedCase):
             self.calls["restart"] += 1
             return "dashboard: restarted"
 
+        def deploy(repo):
+            self.calls["deploy"].append(git(repo, "rev-parse", "HEAD"))
+            if self.deploy_ok:                 # the real one records the commit itself (site/deploy.py)
+                settings.set(self.conn, site_deploy.DEPLOYED_KEY, self.calls["deploy"][-1])
+            return self.deploy_ok, "LIVE on it" if self.deploy_ok else "not live: Cloudflare did not take the deploy"
+
         ctx = runner.Context("updater", self.conn, None, config.get_config(), dry, 0)
         return updater.run(ctx, repo=self.repo, suite=suite, requirements=requirements, migrations=migrations, restart=restart,
-                           probe=lambda: self.dash)
+                           probe=lambda: self.dash, deploy=deploy)
 
     def head(self):
         return git(self.repo, "rev-parse", "HEAD")
@@ -282,11 +291,14 @@ class Sync(Repos):
         real = updater.run
         self.suite_ok = True
 
-        def fake_run(ctx):
+        self.deploys = []
+
+        def fake_run(ctx, **kw):
             return real(ctx, repo=self.repo,
                         suite=lambda wt: (self.suite_ok, "Ran 3 tests" if self.suite_ok else "FAILED (failures=1)"),
                         requirements=lambda r, w: None, migrations=lambda r: None,
-                        restart=lambda: "dashboard: restarted", probe=lambda: self.dash)
+                        restart=lambda: "dashboard: restarted", probe=lambda: self.dash,
+                        deploy=lambda repo: (self.deploys.append(1), (True, "LIVE"))[1], **kw)
         self.sleeps = []
         self.on_sleep = lambda s: None
         self.wait_seconds = 30 * 60
@@ -361,3 +373,96 @@ class Sync(Repos):
         self.assertEqual(code, 1)
         self.assertEqual(self.sleeps, [15, 15])
         self.assertIn("the updater is still running; run this again", out)
+
+
+class SiteFollows(Repos):
+    """Chris, 2026-10-12: "do what you can without needing me to respond or terminal anything". The site
+    on Cloudflare follows the code: deployed by the updater when a merge changes it, once when the suite
+    has never deployed it, never twice for the same commit, and a failure is told and left for Publish."""
+
+    def setUp(self):
+        super().setUp()
+        (self.repo / "wrangler.live.jsonc").write_text("{}")             # go-live ran here once
+        patcher = mock.patch("convention_social.site.deploy.shutil.which", return_value="/opt/homebrew/bin/npx")
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_a_merge_that_changes_the_site_deploys_it_once(self):
+        before = self.head()
+        target = self.commit("site/theme.css", "body{}")
+        line = self.run_updater()
+        self.assertIn("tests passed", line)
+        self.assertIn(f"site: deployed (1 site file(s) changed since {before[:7]})", line)
+        self.assertEqual(self.calls["deploy"], [target], "deployed from the NEW checkout")
+        self.assertEqual(settings.get(self.conn, site_deploy.DEPLOYED_KEY), target)
+        self.assertIn(f"site: the site is on {target[:7]}, the same as the code", self.run_updater())
+        self.assertEqual(len(self.calls["deploy"]), 1, "never twice for one commit")
+
+    def test_a_merge_off_the_site_is_not_deployed(self):
+        target = self.commit("a.txt", "two")
+        before = settings.get(self.conn, site_deploy.DEPLOYED_KEY)
+        line = self.run_updater()
+        self.assertIn(f"site: nothing since {before[:7]} changes the site", line)
+        self.assertEqual(self.calls["deploy"], [])
+        self.assertEqual(settings.get(self.conn, site_deploy.DEPLOYED_KEY), target, "the record moves with the code")
+
+    def test_a_site_never_deployed_by_the_suite_is_deployed_on_the_next_pass(self):
+        # the first pass after this arrives: an older updater did the merge, the site on Cloudflare is older still
+        settings.set(self.conn, site_deploy.DEPLOYED_KEY, "")
+        line = self.run_updater()
+        self.assertIn("up to date", line)
+        self.assertIn("site: deployed (the suite has not deployed the site yet)", line)
+        self.assertEqual(self.calls["deploy"], [self.head()])
+
+    def test_a_failed_deploy_is_an_error_and_waits_for_publish(self):
+        self.deploy_ok = False
+        target = self.commit("offer.json", "{}")
+        line = self.run_updater()
+        self.assertIn("site: deploy FAILED (1 site file(s) changed", line)
+        err = db.one(self.conn, "SELECT kind, message FROM errors WHERE agent='updater' AND kind='site_deploy'")
+        self.assertIn("Press Publish on the Photos page", err["message"])
+        self.assertIn("Cloudflare did not take the deploy", err["message"])
+        self.assertEqual(settings.get(self.conn, site_deploy.FAILED_KEY), target)
+        self.assertIn(f"site: the deploy of {target[:7]} failed; not trying again by itself", self.run_updater())
+        self.assertEqual(len(self.calls["deploy"]), 1)
+        settings.set(self.conn, site_deploy.DEPLOYED_KEY, target)        # Publish succeeded (site/deploy.py records it)
+        settings.set(self.conn, site_deploy.FAILED_KEY, "")
+        self.assertIn("the same as the code", self.run_updater())
+
+    def test_dry_run_only_says_it_would_deploy(self):
+        settings.set(self.conn, site_deploy.DEPLOYED_KEY, "")
+        self.assertIn("DRY RUN site: the suite has not deployed the site yet; would deploy", self.run_updater(dry=True))
+        self.assertEqual(self.calls["deploy"], [])
+
+    def test_without_a_go_live_the_site_is_behind_and_said_so(self):
+        (self.repo / "wrangler.live.jsonc").unlink()
+        settings.set(self.conn, site_deploy.DEPLOYED_KEY, "")
+        line = self.run_updater()
+        self.assertIn("site: behind the code, not deployable here (no wrangler.live.jsonc", line)
+        self.assertEqual(self.calls["deploy"], [])
+        err = db.one(self.conn, "SELECT message FROM errors WHERE agent='updater' AND kind='site_deploy'")
+        self.assertIn("run scripts/go-live.sh once on the Mini", err["message"])
+        self.run_updater()
+        self.assertEqual(db.one(self.conn, "SELECT COUNT(*) n FROM errors WHERE kind='site_deploy'")["n"], 1, "one open line, not one per pass")
+
+
+class SyncLeavesTheSite(Repos):
+    """go-live's first step (`ccs sync`) brings the code over and leaves the site to go-live's own deploy step."""
+
+    def test_sync_never_deploys_the_site(self):
+        settings.set(self.conn, site_deploy.DEPLOYED_KEY, "")
+        (self.repo / "wrangler.live.jsonc").write_text("{}")
+        deploys = []
+        real = updater.run
+
+        def fake_run(ctx, **kw):
+            return real(ctx, repo=self.repo, suite=lambda wt: (True, "Ran 3 tests"), requirements=lambda r, w: None,
+                        migrations=lambda r: None, restart=lambda: "dashboard: restarted", probe=lambda: self.dash,
+                        deploy=lambda repo: (deploys.append(1), (True, "LIVE"))[1], **kw)
+        with mock.patch("convention_social.agents.updater.run", fake_run), \
+             mock.patch("convention_social.core.config.REPO_ROOT", self.repo), \
+             mock.patch("convention_social.site.deploy.shutil.which", return_value="/opt/homebrew/bin/npx"):
+            self.assertEqual(updater.sync(sleep=lambda s: None, say=lambda s: None), 0)
+        self.assertEqual(deploys, [])
+        run = db.one(self.conn, "SELECT summary FROM agent_runs WHERE agent='updater' ORDER BY id DESC")
+        self.assertNotIn("site:", run["summary"])

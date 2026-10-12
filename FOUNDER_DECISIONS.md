@@ -12,8 +12,11 @@ only when Chris says so.
 - **Repo:** a fresh private repo, `ChrisKennedyImages/cki-convention-social`,
   with its own history. Nothing from any other company's suite is referenced
   anywhere (`tests/test_banned_words.py`).
-- **Conventions:** both fan conventions (comic, anime, gaming; no cosplay, 2026-10-11) and
-  business and political conferences.
+- **Conventions:** business, corporate and association conferences, conventions
+  and trade shows, galas and award dinners. Fan conventions (comic, anime,
+  gaming) are off every public surface and out of the scout's search since
+  2026-10-12 (no cosplay since 2026-10-11); political work is taken when it
+  comes, never what the company is positioned as.
 - **Photo library:** Google Drive of chriskimages@gmail.com, read only, signed
   in as Chris (OAuth, `drive.readonly`).
 - **Platforms:** Instagram, a Facebook Page and Pinterest, all through this
@@ -404,6 +407,36 @@ only when Chris says so.
   conventions, galas and award dinners. The sorter still recognises a
   political conference as business work, so those photos are used like any
   other.
+
+## 2026-10-12, late: the site goes live by itself; the panorama; no fan conventions; portraits are headshots
+
+- "we will fix all tomorrow or do what you can without needing me to respond
+  or terminal anything." So nothing here waits for a terminal:
+  - **eventcaliber.com follows the code.** `ccs site deploy` is the build, the
+    wrangler deploy with the untracked `wrangler.live.jsonc` that go-live
+    leaves behind, and the check from outside (`site/deploy.py`). The updater
+    runs it when a merge changes a site file, and once when the suite has never
+    deployed the site; `scripts/go-live.sh` uses the same command. A deploy
+    that fails is an error on the Agents page and is not retried by itself for
+    that commit. **Publish the site**, a button on Photos, Approved, runs it from
+    a phone after the hero or the approved photos change; the Website card
+    there says what happened.
+  - **The home page photo.** "the home page image is not the correct photo":
+    the wide stage panorama he sent in the chat ships with the code as
+    `site/hero.jpg` (re-encoded, no camera data) and is the hero whenever
+    nothing has been sent from the phone; Claude checks it like any upload. A
+    phone upload wins over it; Remove hands back to it.
+  - **"We are going to get rid of 'fan conventions'."** Off every public
+    surface: the offer file, the quote form, the captions and keywords, the
+    photo text, the search metadata, the brand note, the scout's search brief
+    (it leaves fan conventions out) and the dashboard's kind menus. The sorter
+    still tags a photo "fan" so those photos can be told apart; they stay
+    usable as convention photos until he rules on them (the question he was
+    asked: keep them as plain convention photos, or set them aside like
+    weddings).
+  - **"Portraits and headshots are the same."** One coverage row, Portraits.
+    One shot type, portrait; rows the sorter had called "headshot" are
+    portraits (migration 0063), and every reader says Portrait.
 
 ## Standing rules from the brief
 

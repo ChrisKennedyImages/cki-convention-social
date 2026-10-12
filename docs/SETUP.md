@@ -110,8 +110,12 @@ Cloudflare steps: `scripts/go-live.sh` on the Mini (section 9) signs in to
 Cloudflare (a browser opens; use the account that holds eventcaliber.com and
 click Allow), creates the image bucket and the booking database, builds and
 deploys the site, gives the site and the Mini the same upload token without
-showing it, and checks every page from the outside. Run it again any time to
-redeploy, for instance once photos are cleared.
+showing it, and checks every page from the outside. After that first run the
+site keeps itself current: the updater redeploys it when a merge changes a
+site file, and **Publish the site** on the Photos page (Approved) redeploys it
+from your phone, for instance once photos are cleared or the hero changes.
+The Website card there says what happened. `scripts/go-live.sh` still works
+for a full redeploy.
 
 Two things only you can do in the Cloudflare dashboard, and the script tells
 you when it needs them: turning on R2 (it asks for a card even for the free

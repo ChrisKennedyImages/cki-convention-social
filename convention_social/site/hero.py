@@ -6,6 +6,12 @@ way the final check looks at every photo: nobody who may be under 18, nothing re
 person, not a wedding or a private occasion. The verdict is kept with the file's hash, so Claude looks once
 per upload. Without a verdict the upload is not used (fail closed) and the build says so. It wins over a
 library pick while it is here; Remove hands the choice back.
+
+The same evening ("the home page image is not the correct photo ... do what you can without needing me to
+respond") the photo he had sent in the chat, a wide stage panorama, was re-encoded the same way and shipped
+with the code as site/hero.jpg. It is the hero whenever nothing has been sent from the phone, checked by
+Claude in the same way. A phone upload wins over it; Remove takes the upload away and the shipped photo is
+the hero again. SITE_HERO_SHIPPED points elsewhere (the tests point it at nothing).
 """
 from __future__ import annotations
 
@@ -21,6 +27,7 @@ from PIL import Image, ImageOps, UnidentifiedImageError
 from ..core import config, db, settings
 
 FILE = "hero-upload.jpg"
+SHIPPED_FILE = "hero.jpg"
 CHECK_KEY = "site.hero_upload_check"
 MIN_WIDTH = 1200
 MAX_BYTES = 40 * 1024 * 1024
@@ -34,8 +41,27 @@ def path() -> Path:
     return config.get_config().data_root / "site" / FILE
 
 
-def present() -> bool:
+def shipped() -> Path:
+    """The photo that came with the code (site/hero.jpg, the panorama Chris sent on 2026-10-12)."""
+    override = config.getenv("SITE_HERO_SHIPPED")
+    return Path(override).expanduser() if override else config.REPO_ROOT / "site" / SHIPPED_FILE
+
+
+def _uploaded() -> bool:
     return path().is_file() and path().stat().st_size > 0
+
+
+def source() -> Optional[Path]:
+    """The file in use: the one sent from the phone, else the one shipped with the code, else none."""
+    if _uploaded():
+        return path()
+    if shipped().is_file():
+        return shipped()
+    return None
+
+
+def present() -> bool:
+    return source() is not None
 
 
 def save(data: bytes) -> Path:
@@ -61,19 +87,21 @@ def save(data: bytes) -> Path:
 
 
 def remove(conn: sqlite3.Connection) -> bool:
-    was = present()
+    """Take the phone upload away (the shipped photo, if any, is the hero again). Its verdict goes
+    with it; one verdict is kept at a time, so Claude looks at the shipped photo again on the next build."""
+    was = _uploaded()
     if was:
         path().unlink()
-    settings.set(conn, CHECK_KEY, "")
+        settings.set(conn, CHECK_KEY, "")
     return was
 
 
 def image() -> Image.Image:
-    return Image.open(path()).convert("RGB")
+    return Image.open(source()).convert("RGB")
 
 
 def _sha() -> str:
-    return hashlib.sha256(path().read_bytes()).hexdigest()
+    return hashlib.sha256(source().read_bytes()).hexdigest()
 
 
 def record(conn: sqlite3.Connection) -> Optional[dict]:
@@ -97,7 +125,7 @@ def checked(conn: sqlite3.Connection, look: Optional[Callable[[bytes], Optional[
     if rec is None:
         if look is None:
             return False, "not checked yet: the next site build with the Anthropic key asks Claude to look"
-        data = look(path().read_bytes())
+        data = look(source().read_bytes())
         if data is None:
             return False, "not checked: Claude could not look (no key, the monthly cap, or a refusal)"
         details = eligibility.blocking_details(list(data.get("personal_details") or []), "event")
@@ -119,9 +147,10 @@ def checked(conn: sqlite3.Connection, look: Optional[Callable[[bytes], Optional[
 def status(conn: sqlite3.Connection) -> dict:
     """For the Photos tab: whether an upload is here, its size, and what Claude said about it."""
     if not present():
-        return {"present": False}
-    with Image.open(path()) as im:
+        return {"present": False, "source": ""}
+    with Image.open(source()) as im:
         size = im.size
     rec = record(conn)
-    return {"present": True, "width": size[0], "height": size[1], "checked": rec is not None,
-            "ok": bool(rec and rec["ok"]), "why": rec["why"] if rec else "not checked yet: the next go-live asks Claude to look"}
+    return {"present": True, "source": "phone" if _uploaded() else "code", "width": size[0], "height": size[1],
+            "checked": rec is not None, "ok": bool(rec and rec["ok"]),
+            "why": rec["why"] if rec else "not checked yet: the next publish asks Claude to look"}
