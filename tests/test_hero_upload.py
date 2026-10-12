@@ -5,6 +5,7 @@ import io
 import json
 import os
 import types
+from unittest import mock
 
 from fastapi.testclient import TestClient
 from PIL import Image
@@ -13,7 +14,7 @@ from convention_social.core import auth, config, db, settings
 from convention_social.dashboard.app import COOKIE, create_app, make_token
 from convention_social.library import classify
 from convention_social.render import meta
-from convention_social.site import build, hero
+from convention_social.site import build, deploy, hero
 from tests._base import IsolatedCase
 from tests._photos import jpeg_bytes
 from tests.test_wedding import event_photo
@@ -59,27 +60,33 @@ class Keep(IsolatedCase):
         self.assertFalse(hero.present())
         self.assertFalse(hero.remove(self.conn))
 
-    def test_claude_looks_once_per_upload_and_the_verdict_decides(self):
+    def test_claude_looks_once_per_upload_and_only_words_a_note(self):
+        # Chris, 2026-10-12: "That's still not the ... landing page photo I uploaded": his photo is the hero, full stop
         self.assertEqual(hero.checked(self.conn), (False, "no upload"))
         hero.save(jpeg_bytes(size=(1600, 1000)))
-        self.assertEqual(hero.checked(self.conn)[0], False)
-        self.assertIn("not checked yet", hero.checked(self.conn)[1])
+        self.assertEqual(hero.checked(self.conn), (True, "your photo; Claude has not looked at it yet"))
         client = LookClient()
-        self.assertEqual(hero.checked(self.conn, looker(self.conn, client)), (True, "checked by Claude"))
-        self.assertEqual(hero.checked(self.conn, looker(self.conn, LookClient(possible_minor=True))), (True, "checked by Claude"), "kept with the file")
+        self.assertEqual(hero.checked(self.conn, looker(self.conn, client)), (True, "your photo, seen by Claude"))
+        self.assertEqual(hero.checked(self.conn, looker(self.conn, LookClient(possible_minor=True))), (True, "your photo, seen by Claude"), "kept with the file")
         self.assertEqual(client.calls, 1)
         self.assertEqual(db.one(self.conn, "SELECT COUNT(*) n FROM api_usage WHERE agent='site'")["n"], 1)
         hero.save(jpeg_bytes(seed=2, size=(1600, 1000)))                   # a new file: Claude looks again
-        self.assertEqual(hero.checked(self.conn, looker(self.conn, LookClient(possible_minor=True))), (False, "someone in it may be under 18"))
+        self.assertEqual(hero.checked(self.conn, looker(self.conn, LookClient(possible_minor=True))),
+                         (True, "your photo; Claude notes: someone in it may be under 18"))
+        self.assertEqual(hero.status(self.conn)["notes"], ["someone in it may be under 18"])
         hero.save(jpeg_bytes(seed=3, size=(1600, 1000)))
-        self.assertEqual(hero.checked(self.conn, looker(self.conn, LookClient(event_kind="wedding")))[0], False)
+        ok, note = hero.checked(self.conn, looker(self.conn, LookClient(event_kind="wedding")))
+        self.assertTrue(ok)
+        self.assertIn("a wedding or a private occasion", note)
         hero.save(jpeg_bytes(seed=4, size=(1600, 1000)))
-        self.assertEqual(hero.checked(self.conn, looker(self.conn, LookClient(personal_details=["vehicle_plate"])))[1], "it shows vehicle_plate")
+        self.assertEqual(hero.checked(self.conn, looker(self.conn, LookClient(personal_details=["vehicle_plate"]))),
+                         (True, "your photo; Claude notes: it shows vehicle_plate"))
         hero.save(jpeg_bytes(seed=6, size=(1600, 1000)))
-        self.assertEqual(hero.checked(self.conn, looker(self.conn, LookClient(personal_details=["badge_name", "document"])))[0], True,
-                         "a name badge or a name in the photo is fine (Chris, 2026-10-12)")
-        hero.save(jpeg_bytes(seed=5, size=(1600, 1000)))
-        self.assertIn("could not look", hero.checked(self.conn, lambda data: None)[1])
+        self.assertEqual(hero.checked(self.conn, looker(self.conn, LookClient(personal_details=["badge_name", "document"]))),
+                         (True, "your photo, seen by Claude"), "a name badge or a name in the photo is nothing to note")
+        hero.save(jpeg_bytes(seed=7, size=(1600, 1000)))
+        self.assertEqual(hero.checked(self.conn, lambda data: None), (True, "your photo; Claude has not looked at it yet"), "the cap holds nothing back")
+        self.assertIsNone(hero.record(self.conn), "and Claude is asked again next time")
 
 
 class OnTheSite(IsolatedCase):
@@ -95,15 +102,15 @@ class OnTheSite(IsolatedCase):
     def fetch(self, row):
         return Image.new("RGB", (int(row["width"]), int(row["height"])), (90, 90, 90))
 
-    def test_the_upload_is_the_hero_once_claude_has_looked(self):
+    def test_the_upload_is_the_hero_looked_at_or_not(self):
         hero.save(jpeg_bytes(size=(1600, 1000)))
         photos = build.pick_photos(self.conn, self.fetch)
-        self.assertEqual(photos.hero[0][0].size, (3000, 2000), "unchecked: the build chooses from the library")
-        self.assertTrue(photos.hero_note.startswith("your uploaded photo could not be used: not checked yet"), photos.hero_note)
+        self.assertEqual(photos.hero[0][0].size, (1600, 1000), "his photo, before Claude has looked")
+        self.assertEqual(photos.hero_note, "your uploaded photo (your photo; Claude has not looked at it yet)")
         photos = build.pick_photos(self.conn, self.fetch, look=looker(self.conn, LookClient()))
         self.assertEqual(photos.hero[0][0].size, (1600, 1000))
         self.assertEqual(photos.hero[0][1], "Stage and panel")
-        self.assertEqual(photos.hero_note, "your uploaded photo (checked by Claude)")
+        self.assertEqual(photos.hero_note, "your uploaded photo (your photo, seen by Claude)")
         self.assertEqual(len(photos.coverage), 3, "the library frames fill the grid")
         settings.set(self.conn, build.HERO_KEY, str(db.one(self.conn, "SELECT id FROM photos WHERE drive_id='lib2'")["id"]))
         self.assertEqual(build.pick_photos(self.conn, self.fetch).hero[0][0].size, (1600, 1000), "the upload wins over a pick")
@@ -111,11 +118,11 @@ class OnTheSite(IsolatedCase):
         photos = build.pick_photos(self.conn, self.fetch)
         self.assertTrue(photos.hero_note.startswith("your Site hero pick"), photos.hero_note)
 
-    def test_a_refused_upload_is_never_the_hero(self):
+    def test_claudes_note_never_holds_the_upload_back(self):
         hero.save(jpeg_bytes(size=(1600, 1000)))
         photos = build.pick_photos(self.conn, self.fetch, look=looker(self.conn, LookClient(possible_minor=True)))
-        self.assertEqual(photos.hero[0][0].size, (3000, 2000))
-        self.assertIn("your uploaded photo could not be used: someone in it may be under 18; the build's choice", photos.hero_note)
+        self.assertEqual(photos.hero[0][0].size, (1600, 1000))
+        self.assertEqual(photos.hero_note, "your uploaded photo (your photo; Claude notes: someone in it may be under 18)")
 
 
 class TheCard(IsolatedCase):
@@ -135,10 +142,12 @@ class TheCard(IsolatedCase):
         r = self.client.post("/library/hero/upload", files={"file": ("tiny.jpg", jpeg_bytes(size=(600, 400)), "image/jpeg")}, follow_redirects=False)
         self.assertIn("Not+kept:+too+small", r.headers["location"])
         r = self.client.post("/library/hero/upload", files={"file": ("pano.jpg", jpeg_bytes(size=(2000, 900)), "image/jpeg")}, follow_redirects=False)
-        self.assertIn("msg=Kept.", r.headers["location"])
+        self.assertIn("msg=Kept.+It+is+the+site%27s+hero.", r.headers["location"])
+        self.assertIn("The+site+is+not+published+from+here", r.headers["location"], "no go-live in a test: said, not hidden")
         page = self.client.get("/library?view=approved").text
         self.assertIn("Uploaded: 2000 × 900", page)
-        self.assertIn("not checked yet", page)
+        self.assertIn("Claude looks at it during the publish", page)
+        self.assertNotIn("not checked yet", page)
         self.assertIn(">Replace</button>", page)
         self.assertTrue(hero.present())
         r = self.client.post("/library/hero/remove", follow_redirects=False)
@@ -146,6 +155,24 @@ class TheCard(IsolatedCase):
         self.assertFalse(hero.present())
         anon = TestClient(create_app())
         self.assertNotEqual(anon.post("/library/hero/remove", follow_redirects=False).status_code, 303)
+
+    def test_sending_removing_or_picking_a_hero_publishes_the_site_by_itself(self):
+        # Chris, 2026-10-12: nobody at a terminal, no second button
+        with mock.patch("convention_social.site.deploy.ready", return_value=(True, "ready")), \
+             mock.patch("convention_social.site.deploy.start_in_background") as start:
+            r = self.client.post("/library/hero/upload", files={"file": ("pano.jpg", jpeg_bytes(size=(2000, 900)), "image/jpeg")}, follow_redirects=False)
+            self.assertIn("Publishing+the+site+with+it+now", r.headers["location"])
+            self.assertEqual(start.call_count, 1)
+            self.assertEqual(deploy.read_status()["state"], "running")
+            r = self.client.post("/library/hero/remove", follow_redirects=False)
+            self.assertIn("A+publish+is+already+running", r.headers["location"])
+            self.assertEqual(start.call_count, 1, "one at a time")
+            deploy.write_status("done", "live on abc1234")
+            from tests.test_wedding import event_photo
+            pid = event_photo(self.conn, "pick1", kind="business", final="business")
+            r = self.client.post(f"/library/photo/{pid}/hero", data={"back": "/library?view=approved"}, follow_redirects=False)
+            self.assertIn("msg=Site+hero%3A+this+photo.+Publishing+the+site+with+it+now", r.headers["location"])
+            self.assertEqual(start.call_count, 2)
 
 
 class Shipped(IsolatedCase):
@@ -168,31 +195,32 @@ class Shipped(IsolatedCase):
         self.assertEqual(hero.source(), self.file)
         st = hero.status(self.conn)
         self.assertEqual((st["source"], st["width"], st["height"], st["checked"]), ("code", 2576, 1281, False))
-        self.assertIn("not checked yet", st["why"])
+        self.assertIn("Claude looks at it during the publish", st["why"])
         client = LookClient()
-        self.assertEqual(hero.checked(self.conn, looker(self.conn, client)), (True, "checked by Claude"))
-        self.assertEqual(hero.checked(self.conn, looker(self.conn, client)), (True, "checked by Claude"))
+        self.assertEqual(hero.checked(self.conn, looker(self.conn, client)), (True, "your photo, seen by Claude"))
+        self.assertEqual(hero.checked(self.conn, looker(self.conn, client)), (True, "your photo, seen by Claude"))
         self.assertEqual(client.calls, 1, "once per file")
         self.assertFalse(hero.remove(self.conn), "nothing from the phone to remove")
         self.assertTrue(hero.present(), "the shipped photo stays")
         hero.save(jpeg_bytes(seed=8, size=(1600, 1000)))
         self.assertEqual(hero.status(self.conn)["source"], "phone")
         self.assertEqual(hero.image().size, (1600, 1000))
-        self.assertEqual(hero.checked(self.conn, looker(self.conn, LookClient(possible_minor=True))), (False, "someone in it may be under 18"))
+        self.assertEqual(hero.checked(self.conn, looker(self.conn, LookClient(possible_minor=True))),
+                         (True, "your photo; Claude notes: someone in it may be under 18"))
         self.assertTrue(hero.remove(self.conn))
         self.assertEqual((hero.status(self.conn)["source"], hero.image().size), ("code", (2576, 1281)))
-        self.assertEqual(hero.checked(self.conn, looker(self.conn, LookClient())), (True, "checked by Claude"), "looked at again, judged on its own")
+        self.assertEqual(hero.checked(self.conn, looker(self.conn, LookClient())), (True, "your photo, seen by Claude"), "looked at again, on its own")
 
-    def test_it_is_the_site_hero_once_claude_has_looked(self):
+    def test_it_is_the_site_hero_looked_at_or_not(self):
         for i in range(2):
             event_photo(self.conn, f"lib{i}", kind="business", final="business", quality=5 - i, light=5, moment=5)
         fetch = lambda row: Image.new("RGB", (int(row["width"]), int(row["height"])), (90, 90, 90))  # noqa: E731
         photos = build.pick_photos(self.conn, fetch)
-        self.assertEqual(photos.hero[0][0].size, (3000, 2000), "unchecked: the build chooses from the library")
-        self.assertTrue(photos.hero_note.startswith("the photo you sent, shipped with the code could not be used: not checked yet"), photos.hero_note)
+        self.assertEqual(photos.hero[0][0].size, (2576, 1281), "his photo, before Claude has looked")
+        self.assertEqual(photos.hero_note, "the photo you sent, shipped with the code (your photo; Claude has not looked at it yet)")
         photos = build.pick_photos(self.conn, fetch, look=looker(self.conn, LookClient()))
         self.assertEqual(photos.hero[0][0].size, (2576, 1281))
-        self.assertEqual(photos.hero_note, "the photo you sent, shipped with the code (checked by Claude)")
+        self.assertEqual(photos.hero_note, "the photo you sent, shipped with the code (your photo, seen by Claude)")
 
     def test_the_real_file_is_in_the_code_wide_enough_and_carries_no_camera_data(self):
         os.environ.pop("SITE_HERO_SHIPPED")

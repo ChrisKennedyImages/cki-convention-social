@@ -748,10 +748,23 @@ def create_app() -> FastAPI:
         conn.execute("UPDATE photos SET clearance=?, clearance_at=? WHERE id=?", (state, db.utcnow(), pid))
         return RedirectResponse(back if back.startswith("/") and not back.startswith("//") else "/library", status_code=303)
 
+    def publish_now() -> str:
+        """Chris, 2026-10-12: a hero he sends, removes or picks reaches the site by itself, with nobody at a
+        terminal and no second button. What happened, for the message: publishing, or why not."""
+        from ..site import deploy
+        ready, why = deploy.ready()
+        if not ready:
+            return f"The site is not published from here ({why})."
+        if deploy.read_status().get("state") == "running":
+            return "A publish is already running; it takes this with it on the next one. Press Publish the site after it ends."
+        deploy.write_status("running", "starting")
+        deploy.start_in_background()
+        return "Publishing the site with it now. The Website card says when it is live."
+
     @app.post("/library/hero/upload")
     async def hero_upload_add(file: UploadFile = File(...), user: str = Depends(require_user), conn=Depends(conn_dep)):
-        """The website's main photo straight from Chris's phone (2026-10-12). Claude looks at it during the
-        next site build before it is used."""
+        """The website's main photo straight from Chris's phone (2026-10-12). It IS the hero; Claude looks at
+        it during the publish for the alt text and a note, never to hold it back. The publish starts now."""
         from ..site import hero as hero_upload
         data = await file.read(hero_upload.MAX_BYTES + 1)
         try:
@@ -759,16 +772,15 @@ def create_app() -> FastAPI:
             settings.set(conn, hero_upload.CHECK_KEY, "")
         except hero_upload.Refused as e:
             return RedirectResponse(f"/library?view=approved&msg=Not+kept:+{str(e).replace(' ', '+')}", status_code=303)
-        return RedirectResponse("/library?view=approved&msg=Kept.+It+is+the+site+hero+from+the+next+go-live,+once+Claude+has+looked+at+it.",
-                                status_code=303)
+        return RedirectResponse("/library?view=approved&msg=" + quote_plus(f"Kept. It is the site's hero. {publish_now()}"), status_code=303)
 
     @app.post("/library/hero/remove")
     def hero_upload_remove(user: str = Depends(require_user), conn=Depends(conn_dep)):
         from ..site import hero as hero_upload
         hero_upload.remove(conn)
-        msg = ("Removed.+The+photo+that+came+with+the+code+is+the+hero+again." if hero_upload.present()
-               else "Removed.+The+build+chooses+the+hero+again.")
-        return RedirectResponse(f"/library?view=approved&msg={msg}", status_code=303)
+        msg = ("Removed. The photo that came with the code is the hero again." if hero_upload.present()
+               else "Removed. The build chooses the hero again.")
+        return RedirectResponse("/library?view=approved&msg=" + quote_plus(f"{msg} {publish_now()}"), status_code=303)
 
     @app.post("/site/publish")
     def site_publish(user: str = Depends(require_user)):
@@ -793,13 +805,14 @@ def create_app() -> FastAPI:
         from ..site.build import HERO_KEY
         if settings.get(conn, HERO_KEY) == str(pid):
             settings.set(conn, HERO_KEY, "")
-            msg = "Site hero: the build chooses again"
+            msg = "Site hero: the build chooses again."
         else:
             settings.set(conn, HERO_KEY, str(pid))
-            msg = "Site hero: this photo, on the next go-live"
+            msg = "Site hero: this photo."
+        msg = f"{msg} {publish_now()}"
         back = back if back.startswith("/") and not back.startswith("//") else "/library"
         path, _, anchor = back.partition("#")
-        return RedirectResponse(f"{path}{'&' if '?' in path else '?'}msg={msg.replace(' ', '+')}" + (f"#{anchor}" if anchor else ""),
+        return RedirectResponse(f"{path}{'&' if '?' in path else '?'}msg={quote_plus(msg)}" + (f"#{anchor}" if anchor else ""),
                                 status_code=303)
 
     # ------------------------------------------------------------------ do not use

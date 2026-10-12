@@ -30,10 +30,10 @@
 </div>
 <div class="card">
   <strong>Site hero from your phone</strong>
-  <div class="muted">The website's main photo. A photo you send here is the hero from the next publish, once Claude has looked at it (nobody who may be under 18, nothing readable that identifies a person, not a wedding). It wins over a Site hero pick below while it is here.</div>
+  <div class="muted">The website's main photo. A photo you send here is the hero, and the site publishes itself with it. It wins over a Site hero pick below while it is here. Claude looks at it during the publish, for the alt text and a note here, never to hold it back.</div>
   {% if hero_upload.present %}
   <div class="row" style="margin-top:8px"><span>{{ 'Uploaded' if hero_upload.source == 'phone' else 'With the code, the photo you sent on 2026-10-12' }}: {{ hero_upload.width }} × {{ hero_upload.height }}</span>
-    <span class="badge {{ 'ok' if hero_upload.ok else 'blocked' }}">{{ hero_upload.why }}</span>
+    <span class="badge {{ 'ok' if not hero_upload.notes else 'draft' }}">{{ hero_upload.why }}</span>
     {% if hero_upload.source == 'phone' %}<form method="post" action="/library/hero/remove" class="inline"><button class="small danger" type="submit">Remove</button></form>{% endif %}
   </div>
   {% endif %}
