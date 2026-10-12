@@ -28,7 +28,7 @@ from .meta import ImageMeta, save_jpeg
 SIZES = {"4:5": (1080, 1350), "2:3": (1000, 1500), "1:1": (1080, 1080)}
 FORMATS = ("photo", "appearance", "services", "delivery")
 SERVICES = ("Backstage and green rooms", "Breakouts and panels", "Before, during and evening events",
-            "Dinners and receptions", "Portraits", "Exhibition halls and vendors")
+            "Dinners and receptions", "Portraits", "Exhibition halls")
 
 
 @dataclass

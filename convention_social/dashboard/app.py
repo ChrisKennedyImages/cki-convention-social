@@ -185,8 +185,8 @@ MEDIA_TYPES = {".mp4": "video/mp4", ".png": "image/png"}
 # what a photo shows, in plain words, for the draft page's correction (Chris, 2026-10-11: "it calls a
 # stage shot a portrait which, never can happen!")
 SHOT_CHOICES = [("stage_panel", "Stage and panel"), ("backstage", "Backstage"), ("portrait", "Portrait or headshot"),
-                ("group", "Group photo"), ("candid", "Candid moment"), ("crowd", "Crowd"), ("vendor_hall", "Vendor hall"),
-                ("booth", "Exhibitor booth"), ("dinner_reception", "Dinner and reception"), ("venue", "Venue"),
+                ("group", "Group photo"), ("candid", "Candid moment"), ("crowd", "Crowd"),
+                ("vendor_hall", "Exhibition hall, vendors or a booth"), ("dinner_reception", "Dinner and reception"), ("venue", "Venue"),
                 ("building_exterior", "Building exterior"), ("building_interior", "Building interior"), ("other", "Other")]
 
 

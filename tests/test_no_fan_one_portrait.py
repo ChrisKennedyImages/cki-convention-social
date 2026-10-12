@@ -126,3 +126,40 @@ class OnePortrait(IsolatedCase):
         db.migrate(conn)
         self.assertEqual(db.one(conn, "SELECT shot_type FROM classifications WHERE photo_id=?", (pid,))["shot_type"], "portrait")
         self.assertEqual(db.one(conn, "SELECT shot_type FROM final_checks WHERE photo_id=?", (pid,))["shot_type"], "portrait")
+
+
+class OneHall(IsolatedCase):
+    """Chris, 2026-10-12: "Exhibition Halls, vendors and booths are all the same thing"."""
+
+    def test_one_coverage_row_and_one_shot_type(self):
+        keys = offer.coverage_keys()
+        self.assertIn("exhibition_hall", keys)
+        self.assertNotIn("vendors", keys)
+        worker = (REPO / "worker" / "index.js").read_text().split("const COVERAGE")[1].split("]")[0]
+        self.assertNotIn("vendors", worker)
+        self.assertIn("exhibition_hall", worker)
+        self.assertNotIn("booth", classify.SHOT_TYPES)
+        self.assertIn("vendor_hall", classify.SHOT_TYPES)
+        self.assertIn("vendor_hall for an exhibition hall, an exhibit floor, vendors or a booth (all one thing)", classify.FINAL_SYSTEM)
+        self.assertNotIn('"booth"', json.dumps(classify.FINAL_SCHEMA))
+        self.assertNotIn("vendors", draft.COVERAGE_BY_KIND["fan"])
+        self.assertEqual(dict(dashboard.SHOT_CHOICES).get("booth"), None)
+        self.assertEqual(dict(dashboard.SHOT_CHOICES)["vendor_hall"], "Exhibition hall, vendors or a booth")
+        for words in (photo_text.SHOT_WORDS, meta.SHOT_WORDS):
+            self.assertEqual((words["vendor_hall"], words["booth"]), ("Exhibition hall", "Exhibition hall"))
+        self.assertEqual(seo_plan.ROOM["booth"], "floor")
+
+    def test_the_migration_turns_stored_booths_into_the_hall(self):
+        from tests.test_wedding import event_photo
+        conn = db.connect()
+        self.addCleanup(conn.close)
+        mine = [v for v in {r[0] for r in conn.execute("SELECT version FROM schema_migrations")} if "0064" in v]
+        self.assertEqual(len(mine), 1)
+        conn.execute("DELETE FROM schema_migrations WHERE version=?", (mine[0],))
+        pid = event_photo(conn, "b1", kind="business", final="business")
+        conn.execute("UPDATE classifications SET shot_type='booth' WHERE photo_id=?", (pid,))
+        conn.execute("UPDATE final_checks SET shot_type='booth' WHERE photo_id=?", (pid,))
+        conn.commit()
+        db.migrate(conn)
+        self.assertEqual(db.one(conn, "SELECT shot_type FROM classifications WHERE photo_id=?", (pid,))["shot_type"], "vendor_hall")
+        self.assertEqual(db.one(conn, "SELECT shot_type FROM final_checks WHERE photo_id=?", (pid,))["shot_type"], "vendor_hall")

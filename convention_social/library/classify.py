@@ -42,7 +42,8 @@ OLLAMA_URL = "http://127.0.0.1:11434"
 VISION_HINTS = ("llava", "vision", "-vl", "vl:", "qwen2.5vl", "qwen3-vl", "gemma3", "minicpm-v", "moondream", "bakllava", "granite3.2-vision", "mistral-small3")
 THUMB_EDGE = 512
 # portraits and headshots are one thing (Chris, 2026-10-12); rows sorted "headshot" before then read as portrait
-SHOT_TYPES = ("cosplay_portrait", "portrait", "group", "candid", "stage_panel", "vendor_hall", "booth",
+# exhibition halls, vendors and booths are one thing too (Chris, 2026-10-12): rows sorted "booth" read as vendor_hall
+SHOT_TYPES = ("cosplay_portrait", "portrait", "group", "candid", "stage_panel", "vendor_hall",
               "backstage", "dinner_reception", "crowd", "venue", "building_exterior", "building_interior", "other")
 DETAILS = ("badge_name", "vehicle_plate", "screen", "document", "house_number", "street_sign")
 # What an architecture frame shows. Chris, 2026-10-10, after the first building sheet: the
@@ -115,7 +116,7 @@ FINAL_SYSTEM = """You are the last check before a photographer posts a photo pub
 Answer four things about the photo only from what is visible:
 possible_minor: true if anyone in the photo could be under 18. When unsure, true.
 personal_details: anything readable that identifies a private person or a home: a name on a badge, a vehicle plate, a screen or document with private information (a message, an email, a form, a medical or financial paper), a house number, a street sign. A book cover, a program, a slide, signage, a title or a name on its own is not private information. Empty when none.
-shot_type: what the photo is of. stage_panel for anyone on a stage, at a podium or on a panel, however close the framing; portrait (a headshot is a portrait) only for a posed picture of a person made for its own sake, away from a stage; group for a posed group; candid for an unposed moment; crowd for an audience or a room of people; vendor_hall or booth for an exhibit floor; backstage; dinner_reception; venue, building_exterior or building_interior for a building with no event in it; cosplay_portrait for a person in costume; other when none fits.
+shot_type: what the photo is of. stage_panel for anyone on a stage, at a podium or on a panel, however close the framing; portrait (a headshot is a portrait) only for a posed picture of a person made for its own sake, away from a stage; group for a posed group; candid for an unposed moment; crowd for an audience or a room of people; vendor_hall for an exhibition hall, an exhibit floor, vendors or a booth (all one thing); backstage; dinner_reception; venue, building_exterior or building_interior for a building with no event in it; cosplay_portrait for a person in costume; other when none fits.
 event_kind: what kind of occasion the photo is from. fan for a fan convention (comics, anime, gaming); business for a business, trade or political conference or a corporate gala; wedding for a wedding or its reception (a bride, a groom, a wedding party, a first dance, a cake, wedding dress); private for a party, a family or personal occasion, a religious ceremony or a portrait session with no event around it; unknown only when nothing visible tells. A wedding is never business.
 Return JSON only, matching the schema."""
 
