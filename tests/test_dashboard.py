@@ -7,6 +7,7 @@ import re
 
 from fastapi.testclient import TestClient
 
+from convention_social.ai import copy_rules
 from convention_social.core import auth, config, db
 from convention_social.dashboard.app import COOKIE, create_app, make_token
 from convention_social.drive import scan
@@ -91,9 +92,13 @@ class Dashboard(IsolatedCase):
     def test_approve_refuses_rule_break_and_ineligible_photo(self):
         c = self.signed_in()
         pid = self.seed_library()
+        # Chris, 2026-10-12: a caption that breaks a rule is rewritten by the suite, never refused back to him
         q1 = self.draft("Coverage from $500 a day.")
         r = c.post(f"/queue/{q1}/approve", follow_redirects=False)
-        self.assertIn("msg=blocked", r.headers["location"])
+        self.assertIn("msg=approved", r.headers["location"])
+        caption = json.loads(db.one(self.conn, "SELECT caption FROM content_queue WHERE id=?", (q1,))["caption"])["instagram"]
+        self.assertNotIn("$500", caption)
+        self.assertTrue(copy_rules.check(caption, social=True).ok, caption)
         q2 = self.draft(photo_ids=[pid])
         self.assertIn("msg=ineligible", c.post(f"/queue/{q2}/approve", follow_redirects=False).headers["location"])
         c.post("/library/folder/fcon/clearance", data={"state": "cleared"})
@@ -109,9 +114,14 @@ class Dashboard(IsolatedCase):
         cid = db.one(self.conn, "SELECT id, official FROM conventions")
         self.assertEqual(cid["official"], 0)
         q = self.draft("Proud to be the official photographer here.", convention_id=cid["id"])
-        self.assertIn("msg=blocked", c.post(f"/queue/{q}/approve", follow_redirects=False).headers["location"])
-        c.post("/calendar/save", data={"id": cid["id"], "name": "Big Con", "kind": "fan", "official": "on"})
         self.assertIn("msg=approved", c.post(f"/queue/{q}/approve", follow_redirects=False).headers["location"])
+        caption = json.loads(db.one(self.conn, "SELECT caption FROM content_queue WHERE id=?", (q,))["caption"])["instagram"]
+        self.assertNotIn("official", caption.lower(), "without the flag the claim is rewritten away, never posted")
+        c.post("/calendar/save", data={"id": cid["id"], "name": "Big Con", "kind": "business", "official": "on"})
+        q2 = self.draft("Proud to be the official photographer here.", convention_id=cid["id"])
+        self.assertIn("msg=approved", c.post(f"/queue/{q2}/approve", follow_redirects=False).headers["location"])
+        caption = json.loads(db.one(self.conn, "SELECT caption FROM content_queue WHERE id=?", (q2,))["caption"])["instagram"]
+        self.assertIn("official", caption.lower(), "with the flag the claim stands as written")
 
     def test_do_not_use_pulls_an_approved_post_back(self):
         c = self.signed_in()

@@ -459,6 +459,18 @@ only when Chris says so.
   8a). Google is not in IndexNow and its Indexing API is not for this kind of
   site, so there is no way to make Google index it without that step.
 
+## 2026-10-12, morning: captions mend themselves
+
+- "the captions should auto correct themselves with the warnings they gave
+  me before approval. I don't want to change any captions." A draft in the
+  queue whose captions break a rule now (the rules grew after it was written)
+  is rewritten by the suite, never by him: the content agent mends every open
+  draft at the start of each run, the draft page mends one the moment he opens
+  it, and Approve mends before it would ever refuse. The writer gets the
+  rule's own words as the correction, twice, and the template stands in after
+  that (`agents/content.mend_captions`). The page says what was rewritten and
+  why; the old text is kept in the draft's record.
+
 ## Standing rules from the brief
 
 - Nothing publishes without Chris's Approve on the dashboard, until he says
