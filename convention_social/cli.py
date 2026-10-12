@@ -362,6 +362,8 @@ def cmd_site(args) -> int:
     out = build.build(conn, photos, preview=args.preview)
     print(f"built {out} (hero {len(photos.hero)}, coverage {len(photos.coverage)}, venues {len(photos.venues)})"
           f"{' PREVIEW' if args.preview else ''}")
+    if photos.hero_note:
+        print(f"hero: {photos.hero_note}")
     conn.close()
     return 0
 

@@ -43,6 +43,7 @@ class SitePhotos:
     hero: list = field(default_factory=list)       # [(image, alt)] or [(image, alt, ImageMeta)]
     coverage: list = field(default_factory=list)
     venues: list = field(default_factory=list)
+    hero_note: str = ""                            # which photo is the hero and why, for the go-live output
 
 
 class SiteCopyRefused(ValueError):
@@ -147,12 +148,24 @@ def pick_photos(conn: sqlite3.Connection, fetch: Callable[[dict], Image.Image],
     hero = None
     if chosen_id is not None:
         picked = next((r for r in rows if r["id"] == chosen_id and r["subject"] == "event"), None)
-        if picked is not None and (picked in events or usable(picked)):
+        if picked is None:
+            out.hero_note = f"your Site hero pick (photo {chosen_id}) is not an event photo in the library; the build chose instead"
+        elif picked in events or usable(picked):
             hero = picked
+            out.hero_note = f"your Site hero pick (photo {chosen_id}, {site_alt(picked).lower()})"
+        else:
+            ok, why = eligibility.is_candidate(conn, picked["id"])
+            why = why if not ok else eligibility.is_eligible(conn, picked["id"])[1]
+            out.hero_note = f"your Site hero pick (photo {chosen_id}) could not be used: {why}; the build chose instead"
     if hero is None:
         land = [r for r in events if (r["width"] or 0) > (r["height"] or 0)][:HERO_CANDIDATES]
         if land:
-            hero = max(land, key=lambda r: hero_score(r, image_of(r)))
+            scores = {r["id"]: hero_score(r, image_of(r)) for r in land}
+            hero = max(land, key=lambda r: scores[r["id"]])
+            out.hero_note = (out.hero_note + "; " if out.hero_note else "") + \
+                f"the build's choice: photo {hero['id']} ({site_alt(hero).lower()}, score {scores[hero['id']]:.2f} of {len(land)} looked at)"
+        else:
+            out.hero_note = (out.hero_note + "; " if out.hero_note else "") + "no usable landscape event photo for the hero"
     if hero is not None:
         out.hero = [(image_of(hero), site_alt(hero))]
         events = [r for r in events if r["id"] != hero["id"]]

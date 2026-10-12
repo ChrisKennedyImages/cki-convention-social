@@ -66,6 +66,7 @@ class Hero(IsolatedCase):
         self.assertEqual(photos.hero[0][0].getpixel((5, 5)), RED)
         self.assertEqual(photos.hero[0][1], "Stage and panel")
         self.assertEqual(len(photos.coverage), 2)
+        self.assertRegex(photos.hero_note, r"^the build's choice: photo \d+ \(stage and panel, score \d\.\d\d of 3 looked at\)$")
 
     def test_chris_own_pick_wins_while_it_is_usable(self):
         self.add("grey-best", GREY, quality=5, light=5, moment=5)
@@ -73,12 +74,17 @@ class Hero(IsolatedCase):
         settings.set(self.conn, build.HERO_KEY, str(pick))
         photos = build.pick_photos(self.conn, self.fetch)
         self.assertEqual(photos.hero[0][0].size, (2000, 3000), "his pick, portrait or not")
+        self.assertEqual(photos.hero_note, f"your Site hero pick (photo {pick}, crowd)")
         self.conn.execute("UPDATE photos SET clearance='blocked' WHERE id=?", (pick,))
         self.fetched.clear()
         photos = build.pick_photos(self.conn, self.fetch)
         self.assertEqual(photos.hero[0][0].size, (3000, 2000), "a pick he since blocked is not used")
+        self.assertIn(f"your Site hero pick (photo {pick}) could not be used: Chris blocked this photo; the build chose instead; "
+                      "the build's choice: photo", photos.hero_note)
         settings.set(self.conn, build.HERO_KEY, "999")
-        self.assertEqual(build.pick_photos(self.conn, self.fetch).hero[0][0].size, (3000, 2000), "a pick that is no photo is ignored")
+        photos = build.pick_photos(self.conn, self.fetch)
+        self.assertEqual(photos.hero[0][0].size, (3000, 2000), "a pick that is no photo is ignored")
+        self.assertIn("is not an event photo in the library", photos.hero_note)
 
     def test_the_grid_never_leads_with_one_event_on_everything(self):
         for i in range(5):                                                   # five strong CPAC frames, grey, told apart by shade
