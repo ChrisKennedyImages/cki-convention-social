@@ -55,6 +55,7 @@ class Site(IsolatedCase):
         for word in ("mousemove", "touchmove", "IntersectionObserver(es=>{live=", "visibilitychange", "requestAnimationFrame(step)"):
             self.assertIn(word, js, word)
         css = (out / "assets/site.css").read_text()
+        self.assertIn("filter:saturate(1.35)", css[css.index(".hero .img img{"):][:300], "Chris, 2026-10-12: up the saturation, it was lost in the layer")
         self.assertIn(".hero canvas.web{position:absolute;inset:0", css)
         self.assertIn("pointer-events:none", css[css.index(".hero canvas.web{"):][:200])
         self.assertIn(".hero canvas.web{display:none}", css[css.index("prefers-reduced-motion"):])

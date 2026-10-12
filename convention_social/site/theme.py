@@ -41,10 +41,10 @@ a{color:inherit;text-decoration:none}img{display:block;max-width:100%}
 .btn.fill{background:var(--w);color:var(--k)}.btn.fill:hover{background:var(--c)}
 /* hero */
 .hero{position:relative;height:100svh;min-height:640px;overflow:hidden;display:flex;align-items:flex-end}
-.hero .img{position:absolute;inset:0}.hero .img img{width:100%;height:100%;object-fit:cover;animation:push 18s ease-out forwards;filter:saturate(.9) contrast(1.05)}
+.hero .img{position:absolute;inset:0}.hero .img img{width:100%;height:100%;object-fit:cover;animation:push 18s ease-out forwards;filter:saturate(1.35) contrast(1.06)}
 @keyframes push{from{transform:scale(1.14)}to{transform:scale(1)}}
-.hero:after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(10,10,11,.55) 0%,rgba(10,10,11,0) 30%,rgba(10,10,11,.25) 55%,rgba(10,10,11,.96) 100%)}
-.hero canvas.web{position:absolute;inset:0;width:100%;height:100%;z-index:2;pointer-events:none;mix-blend-mode:screen;opacity:.85}
+.hero:after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(10,10,11,.42) 0%,rgba(10,10,11,0) 26%,rgba(10,10,11,.12) 55%,rgba(10,10,11,.94) 100%)}
+.hero canvas.web{position:absolute;inset:0;width:100%;height:100%;z-index:2;pointer-events:none;mix-blend-mode:screen;opacity:.7}
 .vf{position:absolute;inset:clamp(70px,9vh,110px) var(--pad) clamp(24px,4vh,40px);z-index:2;pointer-events:none}
 .vf i{position:absolute;width:44px;height:44px;border:0 solid var(--w)}
 .vf i:nth-child(1){left:0;top:0;border-width:2px 0 0 2px}.vf i:nth-child(2){right:0;top:0;border-width:2px 2px 0 0}
