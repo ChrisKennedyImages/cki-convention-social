@@ -5,6 +5,7 @@ it would ever refuse."""
 from __future__ import annotations
 
 import json
+from pathlib import Path
 import os
 from unittest import mock
 
@@ -188,3 +189,47 @@ class OnTheDraftPage(Mend):
         qid = self.draft(status="approved")
         self.client.get(f"/queue/{qid}")
         self.assertEqual(json.loads(self.row(qid)["caption"])["instagram"], BROKEN)
+
+
+class TheCard(Mend):
+    """The card comes from the same day as the captions: cards from before 2026-10-11 said "coverage", a word
+    a card no longer carries, so a mended draft's card is drawn again with today's words."""
+
+    def test_the_card_is_drawn_again_from_the_photo_copy_on_this_machine(self):
+        cache = config.get_config().data_root / "photos"
+        cache.mkdir(parents=True, exist_ok=True)
+        (cache / "e1.img").write_bytes(jpeg_bytes(seed=3, size=(3000, 2000)))
+        old = self.root / "old-card.jpg"
+        old.write_bytes(jpeg_bytes(size=(1080, 1350)))
+        qid = self.draft()
+        self.conn.execute("UPDATE content_queue SET render_paths=? WHERE id=?", (json.dumps({"4:5": [str(old)]}), qid))
+        self.conn.execute("UPDATE photos SET local_path=? WHERE id=?", (str(cache / "e1.img"), self.pid))
+        mend = content.mend_captions(self.conn, self.row(qid), drafter=Writer([CLEAN]))
+        self.assertEqual(mend["card"], "card drawn again with today's words")
+        paths = json.loads(self.row(qid)["render_paths"])
+        self.assertEqual(sorted(paths), ["2:3", "4:5"])
+        for files in paths.values():
+            for f in files:
+                self.assertNotEqual(f, str(old))
+                self.assertTrue(Path(f).is_file(), f)
+                self.assertIn(str(config.get_config().data_root / "renders" / "posts" / "2026-10-12"), f)
+        data = Path(paths["4:5"][0]).read_bytes()
+        self.assertIn(b"Stage and panel", data, "today's words travel in the file")
+        self.assertIn("Card drawn again with today&#39;s words.", self.client_page(qid))
+
+    def test_without_a_copy_of_the_photo_the_old_card_stays_and_says_so(self):
+        old = self.root / "old-card.jpg"
+        old.write_bytes(jpeg_bytes(size=(1080, 1350)))
+        qid = self.draft()
+        self.conn.execute("UPDATE content_queue SET render_paths=? WHERE id=?", (json.dumps({"4:5": [str(old)]}), qid))
+        mend = content.mend_captions(self.conn, self.row(qid), drafter=Writer([CLEAN]))
+        self.assertEqual(mend["card"], f"card kept: no copy of photo {self.pid} on this machine")
+        self.assertEqual(json.loads(self.row(qid)["render_paths"]), {"4:5": [str(old)]})
+        self.assertTrue(all(copy_rules.check(t, social=True).ok for t in json.loads(self.row(qid)["caption"]).values()), "the captions are mended all the same")
+
+    def client_page(self, qid):
+        os.environ["DASHBOARD_PASSWORD_HASH"] = auth.hash_password("correct horse")
+        config.reset()
+        client = TestClient(create_app())
+        client.cookies.set(COOKIE, make_token("chris"))
+        return client.get(f"/queue/{qid}").text
