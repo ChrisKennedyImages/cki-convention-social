@@ -471,6 +471,17 @@ only when Chris says so.
   that (`agents/content.mend_captions`). The page says what was rewritten and
   why; the old text is kept in the draft's record.
 
+## 2026-10-12, morning: a morning with no draft is said out loud
+
+- "the render didn't land this morning at 8am." A content run that drafts
+  nothing used to end in a quiet summary line: no ping, no error, and the
+  final check's two quiet reasons (the monthly AI cap, no key) returned
+  nothing and said nothing. Now the run records the reason as an open error
+  on the Agents page and pings the phone ("no post drafted for Tuesday", the
+  reason, a tap to the Agents page), once per reason while it stands; the
+  cap and a missing key are errors the moment they bite (`classify.look`).
+  "Already drafted" stays quiet, since it is not a failure.
+
 ## Standing rules from the brief
 
 - Nothing publishes without Chris's Approve on the dashboard, until he says

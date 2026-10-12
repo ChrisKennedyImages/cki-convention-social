@@ -180,8 +180,16 @@ def mend_captions(conn: sqlite3.Connection, row, *, drafter=None, agent: str = "
         record["writer_error"] = f"{type(e).__name__}: {e}"
     reports = {n: copy_rules.check(t, names=known_names, social=True).as_dict() for n, t in fixed.items()}
     mend = {"at": db.utcnow(), "by": writer, "fixed": broken, "was": {n: captions[n] for n in broken}}
+    # the card comes from the same day as the captions: drawn again with today's words where the photos are here
+    try:
+        paths, note = redraw(conn, row, meta, agent=agent)
+    except Exception as e:  # noqa: BLE001  a card that cannot be drawn again stays; the captions are still mended
+        paths, note = None, f"card kept: it could not be drawn again ({type(e).__name__}: {e})"
+    mend["card"] = note
     meta.update(rules=reports, alt_text=alt, seo={**(meta.get("seo") or {}), **record},
                 mended=list(meta.get("mended") or []) + [mend])
+    if paths is not None:
+        conn.execute("UPDATE content_queue SET render_paths=? WHERE id=?", (json.dumps(paths), row["id"]))
     conn.execute("UPDATE content_queue SET caption=?, rule_report=?, updated_at=? WHERE id=?",
                  (json.dumps(fixed), json.dumps(meta), db.utcnow(), row["id"]))
     return mend
@@ -255,6 +263,86 @@ def middle_first(items: list, hero) -> list:
     return rest[:k] + [hero] + rest[k:]
 
 
+def make_renderer(conn: sqlite3.Connection, agent: str, *, design: str, rows: list, hero: dict, images: dict, day: date,
+                  track, out_dir: Path, seo) -> tuple[Callable[[tuple], dict], list]:
+    """The day's design on its photos, as `render(focus) -> {aspect: [paths]}` for the art director, and the
+    list a failed reel is written to (the same photos then go out as a carousel). Shared by the fresh draft
+    and the mend, so a redrawn card is the same card the day would have made."""
+    from ..render import motion
+    kicker = kicker_for(hero).upper()
+    copy = motion.MotionCopy(kicker=kicker)
+    tag = f"{hero['id']}-{design}"
+    reel_failed: list[str] = []
+
+    def single(focus, aspects=("4:5", "2:3")):
+        shot = shot_for(hero, images[hero["id"]], focus)
+        return {a: [str(motion.single_post(shot, copy, out=out_dir / f"{tag}-{a.replace(':', '')}.jpg", aspect=a,
+                                           kicker=kicker, meta=seo))] for a in aspects}
+
+    def render(focus):
+        if design == "single":
+            return single(focus)
+        shots = [shot_for(r, images[r["id"]]) for r in rows]
+        if design == "reel" and not reel_failed:
+            # Instagram and Facebook get the reel (render_paths "9:16"), with its cover; Pinterest the
+            # hero as a 2:3 card; the art director looks at the cover and the stills, never the mp4
+            kind = reel_kind(day)
+            try:
+                video = motion.REELS[kind](shots, copy, out=out_dir / f"{tag}-{kind}.mp4", audio=track)
+                stills = motion.reel_stills(kind, shots, copy, out_dir=out_dir / f"{tag}-stills", meta=seo)
+            except Exception as e:  # noqa: BLE001  a reel that cannot be made leaves a carousel of the same photos, said why
+                reel_failed.append(f"{type(e).__name__}: {e}")
+                runner.record_error(conn, agent, "reel", f"the {kind} reel for {day} was not made: {e}")
+            else:
+                return {"9:16": [str(video)], "cover": [str(stills[0])], **single(focus, ("2:3",)),
+                        "stills": [str(p) for p in stills[1:]]}
+        if design in ("carousel", "reel"):        # the reel's fallback takes the same 4 to 6 photos
+            return {"4:5": [str(p) for p in motion.carousel(shots, copy, out_dir=out_dir / tag, meta=seo)]}
+        ordered = middle_first(shots, shots[0])
+        mid = ordered.index(shots[0])
+        if design == "fan":
+            return {"4:5": [str(motion.fan_post(ordered, copy, out=out_dir / f"{tag}.jpg", focus=mid, meta=seo))]}
+        return {"4:5": [str(motion.spotlight_post(ordered, copy, out=out_dir / f"{tag}.jpg", index=mid, meta=seo))]}
+
+    return render, reel_failed
+
+
+def redraw(conn: sqlite3.Connection, row, meta: dict, *, agent: str = "content") -> tuple[Optional[dict], str]:
+    """The card of a queued draft drawn again with today's design copy, from the copies of its photos on
+    this machine (the cards from before 2026-10-11 said "coverage", a word a card no longer carries).
+    (new render_paths, note); None when a photo copy is missing, and the old card stays, said so."""
+    cfg = config.get_config()
+    pids = [int(x) for x in json.loads(row["photo_ids"] or "[]")] if row["photo_ids"] else []
+    rows = [db.one(conn, """SELECT p.*, c.subject, c.event_kind, c.shot_type, c.convention_name FROM photos p
+                            LEFT JOIN classifications c ON c.photo_id = p.id WHERE p.id=?""", (pid,)) for pid in pids]
+    if not rows or any(r is None for r in rows):
+        return None, "card kept: a photo of it is no longer in the library"
+    rows = [dict(r) for r in rows]
+    images = {}
+    for r in rows:
+        path = Path(r["local_path"]) if r["local_path"] else cfg.data_root / "photos" / f"{r['drive_id']}.img"
+        if not path.is_file():
+            return None, f"card kept: no copy of photo {r['id']} on this machine"
+        images[r["id"]] = Image.open(io.BytesIO(path.read_bytes()))
+    try:
+        day = date.fromisoformat(meta.get("for_day") or "")
+    except ValueError:
+        day = target_day(cfg)
+    design = meta.get("design") or "single"
+    hero = rows[0]
+    track = music.current(conn) if design == "reel" else None
+    out_dir = cfg.data_root / "renders" / "posts" / day.isoformat()
+    out_dir.mkdir(parents=True, exist_ok=True)
+    render, reel_failed = make_renderer(conn, agent, design=design, rows=rows, hero=hero, images=images, day=day, track=track,
+                                        out_dir=out_dir, seo=image_meta.for_photo(conn, hero))
+    art = meta.get("art") or {}
+    focus = tuple(art["focus"]) if isinstance(art.get("focus"), list) and len(art["focus"]) == 2 else (0.5, 0.42)
+    paths = render(focus)
+    if reel_failed:
+        meta["design"], meta["reel_failed"] = "carousel", reel_failed[0]
+    return paths, "card drawn again with today's words"
+
+
 def draft_one(ctx: runner.Context, fetch: Callable[[dict], bytes], *, now: Optional[datetime] = None,
               check_client=None, drafter=None, art_client=None, _depth: int = 0) -> str:
     from ..render import motion
@@ -313,42 +401,8 @@ def draft_one(ctx: runner.Context, fetch: Callable[[dict], bytes], *, now: Optio
     images = {r["id"]: Image.open(io.BytesIO(d)) for r, d in chosen}
     out_dir = ctx.cfg.data_root / "renders" / "posts" / day.isoformat()
     seo = image_meta.for_photo(ctx.conn, hero)
-    kicker = kicker_for(hero).upper()
-    copy = motion.MotionCopy(kicker=kicker)
-    tag = f"{hero['id']}-{design}"
-
-    reel_failed: list[str] = []
-
-    def single(focus, aspects=("4:5", "2:3")):
-        shot = shot_for(hero, images[hero["id"]], focus)
-        return {a: [str(motion.single_post(shot, copy, out=out_dir / f"{tag}-{a.replace(':', '')}.jpg", aspect=a,
-                                           kicker=kicker, meta=seo))] for a in aspects}
-
-    def render(focus):
-        if design == "single":
-            return single(focus)
-        shots = [shot_for(r, images[r["id"]]) for r, _ in chosen]
-        if design == "reel" and not reel_failed:
-            # Instagram and Facebook get the reel (render_paths "9:16"), with its cover; Pinterest the
-            # hero as a 2:3 card; the art director looks at the cover and the stills, never the mp4
-            kind = reel_kind(day)
-            try:
-                video = motion.REELS[kind](shots, copy, out=out_dir / f"{tag}-{kind}.mp4", audio=track)
-                stills = motion.reel_stills(kind, shots, copy, out_dir=out_dir / f"{tag}-stills", meta=seo)
-            except Exception as e:  # noqa: BLE001  a reel that cannot be made leaves a carousel of the same photos, said why
-                reel_failed.append(f"{type(e).__name__}: {e}")
-                runner.record_error(ctx.conn, ctx.agent, "reel", f"the {kind} reel for {day} was not made: {e}")
-            else:
-                return {"9:16": [str(video)], "cover": [str(stills[0])], **single(focus, ("2:3",)),
-                        "stills": [str(p) for p in stills[1:]]}
-        if design in ("carousel", "reel"):        # the reel's fallback takes the same 4 to 6 photos
-            return {"4:5": [str(p) for p in motion.carousel(shots, copy, out_dir=out_dir / tag, meta=seo)]}
-        ordered = middle_first(shots, shots[0])
-        mid = ordered.index(shots[0])
-        if design == "fan":
-            return {"4:5": [str(motion.fan_post(ordered, copy, out=out_dir / f"{tag}.jpg", focus=mid, meta=seo))]}
-        return {"4:5": [str(motion.spotlight_post(ordered, copy, out=out_dir / f"{tag}.jpg", index=mid, meta=seo))]}
-
+    render, reel_failed = make_renderer(ctx.conn, ctx.agent, design=design, rows=[r for r, _ in chosen], hero=hero, images=images,
+                                        day=day, track=track, out_dir=out_dir, seo=seo)
     render_paths, art = art_director.direct(ctx.conn, render, dry_run=ctx.dry_run, client=art_client, agent=ctx.agent,
                                             allow_redo=design == "single", max_files=4)
     if reel_failed:
@@ -404,7 +458,16 @@ def run(ctx: runner.Context, fetch: Optional[Callable[[dict], bytes]] = None) ->
             cached = ctx.cfg.data_root / "photos" / f"{row['drive_id']}.img"
             return cached.read_bytes() if cached.exists() else reader.download(row["drive_id"])
     mended = 0 if ctx.dry_run else mend_queue(ctx.conn, agent=ctx.agent)
-    return (f"rewrote the captions of {mended} queued draft(s) that broke a rule; " if mended else "") + draft_one(ctx, fetch)
+    summary = draft_one(ctx, fetch)
+    if "drafted post" not in summary and "already drafted" not in summary:
+        # 2026-10-12: "the render didn't land this morning at 8am". A morning with no draft is said out loud, with
+        # the reason, on the phone and on the Agents page; never a quiet summary line.
+        from ..ai import spend
+        day = target_day(ctx.cfg)
+        why = summary + ("; the monthly AI cap is reached (Keys page, AI)" if spend.cap_reached(ctx.conn) else "")
+        runner.record_error_once(ctx.conn, ctx.agent, "no_draft", f"No post was drafted for {day}: {why}")
+        notify.push(f"{ctx.cfg.brand_name}: no post drafted for {day:%A}", why, dry_run=ctx.dry_run, click=notify.link("/agents"))
+    return (f"rewrote the captions of {mended} queued draft(s) that broke a rule; " if mended else "") + summary
 
 
 if __name__ == "__main__":
