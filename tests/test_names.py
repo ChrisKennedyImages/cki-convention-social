@@ -146,16 +146,24 @@ class Gates(AgentCase):
         return add_post(self.conn, [pid], captions=caps, status=status,
                         render_paths={"4:5": [write_render(self.root / "data" / "r", "a.jpg")]})
 
-    def test_approve_refuses_a_caption_that_names_the_event(self):
+    def test_a_caption_that_names_the_event_is_rewritten_before_he_sees_it(self):
+        # Chris, 2026-10-12: "the captions should auto correct themselves ... I don't want to change any captions"
         os.environ["DASHBOARD_PASSWORD_HASH"] = auth.hash_password("correct horse")
         config.reset()
         qid = self.named_post("draft")
         client = TestClient(create_app())
         client.cookies.set(COOKIE, make_token("chris"))
         page = client.get(f"/queue/{qid}").text
-        self.assertIn("names &#39;CPAC&#39;", page)
+        self.assertIn("the suite rewrote it. Nothing to fix.", page)
+        self.assertIn("names &#39;CPAC&#39;", page, "the note says what was wrong")
+        self.assertNotIn('class="rule block"', page)
+        captions = json.loads(db.one(self.conn, "SELECT caption FROM content_queue WHERE id=?", (qid,))["caption"])
+        for text in captions.values():
+            self.assertNotIn("CPAC", text)
+            self.assertTrue(copy_rules.check(text, names=names.public_names(self.conn), social=True).ok, text)
         r = client.post(f"/queue/{qid}/approve", follow_redirects=False)
-        self.assertIn("msg=blocked", r.headers["location"])
+        self.assertNotIn("msg=blocked", r.headers["location"])
+        self.assertIn("msg=ineligible", r.headers["location"], "the photo gate still holds; the name never does the blocking")
         self.assertEqual(db.one(self.conn, "SELECT status FROM content_queue WHERE id=?", (qid,))["status"], "draft")
 
     def test_the_publisher_turns_back_a_post_that_names_the_event(self):

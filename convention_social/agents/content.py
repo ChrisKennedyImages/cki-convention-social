@@ -128,6 +128,72 @@ def write_captions(drafter, facts: claude.PostFacts, photo: Path, known_names) -
     return caps, alt, record, writer
 
 
+# Chris, 2026-10-12: "the captions should auto correct themselves with the warnings they gave me before
+# approval. I don't want to change any captions." A draft already in the queue whose captions break a rule
+# (the rules grew after it was written: 2026-10-11 took every word about what is offered out of public copy)
+# is rewritten by the suite with the rule's own words as the correction, the way a fresh draft is, and the
+# template stands in when the writer misses twice. Never his hands.
+MENDABLE = ("draft",)
+
+
+def official_for(conn: sqlite3.Connection, row) -> bool:
+    """A post may say "official" only for an event Chris marked official on the calendar."""
+    if not row["convention_id"]:
+        return False
+    c = db.one(conn, "SELECT official FROM conventions WHERE id=?", (row["convention_id"],))
+    return bool(c and c["official"])
+
+
+def mend_captions(conn: sqlite3.Connection, row, *, drafter=None, agent: str = "content") -> Optional[dict]:
+    """Rewrite a queued draft's captions when one breaks a rule now. Returns the mend record, or None
+    when every caption passes (nothing is touched then, and nothing is spent)."""
+    known_names = names.public_names(conn)
+    official = official_for(conn, row)
+    try:
+        captions = json.loads(row["caption"] or "{}")
+        meta = json.loads(row["rule_report"] or "{}")
+    except ValueError:
+        captions, meta = {}, {}
+    broken = {n: [b.message for b in copy_rules.check(t, official=official, names=known_names, social=True).blocks]
+              for n, t in captions.items()}
+    broken = {n: m for n, m in broken.items() if m}
+    if not broken or row["kind"] != "photo":
+        return None
+    cfg = config.get_config()
+    pids = [int(x) for x in json.loads(row["photo_ids"] or "[]")] if row["photo_ids"] else []
+    hero = db.one(conn, """SELECT p.*, c.subject, c.event_kind, c.shot_type FROM photos p
+                           LEFT JOIN classifications c ON c.photo_id = p.id WHERE p.id=?""", (pids[0],)) if pids else None
+    subject = (hero["subject"] if hero and hero["subject"] else meta.get("subject")) or "event"
+    design = meta.get("design") or "single"
+    facts = claude.PostFacts(brand_name=cfg.brand_name, event_kind=(hero["event_kind"] if hero else None) or "unknown",
+                             shot_type=(hero["shot_type"] if hero else None) or "", subject=subject, official=official,
+                             quote_link=f"{cfg.brand_domain}/book" if cfg.brand_domain else "")
+    facts.plan = seo_plan.plan_for(subject=subject, event_kind=facts.event_kind, shot_type=facts.shot_type, design=design)
+    photo = Path(hero["local_path"]) if hero and hero["local_path"] else (cfg.data_root / "photos" / f"{hero['drive_id']}.img" if hero else None)
+    if drafter is None:
+        # the writer looks at the photo; without a copy of it here the template, which cannot miss, writes
+        drafter = claude.get_drafter(conn, agent=agent) if photo is not None and photo.exists() else claude.TemplateDrafter()
+    try:
+        fixed, alt, record, writer = write_captions(drafter, facts, photo or Path("none"), known_names)
+    except claude.DraftError as e:                   # the cap, a refusal: the template stands in, said so
+        fixed, alt, record, writer = write_captions(claude.TemplateDrafter(), facts, Path("none"), known_names)
+        record["writer_error"] = f"{type(e).__name__}: {e}"
+    reports = {n: copy_rules.check(t, names=known_names, social=True).as_dict() for n, t in fixed.items()}
+    mend = {"at": db.utcnow(), "by": writer, "fixed": broken, "was": {n: captions[n] for n in broken}}
+    meta.update(rules=reports, alt_text=alt, seo={**(meta.get("seo") or {}), **record},
+                mended=list(meta.get("mended") or []) + [mend])
+    conn.execute("UPDATE content_queue SET caption=?, rule_report=?, updated_at=? WHERE id=?",
+                 (json.dumps(fixed), json.dumps(meta), db.utcnow(), row["id"]))
+    return mend
+
+
+def mend_queue(conn: sqlite3.Connection, *, drafter=None, agent: str = "content") -> int:
+    """Every open draft, mended where a rule now bites. The number rewritten."""
+    rows = db.rows(conn, f"SELECT * FROM content_queue WHERE kind='photo' AND status IN ({','.join('?' * len(MENDABLE))}) ORDER BY id",
+                   MENDABLE)
+    return sum(1 for r in rows if mend_captions(conn, r, drafter=drafter, agent=agent) is not None)
+
+
 def kicker_for(row: dict) -> str:
     """The small line printed on the post: the kind of work, never which event or who is in it.
     Chris, 2026-10-11: "i want to make sure the captions don't say the specific event or person", and on
@@ -337,7 +403,8 @@ def run(ctx: runner.Context, fetch: Optional[Callable[[dict], bytes]] = None) ->
         def fetch(row):
             cached = ctx.cfg.data_root / "photos" / f"{row['drive_id']}.img"
             return cached.read_bytes() if cached.exists() else reader.download(row["drive_id"])
-    return draft_one(ctx, fetch)
+    mended = 0 if ctx.dry_run else mend_queue(ctx.conn, agent=ctx.agent)
+    return (f"rewrote the captions of {mended} queued draft(s) that broke a rule; " if mended else "") + draft_one(ctx, fetch)
 
 
 if __name__ == "__main__":

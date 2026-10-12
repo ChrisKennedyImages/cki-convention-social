@@ -149,10 +149,8 @@ def inside_data_root(p: Path) -> bool:
 
 # ---------------------------------------------------------------------- queue helpers
 def official_for(conn, row) -> bool:
-    if not row["convention_id"]:
-        return False
-    c = db.one(conn, "SELECT official FROM conventions WHERE id=?", (row["convention_id"],))
-    return bool(c and c["official"])
+    from ..agents.content import official_for as _official
+    return _official(conn, row)
 
 
 NOT_THUMBS = ("9:16", "cover", "stills")   # a reel plays as a video with its cover; the stills are for the art director
@@ -168,10 +166,13 @@ def queue_view(conn, row) -> dict:
     photo_checks = [(pid, *eligibility.is_eligible(conn, int(pid)), shot_type_of(conn, int(pid))) for pid in photo_ids]
     renders = json.loads(row["render_paths"] or "{}")
     try:
-        art = json.loads(row["rule_report"] or "{}").get("art") or {}
+        meta = json.loads(row["rule_report"] or "{}")
     except ValueError:
-        art = {}
+        meta = {}
+    art = meta.get("art") or {}
+    mended = meta.get("mended") or []
     return {**dict(row), "art": art, "captions": captions, "targets": targets, "reports": reports, "official": official,
+            "mended": mended[-1] if mended else None,
             "blocked_networks": [n for n in targets if not reports[n].ok],
             "photo_checks": photo_checks, "ineligible": [c for c in photo_checks if not c[1]],
             "video": any(str(x).lower().endswith(".mp4") for x in renders.get("9:16") or []), "cover": bool(renders.get("cover")),
@@ -496,9 +497,20 @@ def create_app() -> FastAPI:
         return render(request, "queue.html", items=[queue_view(conn, r) for r in rows], show=show,
                       auth_state=auth_state, msg=request.query_params.get("msg", ""), brief=brief)
 
+    def mended_row(conn, row):
+        """Chris, 2026-10-12: "the captions should auto correct themselves with the warnings they gave me
+        before approval. I don't want to change any captions." A draft he opens or approves whose captions
+        break a rule now is rewritten by the suite first (agents/content.mend_captions); he never edits."""
+        from ..agents import content
+        if row["status"] in content.MENDABLE and queue_view(conn, row)["blocked_networks"]:
+            if content.mend_captions(conn, row, agent="dashboard") is not None:
+                return load_queue_row(conn, row["id"]), True
+        return row, False
+
     @app.get("/queue/{qid}", response_class=HTMLResponse)
     def queue_detail(qid: int, request: Request, user: str = Depends(require_user), conn=Depends(conn_dep), msg: str = ""):
-        return render(request, "detail.html", item=queue_view(conn, load_queue_row(conn, qid)), networks=NETWORKS, msg=msg,
+        row, mended = mended_row(conn, load_queue_row(conn, qid))
+        return render(request, "detail.html", item=queue_view(conn, row), networks=NETWORKS, msg=msg or ("mended" if mended else ""),
                       shot_choices=SHOT_CHOICES)
 
     @app.post("/queue/{qid}/save")
@@ -517,6 +529,7 @@ def create_app() -> FastAPI:
         row = load_queue_row(conn, qid)
         if row["status"] != "draft":
             return RedirectResponse(f"/queue/{qid}", status_code=303)
+        row, _ = mended_row(conn, row)
         item = queue_view(conn, row)
         if item["blocked_networks"]:
             return RedirectResponse(f"/queue/{qid}?msg=blocked", status_code=303)
