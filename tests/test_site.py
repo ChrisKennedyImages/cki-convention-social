@@ -41,6 +41,24 @@ class Site(IsolatedCase):
         self.assertNotIn("noindex", home)
         self.assertIn("/api/availability", (out / "availability/index.html").read_text())
 
+    def test_the_hero_carries_the_magnetic_web(self):
+        """Chris, 2026-10-11: "make the photo have the magnetic web effect": a canvas over the hero, drawn by the
+        site's script, pulled by the pointer, still under reduced motion and asleep off screen."""
+        out = self.built()
+        home = (out / "index.html").read_text()
+        self.assertIn('<canvas class="web" aria-hidden="true"></canvas>', home)
+        self.assertEqual(home.index('class="img"'), home.index('class="img"'), "one hero")
+        self.assertLess(home.index('<div class="img">'), home.index('<canvas class="web"'))
+        js = (out / "assets/site.js").read_text()
+        self.assertIn("document.querySelector('.hero canvas.web')", js)
+        self.assertIn("if(web&&!reduce)", js)
+        for word in ("mousemove", "touchmove", "IntersectionObserver(es=>{live=", "visibilitychange", "requestAnimationFrame(step)"):
+            self.assertIn(word, js, word)
+        css = (out / "assets/site.css").read_text()
+        self.assertIn(".hero canvas.web{position:absolute;inset:0", css)
+        self.assertIn("pointer-events:none", css[css.index(".hero canvas.web{"):][:200])
+        self.assertIn(".hero canvas.web{display:none}", css[css.index("prefers-reduced-motion"):])
+
     def test_no_banned_copy_on_any_page(self):
         out = self.built()
         for page in out.rglob("*.html"):

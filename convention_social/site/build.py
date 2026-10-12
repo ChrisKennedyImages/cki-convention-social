@@ -267,7 +267,7 @@ def home_body(t: dict, hero: str, frames: list[tuple[str, str]], stack: list[str
     short = ["Backstage", "Green rooms", "Breakouts", "Main stage", "Evening events", "Dinners", "Portraits",
              "Exhibition halls", "Vendors", "Delivered on site"]
     return f"""
-<section class="hero"><div class="img">{hero}</div>
+<section class="hero"><div class="img">{hero}</div><canvas class="web" aria-hidden="true"></canvas>
 <div class="vf" aria-hidden="true"><i></i><i></i><i></i><i></i><span class="cross"></span><span class="focus"></span></div>
 <div class="hud tl mono"><span class="rec">Rec</span> <span id="tc">00:00:00:00</span></div>
 <div class="hud tr mono">ISO 3200 &nbsp; 1/250 &nbsp; F2.8 &nbsp; AWB</div>

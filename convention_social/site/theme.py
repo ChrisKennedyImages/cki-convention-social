@@ -44,6 +44,7 @@ a{color:inherit;text-decoration:none}img{display:block;max-width:100%}
 .hero .img{position:absolute;inset:0}.hero .img img{width:100%;height:100%;object-fit:cover;animation:push 18s ease-out forwards;filter:saturate(.9) contrast(1.05)}
 @keyframes push{from{transform:scale(1.14)}to{transform:scale(1)}}
 .hero:after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(10,10,11,.55) 0%,rgba(10,10,11,0) 30%,rgba(10,10,11,.25) 55%,rgba(10,10,11,.96) 100%)}
+.hero canvas.web{position:absolute;inset:0;width:100%;height:100%;z-index:2;pointer-events:none;mix-blend-mode:screen;opacity:.85}
 .vf{position:absolute;inset:clamp(70px,9vh,110px) var(--pad) clamp(24px,4vh,40px);z-index:2;pointer-events:none}
 .vf i{position:absolute;width:44px;height:44px;border:0 solid var(--w)}
 .vf i:nth-child(1){left:0;top:0;border-width:2px 0 0 2px}.vf i:nth-child(2){right:0;top:0;border-width:2px 2px 0 0}
@@ -170,7 +171,7 @@ form.book textarea{min-height:120px;resize:vertical}
 .vf .focus{left:60%;top:16%;width:70px;height:52px}.vf .cross,.hud.tl{display:none}
 .hero .copy{padding:0 calc(var(--pad) + 14px) 76px}.mega{font-size:clamp(30px,10.4vw,64px)}.hero .lede{font-size:16px}.hero .row{margin-top:18px;gap:20px}
 .vf i{width:28px;height:28px}.list a{grid-template-columns:44px 1fr auto}.top .btn{padding:12px 14px}}
-@media (prefers-reduced-motion:reduce){*,*:before,*:after{animation:none!important;transition:none!important}.mega span em{transform:none}.rv{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){*,*:before,*:after{animation:none!important;transition:none!important}.mega span em{transform:none}.rv{opacity:1;transform:none}.hero canvas.web{display:none}}
 """
 
 JS = r"""
@@ -188,6 +189,23 @@ if(fr)addEventListener('scroll',()=>{fr.textContent=String(1+Math.floor(scrollY/
 const cur=document.querySelector('.cursor');
 if(cur&&fine){addEventListener('mousemove',e=>{cur.classList.add('live');cur.style.transform='translate('+e.clientX+'px,'+e.clientY+'px)'});
 document.querySelectorAll('a,button,.chips label').forEach(a=>{a.addEventListener('mouseenter',()=>cur.classList.add('big'));a.addEventListener('mouseleave',()=>cur.classList.remove('big'))})}
+// the magnetic web over the hero (Chris, 2026-10-11): a drifting mesh of points and lines in the brand cyan that
+// the pointer pulls toward itself; still under reduced motion, asleep while the hero is off screen or the tab hidden
+const web=document.querySelector('.hero canvas.web');
+if(web&&!reduce){const ctx=web.getContext('2d'),hero=web.parentElement;let W=0,H=0,pts=[],live=true,raf=0;const ptr={x:-1e4,y:-1e4,on:false};
+const make=()=>{const r=hero.getBoundingClientRect(),dpr=Math.min(2,devicePixelRatio||1);W=r.width;H=r.height;web.width=W*dpr;web.height=H*dpr;ctx.setTransform(dpr,0,0,dpr,0,0);
+const n=Math.round(Math.min(150,Math.max(50,W*H/13000)));pts=Array.from({length:n},()=>({x:Math.random()*W,y:Math.random()*H,vx:(Math.random()-.5)*.35,vy:(Math.random()-.5)*.35,ox:0,oy:0,ovx:0,ovy:0}))};
+const step=()=>{raf=0;if(!live)return;ctx.clearRect(0,0,W,H);const R=200,L=130;
+for(const p of pts){p.x+=p.vx;p.y+=p.vy;if(p.x<0||p.x>W)p.vx*=-1;if(p.y<0||p.y>H)p.vy*=-1;
+const dx=ptr.x-(p.x+p.ox),dy=ptr.y-(p.y+p.oy),d=Math.hypot(dx,dy);if(ptr.on&&d<R&&d>1){const f=(1-d/R)*1.1;p.ovx+=dx/d*f;p.ovy+=dy/d*f}
+p.ovx-=p.ox*.03;p.ovy-=p.oy*.03;p.ovx*=.86;p.ovy*=.86;p.ox+=p.ovx;p.oy+=p.ovy}
+ctx.lineWidth=1;for(let i=0;i<pts.length;i++){const a=pts[i],ax=a.x+a.ox,ay=a.y+a.oy;for(let j=i+1;j<pts.length;j++){const b=pts[j],bx=b.x+b.ox,by=b.y+b.oy;const dx=ax-bx,dy=ay-by;
+if(dx>L||dx<-L||dy>L||dy<-L)continue;const d=Math.hypot(dx,dy);if(d>L)continue;ctx.strokeStyle='rgba(0,225,255,'+(.32*(1-d/L)).toFixed(3)+')';ctx.beginPath();ctx.moveTo(ax,ay);ctx.lineTo(bx,by);ctx.stroke()}}
+ctx.fillStyle='rgba(0,225,255,.8)';for(const p of pts){ctx.beginPath();ctx.arc(p.x+p.ox,p.y+p.oy,1.5,0,6.2832);ctx.fill()}raf=requestAnimationFrame(step)};
+const go=()=>{if(!raf&&live)raf=requestAnimationFrame(step)};const at=(cx,cy)=>{const r=hero.getBoundingClientRect();ptr.x=cx-r.left;ptr.y=cy-r.top;ptr.on=true};
+make();addEventListener('resize',make);hero.addEventListener('mousemove',e=>at(e.clientX,e.clientY),{passive:true});hero.addEventListener('mouseleave',()=>{ptr.on=false});
+hero.addEventListener('touchmove',e=>at(e.touches[0].clientX,e.touches[0].clientY),{passive:true});hero.addEventListener('touchend',()=>{ptr.on=false});
+new IntersectionObserver(es=>{live=es[0].isIntersecting&&!document.hidden;go()}).observe(hero);document.addEventListener('visibilitychange',()=>{live=!document.hidden;go()});go()}
 // coverage peek
 const peek=document.querySelector('.peek');
 if(peek&&fine){const img=peek.querySelector('img');document.querySelectorAll('.list a').forEach(a=>{
