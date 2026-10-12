@@ -19,7 +19,7 @@
     <img src="/media/thumb/{{ p.id }}" loading="lazy" alt="">
     <div class="muted" style="margin-top:6px">{{ (p.shot_type or 'not sorted yet').replace('_',' ') }}</div>
     <a class="muted" href="/library/folder/{{ p.folder_id }}">{{ p.folder_name or '' }}</a>
-    {% if view == 'approved' %}<div><span class="badge {{ 'ok' if p.why[0] else 'blocked' }}">{{ 'ready to use' if p.why[0] else p.why[1] }}</span></div>{% endif %}
+    {% if view == 'approved' %}<div><span class="badge {{ 'ok' if p.why[0] else 'blocked' }}">{{ 'ready to use' if p.why[0] else p.why[1] }}</span>{% if hero_id == p.id %} <span class="badge ok">site hero</span>{% endif %}</div>{% endif %}
     <div class="row" style="margin-top:6px">
     {% for state, label, cls in ([('cleared', 'Use', 'ok'), ('blocked', "Don't use", 'danger')] if view == 'review'
                                  else [('inherit', 'Undo', ''), ('blocked', "Don't use", 'danger')]) %}
@@ -28,6 +28,11 @@
         <input type="hidden" name="state" value="{{ state }}"><button class="small {{ cls }}" type="submit">{{ label }}</button>
       </form>
     {% endfor %}
+    {% if view == 'approved' %}
+      <form method="post" action="/library/photo/{{ p.id }}/hero" class="inline">
+        <input type="hidden" name="back" value="{{ p.back }}"><button class="small {{ 'ok' if hero_id == p.id else '' }}" type="submit">{{ 'Site hero: chosen' if hero_id == p.id else 'Site hero' }}</button>
+      </form>
+    {% endif %}
     </div>
   </div>
 {% endfor %}

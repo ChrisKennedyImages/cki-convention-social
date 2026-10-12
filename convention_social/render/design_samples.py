@@ -151,19 +151,19 @@ def pick(conn, n: int = 6) -> list:
     Chris, 2026-10-11: "if it's not approved then don't use it yet or at all"."""
     # every approved photo counts here, not four per event: most of the work Chris approved can be from one
     rows = [r for r in report.best(conn, 400, cap=None) if eligibility.clearance_of(conn, r) == "cleared" and usable(conn, r)]
-    picked, rooms = [], set()
-    for r in rows:
-        room = ROOMS.get(r["shot_type"] or "", OTHER)[0]
-        if room not in rooms:
+    # one room and one event before any repeats (Chris, 2026-10-11: "not have CPAC and ACU the first thing on everything")
+    picked, rooms, events = [], set(), set()
+    for want_room, want_event in ((True, True), (True, False), (False, True), (False, False)):
+        for r in rows:
+            room = ROOMS.get(r["shot_type"] or "", OTHER)[0]
+            event = (r["convention_name"] or "").strip().lower() or r["folder_id"]
+            if r in picked or (want_room and room in rooms) or (want_event and event in events):
+                continue
             picked.append(r)
             rooms.add(room)
-        if len(picked) >= n:
-            return picked
-    for r in rows:
-        if r not in picked:
-            picked.append(r)
-        if len(picked) >= n:
-            break
+            events.add(event)
+            if len(picked) >= n:
+                return picked
     return picked
 
 

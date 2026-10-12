@@ -23,7 +23,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Optional
 
-from PIL import Image, ImageOps
+from PIL import Image, ImageOps, ImageStat
 
 from .. import offer
 from ..ai import copy_rules
@@ -50,7 +50,50 @@ class SiteCopyRefused(ValueError):
 
 
 HERO_ROWS, COVERAGE_ROWS, VENUE_ROWS = 1, 6, 4
+EVENT_POOL = 20               # eligible event photos the build gathers: the hero is chosen among them, the grid spread across events
+HERO_CANDIDATES = 12          # landscape frames looked at (fetched) for the hero's colour and punch
 RECHECKS = 12                 # Claude calls one site build may spend asking what kind of occasion a photo is from
+HERO_KEY = "site.hero_photo_id"   # Chris's own pick for the hero (Photos tab, Approved: Site hero); it wins while it is usable
+STAGE = ("stage_panel", "stage")
+
+
+def colorfulness(im: Image.Image) -> float:
+    """How much colour and punch a frame has, 0 to about 1.5: the mean saturation of its pixels plus
+    half the spread of their brightness (a flat grey frame scores near 0, a lit stage with colour high)."""
+    small = im.convert("RGB").copy()
+    small.thumbnail((320, 320))
+    _, s, v = small.convert("HSV").split()
+    return ImageStat.Stat(s).mean[0] / 255 + min(1.0, ImageStat.Stat(v).stddev[0] / 128) / 2
+
+
+def hero_score(row: dict, im: Image.Image) -> float:
+    """The hero on its own merit (Chris, 2026-10-11: "the most colorful and dynamic photo, a wide stage
+    panorama shot or a very powerful [keynote] shot"): the frame's strength, its colour and punch, a
+    stage or panel, and a wide frame."""
+    from ..library import report
+    wide = (row.get("width") or 0) >= 1.5 * (row.get("height") or 1)
+    return report.strength(row) / 10 + colorfulness(im) + (0.5 if row.get("shot_type") in STAGE else 0.0) + (0.25 if wide else 0.0)
+
+
+def spread(rows: list[dict], key: Callable[[dict], object]) -> list[dict]:
+    """The same rows, one per key before any key repeats, each round in the order given (the website's
+    grid and the samples never lead with one event on everything: Chris, 2026-10-11)."""
+    out, pending = [], list(rows)
+    while pending:
+        seen, rest = set(), []
+        for r in pending:
+            k = key(r)
+            if k in seen:
+                rest.append(r)
+            else:
+                seen.add(k)
+                out.append(r)
+        pending = rest
+    return out
+
+
+def event_of(row: dict) -> object:
+    return (row.get("convention_name") or "").strip().lower() or row.get("folder_id") or row.get("id")
 
 
 def pick_photos(conn: sqlite3.Connection, fetch: Callable[[dict], Image.Image],
@@ -59,8 +102,11 @@ def pick_photos(conn: sqlite3.Connection, fetch: Callable[[dict], Image.Image],
     is judged on its own: the strongest frame first (sharp, lit, a moment), a known conference or
     convention before an unknown kind, and never a wedding or a private occasion (Chris, 2026-10-11:
     "The main photo when you open the website is from a damn wedding! That one needs to be the best of
-    the best"). `recheck` gives Claude's final check to a photo it has not yet judged for that, up to
-    RECHECKS per build; without it such a photo waits."""
+    the best"). The hero is Chris's own pick when he made one and it is usable; otherwise the landscape
+    frame with the highest hero_score among the strongest HERO_CANDIDATES. The grid is spread across
+    events, so no one event is the first thing on everything. `recheck` gives Claude's final check to a
+    photo it has not yet judged for its kind, up to RECHECKS per build; without it such a photo waits."""
+    from ..core import settings
     from ..library import report
     rows = db.rows(conn, """
         SELECT p.*, c.subject, c.quality, c.sharp, c.light, c.moment, c.event_kind, c.shot_type, c.convention_name, c.summary
@@ -68,32 +114,50 @@ def pick_photos(conn: sqlite3.Connection, fetch: Callable[[dict], Image.Image],
         ORDER BY COALESCE(c.quality,0) DESC, p.width DESC LIMIT 600""")
     rows = sorted((dict(r) for r in rows), key=lambda r: (0 if r["event_kind"] in ("fan", "business") else 1,
                                                           -report.strength(r), -(r["width"] or 0)))
+    chosen = settings.get(conn, HERO_KEY)
+    chosen_id = int(chosen) if chosen and str(chosen).isdigit() else None
     out, images, rechecks = SitePhotos(), {}, 0
     events: list[dict] = []
     venues: list[dict] = []
-    for r in rows:
-        if len(events) >= HERO_ROWS + COVERAGE_ROWS and len(venues) >= VENUE_ROWS:
-            break
-        if (r["subject"] == "event" and len(events) >= HERO_ROWS + COVERAGE_ROWS) or \
-           (r["subject"] == "architecture" and len(venues) >= VENUE_ROWS):
-            continue
+
+    def usable(r) -> bool:
+        nonlocal rechecks
         if not eligibility.is_candidate(conn, r["id"])[0]:
-            continue
+            return False
         if recheck is not None and rechecks < RECHECKS and eligibility.needs_kind_check(conn, r["id"]):
             rechecks += 1
             images[r["id"]] = fetch(r)
             if recheck(r, images[r["id"]]) is None:
-                continue                                    # Claude could not look: not used
-        if not eligibility.is_eligible(conn, r["id"])[0]:
+                return False                                # Claude could not look: not used
+        return eligibility.is_eligible(conn, r["id"])[0]
+
+    for r in rows:
+        if len(events) >= EVENT_POOL and len(venues) >= VENUE_ROWS:
+            break
+        if (r["subject"] == "event" and len(events) >= EVENT_POOL) or (r["subject"] == "architecture" and len(venues) >= VENUE_ROWS):
             continue
-        (events if r["subject"] == "event" else venues).append(r)
-    land = [r for r in events if (r["width"] or 0) > (r["height"] or 0)]
-    if land:
-        hero = land[0]
-        out.hero = [(images.get(hero["id"]) or fetch(hero), site_alt(hero))]
-        events = [r for r in events if r is not hero]
-    out.coverage = [(images.get(r["id"]) or fetch(r), site_alt(r)) for r in events[:COVERAGE_ROWS]]
-    out.venues = [(images.get(r["id"]) or fetch(r), site_alt(r)) for r in venues[:VENUE_ROWS]]
+        if usable(r):
+            (events if r["subject"] == "event" else venues).append(r)
+
+    def image_of(r):
+        if r["id"] not in images:
+            images[r["id"]] = fetch(r)
+        return images[r["id"]]
+
+    hero = None
+    if chosen_id is not None:
+        picked = next((r for r in rows if r["id"] == chosen_id and r["subject"] == "event"), None)
+        if picked is not None and (picked in events or usable(picked)):
+            hero = picked
+    if hero is None:
+        land = [r for r in events if (r["width"] or 0) > (r["height"] or 0)][:HERO_CANDIDATES]
+        if land:
+            hero = max(land, key=lambda r: hero_score(r, image_of(r)))
+    if hero is not None:
+        out.hero = [(image_of(hero), site_alt(hero))]
+        events = [r for r in events if r["id"] != hero["id"]]
+    out.coverage = [(image_of(r), site_alt(r)) for r in spread(events, event_of)[:COVERAGE_ROWS]]
+    out.venues = [(image_of(r), site_alt(r)) for r in venues[:VENUE_ROWS]]
     return out
 
 

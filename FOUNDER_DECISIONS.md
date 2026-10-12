@@ -381,6 +381,19 @@ only when Chris says so.
   live daily draft re-checks every photo it picks, so a wedding never reaches
   a post either.
 
+## 2026-10-11: the website's main photo, and no one event first on everything
+
+- "The main photo needs to be the most colorful and dynamic photo - a wide
+  stage panorama shot or a very powerful trump shot. And we need to not have
+  CPAC and ACU the first thing on everything." The hero is chosen among the
+  strongest eligible landscape frames by its own score: strength, colour and
+  punch measured from the picture, a stage or panel, a wide frame
+  (`site/build.py` `hero_score`). Chris can also pick it himself: Photos tab,
+  Approved, "Site hero" on a photo; his pick wins while the photo is usable,
+  and tapping it again hands the choice back. The site's grid and the design
+  samples are spread across events, one per event before any event repeats.
+  The daily draft already rotates events (`variety_days`).
+
 ## Standing rules from the brief
 
 - Nothing publishes without Chris's Approve on the dashboard, until he says

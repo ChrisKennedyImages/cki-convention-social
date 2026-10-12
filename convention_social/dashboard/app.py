@@ -629,8 +629,10 @@ def create_app() -> FastAPI:
             p["back"] = f"/library?view={view}&subject={subject}&page={page}#p{nxt}"
             p["why"] = eligibility.is_candidate(conn, p["id"]) if view == "approved" else None
         common["view"] = view
+        hero = settings.get(conn, "site.hero_photo_id")
         return render(request, "library.html", items=shown, page=page, pages=pages, total=total, subject=subject,
-                      subject_counts=subject_counts, subject_words=SUBJECT_WORDS, **common)
+                      subject_counts=subject_counts, subject_words=SUBJECT_WORDS,
+                      hero_id=int(hero) if hero and hero.isdigit() else None, **common)
 
     @app.get("/more", response_class=HTMLResponse)
     def more(request: Request, user: str = Depends(require_user)):
@@ -726,6 +728,23 @@ def create_app() -> FastAPI:
             raise HTTPException(400)
         conn.execute("UPDATE photos SET clearance=?, clearance_at=? WHERE id=?", (state, db.utcnow(), pid))
         return RedirectResponse(back if back.startswith("/") and not back.startswith("//") else "/library", status_code=303)
+
+    @app.post("/library/photo/{pid}/hero")
+    def photo_hero(pid: int, user: str = Depends(require_user), conn=Depends(conn_dep), back: str = Form(default="/library")):
+        """Chris's own pick for the website's main photo (2026-10-11: "the most colorful and dynamic photo, a
+        wide stage panorama shot or a very powerful [keynote] shot"). Tapping the chosen one again lets the
+        build choose. It takes effect on the next go-live, and only while the photo is usable."""
+        from ..site.build import HERO_KEY
+        if settings.get(conn, HERO_KEY) == str(pid):
+            settings.set(conn, HERO_KEY, "")
+            msg = "Site hero: the build chooses again"
+        else:
+            settings.set(conn, HERO_KEY, str(pid))
+            msg = "Site hero: this photo, on the next go-live"
+        back = back if back.startswith("/") and not back.startswith("//") else "/library"
+        path, _, anchor = back.partition("#")
+        return RedirectResponse(f"{path}{'&' if '?' in path else '?'}msg={msg.replace(' ', '+')}" + (f"#{anchor}" if anchor else ""),
+                                status_code=303)
 
     # ------------------------------------------------------------------ do not use
     @app.get("/donotuse", response_class=HTMLResponse)

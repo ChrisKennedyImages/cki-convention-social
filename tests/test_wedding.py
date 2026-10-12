@@ -186,7 +186,7 @@ class TheSite(IsolatedCase):
             client.current = row["drive_id"]
             return classify.final_check(self.conn, row["id"], jpeg_bytes(), client=client, agent="site")
         photos = build.pick_photos(self.conn, self.fetch, recheck=recheck)
-        self.assertEqual(len(client.calls), 7, "it stops asking once the hero and the grid are full")
+        self.assertEqual(len(client.calls), 12, "the cap: the rest wait for another build or a draft")
         self.assertEqual((len(photos.hero), len(photos.coverage)), (1, 6))
         self.assertEqual(build.RECHECKS, 12)
 
