@@ -14,12 +14,15 @@ an official role, a client list or past bookings.
 """
 from __future__ import annotations
 
+import hashlib
 import html
 import io
 import json
+import re
 import shutil
 import sqlite3
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -28,13 +31,16 @@ from PIL import Image, ImageOps, ImageStat
 from .. import offer
 from ..ai import copy_rules
 from ..core import config, db
-from ..seo import markup
+from ..seo import indexnow, markup
 from ..library import eligibility
 from ..render import fonts
 from ..render.meta import ImageMeta, save_jpeg
 from . import marks, theme
 
 DIST = config.REPO_ROOT / "site" / "dist"
+PAGES = ("/", "/about/", "/book/", "/availability/", "/privacy/")     # the public pages, in sitemap order
+LASTMOD_FILE = "lastmod.json"      # DATA_ROOT/site: each page's content hash and the date it last changed
+VERIFICATION_KEY = "GOOGLE_SITE_VERIFICATION"   # the Search Console HTML tag's content value (Keys page)
 WIDTHS = (800, 1600)
 
 
@@ -324,11 +330,63 @@ def home_body(t: dict, hero: str, frames: list[tuple[str, str]], stack: list[str
 <a class="huge" href="/book/">Request a quote</a><p>{e(t['cta_p'])}</p></section>"""
 
 
+def verification_value() -> str:
+    """The Google Search Console tag's content value from the Keys page. Chris may paste the whole
+    <meta> tag; only its content survives, and only a value that could not break the page."""
+    from ..core import secrets
+    raw = (secrets.get_secret(VERIFICATION_KEY) or "").strip()
+    m = re.search(r'content\s*=\s*["\']([^"\']+)["\']', raw)
+    value = m.group(1).strip() if m else raw
+    return value if re.fullmatch(r"[A-Za-z0-9_-]{8,128}", value) else ""
+
+
+def _lastmod_path() -> Path:
+    return config.get_config().data_root / "site" / LASTMOD_FILE
+
+
+def page_dates(out: Path, rels: dict[str, str], *, preview: bool, today: Optional[str] = None) -> dict[str, str]:
+    """{path: YYYY-MM-DD} the date each page's content last changed, for the sitemap's lastmod.
+
+    A page's content is its HTML plus every /assets/ file its body shows (a new hero changes the home
+    page even when the file name does not; the head's og:image, the same on every page, does not
+    count). The record under DATA_ROOT/site is updated only by a live build; a preview reads it and
+    never writes (so a preview is side-effect free)."""
+    today = today or datetime.now(timezone.utc).date().isoformat()
+    try:
+        record = json.loads(_lastmod_path().read_text())
+    except (OSError, ValueError):
+        record = {}
+    dates, changed = {}, False
+    for path, rel in rels.items():
+        page = out / rel
+        text = page.read_text(encoding="utf-8")
+        body = text[text.index("<main>"):] if "<main>" in text else text
+        h = hashlib.sha256(page.read_bytes())
+        for ref in sorted(set(re.findall(r'/assets/[A-Za-z0-9_./-]+', body))):
+            asset = out / ref.lstrip("/")
+            if asset.is_file():
+                h.update(ref.encode()); h.update(asset.read_bytes())
+        digest = h.hexdigest()
+        known = record.get(path) or {}
+        if known.get("sha") == digest and known.get("date"):
+            dates[path] = known["date"]
+        else:
+            dates[path] = today
+            if not preview:
+                record[path] = {"sha": digest, "date": today}
+                changed = True
+    if changed:
+        _lastmod_path().parent.mkdir(parents=True, exist_ok=True)
+        _lastmod_path().write_text(json.dumps(record, indent=0, sort_keys=True))
+    return dates
+
+
 def build(conn: Optional[sqlite3.Connection], photos: SitePhotos, *, out: Path = DIST, preview: bool = False,
           head_extra: str = "") -> Path:
     o = offer.load()
     cfg = config.get_config()
     brand = cfg.brand_name
+    verification = verification_value()
     t = copy_text()
     check_copy([v if isinstance(v, str) else " ".join(x for pair in v for x in pair) for v in t.values()] + offer.coverage_labels())
     if out.exists():
@@ -454,12 +512,17 @@ It is never sold or shared. The website holds it only until the booking inbox co
         dest.write_text(theme.shell(title=e(title if rel == "index.html" else f"{title} | {brand}"), description=e(desc), body=body,
                                     mark_svg=mark_svg, brand=e(brand), legal=e(cfg.legal_name), email=e(contact_email()),
                                     preview=preview, canonical=base + path, jsonld=head_extra if rel == "index.html" else "",
-                                    og_image=og, sections=sections), encoding="utf-8")
-    # a preview is never crawled; the live site lists its public pages and every photo on them
+                                    og_image=og, sections=sections, verification=verification), encoding="utf-8")
+    # a preview is never crawled; the live site lists its public pages and every photo on them, each with the
+    # date its content last changed (Chris, 2026-10-12: "no site map or Google search indexing")
     (out / "robots.txt").write_text("User-agent: *\nDisallow: /\n" if preview else markup.robots_txt(base))
+    rels = {p: ("index.html" if p == "/" else p.strip("/") + "/index.html") for p in PAGES}
     (out / "sitemap.xml").write_text(markup.sitemap_xml(
-        base, ["/", "/about/", "/book/", "/availability/", "/privacy/"],
-        {"/": [{"loc": loc, "title": m.title or alt, "caption": m.description or alt} for loc, alt, m in shown]}))
+        base, list(PAGES),
+        {"/": [{"loc": loc, "title": m.title or alt, "caption": m.description or alt} for loc, alt, m in shown]},
+        lastmod=page_dates(out, rels, preview=preview)))
+    if not preview and indexnow.key():
+        indexnow.write_key_file(out, indexnow.key())        # /<key>.txt: the proof the IndexNow pings are ours
     (out / "build.json").write_text(json.dumps({"preview": preview, "hero": len(photos.hero), "coverage": len(photos.coverage),
                                                 "venues": len(photos.venues), "mark": mark_key}))
     return out

@@ -632,7 +632,10 @@ def create_app() -> FastAPI:
         hero = settings.get(conn, "site.hero_photo_id")
         from ..site import deploy
         from ..site import hero as hero_upload
-        site = {"status": deploy.read_status(), "ready": deploy.ready(), "deployed": (settings.get(conn, deploy.DEPLOYED_KEY) or "")[:7]}
+        from ..seo import indexnow
+        from ..site import build as site_build
+        site = {"status": deploy.read_status(), "ready": deploy.ready(), "deployed": (settings.get(conn, deploy.DEPLOYED_KEY) or "")[:7],
+                "google": bool(site_build.verification_value()), "indexnow": bool(indexnow.key())}
         return render(request, "library.html", items=shown, page=page, pages=pages, total=total, subject=subject,
                       subject_counts=subject_counts, subject_words=SUBJECT_WORDS, site=site,
                       hero_id=int(hero) if hero and hero.isdigit() else None, hero_upload=hero_upload.status(conn), **common)
@@ -1142,6 +1145,11 @@ def create_app() -> FastAPI:
              "fields": [f("OLLAMA_MODEL", "Ollama model"), f("CLASSIFY_BACKEND", "Sorter", choices=["auto", "ollama", "claude"])]},
             {"title": "This dashboard", "note": "The address you open this dashboard at from your phone.",
              "fields": [f("DASHBOARD_PUBLIC_URL", "Dashboard address")]},
+            {"title": "Search engines", "note": "Google: in Search Console add the property https://eventcaliber.com/, choose the "
+                                               "HTML tag, paste the tag (or its content value) here, press Publish the site on the Photos "
+                                               "page, then Verify in Search Console and submit sitemap.xml there once. Bing and the other "
+                                               "IndexNow engines are told after every publish with the key below, made by itself.",
+             "fields": [f("GOOGLE_SITE_VERIFICATION", "Google Search Console tag"), f("INDEXNOW_KEY", "IndexNow key (made on the first publish)")]},
         ]
 
     key_names = {fld["name"] for g in key_groups() for fld in g["fields"]}

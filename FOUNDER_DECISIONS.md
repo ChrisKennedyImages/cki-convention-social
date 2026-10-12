@@ -443,6 +443,22 @@ only when Chris says so.
     One shot type, portrait; rows the sorter had called "headshot" are
     portraits (migration 0063), and every reader says Portrait.
 
+## 2026-10-12, late: search engines
+
+- "And yet no site map or Google search indexing." The sitemap and robots.txt
+  have been built and checked from outside since 2026-10-09; what was missing
+  is the telling. Now: the Google Search Console HTML tag goes on every page
+  from the Keys page (`GOOGLE_SITE_VERIFICATION`), the sitemap carries each
+  page's true last-changed date (a content record under the data root, never
+  the build date), the first publish makes an IndexNow key (`INDEXNOW_KEY`,
+  hosted at `/<key>.txt`) and every live publish tells Bing, Yandex and the
+  other IndexNow engines which pages to read again (`seo/indexnow.py`). A
+  ping that fails never fails a publish; the Website card says so. The one
+  step only Chris can do, from his phone: add the property in Search Console,
+  paste the tag, publish, press Verify, submit `sitemap.xml` (docs/SETUP.md,
+  8a). Google is not in IndexNow and its Indexing API is not for this kind of
+  site, so there is no way to make Google index it without that step.
+
 ## Standing rules from the brief
 
 - Nothing publishes without Chris's Approve on the dashboard, until he says

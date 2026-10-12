@@ -127,6 +127,31 @@ Optional spam check: a free Cloudflare Turnstile widget for the domain; its
 site key goes in `.env` as `TURNSTILE_SITE_KEY` and its secret into
 `npx wrangler secret put TURNSTILE_SECRET -c wrangler.live.jsonc`.
 
+### 8a. Search engines: Google Search Console and IndexNow
+
+The site has carried a sitemap (`/sitemap.xml`, every public page and every
+photo on the home page, each page with the date its content last changed)
+and a `robots.txt` that names it since the first build, and the weekly site
+check reads both from outside. A search engine still has to be told the site
+exists. From your phone:
+
+1. Open https://search.google.com/search-console and add a property of the
+   **URL prefix** kind: `https://eventcaliber.com/`.
+2. Under verification methods choose **HTML tag** and copy the tag.
+3. Dashboard, Keys, Search engines: paste the tag (or only its content value)
+   into **Google Search Console tag**, save.
+4. Dashboard, Photos, Approved: **Publish the site**. The tag is now on every
+   page.
+5. Back in Search Console press **Verify**. Then Sitemaps, enter `sitemap.xml`,
+   Submit. Google reads the sitemap from then on; the first pages appear in
+   its results within days, not minutes.
+
+Bing, Yandex and the other IndexNow engines need no account: the first publish
+makes an IndexNow key (Keys page, Search engines), the site hosts it at
+`/<key>.txt`, and every publish tells them which pages to read again. The
+Website card on the Photos page says whether they heard. Bing Webmaster Tools
+can also import the Search Console property if you want its reports.
+
 Organizer emails (the Outreach agent) need the opt-out table too. It is in
 `worker/schema.sql`, which the go-live script applies on every run; it only
 adds what is missing. Every organizer email

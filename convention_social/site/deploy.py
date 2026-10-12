@@ -188,6 +188,8 @@ def run(*, repo: Optional[Path] = None, conn=None, say: Callable[[str], None] = 
     conn = conn or db.connect()
     head = _git(repo, "rev-parse", "HEAD")
     try:
+        from ..seo import indexnow
+        indexnow.ensure_key()                      # once: the key the site hosts and the pings carry (kept in .env)
         write_status("running", "building the pages", commit=head)
         say("building the site")
         r = build(repo)
@@ -209,7 +211,10 @@ def run(*, repo: Optional[Path] = None, conn=None, say: Callable[[str], None] = 
                 return _failed(conn, head, say, "deployed, but the check from outside did not pass", "\n".join(lines))
         settings.set(conn, DEPLOYED_KEY, head)
         settings.set(conn, FAILED_KEY, "")
-        write_status("done", f"live on {head[:7]}" + (f"; hero: {hero}" if hero else ""), commit=head, hero=hero)
+        told, engines = tell_engines()            # the site is live either way; the card says whether they heard
+        say(engines)
+        write_status("done", f"live on {head[:7]}" + (f"; hero: {hero}" if hero else ""), commit=head, hero=hero,
+                     engines=engines, engines_told=told)
         say(f"LIVE on {head[:7]}" + (f" (hero: {hero})" if hero else ""))
         return 0
     except subprocess.TimeoutExpired as e:
@@ -218,6 +223,15 @@ def run(*, repo: Optional[Path] = None, conn=None, say: Callable[[str], None] = 
         lock.release()
         if own:
             conn.close()
+
+
+def tell_engines(post=None) -> tuple[bool, str]:
+    """After a publish: the IndexNow engines hear which pages to read again. Google is not in that
+    protocol; it reads the sitemap (its lastmod dates are true) once Search Console knows the site."""
+    from ..seo import indexnow
+    from ..site import build as site_build
+    cfg = config.get_config()
+    return indexnow.ping(f"https://{cfg.brand_domain}", site_build.PAGES, post=post)
 
 
 def _failed(conn, head: str, say: Callable[[str], None], what: str, detail: str) -> int:

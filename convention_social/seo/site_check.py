@@ -154,6 +154,14 @@ def check_robots(status: int, text: str) -> dict:
     return {"title_ok": None, "description_ok": None, "h1_ok": None, "alt_ok": None, "problems": problems, "ok": not problems}
 
 
+def check_key_file(status: int, text: str, key: str) -> dict:
+    """The IndexNow key file: the engines read it to believe a ping; its whole content is the key."""
+    problems = [] if status == 200 else [f"answered {status or 'nothing'}"]
+    if status == 200 and (text or "").strip() != key:
+        problems.append("does not carry the IndexNow key")
+    return {"title_ok": None, "description_ok": None, "h1_ok": None, "alt_ok": None, "problems": problems, "ok": not problems}
+
+
 def _flag(value) -> Optional[int]:
     return None if value is None else int(bool(value))
 
@@ -163,8 +171,10 @@ def check_all(cfg: Optional[config.Config] = None, *, transport: Optional[Transp
     domain comes up). Each result: path, url, status, ok, problems and the per-check flags."""
     cfg = cfg or config.get_config()
     transport = transport or requests_transport
+    from . import indexnow
+    key_file = "/" + indexnow.key_file_name(indexnow.key()) if indexnow.key() else ""
     results = []
-    for path in PATHS:
+    for path in PATHS + ((key_file,) if key_file else ()):
         url = base_url(cfg) + path
         try:
             status, text = transport(url)
@@ -177,6 +187,8 @@ def check_all(cfg: Optional[config.Config] = None, *, transport: Optional[Transp
             r = check_sitemap(status, text)
         elif path == "/robots.txt":
             r = check_robots(status, text)
+        elif path == key_file:
+            r = check_key_file(status, text, indexnow.key())
         else:
             r = check_html(status, text)
         if reach:
