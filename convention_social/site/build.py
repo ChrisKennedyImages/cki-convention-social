@@ -198,9 +198,10 @@ def site_alt(row: dict) -> str:
     return SHOT_WORDS.get(row.get("shot_type") or "", "Event photography")
 
 
-def dodge_shadows(im: Image.Image, amount: float = 0.14) -> Image.Image:
+def dodge_shadows(im: Image.Image, amount: float = 0.06) -> Image.Image:
     """Lift the shadows a touch, as a dodge would: the darkest values rise by up to `amount` of the
-    range, the mid tones a little, the highlights not at all (Chris, 2026-10-12: "dodge shadows a tad")."""
+    range, the mid tones a little, the highlights not at all (Chris, 2026-10-12: "dodge shadows a tad", then
+    "Way too much dodging": 0.14 became 0.06)."""
     lut = [min(255, round(v + amount * 255 * (1 - v / 255) ** 2)) for v in range(256)]
     return im.convert("RGB").point(lut * 3)
 
