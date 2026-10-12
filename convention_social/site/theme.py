@@ -163,7 +163,7 @@ form.book textarea{min-height:120px;resize:vertical}
 .steps>div{border-right:0;border-bottom:1px solid var(--g3)}.venues .grid{grid-template-columns:1fr}.venues figure:first-child{grid-row:auto}
 .reel .pin{position:relative;height:auto;padding:90px 0}.reel .track{overflow-x:auto;scroll-snap-type:x mandatory;transform:none!important}
 .frame{width:78vw;scroll-snap-align:start}.side{position:relative;top:0}form.book{grid-template-columns:1fr}.hud.tr{display:none}
-.hero .copy{padding:0 calc(var(--pad) + 14px) 76px}.mega{font-size:clamp(30px,10.4vw,64px)}.hero .lede{font-size:16px}.hero .row{margin-top:18px;gap:20px}
+.hero .copy{padding:0 calc(var(--pad) + 14px) 76px}.mega{font-size:min(clamp(30px,10.4vw,64px),calc((100vw - 100px) / 9.9))}.hero .lede{font-size:16px}.hero .row{margin-top:18px;gap:20px}
 .vf i{width:28px;height:28px}.list a{grid-template-columns:44px 1fr auto}.top .btn{padding:12px 14px}}
 @media (prefers-reduced-motion:reduce){*,*:before,*:after{animation:none!important;transition:none!important}.mega span em{transform:none}.rv{opacity:1;transform:none}.hero canvas.web{display:none}}
 """
