@@ -173,7 +173,7 @@ class DesignSamples(IsolatedCase):
         self.photo(14, "dinner_reception", clearance="inherit")     # never approved: Chris, "don't use it yet or at all"
         self.photo(12, "crowd")
         db.insert(self.conn, "do_not_use", kind="photo", value="d12", reason="takedown", added_at=db.utcnow())
-        self.photo(13, "group", details='["badge_name"]')
+        self.photo(13, "group", details='["vehicle_plate"]')          # a name badge would be fine (2026-10-12); a plate is not
         picked = [r["drive_id"] for r in design_samples.pick(self.conn, 6)]
         self.assertEqual(sorted(picked), ["d0", "d1", "d2"])
 

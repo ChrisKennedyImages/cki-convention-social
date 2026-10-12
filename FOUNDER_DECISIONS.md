@@ -482,6 +482,20 @@ only when Chris says so.
   cap and a missing key are errors the moment they bite (`classify.look`).
   "Already drafted" stays quiet, since it is not a failure.
 
+## 2026-10-12, morning: a name in the photo is fine
+
+- Approved photos sat marked "shows personal details: document" and "screen"
+  (a book cover with its author's name, a card in a portrait). "If they're
+  wearing a name badge or there's a name in the photo it's fine to use." So a
+  name badge, and the screens and documents the sorter flags at an event (a
+  book cover, a program, a slide, signage: a name or a title), never keep a
+  photo out of anything (`eligibility.NAME_DETAILS`), and the sorter and the
+  final check are told that private information on a screen or paper means a
+  message, an email or a form, never a title or a name. A plate, a house
+  number or a street sign on a photo of people still keeps it out, as does
+  anyone who may be under 18. Photos already flagged need no new look: the
+  gate reads the stored flags with the new rule.
+
 ## Standing rules from the brief
 
 - Nothing publishes without Chris's Approve on the dashboard, until he says

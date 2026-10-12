@@ -74,7 +74,10 @@ class Keep(IsolatedCase):
         hero.save(jpeg_bytes(seed=3, size=(1600, 1000)))
         self.assertEqual(hero.checked(self.conn, looker(self.conn, LookClient(event_kind="wedding")))[0], False)
         hero.save(jpeg_bytes(seed=4, size=(1600, 1000)))
-        self.assertEqual(hero.checked(self.conn, looker(self.conn, LookClient(personal_details=["badge_name"])))[1], "it shows badge_name")
+        self.assertEqual(hero.checked(self.conn, looker(self.conn, LookClient(personal_details=["vehicle_plate"])))[1], "it shows vehicle_plate")
+        hero.save(jpeg_bytes(seed=6, size=(1600, 1000)))
+        self.assertEqual(hero.checked(self.conn, looker(self.conn, LookClient(personal_details=["badge_name", "document"])))[0], True,
+                         "a name badge or a name in the photo is fine (Chris, 2026-10-12)")
         hero.save(jpeg_bytes(seed=5, size=(1600, 1000)))
         self.assertIn("could not look", hero.checked(self.conn, lambda data: None)[1])
 
