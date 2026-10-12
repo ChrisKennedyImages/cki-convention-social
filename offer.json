@@ -13,7 +13,6 @@
     {"key": "dinners", "label": "Dinners and receptions"},
     {"key": "portraits", "label": "Portraits"},
     {"key": "exhibition_hall", "label": "Exhibition halls"},
-    {"key": "vendors", "label": "Vendors and booths"},
     {"key": "on_site_delivery", "label": "Instant delivery by face match: guests scan their badge, add a selfie, and get every photo they are in"}
   ],
   "quote_questions": [

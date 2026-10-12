@@ -509,6 +509,14 @@ only when Chris says so.
   removing or picking a hero on the dashboard publishes the site by itself,
   so there is no second button and no terminal.
 
+## 2026-10-12, midday: exhibition halls, vendors and booths are one thing
+
+- "Exhibition Halls, vendors and booths are all the same thing." One coverage
+  row, Exhibition halls, on the site and the quote form; one shot type,
+  `vendor_hall` (rows the sorter had called "booth" are the hall, migration
+  0064), and every reader says Exhibition hall. Like portraits and headshots
+  the same morning.
+
 ## Standing rules from the brief
 
 - Nothing publishes without Chris's Approve on the dashboard, until he says

@@ -50,8 +50,8 @@ MAX_DEPTH = 64
 
 SHOT_WORDS = {
     "portrait": "Portrait", "headshot": "Portrait", "group": "Group photo",      # headshot: rows sorted before 2026-10-12
-    "candid": "Candid moment", "stage_panel": "Stage and panel", "stage": "Stage", "vendor_hall": "Vendor hall",
-    "booth": "Exhibitor booth", "backstage": "Backstage", "dinner_reception": "Dinner and reception", "dinner": "Dinner",
+    "candid": "Candid moment", "stage_panel": "Stage and panel", "stage": "Stage", "vendor_hall": "Exhibition hall",
+    "booth": "Exhibition hall", "backstage": "Backstage", "dinner_reception": "Dinner and reception", "dinner": "Dinner",
     "crowd": "Crowd", "venue": "Venue",
 }
 PEOPLE_SHOTS = {"portrait", "headshot", "group"}

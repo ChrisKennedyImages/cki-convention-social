@@ -108,7 +108,7 @@ def is_clean(path: Path) -> list[str]:
 
 
 SHOT_WORDS = {"portrait": "Portrait", "group": "Group photo", "candid": "Candid moment",
-              "stage_panel": "Stage and panel", "vendor_hall": "Vendor hall", "booth": "Booth", "backstage": "Backstage",
+              "stage_panel": "Stage and panel", "vendor_hall": "Exhibition hall", "booth": "Exhibition hall", "backstage": "Backstage",
               "dinner_reception": "Dinner and reception", "headshot": "Portrait", "crowd": "Crowd", "venue": "Venue",
               "building_exterior": "Building exterior", "building_interior": "Building interior"}
 
