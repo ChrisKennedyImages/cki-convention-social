@@ -65,10 +65,17 @@ class NoFanConventions(IsolatedCase):
             self.assertNotIn("Fan convention", page, path)
             self.assertIn("Conference or convention", page, path)
 
-    def test_the_sorter_still_tells_a_fan_convention_apart(self):
-        # the photos stay usable as convention photos until Chris rules on them (FOUNDER_DECISIONS 2026-10-12, late)
+    def test_the_sorter_still_tells_a_fan_convention_apart_and_the_photos_are_plain_conventions(self):
+        # Chris, 2026-10-12: "The fan photos go to plain conventions": used like any convention photo, never set aside
         self.assertIn("fan", classify.KINDS)
         self.assertNotIn("fan", classify.NOT_OFFERED_KINDS)
+        from convention_social.library import eligibility
+        self.assertNotIn("fan", eligibility.NOT_OFFERED_KINDS)
+        from tests.test_wedding import event_photo
+        conn = db.connect()
+        self.addCleanup(conn.close)
+        pid = event_photo(conn, "fan1", kind="fan", final="fan")
+        self.assertTrue(eligibility.is_eligible(conn, pid)[0], eligibility.is_eligible(conn, pid))
 
     def test_no_public_python_wording_says_fan_convention(self):
         allowed = {"convention_social/library/classify.py", "convention_social/library/heuristics.py",

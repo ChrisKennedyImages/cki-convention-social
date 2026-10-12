@@ -14,9 +14,11 @@ only when Chris says so.
   anywhere (`tests/test_banned_words.py`).
 - **Conventions:** business, corporate and association conferences, conventions
   and trade shows, galas and award dinners. Fan conventions (comic, anime,
-  gaming) are off every public surface and out of the scout's search since
-  2026-10-12 (no cosplay since 2026-10-11); political work is taken when it
-  comes, never what the company is positioned as.
+  gaming) are shot when someone asks by email, never advertised or named: off
+  every public surface and out of the scout's search since 2026-10-12, their
+  photos used as plain convention photos (no cosplay since 2026-10-11).
+  Political work is taken when it comes, never what the company is positioned
+  as.
 - **Photo library:** Google Drive of chriskimages@gmail.com, read only, signed
   in as Chris (OAuth, `drive.readonly`).
 - **Platforms:** Instagram, a Facebook Page and Pinterest, all through this
@@ -429,11 +431,14 @@ only when Chris says so.
   - **"We are going to get rid of 'fan conventions'."** Off every public
     surface: the offer file, the quote form, the captions and keywords, the
     photo text, the search metadata, the brand note, the scout's search brief
-    (it leaves fan conventions out) and the dashboard's kind menus. The sorter
-    still tags a photo "fan" so those photos can be told apart; they stay
-    usable as convention photos until he rules on them (the question he was
-    asked: keep them as plain convention photos, or set them aside like
-    weddings).
+    (it leaves fan conventions out) and the dashboard's kind menus. His ruling,
+    the same night: **"The fan photos go to plain conventions."** They are
+    used like any convention photo, in posts and on the site, and every public
+    word about them says convention. **"We will shoot a fan convention, but we
+    are not going to advertise it or say it. People can email directly if they
+    want us for that."** So the sorter keeps the tag (the photos can be told
+    apart) and nothing is set aside; no public surface, search or outreach
+    ever offers or names fan conventions.
   - **"Portraits and headshots are the same."** One coverage row, Portraits.
     One shot type, portrait; rows the sorter had called "headshot" are
     portraits (migration 0063), and every reader says Portrait.
