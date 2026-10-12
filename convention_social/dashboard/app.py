@@ -630,9 +630,10 @@ def create_app() -> FastAPI:
             p["why"] = eligibility.is_candidate(conn, p["id"]) if view == "approved" else None
         common["view"] = view
         hero = settings.get(conn, "site.hero_photo_id")
+        from ..site import hero as hero_upload
         return render(request, "library.html", items=shown, page=page, pages=pages, total=total, subject=subject,
                       subject_counts=subject_counts, subject_words=SUBJECT_WORDS,
-                      hero_id=int(hero) if hero and hero.isdigit() else None, **common)
+                      hero_id=int(hero) if hero and hero.isdigit() else None, hero_upload=hero_upload.status(conn), **common)
 
     @app.get("/more", response_class=HTMLResponse)
     def more(request: Request, user: str = Depends(require_user)):
@@ -728,6 +729,26 @@ def create_app() -> FastAPI:
             raise HTTPException(400)
         conn.execute("UPDATE photos SET clearance=?, clearance_at=? WHERE id=?", (state, db.utcnow(), pid))
         return RedirectResponse(back if back.startswith("/") and not back.startswith("//") else "/library", status_code=303)
+
+    @app.post("/library/hero/upload")
+    async def hero_upload_add(file: UploadFile = File(...), user: str = Depends(require_user), conn=Depends(conn_dep)):
+        """The website's main photo straight from Chris's phone (2026-10-12). Claude looks at it during the
+        next site build before it is used."""
+        from ..site import hero as hero_upload
+        data = await file.read(hero_upload.MAX_BYTES + 1)
+        try:
+            hero_upload.save(data)
+            settings.set(conn, hero_upload.CHECK_KEY, "")
+        except hero_upload.Refused as e:
+            return RedirectResponse(f"/library?view=approved&msg=Not+kept:+{str(e).replace(' ', '+')}", status_code=303)
+        return RedirectResponse("/library?view=approved&msg=Kept.+It+is+the+site+hero+from+the+next+go-live,+once+Claude+has+looked+at+it.",
+                                status_code=303)
+
+    @app.post("/library/hero/remove")
+    def hero_upload_remove(user: str = Depends(require_user), conn=Depends(conn_dep)):
+        from ..site import hero as hero_upload
+        hero_upload.remove(conn)
+        return RedirectResponse("/library?view=approved&msg=Removed.+The+build+chooses+the+hero+again.", status_code=303)
 
     @app.post("/library/photo/{pid}/hero")
     def photo_hero(pid: int, user: str = Depends(require_user), conn=Depends(conn_dep), back: str = Form(default="/library")):

@@ -98,7 +98,8 @@ def event_of(row: dict) -> object:
 
 
 def pick_photos(conn: sqlite3.Connection, fetch: Callable[[dict], Image.Image],
-                recheck: Optional[Callable[[dict, Image.Image], Optional[dict]]] = None) -> SitePhotos:
+                recheck: Optional[Callable[[dict, Image.Image], Optional[dict]]] = None,
+                look: Optional[Callable[[bytes], Optional[dict]]] = None) -> SitePhotos:
     """Postable photos only: event work for the hero and the grid, building work for venues. Each photo
     is judged on its own: the strongest frame first (sharp, lit, a moment), a known conference or
     convention before an unknown kind, and never a wedding or a private occasion (Chris, 2026-10-11:
@@ -146,26 +147,40 @@ def pick_photos(conn: sqlite3.Connection, fetch: Callable[[dict], Image.Image],
         return images[r["id"]]
 
     hero = None
+    from . import hero as upload
+    if upload.present():
+        ok, why = upload.checked(conn, look)
+        if ok:
+            from ..seo.photo_text import SHOT_WORDS
+            rec = upload.record(conn) or {}
+            out.hero = [(upload.image(), SHOT_WORDS.get(rec.get("shot_type") or "", "Event photography"))]
+            out.hero_note = "your uploaded photo (checked by Claude)"
+            out.coverage = [(image_of(r), site_alt(r)) for r in spread(events, event_of)[:COVERAGE_ROWS]]
+            out.venues = [(image_of(r), site_alt(r)) for r in venues[:VENUE_ROWS]]
+            return out
+        out.hero_note = f"your uploaded photo could not be used: {why}"
+
+    def note(text):
+        out.hero_note = (out.hero_note + "; " if out.hero_note else "") + text
     if chosen_id is not None:
         picked = next((r for r in rows if r["id"] == chosen_id and r["subject"] == "event"), None)
         if picked is None:
-            out.hero_note = f"your Site hero pick (photo {chosen_id}) is not an event photo in the library; the build chose instead"
+            note(f"your Site hero pick (photo {chosen_id}) is not an event photo in the library; the build chose instead")
         elif picked in events or usable(picked):
             hero = picked
-            out.hero_note = f"your Site hero pick (photo {chosen_id}, {site_alt(picked).lower()})"
+            note(f"your Site hero pick (photo {chosen_id}, {site_alt(picked).lower()})")
         else:
             ok, why = eligibility.is_candidate(conn, picked["id"])
             why = why if not ok else eligibility.is_eligible(conn, picked["id"])[1]
-            out.hero_note = f"your Site hero pick (photo {chosen_id}) could not be used: {why}; the build chose instead"
+            note(f"your Site hero pick (photo {chosen_id}) could not be used: {why}; the build chose instead")
     if hero is None:
         land = [r for r in events if (r["width"] or 0) > (r["height"] or 0)][:HERO_CANDIDATES]
         if land:
             scores = {r["id"]: hero_score(r, image_of(r)) for r in land}
             hero = max(land, key=lambda r: scores[r["id"]])
-            out.hero_note = (out.hero_note + "; " if out.hero_note else "") + \
-                f"the build's choice: photo {hero['id']} ({site_alt(hero).lower()}, score {scores[hero['id']]:.2f} of {len(land)} looked at)"
+            note(f"the build's choice: photo {hero['id']} ({site_alt(hero).lower()}, score {scores[hero['id']]:.2f} of {len(land)} looked at)")
         else:
-            out.hero_note = (out.hero_note + "; " if out.hero_note else "") + "no usable landscape event photo for the hero"
+            note("no usable landscape event photo for the hero")
     if hero is not None:
         out.hero = [(image_of(hero), site_alt(hero))]
         events = [r for r in events if r["id"] != hero["id"]]

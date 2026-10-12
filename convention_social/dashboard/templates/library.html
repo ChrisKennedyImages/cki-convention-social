@@ -12,6 +12,22 @@
   {% if view == 'review' %}Only what you approve is ever used. These are the sorted photos you have not decided on yet, strongest first. Use approves one; Don't use keeps it out for good. Photos where someone may be under 18, or with a readable name badge, plate or screen, never show here and are never used.
   {% else %}Everything you approved, one photo at a time or by its folder. Only these are ever used: in posts, on the website and in the design samples. Undo puts a photo back to review; Don't use keeps it out for good.{% endif %}
 </div>
+{% if view == 'approved' and subject == 'event' %}
+<div class="card">
+  <strong>Site hero from your phone</strong>
+  <div class="muted">The website's main photo. A photo you send here is the hero from the next go-live, once Claude has looked at it (nobody who may be under 18, nothing readable that identifies a person, not a wedding). It wins over a Site hero pick below while it is here.</div>
+  {% if hero_upload.present %}
+  <div class="row" style="margin-top:8px"><span>Uploaded: {{ hero_upload.width }} × {{ hero_upload.height }}</span>
+    <span class="badge {{ 'ok' if hero_upload.ok else 'blocked' }}">{{ hero_upload.why }}</span>
+    <form method="post" action="/library/hero/remove" class="inline"><button class="small danger" type="submit">Remove</button></form>
+  </div>
+  {% endif %}
+  <form method="post" action="/library/hero/upload" enctype="multipart/form-data" style="margin-top:10px">
+    <label>Photo (the original, {{ 1200 }} pixels wide or more)</label><input type="file" name="file" accept="image/*" required>
+    <button type="submit">{{ 'Replace' if hero_upload.present else 'Send' }}</button>
+  </form>
+</div>
+{% endif %}
 {% if not items %}<div class="card muted">{{ ('No event photos to review right now.' if subject == 'event' else 'No building photos to review right now.') if view == 'review' else ('No event photos approved yet. Tap Use on a photo in To review, or Clear a whole folder in Folders.' if subject == 'event' else 'No building photos approved yet.') }}</div>{% endif %}
 <div class="grid">
 {% for p in items %}
