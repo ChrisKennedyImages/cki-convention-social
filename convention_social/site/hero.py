@@ -1,0 +1,127 @@
+"""The website's main photo from Chris's phone (2026-10-12: "That photo is just on my phone I think").
+
+An upload on the Photos tab (Approved: Site hero from your phone) is kept under DATA_ROOT/site, re-encoded
+so it carries no camera data, and used as the hero by the next site build once Claude has looked at it the
+way the final check looks at every photo: nobody who may be under 18, nothing readable that identifies a
+person, not a wedding or a private occasion. The verdict is kept with the file's hash, so Claude looks once
+per upload. Without a verdict the upload is not used (fail closed) and the build says so. It wins over a
+library pick while it is here; Remove hands the choice back.
+"""
+from __future__ import annotations
+
+import hashlib
+import io
+import json
+import sqlite3
+from pathlib import Path
+from typing import Callable, Optional
+
+from PIL import Image, ImageOps, UnidentifiedImageError
+
+from ..core import config, db, settings
+
+FILE = "hero-upload.jpg"
+CHECK_KEY = "site.hero_upload_check"
+MIN_WIDTH = 1200
+MAX_BYTES = 40 * 1024 * 1024
+
+
+class Refused(ValueError):
+    pass
+
+
+def path() -> Path:
+    return config.get_config().data_root / "site" / FILE
+
+
+def present() -> bool:
+    return path().is_file() and path().stat().st_size > 0
+
+
+def save(data: bytes) -> Path:
+    """Keep the upload as a plain JPEG of its pixels only (no camera data, no GPS). The old verdict goes."""
+    if not data:
+        raise Refused("the file is empty")
+    if len(data) > MAX_BYTES:
+        raise Refused("the file is over 40 MB")
+    try:
+        im = Image.open(io.BytesIO(data))
+        im.load()
+    except (UnidentifiedImageError, OSError, ValueError):
+        raise Refused("not a photo file (send a JPEG or PNG)")
+    im = ImageOps.exif_transpose(im).convert("RGB")
+    if im.width < MIN_WIDTH:
+        raise Refused(f"too small for the hero: {im.width} pixels wide, {MIN_WIDTH} or more needed (send the original, not a preview)")
+    out = path()
+    out.parent.mkdir(parents=True, exist_ok=True)
+    tmp = out.with_suffix(".part")
+    im.save(tmp, "JPEG", quality=92, optimize=True)
+    tmp.replace(out)
+    return out
+
+
+def remove(conn: sqlite3.Connection) -> bool:
+    was = present()
+    if was:
+        path().unlink()
+    settings.set(conn, CHECK_KEY, "")
+    return was
+
+
+def image() -> Image.Image:
+    return Image.open(path()).convert("RGB")
+
+
+def _sha() -> str:
+    return hashlib.sha256(path().read_bytes()).hexdigest()
+
+
+def record(conn: sqlite3.Connection) -> Optional[dict]:
+    """Claude's verdict on the file that is here now, or None when it has not looked at this one."""
+    raw = settings.get(conn, CHECK_KEY)
+    if not raw or not present():
+        return None
+    try:
+        rec = json.loads(raw)
+    except ValueError:
+        return None
+    return rec if rec.get("sha") == _sha() else None
+
+
+def checked(conn: sqlite3.Connection, look: Optional[Callable[[bytes], Optional[dict]]] = None) -> tuple[bool, str]:
+    """(usable, why). Claude's look is asked once per file; `look(jpeg bytes) -> verdict or None`."""
+    from ..library import classify, eligibility
+    if not present():
+        return False, "no upload"
+    rec = record(conn)
+    if rec is None:
+        if look is None:
+            return False, "not checked yet: the next site build with the Anthropic key asks Claude to look"
+        data = look(path().read_bytes())
+        if data is None:
+            return False, "not checked: Claude could not look (no key, the monthly cap, or a refusal)"
+        details = eligibility.blocking_details(list(data.get("personal_details") or []), "event")
+        kind = data.get("event_kind") if data.get("event_kind") in classify.KINDS else "unknown"
+        if data.get("possible_minor", True):
+            ok, why = False, "someone in it may be under 18"
+        elif details:
+            ok, why = False, "it shows " + ", ".join(map(str, details))
+        elif kind in classify.NOT_OFFERED_KINDS:
+            ok, why = False, eligibility.NOT_OFFERED_KIND_WHY
+        else:
+            ok, why = True, "checked by Claude"
+        rec = {"sha": _sha(), "ok": ok, "why": why, "kind": kind, "shot_type": data.get("shot_type") or "",
+               "summary": (data.get("summary") or "")[:200], "at": db.utcnow()}
+        settings.set(conn, CHECK_KEY, json.dumps(rec))
+    return bool(rec["ok"]), rec["why"]
+
+
+def status(conn: sqlite3.Connection) -> dict:
+    """For the Photos tab: whether an upload is here, its size, and what Claude said about it."""
+    if not present():
+        return {"present": False}
+    with Image.open(path()) as im:
+        size = im.size
+    rec = record(conn)
+    return {"present": True, "width": size[0], "height": size[1], "checked": rec is not None,
+            "ok": bool(rec and rec["ok"]), "why": rec["why"] if rec else "not checked yet: the next go-live asks Claude to look"}

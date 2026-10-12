@@ -418,9 +418,10 @@ vision_pass = sort_pass   # the name the first build used
 
 
 # ------------------------------------------------------------------------ the final check
-def final_check(conn: sqlite3.Connection, photo_id: int, image: bytes, *, client=None, agent: str = "content") -> Optional[dict]:
-    """Claude's last look at one photo before it may be posted. Writes final_checks and returns the
-    answer, or None (refused, cap reached, unreadable): then the photo stays unpostable."""
+def look(conn: sqlite3.Connection, image: bytes, *, client=None, agent: str = "content") -> Optional[dict]:
+    """Claude's final look at one picture: the answer (possible_minor, personal_details, shot_type,
+    event_kind, summary), or None (no key, cap reached, refused, unreadable). Paid through the one till.
+    final_check stores it for a library photo; the website's uploaded hero (site/hero.py) keeps its own."""
     if spend.cap_reached(conn):
         return None
     model = config.getenv("FINAL_CHECK_MODEL") or FINAL_MODEL
@@ -444,6 +445,17 @@ def final_check(conn: sqlite3.Connection, photo_id: int, image: bytes, *, client
     if not text:
         return None
     data = json.loads(text)
+    data["model_used"] = answered
+    return data
+
+
+def final_check(conn: sqlite3.Connection, photo_id: int, image: bytes, *, client=None, agent: str = "content") -> Optional[dict]:
+    """Claude's last look at one photo before it may be posted. Writes final_checks and returns the
+    answer, or None (refused, cap reached, unreadable): then the photo stays unpostable."""
+    data = look(conn, image, client=client, agent=agent)
+    if data is None:
+        return None
+    answered = data.get("model_used") or config.getenv("FINAL_CHECK_MODEL") or FINAL_MODEL
     shot = data.get("shot_type") if data.get("shot_type") in SHOT_TYPES else None
     kind = data.get("event_kind") if data.get("event_kind") in KINDS else "unknown"
     conn.execute("INSERT INTO final_checks (photo_id, possible_minor, personal_details, summary, model, checked_at, shot_type, event_kind) "

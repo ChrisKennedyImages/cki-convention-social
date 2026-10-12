@@ -41,6 +41,49 @@ class Site(IsolatedCase):
         self.assertNotIn("noindex", home)
         self.assertIn("/api/availability", (out / "availability/index.html").read_text())
 
+    def test_the_hero_carries_the_magnetic_web(self):
+        """Chris, 2026-10-11: "make the photo have the magnetic web effect": a canvas over the hero, drawn by the
+        site's script, pulled by the pointer, still under reduced motion and asleep off screen."""
+        out = self.built()
+        home = (out / "index.html").read_text()
+        self.assertIn('<canvas class="web" aria-hidden="true"></canvas>', home)
+        self.assertEqual(home.index('class="img"'), home.index('class="img"'), "one hero")
+        self.assertLess(home.index('<div class="img">'), home.index('<canvas class="web"'))
+        js = (out / "assets/site.js").read_text()
+        self.assertIn("document.querySelector('.hero canvas.web')", js)
+        self.assertIn("if(web&&!reduce)", js)
+        for word in ("mousemove", "touchmove", "IntersectionObserver(es=>{live=", "visibilitychange", "requestAnimationFrame(step)"):
+            self.assertIn(word, js, word)
+        css = (out / "assets/site.css").read_text()
+        self.assertIn("filter:brightness(1.24) saturate(1.35)", css[css.index(".hero .img img{"):][:300],
+                      "Chris, 2026-10-12: up the saturation, it was lost in the layer; up brightness too")
+        self.assertIn(".hero canvas.web{position:absolute;inset:0", css)
+        self.assertIn("pointer-events:none", css[css.index(".hero canvas.web{"):][:200])
+        self.assertIn(".hero canvas.web{display:none}", css[css.index("prefers-reduced-motion"):])
+
+    def test_the_heros_shadows_are_dodged_a_tad(self):
+        """Chris, 2026-10-12: "Up brightness and dodge shadows a tad"."""
+        dark = Image.new("RGB", (8, 8), (20, 20, 20))
+        self.assertEqual(build.dodge_shadows(dark).getpixel((0, 0)), (33, 33, 33))
+        self.assertEqual(build.dodge_shadows(Image.new("RGB", (8, 8), (255, 255, 255))).getpixel((0, 0)), (255, 255, 255))
+        self.assertEqual(build.dodge_shadows(Image.new("RGB", (8, 8), (128, 128, 128))).getpixel((0, 0)), (132, 132, 132))
+        hero = Image.new("RGB", (2400, 1600), (20, 20, 20))
+        out = self.built(photos=build.SitePhotos(hero=[(hero, "a")]))
+        with Image.open(out / "assets/hero-800.jpg") as saved:
+            self.assertGreater(saved.getpixel((10, 10))[0], 28, "the saved hero carries the lift")
+            self.assertLess(saved.getpixel((10, 10))[0], 42, "a tad, not a wash (Chris: way too much dodging)")
+
+    def test_the_main_page_never_says_fan_conventions_and_keeps_delivery_out_of_the_hero(self):
+        """Chris, 2026-10-12: "Get rid of 'fan conventions'... Don't put that on the main page"; instant delivery
+        can be highlighted but never front and center."""
+        home = (self.built() / "index.html").read_text()
+        text = re.sub(r"<script.*?</script>|<style.*?</style>|<[^>]+>", " ", home, flags=re.S).lower()
+        self.assertNotIn("fan convention", text)
+        hero = home[home.index('<section class="hero">'):home.index("</section>")]
+        for word in ("selfie", "badge", "scan"):
+            self.assertNotIn(word, hero.lower(), word)
+        self.assertIn("Conventions, conferences, galas and award dinners, photographed room by room.", hero)
+
     def test_no_banned_copy_on_any_page(self):
         out = self.built()
         for page in out.rglob("*.html"):

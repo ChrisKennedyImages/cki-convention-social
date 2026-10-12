@@ -354,7 +354,12 @@ def cmd_site(args) -> int:
         return classify.final_check(conn, row["id"], buf.getvalue(), agent="site")
 
     # Chris, 2026-10-09: the site goes live before any photo is cleared; photos join on the next build
-    photos = build.pick_photos(conn, fetch, recheck=recheck if secrets.get_secret("ANTHROPIC_API_KEY") else None) \
+    def look(data):
+        from .library import classify
+        return classify.look(conn, data, agent="site")
+
+    has_key = bool(secrets.get_secret("ANTHROPIC_API_KEY"))
+    photos = build.pick_photos(conn, fetch, recheck=recheck if has_key else None, look=look if has_key else None) \
         if reader else build.SitePhotos()
     if not photos.hero:
         print("no postable photos yet, so the site is built without photos; they join on the next build "
@@ -362,6 +367,8 @@ def cmd_site(args) -> int:
     out = build.build(conn, photos, preview=args.preview)
     print(f"built {out} (hero {len(photos.hero)}, coverage {len(photos.coverage)}, venues {len(photos.venues)})"
           f"{' PREVIEW' if args.preview else ''}")
+    if photos.hero_note:
+        print(f"hero: {photos.hero_note}")
     conn.close()
     return 0
 
