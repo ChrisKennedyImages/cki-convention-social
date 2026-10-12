@@ -376,7 +376,7 @@ def build(conn: Optional[sqlite3.Connection], photos: SitePhotos, *, out: Path =
 <div class="f"><label class="mono" for="organization">Organization</label><input id="organization" name="organization" maxlength="160" autocomplete="organization"></div>
 <div class="f full"><label class="mono" for="event_name">Event name</label><input id="event_name" name="event_name" maxlength="200"></div>
 <div class="f"><label class="mono" for="event_kind">Kind of event</label><select id="event_kind" name="event_kind"><option value="fan">Fan convention</option>
-<option value="business">Conference or political event</option><option value="other">Gala, reception or something else</option></select></div>
+<option value="business">Conference, convention or corporate event</option><option value="other">Gala, reception or something else</option></select></div>
 <div class="f"><label class="mono" for="attendance">Expected attendance</label><input id="attendance" name="attendance" maxlength="40"></div>
 <div class="f"><label class="mono" for="start_date">First day</label><input id="start_date" name="start_date" type="date"></div>
 <div class="f"><label class="mono" for="end_date">Last day</label><input id="end_date" name="end_date" type="date"></div>

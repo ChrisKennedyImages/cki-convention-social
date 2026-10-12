@@ -261,6 +261,15 @@ class NoCosplay(IsolatedCase):
             self.assertNotIn("cosplay", (root / rel).read_text().lower(), rel)
         self.assertFalse([c for c in offer.coverage_keys() if "cos" in c])
 
+    def test_nothing_positions_the_company_as_political(self):
+        """Chris, 2026-10-12: "Preferably not political but will do if they're paying"."""
+        from convention_social.seo import photo_text
+        root = Path(config.REPO_ROOT)
+        for rel in ("offer.json", "convention_social/site/build.py", "convention_social/ai/claude.py",
+                    "convention_social/outreach/research.py", "convention_social/outreach/draft.py"):
+            self.assertNotIn("political", (root / rel).read_text().lower(), rel)
+        self.assertNotIn("political", photo_text.KIND_WORDS["business"])
+
     def test_a_costume_photo_is_never_used(self):
         conn = db.connect()
         now = db.utcnow()

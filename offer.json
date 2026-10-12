@@ -3,7 +3,7 @@
   "company": "Event Caliber",
   "legal_name": "CKI, LLC",
   "tagline": "Event and convention photography",
-  "event_kinds": ["Fan conventions: comic, anime and gaming", "Business and political conferences", "Galas, receptions and award dinners"],
+  "event_kinds": ["Fan conventions: comic, anime and gaming", "Business, corporate and association conferences", "Galas, receptions and award dinners"],
   "coverage": [
     {"key": "backstage", "label": "Backstage"},
     {"key": "green_room", "label": "Green rooms"},
