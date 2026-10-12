@@ -423,11 +423,16 @@ def look(conn: sqlite3.Connection, image: bytes, *, client=None, agent: str = "c
     """Claude's final look at one picture: the answer (possible_minor, personal_details, shot_type,
     event_kind, summary), or None (no key, cap reached, refused, unreadable). Paid through the one till.
     final_check stores it for a library photo; the website's uploaded hero (site/hero.py) keeps its own."""
+    from ..core import runner
     if spend.cap_reached(conn):
+        # 2026-10-12: a silent None here left a morning with no draft and nothing said; the Agents page says it now
+        runner.record_error_once(conn, agent, "ai_cap", "The monthly AI cap is reached (Keys page, AI, AI_MONTHLY_CAP_USD): Claude "
+                                 "cannot look at a photo or write a caption until the cap is raised or the month turns, so nothing is drafted.")
         return None
     model = config.getenv("FINAL_CHECK_MODEL") or FINAL_MODEL
     if client is None:
         if not secrets.get_secret("ANTHROPIC_API_KEY"):
+            runner.record_error_once(conn, agent, "no_ai_key", "No Anthropic key (Keys page, AI): Claude cannot look at a photo, so nothing is drafted.")
             return None
         import anthropic
         client = anthropic.Anthropic(api_key=secrets.get_secret("ANTHROPIC_API_KEY"))

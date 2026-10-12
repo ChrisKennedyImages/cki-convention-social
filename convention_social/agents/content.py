@@ -404,7 +404,16 @@ def run(ctx: runner.Context, fetch: Optional[Callable[[dict], bytes]] = None) ->
             cached = ctx.cfg.data_root / "photos" / f"{row['drive_id']}.img"
             return cached.read_bytes() if cached.exists() else reader.download(row["drive_id"])
     mended = 0 if ctx.dry_run else mend_queue(ctx.conn, agent=ctx.agent)
-    return (f"rewrote the captions of {mended} queued draft(s) that broke a rule; " if mended else "") + draft_one(ctx, fetch)
+    summary = draft_one(ctx, fetch)
+    if "drafted post" not in summary and "already drafted" not in summary:
+        # 2026-10-12: "the render didn't land this morning at 8am". A morning with no draft is said out loud, with
+        # the reason, on the phone and on the Agents page; never a quiet summary line.
+        from ..ai import spend
+        day = target_day(ctx.cfg)
+        why = summary + ("; the monthly AI cap is reached (Keys page, AI)" if spend.cap_reached(ctx.conn) else "")
+        runner.record_error_once(ctx.conn, ctx.agent, "no_draft", f"No post was drafted for {day}: {why}")
+        notify.push(f"{ctx.cfg.brand_name}: no post drafted for {day:%A}", why, dry_run=ctx.dry_run, click=notify.link("/agents"))
+    return (f"rewrote the captions of {mended} queued draft(s) that broke a rule; " if mended else "") + summary
 
 
 if __name__ == "__main__":
