@@ -45,7 +45,7 @@ LIMITS = {"name": 200, "city": 120, "venue": 200, "organizer": 160, "website": 5
 
 SYSTEM = """You find upcoming conventions and conferences that a convention and event photographer could pitch to photograph. You search the web and report only what the sources you found say.
 Rules:
-1. Only events in the region you are given, starting between the two dates you are given. Fan conventions (comic, anime, gaming), business, trade and political conferences, and galas and award dinners all count.
+1. Only events in the region you are given, starting between the two dates you are given. Fan conventions (comic, anime, gaming), business, trade and association conferences, corporate events, and galas and award dinners all count.
 2. Never invent anything. A field you did not find in a source is an empty string. A date you are not sure of is empty. Dates are YYYY-MM-DD.
 3. Every event lists in sources the URLs of the pages you found it on. Leave out any event you have no source URL for.
 4. organizer_email: only a public contact address printed on the event's own website (organizers, press, media or general contact), with the page it is printed on in email_source_url. Never guess an address, never build one from a name or a pattern, never take one from a third party listing. If there is none, leave both empty.

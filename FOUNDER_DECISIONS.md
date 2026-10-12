@@ -394,6 +394,17 @@ only when Chris says so.
   samples are spread across events, one per event before any event repeats.
   The daily draft already rotates events (`variety_days`).
 
+## 2026-10-12: preferably not political
+
+- "Preferably not political but will do if they're paying." Political work
+  is taken when it comes; it is never what the company is positioned as. No
+  public text, prompt or search names political conferences as the work:
+  the site, the offer file, the quote form, the caption writer, the photo
+  text and the scout say business, corporate and association conferences,
+  conventions, galas and award dinners. The sorter still recognises a
+  political conference as business work, so those photos are used like any
+  other.
+
 ## Standing rules from the brief
 
 - Nothing publishes without Chris's Approve on the dashboard, until he says

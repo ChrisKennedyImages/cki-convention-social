@@ -55,7 +55,7 @@ SHOT_WORDS = {
     "crowd": "Crowd", "venue": "Venue",
 }
 PEOPLE_SHOTS = {"portrait", "headshot", "group"}
-KIND_WORDS = {"fan": "fan convention", "business": "business or political conference"}
+KIND_WORDS = {"fan": "fan convention", "business": "business conference"}
 KIND_KEYWORDS = {"fan": "fan convention photography", "business": "conference photography"}
 # words that are never a person's name, so a Title Cased answer is not mistaken for one
 COMMON_WORDS = set("""
