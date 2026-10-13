@@ -196,7 +196,9 @@ class DailyDraft(IsolatedCase):
         for name in ("cpac", "acu", "liberty", "jordan"):
             self.assertNotIn(name, text)
         for paths in json.loads(row["render_paths"]).values():
-            data = Path(paths[0]).read_bytes().lower()
-            for name in (b"cpac", b"liberty", b"jordan"):
-                self.assertNotIn(name, data, "nor in the file's own search fields")
+            fields = meta.search_text(Path(paths[0])).lower()           # the EXIF, XMP and IPTC text, never the pixels
+            self.assertIn("event caliber", fields, "the reader sees the file's own fields")
+            self.assertIn("stage and panel", fields)
+            for name in ("cpac", "liberty", "jordan"):
+                self.assertNotIn(name, fields, "nor in the file's own search fields")
         conn.close()

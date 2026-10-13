@@ -90,6 +90,17 @@ def save_jpeg(img: Image.Image, path: Path, meta: Optional[ImageMeta] = None, *,
     return path
 
 
+def search_text(path: Path) -> str:
+    """Every text a search engine, a viewer or a social network reads from a JPEG: its APP segments (EXIF,
+    XMP, IPTC) and comments, decoded as latin-1. Never the compressed pixels, which are not text."""
+    with Image.open(path) as im:
+        parts = [data for _, data in getattr(im, "applist", [])]
+        comment = im.info.get("comment")
+        if comment:
+            parts.append(comment if isinstance(comment, bytes) else str(comment).encode("utf-8"))
+    return b"\n".join(parts).decode("latin-1")
+
+
 def is_clean(path: Path) -> list[str]:
     """What should not be in a published file, if anything: [] means clean (no GPS, no camera, no capture time)."""
     found = []
