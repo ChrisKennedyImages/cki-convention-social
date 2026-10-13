@@ -4,11 +4,13 @@ fast-forwards a clean `main`, holds back on red tests, and never touches local w
 from __future__ import annotations
 
 import io
+import json
 import os
 import subprocess
 import sys
 import time
 from contextlib import redirect_stdout
+from datetime import datetime, timedelta
 from pathlib import Path
 from unittest import mock
 
@@ -422,9 +424,15 @@ class SiteFollows(Repos):
         err = db.one(self.conn, "SELECT kind, message FROM errors WHERE agent='updater' AND kind='site_deploy'")
         self.assertIn("Press Publish on the Photos page", err["message"])
         self.assertIn("Cloudflare did not take the deploy", err["message"])
-        self.assertEqual(settings.get(self.conn, site_deploy.FAILED_KEY), target)
-        self.assertIn(f"site: the deploy of {target[:7]} failed; not trying again by itself", self.run_updater())
+        self.assertEqual((site_deploy.failure_record(self.conn)["commit"], site_deploy.failure_record(self.conn)["tries"]), (target, 1))
+        self.assertIn(f"site: the deploy of {target[:7]} failed (try 1 of 3); trying again 30 minutes after", self.run_updater())
         self.assertEqual(len(self.calls["deploy"]), 1)
+        rec = site_deploy.failure_record(self.conn)
+        rec["last_at"] = (datetime.now() - timedelta(minutes=31)).isoformat(timespec="seconds")
+        settings.set(self.conn, site_deploy.FAILED_KEY, json.dumps(rec))
+        self.assertIn("site: deploy FAILED", self.run_updater(), "tried again on its own after half an hour")
+        self.assertEqual(len(self.calls["deploy"]), 2)
+        self.assertEqual(site_deploy.failure_record(self.conn)["tries"], 2)
         settings.set(self.conn, site_deploy.DEPLOYED_KEY, target)        # Publish succeeded (site/deploy.py records it)
         settings.set(self.conn, site_deploy.FAILED_KEY, "")
         self.assertIn("the same as the code", self.run_updater())

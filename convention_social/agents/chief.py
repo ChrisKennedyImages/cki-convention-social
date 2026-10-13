@@ -30,7 +30,8 @@ from ..ai import copy_rules, spend
 from ..core import config, db, mail, notify, runner, settings
 from . import watchdog
 
-SENT_KEY = "chief.brief_sent_on"
+SENT_KEY = "chief.brief_sent_on"        # the mail went (or the dry outbox has it)
+PUSHED_KEY = "chief.brief_pushed_on"    # the phone was told, once a day however the mail fares
 BRIEF_KEY = "chief.brief"
 MODEL = "claude-opus-5"
 
@@ -71,7 +72,7 @@ def gather(ctx: runner.Context, now: datetime) -> dict:
         needs.append(("Google Drive is " + ("signed out. Sign in again." if d["drive"] == "expired" else "not signed in yet."), "/drive"))
     for c in d["channels"]:
         if not c["connected"]:
-            needs.append((f"{c['service'].capitalize()} is disconnected in Buffer. Reconnect it there.", "/agents"))
+            needs.append((f"{c['service'].capitalize()} is disconnected in Buffer. Reconnect it there.", "/buffer"))
     if turned_back:
         needs.append((f"{len(turned_back)} draft(s) the Art director was not happy with.", "/"))
     done = []
@@ -168,9 +169,15 @@ def run(ctx: runner.Context, *, now: Optional[datetime] = None, client=None, for
                                                    "done": b["done"], "watching": b["watching"]}))
     res = mail.send(f"[{ctx.cfg.brand_name}] Morning brief: {len(b['needs'])} need you", body, to=ctx.cfg.alert_email or "",
                     plain=plain, dry_run=ctx.dry_run or not ctx.cfg.alert_email)
-    notify.push(f"{ctx.cfg.brand_name}: {len(b['needs'])} need you", read, dry_run=ctx.dry_run, priority="default",
-                click=watchdog.dashboard_url(ctx.cfg) + "/")
-    settings.set(ctx.conn, SENT_KEY, local.date().isoformat())
+    today = local.date().isoformat()
+    if settings.get(ctx.conn, PUSHED_KEY) != today:
+        notify.push(f"{ctx.cfg.brand_name}: {len(b['needs'])} need you", read, dry_run=ctx.dry_run, priority="default",
+                    click=watchdog.dashboard_url(ctx.cfg) + "/", conn=ctx.conn, agent=ctx.agent)
+        settings.set(ctx.conn, PUSHED_KEY, today)
+    if res.sent or res.dry_run:
+        settings.set(ctx.conn, SENT_KEY, today)
+    else:                                   # not sent, so not marked sent: the hourly run tries again, and it is said
+        runner.record_error_once(ctx.conn, ctx.agent, "brief_mail", f"The morning brief could not be emailed: {res.error}")
     return f"{'DRY RUN ' if ctx.dry_run else ''}brief: {len(b['needs'])} need you, {len(b['done'])} done; mail {'written to outbox' if res.dry_run else ('sent' if res.sent else 'FAILED')}"
 
 

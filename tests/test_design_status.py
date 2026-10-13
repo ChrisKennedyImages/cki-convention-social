@@ -13,7 +13,7 @@ from unittest import mock
 from fastapi.testclient import TestClient
 
 from convention_social import cli
-from convention_social.core import auth, config, db
+from convention_social.core import auth, config, db, settings
 from convention_social.dashboard.app import COOKIE, create_app, make_token
 from convention_social.render import design_samples
 from tests._base import IsolatedCase
@@ -63,11 +63,27 @@ class Auto(Case):
             self.assertIn("started", design_samples.auto(self.conn))
             self.assertIn("being made", design_samples.auto(self.conn), "never two at once")
             design_samples.write_status("done", "made on 4 of your approved photos", folder="design-x")
+            design_samples.made(self.conn)                                 # what `ccs design` records when it finishes
             self.assertIn("up to date", design_samples.auto(self.conn))
             self.assertEqual(start.call_count, 1)
             self.photo()                                                   # one more approved photo
             self.assertIn("started", design_samples.auto(self.conn))
         self.assertEqual(start.call_count, 2)
+
+    def test_a_run_that_failed_is_tried_again_not_called_done(self):
+        """The set was marked made before the job ran, so a failed run was never tried again until the photos changed."""
+        for _ in range(4):
+            self.photo()
+        with mock.patch.object(design_samples, "start_in_background") as start:
+            self.assertIn("started", design_samples.auto(self.conn))
+            self.assertIsNone(settings.get(self.conn, design_samples.LAST_SET_KEY), "not made yet")
+            design_samples.write_status("failed", "Google Drive is signed out")
+            self.assertIn("started", design_samples.auto(self.conn), "a failed run is tried again")
+            self.assertEqual(start.call_count, 2)
+            design_samples.write_status("done", "made on 4 of your approved photos", folder="design-x")
+            design_samples.made(self.conn)
+            self.assertIn("up to date", design_samples.auto(self.conn))
+            self.assertEqual(start.call_count, 2)
 
     def test_a_run_that_died_is_not_left_saying_running(self):
         design_samples.write_status("running", "x")
@@ -96,6 +112,7 @@ class Command(Case):
         err = db.one(self.conn, "SELECT agent, message FROM errors")
         self.assertEqual(err["agent"], "designer")
         self.assertIn("Design samples not made", err["message"])
+        self.assertIsNone(settings.get(self.conn, design_samples.LAST_SET_KEY), "a failed run is not recorded as made")
 
     def test_drive_signed_out_is_said_too(self):
         from convention_social.drive import oauth
@@ -113,11 +130,13 @@ class Command(Case):
             (out / "about.json").write_text(json.dumps({"photos": ["a", "b", "c", "d"], "failed": []}))
             (out / "index.html").write_text("<p>x</p>")
             return out
+        settings.set(self.conn, design_samples.PENDING_SET_KEY, "2026-10-11b:d1,d2,d3,d4")
         with mock.patch("convention_social.drive.oauth.access_token", return_value="tok"), \
              mock.patch.object(design_samples, "make", make):
             code, _ = self.run_design()
         self.assertEqual(code, 0)
         self.assertEqual(design_samples.read_status()["message"], "made on 4 of your approved photos")
+        self.assertEqual(settings.get(self.conn, design_samples.LAST_SET_KEY), "2026-10-11b:d1,d2,d3,d4", "made, now recorded as made")
 
 
 class Card(Case):

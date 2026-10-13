@@ -111,16 +111,29 @@ def sync_availability(ctx: runner.Context, api: SiteAPI) -> str:
 
 def run(ctx: runner.Context, api: SiteAPI | None = None, client=None) -> str:
     api = api or SiteAPI.from_config()
+    site_ok = api is not None
     if api is None:
         new = acked = 0
         cal = "no MEDIA_UPLOAD_TOKEN: the site is not reachable yet"
     else:
-        new, acked = pull(ctx, api)
-        cal = None
+        try:
+            new, acked = pull(ctx, api)
+            cal = None
+        except Exception as e:  # noqa: BLE001  the site being down must not stop the replies he approved
+            runner.record_error_once(ctx.conn, ctx.agent, "site_pull",
+                                     f"Quote requests could not be read from the site: {type(e).__name__}: {e}")
+            new = acked = 0
+            cal = f"the site could not be reached ({type(e).__name__}); nothing pulled, the calendar not synced"
+            site_ok = False
     drafted = draft_new(ctx, client=client)
     sent = send_approved(ctx)
-    if api is not None:
-        cal = sync_availability(ctx, api)
+    if site_ok:
+        try:
+            cal = sync_availability(ctx, api)
+        except Exception as e:  # noqa: BLE001
+            runner.record_error_once(ctx.conn, ctx.agent, "site_availability",
+                                     f"The booked dates could not be sent to the site: {type(e).__name__}: {e}")
+            cal = f"the calendar could not be sent to the site ({type(e).__name__})"
     return (f"{'DRY RUN ' if ctx.dry_run else ''}requests new={new} acked={acked}; drafted={drafted}; "
             f"replies sent={sent['sent']} would_send={sent['would_send']} failed={sent['failed']} held={sent['held']}; {cal}")
 

@@ -551,6 +551,33 @@ only when Chris says so.
   page says so with nothing to remove. Pinned in `tests/test_outreach.py`
   (`NeverContacted`, `Pages`) and `tests/test_scout.py`.
 
+## 2026-10-13: every failure is said once, and out loud
+
+Chris's answers for the roadmap, 2026-10-13: optimize for less of his time,
+more inquiries and bookings, reliability, visibility and self-healing ("I need
+to also run the other parts of the business too"); polish what exists; small
+room for spend. The first batch makes the suite's own silences impossible:
+
+- The watchdog alerts each recorded error on its own (keyed by its row, not
+  its kind), so a second error of the same kind inside six hours is never
+  swallowed; it hears its own errors; an error is marked as sent only when the
+  mail or the push really went, and a mail that could not go is itself an
+  error (`alert_mail`). The inbox and the chief are watched for missed runs.
+- A phone ping that did not go is an `ntfy` error on the Agents page, said
+  once while it stands (`core/notify.py`, every caller passes its connection).
+- Markers that lied: the Buffer numbers are marked pulled only after a pull;
+  the morning brief is marked sent only when the mail went (the phone is told
+  once a day either way; a failed mail is a `brief_mail` error and the hourly
+  run tries again); a site outage no longer stops the inbox from sending the
+  replies he approved (`site_pull`); the design samples are recorded as made
+  only when `ccs design` finishes, so a failed run is tried again next hour;
+  a failed site deploy is tried again after thirty minutes, three times per
+  commit, and the status says "try 2 of 3".
+- The draft page never breaks when the rewrite cannot run: it says so, records
+  a `mend` error once, and the next run tries again.
+- The brief's disconnected-channel line opens the Buffer page; More has an
+  Errors page.
+
 ## Standing rules from the brief
 
 - CPAC, the ACU and their affiliates are never contacted, by code

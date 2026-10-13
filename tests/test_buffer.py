@@ -228,6 +228,24 @@ class Metrics(AgentCase):
         self.assertEqual(sum(w["posts"] for w in weeks), 2)
         conn.close()
 
+    def test_a_failed_pull_is_not_marked_done_and_is_said_once(self):
+        conn, fake = self.seed()
+
+        class Broken:
+            def posts(self, **kw):
+                raise RuntimeError("rate limited")
+        ctx = make_ctx(conn, agent="watchdog")
+        today = date(2026, 10, 9)
+        stats = metrics.pull(ctx, Broken(), today=today)
+        self.assertEqual(stats["errors"], 1)
+        self.assertTrue(metrics.due(conn, today), "a pull that failed is tried again, not marked done")
+        self.assertEqual(db.one(conn, "SELECT kind FROM errors")["kind"], "metrics_pull")
+        metrics.pull(ctx, Broken(), today=today)
+        self.assertEqual(db.one(conn, "SELECT COUNT(*) n FROM errors")["n"], 1, "said once while it stands")
+        metrics.pull(ctx, fake, today=today)
+        self.assertFalse(metrics.due(conn, today))
+        conn.close()
+
     def test_no_channels_no_call(self):
         conn = self.connect()
         fake = FakePosts([])

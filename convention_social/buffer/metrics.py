@@ -81,10 +81,12 @@ def pull(ctx: runner.Context, client, today: Optional[date] = None) -> dict:
                     break
                 after = page.get("endCursor")
             stats["channels"] = len(by_channel)
+            settings.set(ctx.conn, PULLED_KEY, today.isoformat())      # done only when it was: a failed pull is tried again
         except Exception as e:  # noqa: BLE001  (Buffer errors, budget, network)
             stats["errors"] += 1
-            runner.record_error(ctx.conn, ctx.agent, "metrics_pull", f"metrics pull failed: {e}")
-    settings.set(ctx.conn, PULLED_KEY, today.isoformat())
+            runner.record_error_once(ctx.conn, ctx.agent, "metrics_pull", f"metrics pull failed: {e}")
+    else:
+        settings.set(ctx.conn, PULLED_KEY, today.isoformat())
     return stats
 
 

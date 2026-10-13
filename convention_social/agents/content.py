@@ -435,7 +435,7 @@ def draft_one(ctx: runner.Context, fetch: Callable[[dict], bytes], *, now: Optio
                     created_at=now_s, updated_at=now_s)
     # the ping that opens the draft (Chris, 2026-10-11: "I haven't received any ntfy")
     notify.push(f"{ctx.cfg.brand_name}: a post to approve", f"{design} with {len(photo_ids)} photo(s) for {day:%A}. Tap to see it.",
-                dry_run=ctx.dry_run, priority="default", click=notify.link(f"/queue/{qid}"))
+                dry_run=ctx.dry_run, priority="default", click=notify.link(f"/queue/{qid}"), conn=ctx.conn, agent=ctx.agent)
     fell = (f", the reel could not be made ({reel_failed[0]})" if reel_failed
             else f", {asked} wanted but too few photos passed" if asked != design else "")
     return (f"{'DRY RUN ' if ctx.dry_run else ''}drafted post #{qid} for {day} ({kind_used}"
@@ -466,7 +466,8 @@ def run(ctx: runner.Context, fetch: Optional[Callable[[dict], bytes]] = None) ->
         day = target_day(ctx.cfg)
         why = summary + ("; the monthly AI cap is reached (Keys page, AI)" if spend.cap_reached(ctx.conn) else "")
         runner.record_error_once(ctx.conn, ctx.agent, "no_draft", f"No post was drafted for {day}: {why}")
-        notify.push(f"{ctx.cfg.brand_name}: no post drafted for {day:%A}", why, dry_run=ctx.dry_run, click=notify.link("/agents"))
+        notify.push(f"{ctx.cfg.brand_name}: no post drafted for {day:%A}", why, dry_run=ctx.dry_run, click=notify.link("/agents"),
+                    conn=ctx.conn, agent=ctx.agent)
     return (f"rewrote the captions of {mended} queued draft(s) that broke a rule; " if mended else "") + summary
 
 

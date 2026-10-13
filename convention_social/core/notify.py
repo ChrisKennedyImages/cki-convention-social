@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import sys
 
-from . import config
+from . import config, runner
 
 NTFY_URL = "https://ntfy.sh"
 
@@ -29,15 +29,27 @@ def link(path: str = "/") -> str:
     return base + path
 
 
+NOT_A_FAILURE = ("sent", "dry run: nothing sent", "no push from a test")
+
+
 def push_result(title: str, message: str, *, dry_run: bool = True, priority: str = "high", transport=None,
-                click: str | None = None) -> str:
+                click: str | None = None, conn=None, agent: str = "suite") -> str:
     """Sends, and says what happened: "sent", or why nothing was. `click` is the address the phone
-    opens when the notification is tapped."""
+    opens when the notification is tapped. With `conn`, a push that did not go (live, and not from a
+    test) is recorded once as an `ntfy` error for the Agents page and the watchdog's mail: a failed
+    ping used to be a False nobody read (2026-10-13)."""
+    result = _push(title, message, dry_run=dry_run, priority=priority, transport=transport, click=click)
+    if conn is not None and result not in NOT_A_FAILURE:
+        runner.record_error_once(conn, agent, "ntfy", f"No phone ping: {result}")
+    return result
+
+
+def _push(title: str, message: str, *, dry_run: bool, priority: str, transport, click: str | None) -> str:
     cfg = config.get_config()
-    if not cfg.ntfy_topic:
-        return "no ntfy topic is set (Keys page, Phone alerts)"
     if dry_run:
         return "dry run: nothing sent"
+    if not cfg.ntfy_topic:
+        return "no ntfy topic is set (Keys page, Phone alerts)"
     if "unittest" in sys.modules and transport is None:
         return "no push from a test"
     try:
@@ -55,5 +67,6 @@ def push_result(title: str, message: str, *, dry_run: bool = True, priority: str
 
 
 def push(title: str, message: str, *, dry_run: bool = True, priority: str = "high", transport=None,
-         click: str | None = None) -> bool:
-    return push_result(title, message, dry_run=dry_run, priority=priority, transport=transport, click=click) == "sent"
+         click: str | None = None, conn=None, agent: str = "suite") -> bool:
+    return push_result(title, message, dry_run=dry_run, priority=priority, transport=transport, click=click,
+                       conn=conn, agent=agent) == "sent"

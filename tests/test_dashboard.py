@@ -248,6 +248,22 @@ class Dashboard(IsolatedCase):
         self.assertEqual(open_kinds, ["site_check"])
         self.assertEqual(db.one(self.conn, "SELECT COUNT(*) n FROM errors")["n"], 4)       # dismissed, never deleted
 
+    def test_the_errors_page_lists_open_errors_and_dismisses_back_to_itself(self):
+        """More listed /errors with no page behind it."""
+        c = self.signed_in()
+        eid = db.insert(self.conn, "errors", ts=db.utcnow(), agent="content", kind="no_draft",
+                        message="No post was drafted for Tuesday", alerted=0)
+        r = c.get("/errors")
+        self.assertEqual(r.status_code, 200)
+        self.assertIn("No post was drafted for Tuesday", r.text)
+        self.assertIn("Dismiss all 1 no draft", r.text)
+        r = c.post(f"/errors/{eid}/ack", data={"back": "/errors"}, follow_redirects=False)
+        self.assertEqual(r.headers["location"], "/errors")
+        self.assertIn("None.", c.get("/errors").text)
+        self.assertIn('href="/errors"', c.get("/more").text)
+        r = c.post(f"/errors/{eid}/ack", data={"back": "https://evil.example/"}, follow_redirects=False)
+        self.assertEqual(r.headers["location"], "/agents", "only our own pages")
+
     def test_photos_review_then_approved_and_only_approved_counts(self):
         """Chris, 2026-10-11: "I only want to choose what I approve" and "I am unable to go back to the main
         library page where I can hit clear". To review lists the undecided photos with Use; Approved lists
