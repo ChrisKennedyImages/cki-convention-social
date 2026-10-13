@@ -483,7 +483,7 @@ class Dashboard(IsolatedCase):
         self.assertIn("publish", page.lower())
         self.assertIn("by itself in a few minutes with your photo changes", page)
 
-
+    def test_keys_page_writes_env_and_never_shows_secrets(self):
         c = self.signed_in()
         c.post("/keys", data={"ANTHROPIC_API_KEY": "sk-secret-value", "BRAND_NAME": "New Name",
                               "CREDITS_SHEET_ID": "https://docs.google.com/spreadsheets/d/sheet123/edit"})
