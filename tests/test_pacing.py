@@ -83,6 +83,16 @@ class Slots(AgentCase):
         db.insert(conn, "post_history", buffer_post_id="p1", service="facebook", sent_at="2026-10-09T13:31:00+00:00")
         self.assertEqual(pacing.slot_value(pacing.next_slot(conn, "facebook", FRIDAY_8AM)), "2026-10-10T09:30")
 
+    def test_a_draft_for_a_later_day_waits_for_that_day(self):
+        """2026-10-13: a draft "for Tuesday" went out the same day; the day it was drafted for is the floor."""
+        conn = self.connect()
+        self.assertEqual(pacing.slot_value(pacing.next_slot(conn, "instagram", FRIDAY_8AM, not_before=MONDAY)), "2026-10-12T11:30")
+        self.assertEqual(pacing.slot_value(pacing.next_slot(conn, "instagram", FRIDAY_8AM, not_before=date(2026, 10, 1))), "2026-10-09T11:30")
+        planned = pacing.plan(conn, ["instagram", "pinterest"], None, FRIDAY_8AM, not_before=MONDAY)
+        self.assertEqual(planned, {"instagram": "2026-10-12T11:30", "pinterest": "2026-10-12T20:30"})
+        chosen = pacing.plan(conn, ["instagram"], "2026-10-09T14:00", FRIDAY_8AM, not_before=MONDAY)
+        self.assertEqual(chosen, {"instagram": "2026-10-09T14:00"}, "a time Chris set still wins")
+
     def test_a_time_on_the_draft_wins_for_every_network(self):
         conn = self.connect()
         chosen = pacing.plan(conn, ["instagram", "pinterest"], "2026-10-12T14:00", FRIDAY_8AM)

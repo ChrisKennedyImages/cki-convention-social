@@ -132,15 +132,17 @@ def taken_days(conn, network: str, tz: ZoneInfo, *, include_dry: bool = False) -
 
 
 def next_slot(conn, network: str, now: Optional[datetime] = None, cfg: Optional[config.Config] = None, *,
-              include_dry: bool = False) -> Optional[datetime]:
+              include_dry: bool = False, not_before: Optional[date] = None) -> Optional[datetime]:
     """The local time this network's next unscheduled post should go out, or None if every day
-    in the next HORIZON_DAYS is taken."""
+    in the next HORIZON_DAYS is taken. `not_before`: the day the post was drafted for is the floor
+    (2026-10-13: a draft "for Tuesday" went out the same day); a day already past means today."""
     cfg = cfg or config.get_config()
     tz = ZoneInfo(cfg.timezone)
     local_now = (now or datetime.now(timezone.utc)).astimezone(tz)
     taken = taken_days(conn, network, tz, include_dry=include_dry)
+    first = max(local_now.date(), not_before) if not_before else local_now.date()
     for i in range(HORIZON_DAYS):
-        day = local_now.date() + timedelta(days=i)
+        day = first + timedelta(days=i)
         if day in taken:
             continue
         slot = datetime.combine(day, learner.post_time_for(conn, network, time_for(network, day), day), tz)
@@ -155,13 +157,14 @@ def slot_value(slot: datetime) -> str:
 
 
 def plan(conn, targets: list[str], chosen: Optional[str], now: Optional[datetime] = None,
-         cfg: Optional[config.Config] = None, *, include_dry: bool = False) -> dict[str, Optional[str]]:
+         cfg: Optional[config.Config] = None, *, include_dry: bool = False,
+         not_before: Optional[date] = None) -> dict[str, Optional[str]]:
     """{network: local 'YYYY-MM-DDTHH:MM' or None}. A time chosen on the draft wins for every network;
-    None means no open day was found in the horizon."""
+    None means no open day was found in the horizon; `not_before` is the day the post was drafted for."""
     if chosen:
         return {net: chosen for net in targets}
     out = {}
     for net in targets:
-        slot = next_slot(conn, net, now, cfg, include_dry=include_dry)
+        slot = next_slot(conn, net, now, cfg, include_dry=include_dry, not_before=not_before)
         out[net] = slot_value(slot) if slot else None
     return out

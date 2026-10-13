@@ -23,7 +23,7 @@ import html
 import json
 import shutil
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, time, timedelta, timezone
 from typing import Optional
 from zoneinfo import ZoneInfo
 
@@ -41,6 +41,8 @@ MAX_GAP = {"scanner": timedelta(hours=3), "content": timedelta(hours=30), "publi
            "learner": timedelta(hours=30), "seo": timedelta(days=8),
            "scout": timedelta(days=8), "outreach": timedelta(hours=30), "updater": timedelta(hours=1)}
 STUCK_AFTER = timedelta(hours=6)       # a scheduled post this long past its time without being sent
+CONTENT_WINDOW = (8, 20)              # local hours: the 08:00 draft gets its turn first; past 20:00 a missing post is said loudly
+CONTENT_TRIES_A_DAY = 4               # the 08:00 run and up to three more by the watchdog
 SUPPRESS = timedelta(hours=6)
 DISK_MIN_FREE = 10 * 1024 ** 3
 BACKUP_MAX_AGE = timedelta(hours=36)
@@ -179,6 +181,45 @@ def check_agents(ctx: runner.Context, f: Findings, now: datetime) -> None:
                 f.alert(f"agent_missed:{name}", f"{name} last ran {when}. It should run {AGENTS[name]['schedule']}.")
         elif last["ok"] == 0:
             f.note(f"{name} failed on its last run. See the errors list.")
+
+
+def check_content_window(ctx: runner.Context, f: Findings, now: datetime, start=None) -> None:
+    """Tomorrow's post always lands (2026-10-13): the 08:00 draft fires once, and a Mini asleep at 8, a Drive hiccup
+    or an API blip lost the day. Inside the window, with no draft for tomorrow, no content run open and fewer than
+    CONTENT_TRIES_A_DAY runs today, the content agent is started again when its last reason was passing, its last
+    run crashed, or the inputs changed (agents/content.inputs_fingerprint); the same reason on the same inputs
+    waits. Past the window a missing post is a loud alert, once a day."""
+    if not is_built("content"):
+        return
+    from . import content
+    local = local_now(ctx.cfg, now)
+    day = content.target_day(ctx.cfg, now)
+    if content.already_drafted(ctx.conn, day) or local.hour < CONTENT_WINDOW[0]:
+        return
+    if local.hour >= CONTENT_WINDOW[1]:
+        f.alert(f"no_post_day:{day.isoformat()}", f"Tomorrow ({day:%A}) has no post drafted and the day's window is over. "
+                                                 "The Agents page says why.", loud=True, daily=True)
+        return
+    if db.one(ctx.conn, "SELECT 1 FROM agent_runs WHERE agent='content' AND finished_at IS NULL AND ok IS NULL"):
+        f.note(f"content is running now for {day}.")
+        return
+    midnight = datetime.combine(local.date(), time(0, 0), tzinfo=local.tzinfo).astimezone(timezone.utc).isoformat()
+    tries = db.one(ctx.conn, "SELECT COUNT(*) n FROM agent_runs WHERE agent='content' AND started_at >= ?", (midnight,))["n"]
+    if tries >= CONTENT_TRIES_A_DAY:
+        f.note(f"content has tried {tries} times today for {day}; no more by itself today. The Agents page says why.")
+        return
+    try:
+        last = json.loads(settings.get(ctx.conn, content.LAST_ATTEMPT_KEY) or "{}")
+    except ValueError:
+        last = {}
+    crashed = bool(db.one(ctx.conn, "SELECT 1 FROM agent_runs WHERE agent='content' AND ok=0 AND started_at >= ?",
+                          (last.get("at") or midnight,)))       # a crash since the last recorded attempt: nothing was recorded
+    if (not crashed and last.get("day") == day.isoformat() and not last.get("transient")
+            and last.get("fingerprint") == content.inputs_fingerprint(ctx.conn)):
+        f.note(f"content: nothing has changed since its last try for {day} ({(last.get('summary') or '')[:80]}); waiting.")
+        return
+    (start or runner.start_agent)("content")
+    f.note(f"content started again for {day} (try {tries + 1} of {CONTENT_TRIES_A_DAY} today).")
 
 
 def check_dashboard(ctx: runner.Context, f: Findings, probe=None) -> None:
@@ -348,7 +389,7 @@ def send_digest(ctx: runner.Context, notes: list[str], now: datetime) -> bool:
 # ------------------------------------------------------------------ entry
 
 def run(ctx: runner.Context, *, now: Optional[datetime] = None, client: Optional[BufferClient] = None,
-        probe=None, force_digest: Optional[bool] = None) -> str:
+        probe=None, force_digest: Optional[bool] = None, start=None) -> str:
     now = now or now_utc()
     if force_digest is None:
         force_digest = "--digest" in sys.argv
@@ -359,6 +400,7 @@ def run(ctx: runner.Context, *, now: Optional[datetime] = None, client: Optional
     check_posts(ctx, f, now)
     check_budgets(ctx, f, now)
     check_agents(ctx, f, now)
+    check_content_window(ctx, f, now, start)
     check_dashboard(ctx, f, probe)
     check_disk_and_backups(ctx, f, now)
     if client is not None:

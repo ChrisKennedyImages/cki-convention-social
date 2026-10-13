@@ -13,6 +13,7 @@ from __future__ import annotations
 import fcntl
 import os
 import sqlite3
+import subprocess
 import sys
 import traceback
 from dataclasses import dataclass
@@ -113,6 +114,16 @@ def run(agent: str, fn: Callable[[Context], Optional[str]], *, force_dry_run: Op
     finally:
         conn.close()
         lock.release()
+
+
+def start_agent(name: str) -> None:
+    """One run now, exactly as its schedule would start it: its own lock, its own dry-run switch, its own
+    gates. The caller (the dashboard's Run now, the watchdog's draft window) only starts it and returns."""
+    cfg = config.get_config()
+    cfg.ensure_dirs()
+    with open(cfg.data_root / "logs" / f"{name}.manual.log", "ab") as log:
+        subprocess.Popen([sys.executable, "-m", "convention_social.cli", "run", name], cwd=str(config.REPO_ROOT),
+                         stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
 
 
 def main_for(agent: str, fn: Callable[[Context], Optional[str]]) -> None:

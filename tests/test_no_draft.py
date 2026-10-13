@@ -3,6 +3,7 @@ the reason on the phone and on the Agents page, never a quiet summary line; and 
 final check had (the monthly cap, no key) are errors the moment they bite."""
 from __future__ import annotations
 
+import json
 import os
 from unittest import mock
 
@@ -51,6 +52,30 @@ class NoDraft(IsolatedCase):
         self.assertEqual(len(self.errors()), 2, "a different reason is its own line")
         self.go("no photo ready for 2026-10-13: clear folders on the Library page (nothing drafted)")
         self.assertEqual(len(self.errors()), 2, "the same open reason is one line, not one per run")
+
+    def test_the_same_reason_pings_once_a_day_and_the_attempt_is_recorded_for_the_watchdog(self):
+        from convention_social.core import settings
+        summary = "no photo ready for 2026-10-13: clear folders on the Library page (nothing drafted)"
+        _, push = self.go(summary)
+        self.assertEqual(push.call_count, 1)
+        _, push = self.go(summary)
+        self.assertEqual(push.call_count, 0, "the watchdog tries again inside the window; the phone hears each reason once a day")
+        last = json.loads(settings.get(self.conn, content.LAST_ATTEMPT_KEY))
+        self.assertEqual((last["summary"], last["transient"]), (summary, False))
+        self.assertEqual(last["fingerprint"], content.inputs_fingerprint(self.conn))
+        self.assertTrue(last["day"] and last["at"])
+        _, push = self.go("the final check could not run for 2026-10-13: ConnectionError: api down")
+        self.assertEqual(push.call_count, 1, "a different reason is said")
+        self.assertTrue(json.loads(settings.get(self.conn, content.LAST_ATTEMPT_KEY))["transient"])
+
+    def test_a_dead_drive_sign_in_is_a_no_draft_morning_too(self):
+        from convention_social.drive import oauth
+        with mock.patch.object(oauth, "access_token", side_effect=oauth.DriveAuthError("invalid_grant")), \
+             mock.patch.object(content.notify, "push") as push:
+            line = content.run(self.ctx())
+        self.assertIn("not signed in", line)
+        self.assertEqual([e["kind"] for e in self.errors()], ["drive_auth", "no_draft"])
+        self.assertEqual(push.call_count, 1)
 
     def test_a_draft_or_an_already_drafted_day_is_quiet(self):
         for summary in ("drafted post #9 for 2026-10-13 (event): single with 1 photo(s)", "DRY RUN drafted post #9 for 2026-10-13",

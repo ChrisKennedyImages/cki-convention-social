@@ -175,18 +175,12 @@ class ClaudeDrafter:
     def draft(self, facts: PostFacts, photo: Path, notes: Sequence[str] = ()) -> Draft:
         if spend.cap_reached(self.conn):
             raise SpendCapReached("monthly AI spend cap reached; no caption drafted")
-        response = self.client.beta.messages.create(
-            model=self.model,
-            max_tokens=4000,
-            betas=[FALLBACK_BETA],
-            fallbacks="default",
-            thinking={"type": "adaptive"},
-            output_config={"effort": self.effort, "format": {"type": "json_schema", "schema": OUTPUT_SCHEMA}},
-            system=[{"type": "text", "text": SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}}],
-            messages=[{"role": "user", "content": [image_block(photo), {"type": "text", "text": user_text(facts) + (
-                "\n\nYour last draft missed these; fix them and change nothing else that was right:\n- " + "\n- ".join(notes)
-                if notes else "")}]}],
-        )
+        try:
+            response = self._create(facts, photo, notes)
+        except DraftError:
+            raise
+        except Exception as e:  # noqa: BLE001  the API or the network: a DraftError the caller handles (the template writes), never a dead run
+            raise DraftError(f"{type(e).__name__}: {e}") from e
         usage = response.usage
         answered_by = getattr(response, "model", None) or self.model
         spend.record(self.conn, self.agent, answered_by, int(usage.input_tokens or 0), int(usage.output_tokens or 0), "caption")
@@ -201,6 +195,20 @@ class ClaudeDrafter:
                      possible_minor=bool(data.get("possible_minor", True)), privacy=tuple(data.get("privacy") or ()),
                      input_tokens=int(usage.input_tokens or 0), output_tokens=int(usage.output_tokens or 0), raw=data,
                      alt_text=tidy(data.get("alt_text") or ""))
+
+    def _create(self, facts: PostFacts, photo: Path, notes: Sequence[str]):
+        return self.client.beta.messages.create(
+            model=self.model,
+            max_tokens=4000,
+            betas=[FALLBACK_BETA],
+            fallbacks="default",
+            thinking={"type": "adaptive"},
+            output_config={"effort": self.effort, "format": {"type": "json_schema", "schema": OUTPUT_SCHEMA}},
+            system=[{"type": "text", "text": SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}}],
+            messages=[{"role": "user", "content": [image_block(photo), {"type": "text", "text": user_text(facts) + (
+                "\n\nYour last draft missed these; fix them and change nothing else that was right:\n- " + "\n- ".join(notes)
+                if notes else "")}]}],
+        )
 
 
 class TemplateDrafter:

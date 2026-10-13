@@ -182,8 +182,8 @@ class Dashboard(IsolatedCase):
     def test_run_now_starts_one_agent_run(self):
         from unittest import mock
         import sys
-        from convention_social.dashboard import app as app_module
-        with mock.patch.object(app_module.subprocess, "Popen") as popen:
+        from convention_social.core import runner as runner_module
+        with mock.patch.object(runner_module.subprocess, "Popen") as popen:
             r = self.signed_in().post("/agents/scanner/run", follow_redirects=False)
             self.assertEqual(r.status_code, 303)
             self.assertIn("scanner+started", r.headers["location"])

@@ -193,6 +193,78 @@ class ArtDirector(Content):
         self.assertEqual(db.one(self.conn, "SELECT COUNT(*) n FROM api_usage")["n"], 0)
 
 
+class TheDraftSurvivesTheAPI(ArtDirector):
+    """2026-10-13: an Anthropic error in the final check, the caption writer or the art director used to stop
+    the 08:00 run dead, with no "no draft" ping and no retry until the next morning."""
+
+    def test_a_final_check_that_cannot_run_is_a_reason_not_a_dead_run(self):
+        class Broken(FinalClient):
+            def create(self, **kw):
+                self.calls += 1
+                raise ConnectionError("api down")
+        client = Broken({})
+        line = content.draft_one(self.live(), self.fetch, now=MONDAY_6AM, check_client=client)
+        self.assertIn("the final check could not run for 2026-10-13", line)
+        self.assertIn("ConnectionError", line)
+        self.assertEqual(self.queue(), [])
+        errs = db.rows(self.conn, "SELECT kind, message FROM errors WHERE agent='content' AND kind != 'ntfy'")   # live in a test: no topic
+        self.assertEqual([e["kind"] for e in errs], ["final_check"], "said once, not once per photo")
+        self.assertIn("ConnectionError: api down", errs[0]["message"])
+        self.assertGreaterEqual(client.calls, 2, "every candidate was tried before giving up")
+
+    def test_a_writer_that_cannot_write_leaves_the_template_and_says_so(self):
+        class Broken:
+            model = "claude-test"
+
+            def draft(self, facts, photo, notes=()):
+                raise content.claude.DraftError("APIConnectionError: Connection error.")
+        line = content.draft_one(self.live(), self.fetch, now=MONDAY_6AM, check_client=FinalClient({}), drafter=Broken(),
+                                 art_client=ArtClient([say("pass")]))
+        self.assertIn("drafted post", line)
+        meta_ = json.loads(self.queue()[0]["rule_report"])
+        self.assertEqual(meta_["model"], "template")
+        self.assertIn("APIConnectionError", meta_["seo"]["writer_error"])
+        errs = db.rows(self.conn, "SELECT kind, message FROM errors WHERE agent='content' AND kind != 'ntfy'")   # live in a test: no topic
+        self.assertEqual([e["kind"] for e in errs], ["captions"])
+        self.assertIn("APIConnectionError", errs[0]["message"])
+
+    def test_an_art_director_that_cannot_look_lets_the_draft_through_marked_not_reviewed(self):
+        class Broken(ArtClient):
+            def create(self, **kw):
+                self.calls += 1
+                raise ConnectionError("api down")
+        line = content.draft_one(self.live(), self.fetch, now=MONDAY_6AM, check_client=FinalClient({}), art_client=Broken([]))
+        self.assertIn("drafted post", line)
+        meta_ = json.loads(self.queue()[0]["rule_report"])
+        self.assertEqual(meta_["art"]["verdict"], "not reviewed")
+        errs = db.rows(self.conn, "SELECT kind, message FROM errors WHERE kind != 'ntfy'")   # live in a test: no topic
+        self.assertEqual([e["kind"] for e in errs], ["art_director"])
+        self.assertIn("ConnectionError: api down", errs[0]["message"])
+
+    def test_the_claude_writer_turns_api_errors_into_draft_errors(self):
+        from convention_social.ai import claude
+        os.environ["AI_MONTHLY_CAP_USD"] = "5"
+        config.reset()
+
+        class Raising:
+            def __init__(self):
+                self.beta = self
+                self.messages = self
+
+            def create(self, **kw):
+                raise ConnectionError("no route")
+        photo = self.root / "p.jpg"
+        photo.write_bytes(jpeg_bytes())
+        facts = claude.PostFacts(brand_name="Event Caliber", event_kind="business")
+        with self.assertRaises(claude.DraftError) as caught:
+            claude.ClaudeDrafter(self.conn, client=Raising()).draft(facts, photo)
+        self.assertIn("ConnectionError: no route", str(caught.exception))
+        os.environ["AI_MONTHLY_CAP_USD"] = "0"
+        config.reset()
+        with self.assertRaises(claude.SpendCapReached):
+            claude.ClaudeDrafter(self.conn, client=Raising()).draft(facts, photo)
+
+
 SUNDAY = datetime(2026, 10, 18, 10, 0, tzinfo=timezone.utc)         # tomorrow is Monday: spotlight
 WEDNESDAY = datetime(2026, 10, 14, 10, 0, tzinfo=timezone.utc)      # tomorrow is Thursday: carousel
 THURSDAY = datetime(2026, 10, 15, 10, 0, tzinfo=timezone.utc)       # tomorrow is Friday: fan
@@ -222,7 +294,7 @@ class NewDesigns(Content):
         self.assertEqual(meta_["design"], "spotlight")
         self.assertEqual(ids[0], self.ids["e1"])
         self.assertEqual(sorted(ids), sorted([self.ids["e1"], self.ids["e2"], self.ids["e3"]]))
-        self.assertEqual(list(renders), ["4:5"])
+        self.assertEqual(sorted(renders), ["2:3", "4:5"])
         with Image.open(renders["4:5"][0]) as im:
             self.assertEqual(im.size, (1080, 1350))
         self.assertEqual(meta.is_clean(Path(renders["4:5"][0])), [])
@@ -242,6 +314,21 @@ class NewDesigns(Content):
         self.assertEqual((meta_["design"], meta_["design_wanted"]), ("single", "fan"))
         self.assertEqual(ids, [self.ids["e1"]])
         self.assertEqual(sorted(renders), ["2:3", "4:5"])
+
+    def test_every_design_has_a_pinterest_card(self):
+        """2026-10-13: spotlight, carousel and fan rendered 4:5 only; Pinterest then fell back to the photo's own copy,
+        a .img file the publisher refuses, and the whole post failed on every network once a board was set."""
+        for did in ("e4", "e5"):
+            self.add_event_photo(did, f"{did} Con")
+        for now, design in ((SUNDAY, "spotlight"), (WEDNESDAY, "carousel"), (THURSDAY, "fan")):
+            self.conn.execute("DELETE FROM content_queue")                 # each design on the whole pool
+            content.draft_one(self.ctx(), self.fetch, now=now)
+            _, meta_, renders, _ = self.last()
+            self.assertEqual(meta_["design"], design)
+            self.assertEqual(len(renders.get("2:3") or []), 1, (design, renders))
+            with Image.open(renders["2:3"][0]) as im:
+                self.assertEqual(im.size, (1000, 1500), design)
+            self.assertEqual(meta.is_clean(Path(renders["2:3"][0])), [])
 
     def test_sunday_is_a_single_photo(self):
         """The face match post is retired (Chris, 2026-10-11: a post never talks about a service)."""

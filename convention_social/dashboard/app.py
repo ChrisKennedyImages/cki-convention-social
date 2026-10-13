@@ -19,7 +19,6 @@ import os
 import re
 import secrets as pysecrets
 import subprocess
-import sys
 import threading
 import time
 from pathlib import Path
@@ -195,14 +194,7 @@ def shot_type_of(conn, photo_id: int) -> str:
     return (row["shot_type"] if row else None) or ""
 
 
-def start_agent(name: str) -> None:
-    """One run now, exactly as its schedule would start it: its own lock, its own dry-run switch,
-    its own gates. The dashboard only starts it and returns."""
-    cfg = config.get_config()
-    cfg.ensure_dirs()
-    with open(cfg.data_root / "logs" / f"{name}.manual.log", "ab") as log:
-        subprocess.Popen([sys.executable, "-m", "convention_social.cli", "run", name], cwd=str(config.REPO_ROOT),
-                         stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
+start_agent = runner.start_agent      # one run now, exactly as its schedule would start it (core/runner.py)
 
 
 def photo_ids_of_row(row) -> list[int]:

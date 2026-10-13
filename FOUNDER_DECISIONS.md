@@ -578,6 +578,32 @@ room for spend. The first batch makes the suite's own silences impossible:
 - The brief's disconnected-channel line opens the Buffer page; More has an
   Errors page.
 
+## 2026-10-13: tomorrow's post always lands
+
+Batch 2 of the roadmap: the one post a day is never lost to a blip.
+
+- An Anthropic error in the final check, the caption writer or the art
+  director is a reason, not a dead run: the final check's failure is said
+  once (`final_check`) and the photo skipped; the writer's failure leaves the
+  template (`captions`); the art director's failure sends the draft to Chris
+  not reviewed (`art_director`). A dead Drive sign-in is a no-draft morning
+  like any other, said and tried again.
+- The draft window: the 08:00 job fires once, so the hourly watchdog starts
+  the content agent again between 08:00 and 20:00 while tomorrow has no
+  draft, up to four runs a day, when the last reason was passing, the last
+  run crashed, or the inputs changed (`content.inputs_fingerprint`); the
+  same reason on the same inputs waits. The phone hears each reason once a
+  day. Past 20:00 with no draft, a loud alert once. No plist changed.
+- A draft for Tuesday goes out Tuesday: the day it was drafted for is the
+  floor for every network's slot (`pacing.plan not_before`); a time Chris
+  sets still wins.
+- Every design carries the hero as a 2:3 card for Pinterest.
+- The door rewrites a caption that breaks a rule now (the template in dry
+  run, so nothing is spent) and checks again, instead of sending the post
+  back for him to approve again; one rewritten within the hour that still
+  breaks goes back with the reason. No connected channel and no open day
+  are errors on the Agents page, said once.
+
 ## Standing rules from the brief
 
 - CPAC, the ACU and their affiliates are never contacted, by code
