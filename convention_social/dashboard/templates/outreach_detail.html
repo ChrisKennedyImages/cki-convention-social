@@ -37,14 +37,13 @@
 
 {{ footer }}</div>
   <div class="muted" style="margin-top:6px">Headers: List-Unsubscribe {{ built.headers['List-Unsubscribe'] }}; List-Unsubscribe-Post {{ built.headers['List-Unsubscribe-Post'] }}</div>
-  {% if editable %}<div class="row" style="margin-top:12px"><button type="submit">Save</button>{% if row.status == 'approved' %}<span class="muted">Saving sends it back to draft; approve it again after.</span>{% endif %}</div>{% endif %}
+  {% if editable %}<div class="row" style="margin-top:12px"><button type="submit" name="do" value="save">Save</button>
+    {% if approvable %}<button class="ok" type="submit" name="do" value="approve">{{ 'Save and send for real' if row.status == 'would_send' else 'Save and approve' }}</button>{% endif %}
+    {% if row.status == 'approved' %}<span class="muted">Saving sends it back to draft; approve it again after.</span>{% endif %}</div>{% endif %}
 </form>
 <div class="row">
-  {% if approvable %}
-  <form method="post" action="/outreach/{{ row.id }}/approve" class="inline"><button class="ok" type="submit" {{ 'disabled' if blocking else '' }}>{{ 'Approve and send for real' if row.status == 'would_send' else 'Approve' }}</button></form>
-  {% endif %}
   {% if editable %}
-  <form method="post" action="/outreach/{{ row.id }}/reject" class="inline"><button class="danger" type="submit">Reject</button></form>
+  <form method="post" action="/outreach/{{ row.id }}/reject" class="inline" onsubmit="return confirm('Reject this note? It is not sent and not drafted again.')"><button class="danger" type="submit">Reject</button></form>
   {% endif %}
   {% if row.kind == 'first' and row.status == 'sent' %}
     {% if follow_up %}<a class="btn" href="/outreach/{{ follow_up.id }}">The follow-up ({{ follow_up.status.replace('_',' ') }})</a>

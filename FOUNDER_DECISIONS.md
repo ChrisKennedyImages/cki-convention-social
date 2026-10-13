@@ -636,6 +636,47 @@ nudge after eight hours, never a post set aside; the photos stay as they are.
   approval") while the publisher has not picked the post up; a post Buffer
   already holds is pulled back from Buffer, not from here (roadmap 7.5).
 
+## 2026-10-13: one tap on the phone
+
+Batch 4 of the roadmap. Chris's choice for it: the morning ping carries the
+rendered card and an Approve button; it ships on.
+
+- Save is folded into Approve on the draft page, the quote reply and the
+  organizer note: one form, two buttons ("Save", "Save and approve"). An
+  edit is never lost on Approve; the gates (the suite's rewrite, the rules,
+  the photos, the targets; `reply.ready_to_send`; `compliance.problems`)
+  still hold on the way.
+- Approve on the Queue list for a draft whose rules pass, photos are usable
+  and art verdict is pass or not reviewed; a thumbnail opens the full card;
+  the other captions unfold under it. Reject, Delete, Cancel, Exclude,
+  Switch everything live, Remove and Spam ask first. Small buttons are 40 px
+  tall.
+- Approve from the ping (`core/approve_token`): the draft ping carries the
+  card (`Attach`, fetched by the phone from the dashboard over Tailscale
+  with the token, no login; nothing is copied to ntfy) and, when the art
+  director passed the draft, an Approve button (an ntfy `http` action, a
+  POST with a signed single-use token in its body) beside Open. The token
+  is HMAC-SHA256 over the post id, its `updated_at`, an expiry (36 h) and a
+  nonce kept in settings; a save or a rewrite kills it; a newer ping's
+  token replaces an older one's; a GET on the address is a page with a
+  button and approves nothing. The POST runs the page's own gates and
+  answers in a sentence ("Approved post 7. It goes out Tuesday 11:30.").
+  The eight-hour nudge carries the same.
+- Words: the draft page never tells him to fix a caption; a photo approved
+  by its folder says so instead of a no-op Undo.
+- The Keys page holds every setting the code reads (posting times, the
+  building day, the variety and repeat windows, the time zone, the brief
+  hour, the Pinterest link, the scout region and horizon, the outreach
+  caps), and a plain setting can be cleared back to its default. Secrets
+  are replaced, never cleared from there.
+- Google Drive sign-in from the phone: "Sign in to Google Drive" on the
+  Drive page opens Google; the return page (127.0.0.1) does not load on the
+  phone, so its address is pasted back on the Drive page. The same
+  installed-app flow with PKCE as `bin/ccs drive login`, its state and
+  verifier waiting in settings for 15 minutes; a foreign host, a stale
+  sign-in and any scope but `drive.readonly` are refused. No Google console
+  change.
+
 ## Standing rules from the brief
 
 - CPAC, the ACU and their affiliates are never contacted, by code

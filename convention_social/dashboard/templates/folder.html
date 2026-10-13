@@ -8,7 +8,7 @@
   {% if picked %}<div class="muted" style="margin-top:6px">You approved {{ picked }} photo{{ '' if picked == 1 else 's' }} here one by one.</div>{% endif %}
   <div class="row" style="margin-top:8px">
   {% for state, label, cls in [('cleared', 'Approve all ' ~ items|length ~ ' photos', 'ok'), ('excluded', 'Exclude this folder', 'danger'), ('not_cleared', 'Undecided', '')] if state != folder.clearance %}
-    <form method="post" action="/library/folder/{{ folder.drive_id }}/clearance" class="inline"><input type="hidden" name="state" value="{{ state }}"><input type="hidden" name="back" value="/library/folder/{{ folder.drive_id }}"><button class="small {{ cls }}" type="submit">{{ label }}</button></form>
+    <form method="post" action="/library/folder/{{ folder.drive_id }}/clearance" class="inline"{% if state == 'excluded' %} onsubmit="return confirm('Exclude this whole folder? Nothing in it is used, even photos you tapped Use on.')"{% endif %}><input type="hidden" name="state" value="{{ state }}"><input type="hidden" name="back" value="/library/folder/{{ folder.drive_id }}"><button class="small {{ cls }}" type="submit">{{ label }}</button></form>
   {% endfor %}
   </div>
 </div>

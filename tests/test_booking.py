@@ -210,6 +210,22 @@ class BookingPages(IsolatedCase):
         self.assertIn("approved", r.headers["location"])
         self.assertEqual(db.one(self.conn, "SELECT reply_status FROM inquiries")["reply_status"], "approved")
 
+    def test_save_and_approve_keeps_the_price_he_typed(self):
+        """4.1 (2026-10-13): Approve on the reply page lost the price he typed unless he pressed Save first."""
+        self.assertIn('name="do" value="approve"', self.c.get(f"/inquiries/{self.iid}").text)
+        body = db.one(self.conn, "SELECT reply_body FROM inquiries")["reply_body"]
+        r = self.c.post(f"/inquiries/{self.iid}/reply", data={"subject": "Photography for Sample Con 2027", "body": body, "do": "approve"},
+                        follow_redirects=False)
+        self.assertIn("not_ready", r.headers["location"], "the quote line is still empty: saved, not approved")
+        self.assertEqual(db.one(self.conn, "SELECT reply_status FROM inquiries")["reply_status"], "draft")
+        body = body.replace(reply.QUOTE_MARK, "Three days of coverage: 2400 dollars.")
+        r = self.c.post(f"/inquiries/{self.iid}/reply", data={"subject": "Photography for Sample Con 2027", "body": body, "do": "approve"},
+                        follow_redirects=False)
+        self.assertIn("approved", r.headers["location"])
+        row = db.one(self.conn, "SELECT reply_status, reply_body FROM inquiries")
+        self.assertEqual(row["reply_status"], "approved")
+        self.assertIn("2400 dollars", row["reply_body"])
+
     def test_book_dates_from_a_request(self):
         self.c.post("/bookings/add", data={"title": "Sample Con", "start_date": "2027-03-05", "end_date": "2027-03-07",
                                            "status": "booked", "inquiry_id": str(self.iid)})

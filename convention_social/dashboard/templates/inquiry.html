@@ -26,15 +26,12 @@
 {{ footer }}</div>
   {% if deposits %}<label>Deposit link</label><input type="text" name="deposit_link" value="{{ row.deposit_link or '' }}">
   {% else %}<div class="muted" style="margin-top:8px">Deposit links are off: no payment service yet.</div>{% endif %}
-  <div class="row" style="margin-top:12px">{% if row.reply_status != 'sent' %}<button type="submit">Save</button>{% endif %}</div>
+  <div class="row" style="margin-top:12px">{% if row.reply_status != 'sent' %}<button type="submit" name="do" value="save">Save</button>
+    <button class="ok" type="submit" name="do" value="approve">Save and approve</button>{% if why %}<span class="rule block">{{ why }}</span>{% endif %}{% endif %}</div>
 </form>
 <div class="row">
-  {% if row.reply_status == 'draft' %}
-  <form method="post" action="/inquiries/{{ row.id }}/approve" class="inline"><button class="ok" type="submit" {{ 'disabled' if why else '' }}>Approve and send</button></form>
-  {% if why %}<span class="rule block">{{ why }}</span>{% endif %}
-  {% endif %}
   {% for st, label in [('quoted', 'Mark quoted'), ('declined', 'Declined'), ('spam', 'Spam')] %}
-  <form method="post" action="/inquiries/{{ row.id }}/status" class="inline"><input type="hidden" name="status" value="{{ st }}"><button class="small" type="submit">{{ label }}</button></form>
+  <form method="post" action="/inquiries/{{ row.id }}/status" class="inline"{% if st == 'spam' %} onsubmit="return confirm('Mark this request as spam?')"{% endif %}><input type="hidden" name="status" value="{{ st }}"><button class="small" type="submit">{{ label }}</button></form>
   {% endfor %}
 </div>
 <form method="post" action="/bookings/add" class="card" style="margin-top:14px">

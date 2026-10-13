@@ -17,7 +17,7 @@
 {% if not rows %}<div class="card muted">Nobody yet.</div>{% endif %}
 {% for r in rows %}
 <div class="card row"><strong>{{ r.email }}</strong><span class="badge">{{ r.source }}</span><span class="muted">{{ r.reason or '' }} · {{ r.added_at[:10] }}</span>
-  <form method="post" action="/outreach/donotcontact/{{ r.id }}/remove" class="inline" style="margin-left:auto"><button class="small" type="submit">Remove</button></form></div>
+  <form method="post" action="/outreach/donotcontact/{{ r.id }}/remove" class="inline" style="margin-left:auto" onsubmit="return confirm('Remove this address from the do-not-contact list? Notes to it can be drafted again.')"><button class="small" type="submit">Remove</button></form></div>
 {% endfor %}
 <div class="row"><a class="btn" href="/outreach">Back to outreach</a></div>
 {% endblock %}

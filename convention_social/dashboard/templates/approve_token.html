@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block body %}
+<h1>Post #{{ qid }}</h1>
+{% if status != 'draft' %}
+<div class="card">This post is {{ status.replace('_', ' ') }}; there is nothing to approve here. <a href="/queue/{{ qid }}">Open it</a>.</div>
+{% elif token %}
+<div class="card">
+  <p>Nothing was approved by opening this page. Press the button to approve the post, or <a href="/queue/{{ qid }}">open the draft</a> to read it first.</p>
+  <form method="post" action="/queue/{{ qid }}/approve-by-token"><input type="hidden" name="token" value="{{ token }}">
+    <button class="ok" type="submit">Approve post {{ qid }}</button></form>
+</div>
+{% else %}
+<div class="card">This page approves nothing on its own. <a href="/queue/{{ qid }}">Open the draft</a> to approve it.</div>
+{% endif %}
+{% endblock %}

@@ -34,7 +34,7 @@
   {% if hero_upload.present %}
   <div class="row" style="margin-top:8px"><span>{{ 'Uploaded' if hero_upload.source == 'phone' else 'With the code, the photo you sent on 2026-10-12' }}: {{ hero_upload.width }} × {{ hero_upload.height }}</span>
     <span class="badge {{ 'ok' if not hero_upload.notes else 'draft' }}">{{ hero_upload.why }}</span>
-    {% if hero_upload.source == 'phone' %}<form method="post" action="/library/hero/remove" class="inline"><button class="small danger" type="submit">Remove</button></form>{% endif %}
+    {% if hero_upload.source == 'phone' %}<form method="post" action="/library/hero/remove" class="inline" onsubmit="return confirm('Remove the hero you sent? The site is published again without it.')"><button class="small danger" type="submit">Remove</button></form>{% endif %}
   </div>
   {% endif %}
   <form method="post" action="/library/hero/upload" enctype="multipart/form-data" style="margin-top:10px">
@@ -53,12 +53,13 @@
     {% if view == 'approved' %}<div><span class="badge {{ 'ok' if p.why[0] else 'blocked' }}">{{ 'ready to use' if p.why[0] else p.why[1] }}</span>{% if hero_id == p.id %} <span class="badge ok">site hero</span>{% endif %}</div>{% endif %}
     <div class="row" style="margin-top:6px">
     {% for state, label, cls in ([('cleared', 'Use', 'ok'), ('blocked', "Don't use", 'danger')] if view == 'review'
-                                 else [('inherit', 'Undo', ''), ('blocked', "Don't use", 'danger')]) %}
+                                 else ([('inherit', 'Undo', '')] if p.clearance == 'cleared' else []) + [('blocked', "Don't use", 'danger')]) %}
       <form method="post" action="/library/photo/{{ p.id }}/clearance" class="inline">
         <input type="hidden" name="back" value="{{ p.back }}">
         <input type="hidden" name="state" value="{{ state }}"><button class="small {{ cls }}" type="submit">{{ label }}</button>
       </form>
     {% endfor %}
+    {% if view == 'approved' and p.clearance != 'cleared' %}<span class="muted">approved by its folder: <a href="/library/folder/{{ p.folder_id }}">open the folder to change that</a></span>{% endif %}
     {% if view == 'approved' %}
       <form method="post" action="/library/photo/{{ p.id }}/hero" class="inline">
         <input type="hidden" name="back" value="{{ p.back }}"><button class="small {{ 'ok' if hero_id == p.id else '' }}" type="submit">{{ 'Site hero: chosen' if hero_id == p.id else 'Site hero' }}</button>

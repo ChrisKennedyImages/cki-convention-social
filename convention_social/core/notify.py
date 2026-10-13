@@ -32,19 +32,43 @@ def link(path: str = "/") -> str:
 NOT_A_FAILURE = ("sent", "dry run: nothing sent", "no push from a test")
 
 
+def approve_actions(qid: int, token: str) -> str:
+    """The ntfy `Actions` header for a draft the art director passed (Chris, 2026-10-13: Approve on the ping).
+    Two buttons: Approve, an http POST carrying the signed single-use token in its body (a GET on that
+    address approves nothing), and Open, the draft page. The forms are the ones docs.ntfy.sh/publish
+    documents: `http, <label>, <url>, method=, headers.<h>=, body=, clear=true; view, <label>, <url>`."""
+    return (f"http, Approve, {link(f'/queue/{qid}/approve-by-token')}, method=POST, "
+            f"headers.Content-Type=application/x-www-form-urlencoded, body='token={token}', clear=true; "
+            f"view, Open, {link(f'/queue/{qid}')}")
+
+
+def open_action(qid: int) -> str:
+    """Open only: the art director did not pass the draft (or did not look), so he looks himself."""
+    return f"view, Open, {link(f'/queue/{qid}')}"
+
+
+def card_link(qid: int, token: str) -> str:
+    """The rendered card, served by the dashboard to the phone with the token and no login (`Attach`)."""
+    return link(f"/media/card/{qid}/{token}.jpg")
+
+
 def push_result(title: str, message: str, *, dry_run: bool = True, priority: str = "high", transport=None,
-                click: str | None = None, conn=None, agent: str = "suite") -> str:
+                click: str | None = None, conn=None, agent: str = "suite", actions: str | None = None,
+                attach: str | None = None, filename: str | None = None) -> str:
     """Sends, and says what happened: "sent", or why nothing was. `click` is the address the phone
-    opens when the notification is tapped. With `conn`, a push that did not go (live, and not from a
-    test) is recorded once as an `ntfy` error for the Agents page and the watchdog's mail: a failed
-    ping used to be a False nobody read (2026-10-13)."""
-    result = _push(title, message, dry_run=dry_run, priority=priority, transport=transport, click=click)
+    opens when the notification is tapped; `actions` the ntfy Actions header (approve_actions); `attach`
+    a picture's address the phone fetches itself (nothing is copied to ntfy). With `conn`, a push that did
+    not go (live, and not from a test) is recorded once as an `ntfy` error for the Agents page and the
+    watchdog's mail: a failed ping used to be a False nobody read (2026-10-13)."""
+    result = _push(title, message, dry_run=dry_run, priority=priority, transport=transport, click=click,
+                   actions=actions, attach=attach, filename=filename)
     if conn is not None and result not in NOT_A_FAILURE:
         runner.record_error_once(conn, agent, "ntfy", f"No phone ping: {result}")
     return result
 
 
-def _push(title: str, message: str, *, dry_run: bool, priority: str, transport, click: str | None) -> str:
+def _push(title: str, message: str, *, dry_run: bool, priority: str, transport, click: str | None,
+          actions: str | None = None, attach: str | None = None, filename: str | None = None) -> str:
     cfg = config.get_config()
     if dry_run:
         return "dry run: nothing sent"
@@ -59,6 +83,12 @@ def _push(title: str, message: str, *, dry_run: bool, priority: str, transport, 
         headers = {"Title": _ascii(title), "Priority": priority}
         if click:
             headers["Click"] = click
+        if actions:
+            headers["Actions"] = _ascii(actions)
+        if attach:
+            headers["Attach"] = attach
+        if filename:
+            headers["Filename"] = _ascii(filename)
         r = transport(f"{NTFY_URL}/{cfg.ntfy_topic}", data=message.encode("utf-8"), headers=headers)
         code = getattr(r, "status_code", 200)
         return "sent" if code < 300 else f"ntfy answered {code}"
@@ -67,6 +97,7 @@ def _push(title: str, message: str, *, dry_run: bool, priority: str, transport, 
 
 
 def push(title: str, message: str, *, dry_run: bool = True, priority: str = "high", transport=None,
-         click: str | None = None, conn=None, agent: str = "suite") -> bool:
+         click: str | None = None, conn=None, agent: str = "suite", actions: str | None = None,
+         attach: str | None = None, filename: str | None = None) -> bool:
     return push_result(title, message, dry_run=dry_run, priority=priority, transport=transport, click=click,
-                       conn=conn, agent=agent) == "sent"
+                       conn=conn, agent=agent, actions=actions, attach=attach, filename=filename) == "sent"
