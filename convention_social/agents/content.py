@@ -69,6 +69,13 @@ def already_drafted(conn: sqlite3.Connection, day: date) -> bool:
                        (f'%"for_day": "{day.isoformat()}"%',)))
 
 
+def set_aside_for(conn: sqlite3.Connection, day: date) -> bool:
+    """A post drafted for `day` that was set aside afterwards (Chris's reject, a do-not-use entry, a wrong shot;
+    2026-10-13). The art director's own turn-backs carry no day and are drafted again inside their run."""
+    return bool(db.one(conn, "SELECT 1 FROM content_queue WHERE kind='photo' AND status='rejected' AND rule_report LIKE ?",
+                       (f'%"for_day": "{day.isoformat()}"%',)))
+
+
 def inputs_fingerprint(conn: sqlite3.Connection) -> str:
     """What a draft is made from, in one short string: the approved photos and folders, the sort, the final
     checks, the do-not-use list, the set-aside posts. When it changes, a day that found nothing is worth another try."""
@@ -88,12 +95,18 @@ def inputs_fingerprint(conn: sqlite3.Connection) -> str:
 
 
 def recent_use(conn: sqlite3.Connection, days: int) -> tuple[set, set, set]:
-    """(photo ids, event names, credited people) used by posts drafted inside the window and not rejected."""
+    """(photo ids, event names, credited people) used by posts drafted inside the window: every post not
+    rejected, the ones the art director turned back, and the photos of the ones set aside by Chris or the
+    do-not-use list (`rule_report.rejected_by`, 2026-10-13: his reject makes the photo sit out like the art
+    director's; the event and the people of a set-aside post are not "used", since nothing of it aired)."""
     since = (datetime.now(timezone.utc) - timedelta(days=days)).replace(microsecond=0).isoformat()
     photos, events, people = set(), set(), set()
-    for r in db.rows(conn, "SELECT photo_ids, rule_report FROM content_queue WHERE created_at >= ? AND "
-                           "(status != 'rejected' OR rule_report LIKE '%\"verdict\": \"reject\"%')", (since,)):
+    for r in db.rows(conn, "SELECT status, photo_ids, rule_report FROM content_queue WHERE created_at >= ? AND "
+                           "(status != 'rejected' OR rule_report LIKE '%\"verdict\": \"reject\"%' "
+                           "OR rule_report LIKE '%\"rejected_by\"%')", (since,)):
         photos.update(int(p) for p in json.loads(r["photo_ids"] or "[]"))
+        if r["status"] == "rejected" and '"verdict": "reject"' not in (r["rule_report"] or ""):
+            continue                       # set aside: the photo sits out; the event and the people were never shown
         meta = json.loads(r["rule_report"] or "{}")
         if meta.get("event"):
             events.add(meta["event"].lower())
@@ -387,7 +400,10 @@ def draft_one(ctx: runner.Context, fetch: Callable[[dict], bytes], *, now: Optio
     from ..render import motion
     day = target_day(ctx.cfg, now)
     if already_drafted(ctx.conn, day):
-        return f"a post for {day} is already drafted"
+        today = day - timedelta(days=1)
+        if not (set_aside_for(ctx.conn, today) and not already_drafted(ctx.conn, today)):
+            return f"a post for {day} is already drafted"
+        day = today                  # today's post was set aside (a reject, a do-not-use entry): drafted again now, not lost
     want = subject_for(day)
     pool = candidates(ctx.conn, want)
     kind_used = want

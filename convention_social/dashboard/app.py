@@ -197,6 +197,42 @@ def shot_type_of(conn, photo_id: int) -> str:
 start_agent = runner.start_agent      # one run now, exactly as its schedule would start it (core/runner.py)
 
 
+def set_aside(conn, row, *, by: str, why: str) -> None:
+    """A post out of the running, with who set it aside in its record (`rule_report.rejected_by`): the content
+    agent counts its photo as used (agents/content.recent_use) and drafts the day again; the Queue shows why."""
+    try:
+        meta = json.loads(row["rule_report"] or "{}")
+    except ValueError:
+        meta = {}
+    meta = meta if isinstance(meta, dict) else {}
+    now = db.utcnow()
+    meta.update(rejected_by=by, rejected_at=now)
+    conn.execute("UPDATE content_queue SET status='rejected', rule_report=?, last_error=?, updated_at=? WHERE id=?",
+                 (json.dumps(meta), why, now, row["id"]))
+
+
+# Chris, 2026-10-13: posts and replies he approved in dry run go out when the lane is switched live. What the
+# dry run marked would_publish / would_send is approved again (the publisher's door, reply.ready_to_send and
+# compliance.problems check every one before it leaves); what was sent stays as it is.
+DRY_RUN_RELEASES = {
+    "publisher": "UPDATE content_queue SET status='approved', payload=NULL, last_error=NULL, updated_at=? WHERE status='would_publish'",
+    "inbox": "UPDATE inquiries SET reply_status='approved', notes=NULL, updated_at=? WHERE reply_status='would_send'",
+    "outreach": "UPDATE outreach SET status='approved', notes=NULL, updated_at=? WHERE status='would_send'",
+}
+
+
+def release_dry_run_approvals(conn, name: str) -> int:
+    """How many things approved in dry run the lane `name` now sends for real."""
+    sql = DRY_RUN_RELEASES.get(name)
+    return conn.execute(sql, (db.utcnow(),)).rowcount if sql else 0
+
+
+def released_note(n: int) -> str:
+    if not n:
+        return ""
+    return f" {n} thing{'s' if n != 1 else ''} you approved in dry run go{'' if n != 1 else 'es'} out at {'their' if n != 1 else 'its'} time{'s' if n != 1 else ''}."
+
+
 def photo_ids_of_row(row) -> list[int]:
     try:
         return [int(x) for x in json.loads(row["photo_ids"] or "[]")]
@@ -564,9 +600,24 @@ def create_app() -> FastAPI:
 
     @app.post("/queue/{qid}/reject")
     def queue_reject(qid: int, user: str = Depends(require_user), conn=Depends(conn_dep)):
-        load_queue_row(conn, qid)
-        conn.execute("UPDATE content_queue SET status='rejected', updated_at=? WHERE id=?", (db.utcnow(), qid))
+        """Chris, 2026-10-13: a reject sets the post aside with him on the record, its photo sits out
+        (agents/content.recent_use), and a new one is drafted at once instead of the day waiting for 08:00."""
+        row = load_queue_row(conn, qid)
+        if row["status"] not in ("draft", "approved"):
+            return RedirectResponse(f"/queue/{qid}", status_code=303)
+        set_aside(conn, row, by="chris", why="Set aside by you. A new one is being drafted.")
+        start_agent("content")
         return RedirectResponse("/?msg=rejected", status_code=303)
+
+    @app.post("/queue/{qid}/unapprove")
+    def queue_unapprove(qid: int, user: str = Depends(require_user), conn=Depends(conn_dep)):
+        """An Approve taken back before the publisher picked the post up. One Buffer already holds is pulled
+        back from Buffer, not from here."""
+        row = load_queue_row(conn, qid)
+        if row["status"] != "approved":
+            return RedirectResponse(f"/queue/{qid}", status_code=303)
+        conn.execute("UPDATE content_queue SET status='draft', approved_at=NULL, updated_at=? WHERE id=?", (db.utcnow(), qid))
+        return RedirectResponse(f"/queue/{qid}?msg=unapproved", status_code=303)
 
     # ------------------------------------------------------------------ media
     @app.get("/media/render/{qid}/{aspect}/{index}")
@@ -827,12 +878,15 @@ def create_app() -> FastAPI:
         if value:
             conn.execute("INSERT OR IGNORE INTO do_not_use (kind, value, reason, added_at) VALUES (?,?,?,?)",
                          (kind, value, reason.strip() or None, db.utcnow()))
-            # anything waiting that this now covers goes back to drafts with the reason
-            for q in db.rows(conn, "SELECT id, photo_ids FROM content_queue WHERE status IN ('draft','approved')"):
+            # anything waiting that this now covers is set aside with the reason, and the day is drafted again
+            hit = False
+            for q in db.rows(conn, "SELECT * FROM content_queue WHERE status IN ('draft','approved')"):
                 bad = [p for p in json.loads(q["photo_ids"] or "[]") if not eligibility.is_eligible(conn, int(p))[0]]
                 if bad:
-                    conn.execute("UPDATE content_queue SET status='draft', last_error=?, updated_at=? WHERE id=?",
-                                 ("A photo in this post is now on the do-not-use list.", db.utcnow(), q["id"]))
+                    set_aside(conn, q, by="donotuse", why="A photo in this post is now on the do-not-use list. Set aside; a new one is being drafted.")
+                    hit = True
+            if hit:
+                start_agent("content")
         return RedirectResponse("/donotuse", status_code=303)
 
     @app.post("/donotuse/{rid}/remove")
@@ -1003,17 +1057,22 @@ def create_app() -> FastAPI:
     def all_dry_run(user: str = Depends(require_user), conn=Depends(conn_dep), state: str = Form(...)):
         """Chris, 2026-10-11: "Everything should be live now too so we can see the damn thing work!"
         Every switch at once. Approve still gates every post, email and reply; the AI cap still holds."""
+        released = 0
         for name in settings.AGENTS_WITH_DRY_RUN:
             settings.set_dry_run(conn, name, state != "off")
-        word = "dry+run" if state != "off" else "LIVE"
-        return RedirectResponse(f"/agents?msg=Every+agent+is+now+{word}.", status_code=303)
+            if state == "off":
+                released += release_dry_run_approvals(conn, name)
+        word = "dry run" if state != "off" else "LIVE"
+        return RedirectResponse(f"/agents?msg={quote_plus(f'Every agent is now {word}.' + released_note(released))}", status_code=303)
 
     @app.post("/agents/{name}/dry-run")
     def toggle_dry_run(name: str, user: str = Depends(require_user), conn=Depends(conn_dep), state: str = Form(...)):
         if name not in settings.AGENTS_WITH_DRY_RUN:
             raise HTTPException(404)
         settings.set_dry_run(conn, name, state != "off")
-        return RedirectResponse("/agents", status_code=303)
+        released = release_dry_run_approvals(conn, name) if state == "off" else 0
+        word = "dry run" if state != "off" else "LIVE"
+        return RedirectResponse(f"/agents?msg={quote_plus(f'{name} is now {word}.' + released_note(released))}", status_code=303)
 
     def open_errors(conn) -> tuple[list[dict], list[dict]]:
         errors = [dict(e) for e in db.rows(conn, "SELECT * FROM errors WHERE alerted=0 ORDER BY id DESC LIMIT 50")]

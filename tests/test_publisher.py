@@ -173,6 +173,55 @@ class DryRun(PublisherCase):
         self.assertIn("DRY RUN would_publish=1", summary)
 
 
+class Nudge(PublisherCase):
+    """Chris, 2026-10-13: silence never posts, and a draft is never set aside for it. A draft waiting eight hours
+    gets one push that opens it."""
+
+    def waiting(self, hours, for_day="2026-10-13", status="draft"):
+        pid, qid = self.rendered_post(seed=hours, status=status)
+        made = (datetime.now(timezone.utc) - timedelta(hours=hours)).replace(microsecond=0).isoformat()
+        self.conn.execute("UPDATE content_queue SET created_at=?, rule_report=? WHERE id=?", (made, json.dumps({"for_day": for_day}), qid))
+        return qid
+
+    def pushes(self):
+        p = mock.patch.object(publisher.notify, "_push", return_value="sent")
+        self.addCleanup(p.stop)
+        return p.start()
+
+    def test_a_draft_waiting_eight_hours_is_nudged_once_and_never_set_aside(self):
+        push = self.pushes()
+        old, young = self.waiting(9), self.waiting(2)
+        self.waiting(12, status="approved")          # approved is not waiting on him
+        ctx = make_ctx(self.conn, dry_run=True)
+        self.assertEqual(publisher.tend_drafts(ctx), {"waiting": 2, "nudged": 1})
+        self.assertEqual(push.call_count, 1, "the dry-run switch is about Buffer; a draft waiting for him is real")
+        args, kw = push.call_args
+        self.assertIn("still waiting", args[0].lower())
+        self.assertIn("Tuesday's post", args[1])
+        self.assertIn("Nothing goes out unless you approve it", args[1])
+        self.assertTrue(kw["click"].endswith(f"/queue/{old}"))
+        self.assertFalse(kw["dry_run"])
+        self.assertTrue(json.loads(self.row(old)["rule_report"])["nudged_at"])
+        self.assertNotIn("nudged_at", self.row(young)["rule_report"])
+        # once, not twice; and still a draft, not set aside
+        self.assertEqual(publisher.tend_drafts(ctx), {"waiting": 2, "nudged": 0})
+        self.assertEqual(push.call_count, 1)
+        self.assertEqual([self.row(q)["status"] for q in (old, young)], ["draft", "draft"])
+        # a day later the young one has waited its eight hours; the old one is not nudged again
+        later = datetime.now(timezone.utc) + timedelta(hours=30)
+        self.assertEqual(publisher.tend_drafts(ctx, now=later), {"waiting": 2, "nudged": 1})
+        self.assertTrue(push.call_args[1]["click"].endswith(f"/queue/{young}"))
+        self.assertEqual([self.row(q)["status"] for q in (old, young)], ["draft", "draft"])
+
+    def test_the_nudge_rides_the_publishers_ten_minute_run(self):
+        push = self.pushes()
+        self.waiting(9)
+        line = publisher.run(make_ctx(self.conn, dry_run=True))
+        self.assertIn("nudged=1", line)
+        self.assertEqual(push.call_count, 1)
+        self.assertIn("nudged=0", publisher.run(make_ctx(self.conn, dry_run=True)))
+
+
 class Door(PublisherCase):
     def assert_back(self, qid, stats, words):
         self.assertEqual((stats["would_publish"], stats["turned_back"]), (0, 1))

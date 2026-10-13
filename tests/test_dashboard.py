@@ -123,8 +123,19 @@ class Dashboard(IsolatedCase):
         caption = json.loads(db.one(self.conn, "SELECT caption FROM content_queue WHERE id=?", (q2,))["caption"])["instagram"]
         self.assertIn("official", caption.lower(), "with the flag the claim stands as written")
 
-    def test_do_not_use_pulls_an_approved_post_back(self):
+    def popen(self):
+        """The content agent is started as its own process (core/runner.start_agent); here it is only counted."""
+        from unittest import mock
+        from convention_social.core import runner as runner_module
+        p = mock.patch.object(runner_module.subprocess, "Popen")
+        self.addCleanup(p.stop)
+        return p.start()
+
+    def test_do_not_use_sets_the_post_aside_and_drafts_again(self):
+        """2026-10-13: a do-not-use entry used to send the post back to drafts and leave it there; now the
+        post is set aside with the reason and the day is drafted again at once."""
         c = self.signed_in()
+        popen = self.popen()
         pid = self.seed_library()
         c.post("/library/folder/fcon/clearance", data={"state": "cleared"})
         self.final_check(pid)
@@ -133,9 +144,111 @@ class Dashboard(IsolatedCase):
         self.assertEqual(db.one(self.conn, "SELECT status FROM content_queue WHERE id=?", (q,))["status"], "approved")
         c.post("/donotuse/add", data={"kind": "photo", "value": "https://drive.google.com/file/d/p1/view"})
         self.assertEqual(db.one(self.conn, "SELECT value FROM do_not_use")["value"], "p1")
-        row = db.one(self.conn, "SELECT status, last_error FROM content_queue WHERE id=?", (q,))
-        self.assertEqual(row["status"], "draft")
+        row = db.one(self.conn, "SELECT status, last_error, rule_report FROM content_queue WHERE id=?", (q,))
+        self.assertEqual(row["status"], "rejected")
         self.assertIn("do-not-use", row["last_error"])
+        self.assertEqual(json.loads(row["rule_report"])["rejected_by"], "donotuse")
+        self.assertEqual(popen.call_args[0][0][-2:], ["run", "content"])
+        self.assertEqual(popen.call_count, 1)
+        # an entry that touches nothing waiting starts nothing
+        c.post("/donotuse/add", data={"kind": "handle", "value": "@nobody"})
+        self.assertEqual(popen.call_count, 1)
+
+    def test_reject_sets_the_post_aside_and_drafts_again(self):
+        """Chris's reject used to leave the day without a post until 08:00 and the photo free to come straight
+        back (2026-10-13): now the post is set aside with him on the record, its photo sits out
+        (agents/content.recent_use), and a new one is drafted at once. Reject asks first."""
+        c = self.signed_in()
+        popen = self.popen()
+        q = self.draft()
+        self.conn.execute("UPDATE content_queue SET rule_report=? WHERE id=?", (json.dumps({"for_day": "2026-10-14", "design": "single"}), q))
+        form = re.search(rf'<form[^>]*action="/queue/{q}/reject"[^>]*>', c.get(f"/queue/{q}").text).group(0)
+        self.assertIn("confirm(", form)
+        r = c.post(f"/queue/{q}/reject", follow_redirects=False)
+        self.assertIn("msg=rejected", r.headers["location"])
+        row = db.one(self.conn, "SELECT status, rule_report, last_error FROM content_queue WHERE id=?", (q,))
+        meta = json.loads(row["rule_report"])
+        self.assertEqual((row["status"], meta["rejected_by"], meta["for_day"]), ("rejected", "chris", "2026-10-14"))
+        self.assertTrue(meta["rejected_at"])
+        self.assertIn("Set aside", row["last_error"])
+        self.assertEqual(popen.call_args[0][0][-2:], ["run", "content"])
+        self.assertEqual(popen.call_count, 1)
+        page = c.get("/?msg=rejected").text
+        self.assertIn("Set aside", page)
+        self.assertIn("new post is being made", page)
+        # a post that already went out is not something to reject
+        p = self.draft()
+        self.conn.execute("UPDATE content_queue SET status='published' WHERE id=?", (p,))
+        c.post(f"/queue/{p}/reject")
+        self.assertEqual(db.one(self.conn, "SELECT status FROM content_queue WHERE id=?", (p,))["status"], "published")
+        self.assertEqual(popen.call_count, 1)
+
+    def test_unapprove_puts_an_approved_post_back_in_drafts(self):
+        c = self.signed_in()
+        q = self.draft()
+        c.post(f"/queue/{q}/approve")
+        self.assertIn(f'action="/queue/{q}/unapprove"', c.get(f"/queue/{q}").text)
+        r = c.post(f"/queue/{q}/unapprove", follow_redirects=False)
+        self.assertIn("msg=unapproved", r.headers["location"])
+        row = db.one(self.conn, "SELECT status, approved_at FROM content_queue WHERE id=?", (q,))
+        self.assertEqual((row["status"], row["approved_at"]), ("draft", None))
+        self.assertIn("will not go out", c.get(f"/queue/{q}?msg=unapproved").text)
+        # a post Buffer already holds is not taken back from here
+        self.conn.execute("UPDATE content_queue SET status='scheduled' WHERE id=?", (q,))
+        c.post(f"/queue/{q}/unapprove")
+        self.assertEqual(db.one(self.conn, "SELECT status FROM content_queue WHERE id=?", (q,))["status"], "scheduled")
+        self.assertNotIn("/unapprove", c.get(f"/queue/{q}").text)
+
+    def test_going_live_sends_what_he_approved_in_dry_run(self):
+        """Chris, 2026-10-13: posts and replies he approved in dry run go out when the lane is switched live.
+        What the dry run marked would_publish / would_send is approved again; what was sent stays sent."""
+        from convention_social.core import settings
+        from convention_social.outreach import keys
+        c = self.signed_in()
+        now = db.utcnow()
+        dry = self.draft()
+        self.conn.execute("UPDATE content_queue SET status='would_publish', payload='{\"x\": 1}', dry_run=1, last_error='dry run note' WHERE id=?", (dry,))
+        gone = self.draft()
+        self.conn.execute("UPDATE content_queue SET status='published' WHERE id=?", (gone,))
+        inq = {}
+        for name, st in (("dry", "would_send"), ("gone", "sent")):
+            inq[name] = db.insert(self.conn, "inquiries", remote_id=f"r-{name}", received_at=now, name="Dana", email="dana@example.org",
+                                  reply_subject="Photography", reply_body="Hi Dana, here it is.\nChris", reply_status=st,
+                                  notes="dry run: written to outbox", updated_at=now)
+        out = {}
+        for name, st in (("dry", "would_send"), ("gone", "sent")):
+            out[name] = db.insert(self.conn, "outreach", event_key=keys.event_key(f"{name} Con", None), event_name=f"{name} Con",
+                                  email=f"{name}@example.org", subject="Hello", body="Hi.", status=st, token=keys.new_token(),
+                                  approved_at=now, last_attempt_at=now, notes="dry run", created_at=now, updated_at=now)
+        r = c.post("/agents/all/dry-run", data={"state": "off"}, follow_redirects=False)
+        self.assertIn("3+things+you+approved+in+dry+run", r.headers["location"])
+        self.assertIn("3 things you approved in dry run", c.get("/agents?" + r.headers["location"].split("?", 1)[1]).text)
+        post = db.one(self.conn, "SELECT status, payload, last_error FROM content_queue WHERE id=?", (dry,))
+        self.assertEqual((post["status"], post["payload"], post["last_error"]), ("approved", None, None))
+        self.assertEqual(db.one(self.conn, "SELECT status FROM content_queue WHERE id=?", (gone,))["status"], "published")
+        self.assertEqual(db.one(self.conn, "SELECT reply_status, notes FROM inquiries WHERE id=?", (inq["dry"],))["reply_status"], "approved")
+        self.assertEqual(db.one(self.conn, "SELECT reply_status FROM inquiries WHERE id=?", (inq["gone"],))["reply_status"], "sent")
+        self.assertEqual(db.one(self.conn, "SELECT status FROM outreach WHERE id=?", (out["dry"],))["status"], "approved")
+        self.assertEqual(db.one(self.conn, "SELECT status FROM outreach WHERE id=?", (out["gone"],))["status"], "sent")
+        # back to dry run leaves them approved and releases nothing; one lane switched live on its own releases its own rows
+        late = self.draft()
+        self.conn.execute("UPDATE content_queue SET status='would_publish' WHERE id=?", (late,))
+        r = c.post("/agents/all/dry-run", data={"state": "on"}, follow_redirects=False)
+        self.assertNotIn("approved+in+dry+run", r.headers["location"])
+        self.assertEqual(db.one(self.conn, "SELECT status FROM content_queue WHERE id=?", (dry,))["status"], "approved")
+        self.assertEqual(db.one(self.conn, "SELECT status FROM content_queue WHERE id=?", (late,))["status"], "would_publish")
+        self.conn.execute("UPDATE content_queue SET status='would_publish' WHERE id=?", (dry,))
+        r = c.post("/agents/publisher/dry-run", data={"state": "off"}, follow_redirects=False)
+        self.assertIn("2+things+you+approved+in+dry+run", r.headers["location"])
+        self.assertEqual([r["status"] for r in db.rows(self.conn, "SELECT status FROM content_queue WHERE id IN (?, ?)", (dry, late))], ["approved", "approved"])
+        self.conn.execute("UPDATE content_queue SET status='would_publish' WHERE id=?", (late,))
+        self.conn.execute("UPDATE content_queue SET status='scheduled' WHERE id=?", (dry,))
+        r = c.post("/agents/publisher/dry-run", data={"state": "off"}, follow_redirects=False)
+        self.assertIn("1+thing+you+approved+in+dry+run+goes+out", r.headers["location"])
+        self.assertFalse(settings.dry_run(self.conn, "publisher"))
+        r = c.post("/agents/publisher/dry-run", data={"state": "on"}, follow_redirects=False)
+        self.assertNotIn("approved+in+dry+run", r.headers["location"])
+        self.assertTrue(settings.dry_run(self.conn, "publisher"))
 
     def test_keys_page_writes_env_and_never_shows_secrets(self):
         c = self.signed_in()

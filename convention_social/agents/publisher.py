@@ -54,6 +54,8 @@ NO_CHANNELS = "No connected Buffer channel for any network on this post. Connect
 NO_DAY = "No open day in the next {days} days for {nets}. Choose a time on the draft."
 CAPTION_BACK = "caption no longer passes the rules"
 MEND_AGAIN_AFTER = timedelta(hours=1)      # a caption the suite rewrote this recently and that still breaks goes back, not round again
+NUDGE_AFTER = timedelta(hours=8)           # a draft waiting this long gets one push; it is never set aside (Chris, 2026-10-13)
+WAITING_SQL = "SELECT * FROM content_queue WHERE status = 'draft' AND kind = 'photo' ORDER BY id"
 
 
 # ------------------------------------------------------------------ small readers
@@ -132,6 +134,37 @@ def mended_lately(row, now: Optional[datetime] = None) -> bool:
     if last.tzinfo is None:
         last = last.replace(tzinfo=timezone.utc)
     return (now or datetime.now(timezone.utc)) - last < MEND_AGAIN_AFTER
+
+
+def made_at(row) -> Optional[datetime]:
+    try:
+        made = datetime.fromisoformat(row["created_at"])
+    except (TypeError, ValueError):
+        return None
+    return made if made.tzinfo else made.replace(tzinfo=timezone.utc)
+
+
+def tend_drafts(ctx: runner.Context, now: Optional[datetime] = None) -> dict:
+    """Chris, 2026-10-13: silence never posts, and a draft is never set aside for it. A draft waiting eight
+    hours gets one push that opens it, and `rule_report.nudged_at` keeps it to one. The publisher's dry-run
+    switch is about Buffer; the draft waiting for him is real either way, so the nudge goes in dry run too."""
+    now = now or datetime.now(timezone.utc)
+    stats = {"waiting": 0, "nudged": 0}
+    for row in db.rows(ctx.conn, WAITING_SQL):
+        stats["waiting"] += 1
+        meta = _json(row["rule_report"], {})
+        meta = meta if isinstance(meta, dict) else {}
+        made = made_at(row)
+        if meta.get("nudged_at") or made is None or now - made < NUDGE_AFTER:
+            continue
+        day = for_day_of(row)
+        what = f"{day:%A}'s post" if day else f"post {row['id']}"
+        notify.push(f"{ctx.cfg.brand_name}: still waiting", f"Still waiting: {what}. Nothing goes out unless you approve it. Tap to see it.",
+                    dry_run=False, priority="default", click=notify.link(f"/queue/{row['id']}"), conn=ctx.conn, agent=ctx.agent)
+        meta["nudged_at"] = db.utcnow()
+        ctx.conn.execute("UPDATE content_queue SET rule_report=? WHERE id=?", (json.dumps(meta), row["id"]))
+        stats["nudged"] += 1
+    return stats
 
 
 def _set_last_error(conn, row, why: Optional[str]) -> None:
@@ -551,12 +584,14 @@ def verify_scheduled(ctx: runner.Context, client: Optional[BufferClient] = None)
 
 
 def run(ctx: runner.Context) -> str:
+    t = tend_drafts(ctx)
     p = publish_ready(ctx)
     v = verify_scheduled(ctx)
     snap = budget.snapshot(ctx.conn)
     used = "/".join(str(s["used"]) for s in snap)
     return (f"{'DRY RUN ' if ctx.dry_run else ''}would_publish={p['would_publish']} scheduled={p['scheduled']} failed={p['failed']} "
             f"turned_back={p['turned_back']} held={p['held']} skipped_networks={p['skipped_networks']}; "
+            f"drafts waiting={t['waiting']} nudged={t['nudged']}; "
             f"verified published={v['published']} failed={v['failed']} pending={v['pending']}; "
             f"buffer requests 15m/24h/30d={used}")
 

@@ -131,6 +131,45 @@ class Content(IsolatedCase):
         self.assertEqual(self.queue(), [])
         self.assertEqual(self.fetched, [])
 
+    def test_a_photo_in_a_post_chris_set_aside_sits_out(self):
+        """2026-10-13: his reject counts like the art director's: the photo sits out for the repeat window and the
+        day is drafted again with another one. The event is not "used": nothing of a set-aside post aired."""
+        content.draft_one(self.ctx(), self.fetch, now=MONDAY_6AM)
+        first = self.queue()[0]
+        self.assertEqual(json.loads(first["photo_ids"]), [self.ids["e1"]])
+        meta = json.loads(first["rule_report"])
+        meta.update(rejected_by="chris", rejected_at=db.utcnow())
+        self.conn.execute("UPDATE content_queue SET status='rejected', rule_report=?, updated_at=? WHERE id=?",
+                          (json.dumps(meta), db.utcnow(), first["id"]))
+        used_photos, used_events, _ = content.recent_use(self.conn, 30)
+        self.assertIn(self.ids["e1"], used_photos)
+        self.assertNotIn("katsucon", used_events)
+        line = content.draft_one(self.ctx(), self.fetch, now=MONDAY_6AM)
+        self.assertIn("drafted post", line)
+        self.assertEqual(json.loads(self.queue()[1]["photo_ids"]), [self.ids["e2"]], line)
+
+    def test_todays_post_set_aside_is_drafted_again_today(self):
+        """A reject after 08:00, when tomorrow's post already stands: today is drafted again, not lost. A day
+        that never had a post is not filled this way (the agent's job is tomorrow; the window retries that)."""
+        content.draft_one(self.ctx(), self.fetch, now=TUESDAY_6AM)          # Wednesday's post, made Tuesday morning
+        self.assertIn("already drafted", content.draft_one(self.ctx(), self.fetch, now=TUESDAY_6AM))
+        self.assertEqual(len(self.queue()), 1, "Tuesday never had a post and nothing was set aside: nothing is made for it")
+        content.draft_one(self.ctx(), self.fetch, now=MONDAY_6AM)           # Tuesday's post, as if made Monday
+        tuesday = self.queue()[1]
+        self.assertEqual(json.loads(tuesday["rule_report"])["for_day"], "2026-10-13")
+        self.assertIn("already drafted", content.draft_one(self.ctx(), self.fetch, now=TUESDAY_6AM))
+        meta = json.loads(tuesday["rule_report"])
+        meta.update(rejected_by="chris", rejected_at=db.utcnow())
+        self.conn.execute("UPDATE content_queue SET status='rejected', rule_report=?, updated_at=? WHERE id=?",
+                          (json.dumps(meta), db.utcnow(), tuesday["id"]))
+        line = content.draft_one(self.ctx(), self.fetch, now=TUESDAY_6AM)
+        self.assertIn(f"drafted post", line)
+        self.assertIn(meta["for_day"], line)
+        again = self.queue()[2]
+        self.assertEqual(json.loads(again["rule_report"])["for_day"], meta["for_day"])
+        self.assertNotEqual(json.loads(again["photo_ids"]), json.loads(tuesday["photo_ids"]), "the set-aside photo sits out")
+        self.assertIn("already drafted", content.draft_one(self.ctx(), self.fetch, now=TUESDAY_6AM))
+
 
 class ArtClient:
     """The art director's eye: answers from a list, one per look."""
