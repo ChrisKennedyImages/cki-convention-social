@@ -491,6 +491,20 @@ class Pages(OutreachCase):
         r = db.one(self.conn, "SELECT * FROM outreach WHERE id=?", (oid,))
         self.assertEqual((r["status"], r["body"], r["model"]), ("draft", "Hello,\nMy own words.\nChris", "chris"))
 
+    def test_save_and_approve_in_one_tap(self):
+        """4.1 (2026-10-13): one form, two buttons; the compliance gates still hold on the way."""
+        oid = self.row(status="draft", body="Hello,\nIt is $500 a day.\nChris\nEvent Caliber")
+        self.assertIn('name="do" value="approve"', self.c.get(f"/outreach/{oid}").text)
+        r = self.c.post(f"/outreach/{oid}/save", data={"subject": "Photography for Sample Con 2027", "body": "Hello,\nStill $500 a day.\nChris",
+                                                       "do": "approve"}, follow_redirects=False)
+        self.assertIn("not_ready", r.headers["location"])
+        self.assertEqual(self.status(oid), "draft")
+        self.assertIn("Still $500", db.one(self.conn, "SELECT body FROM outreach WHERE id=?", (oid,))["body"], "saved all the same")
+        r = self.c.post(f"/outreach/{oid}/save", data={"subject": "Photography for Sample Con 2027", "body": draft.template_first(FACTS).body,
+                                                       "do": "approve"}, follow_redirects=False)
+        self.assertIn("approved", r.headers["location"])
+        self.assertEqual(self.status(oid), "approved")
+
     def test_reject(self):
         oid = self.row(status="draft")
         self.c.post(f"/outreach/{oid}/reject")

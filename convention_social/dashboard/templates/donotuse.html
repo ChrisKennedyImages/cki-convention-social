@@ -12,6 +12,6 @@
 </form>
 {% for r in rows %}
 <div class="card row"><span class="badge">{{ r.kind }}</span><strong>{{ r.value }}</strong><span class="muted">{{ r.reason or '' }}</span>
-  <form method="post" action="/donotuse/{{ r.id }}/remove" class="inline" style="margin-left:auto"><button class="small" type="submit">Remove</button></form></div>
+  <form method="post" action="/donotuse/{{ r.id }}/remove" class="inline" style="margin-left:auto" onsubmit="return confirm('Remove this from the do-not-use list? It can be used again.')"><button class="small" type="submit">Remove</button></form></div>
 {% endfor %}
 {% endblock %}

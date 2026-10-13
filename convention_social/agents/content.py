@@ -32,7 +32,7 @@ from zoneinfo import ZoneInfo
 from PIL import Image
 
 from ..ai import claude, copy_rules, names, seo_plan
-from ..core import config, db, notify, runner, settings
+from ..core import approve_token, config, db, notify, runner, settings
 from ..library import classify, eligibility
 
 from . import art_director, learner
@@ -497,14 +497,25 @@ def draft_one(ctx: runner.Context, fetch: Callable[[dict], bytes], *, now: Optio
     qid = db.insert(ctx.conn, "content_queue", kind="photo", photo_ids=json.dumps(photo_ids), targets=json.dumps(list(TARGETS)),
                     caption=json.dumps(captions), render_paths=json.dumps(render_paths), rule_report=json.dumps(meta),
                     created_at=now_s, updated_at=now_s)
-    # the ping that opens the draft (Chris, 2026-10-11: "I haven't received any ntfy")
+    # the ping that opens the draft (Chris, 2026-10-11: "I haven't received any ntfy"); 2026-10-13: it carries the
+    # card, and an Approve button when the art director passed the draft (core/approve_token: signed, single use)
     notify.push(f"{ctx.cfg.brand_name}: a post to approve", f"{design} with {len(photo_ids)} photo(s) for {day:%A}. Tap to see it.",
-                dry_run=ctx.dry_run, priority="default", click=notify.link(f"/queue/{qid}"), conn=ctx.conn, agent=ctx.agent)
+                dry_run=ctx.dry_run, priority="default", click=notify.link(f"/queue/{qid}"), conn=ctx.conn, agent=ctx.agent,
+                **ping_extras(ctx.conn, {"id": qid, "updated_at": now_s}, art))
     fell = (f", the reel could not be made ({reel_failed[0]})" if reel_failed
             else f", {asked} wanted but too few photos passed" if asked != design else "")
     return (f"{'DRY RUN ' if ctx.dry_run else ''}drafted post #{qid} for {day} ({kind_used}"
             f"{', instead of ' + want if kind_used != want else ''}): {design} with {len(photo_ids)} photo(s){fell}, "
             f"photo {hero['id']} first, captions by {writer} for \"{plan.primary}\", art director: {art.get('verdict')}")
+
+
+def ping_extras(conn: sqlite3.Connection, row, art: Optional[dict]) -> dict:
+    """What a draft's ping carries besides the words: the card (fetched by the phone from the dashboard with the
+    token, no login), and the Approve button when the art director passed it; Open alone otherwise."""
+    token = approve_token.issue(conn, row)
+    passed = (art or {}).get("verdict") == "pass"
+    return {"actions": notify.approve_actions(row["id"], token) if passed else notify.open_action(row["id"]),
+            "attach": notify.card_link(row["id"], token), "filename": f"post-{row['id']}.jpg"}
 
 
 def run(ctx: runner.Context, fetch: Optional[Callable[[dict], bytes]] = None) -> str:

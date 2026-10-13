@@ -159,8 +159,10 @@ def tend_drafts(ctx: runner.Context, now: Optional[datetime] = None) -> dict:
             continue
         day = for_day_of(row)
         what = f"{day:%A}'s post" if day else f"post {row['id']}"
+        from . import content
         notify.push(f"{ctx.cfg.brand_name}: still waiting", f"Still waiting: {what}. Nothing goes out unless you approve it. Tap to see it.",
-                    dry_run=False, priority="default", click=notify.link(f"/queue/{row['id']}"), conn=ctx.conn, agent=ctx.agent)
+                    dry_run=False, priority="default", click=notify.link(f"/queue/{row['id']}"), conn=ctx.conn, agent=ctx.agent,
+                    **content.ping_extras(ctx.conn, row, meta.get("art")))
         meta["nudged_at"] = db.utcnow()
         ctx.conn.execute("UPDATE content_queue SET rule_report=? WHERE id=?", (json.dumps(meta), row["id"]))
         stats["nudged"] += 1

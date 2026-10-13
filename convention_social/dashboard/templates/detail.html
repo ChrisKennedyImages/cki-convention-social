@@ -2,7 +2,7 @@
 {% block body %}
 {% set notes = {'saved': ('Saved.', ''), 'approved': ('Approved. It goes out at its time.', ''), 'requeued': ('Back in drafts.', ''),
                 'unapproved': ('Back in drafts. It will not go out until you approve it again.', ''),
-                'blocked': ('Not approved: a caption still breaks a rule after the suite rewrote it. Fix it and save first.', 'bad'),
+                'blocked': ('Not approved: a caption still breaks a rule after the suite rewrote it. It tries again on its next run. Nothing for you to do.', 'bad'),
                 'mended': ('A caption broke a rule that came after it was written; the suite rewrote it. Nothing to fix.', ''),
                 'mend_failed': ('A caption breaks a rule, and the suite could not rewrite the caption just now (the API or the network). Its next run tries again. Nothing for you to do.', 'bad'),
                 'ineligible': ('Not approved: a photo in it can no longer be used.', 'bad'),
@@ -29,11 +29,11 @@
   {% endfor %}
   <label>Post time (leave blank for the next open slot)</label>
   <input type="datetime-local" name="scheduled_for" value="{{ item.scheduled_for or '' }}">
-  <div class="row" style="margin-top:12px"><button type="submit">Save</button></div>
+  <div class="row" style="margin-top:12px"><button type="submit" name="do" value="save">Save</button>
+    {% if item.status == 'draft' %}<button class="ok" type="submit" name="do" value="approve">Save and approve</button>{% endif %}</div>
 </form>
 <div class="row">
   {% if item.status == 'draft' %}
-  <form method="post" action="/queue/{{ item.id }}/approve" class="inline"><button class="ok" type="submit">Approve</button></form>
   <form method="post" action="/queue/{{ item.id }}/reject" class="inline" onsubmit="return confirm('Set this post aside? A new one is drafted in its place.')"><button class="danger" type="submit">Reject</button></form>
   {% elif item.status == 'approved' %}
   <form method="post" action="/queue/{{ item.id }}/unapprove" class="inline"><button type="submit">Take back the approval</button></form>

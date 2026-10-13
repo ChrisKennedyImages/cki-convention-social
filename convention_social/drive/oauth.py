@@ -29,6 +29,7 @@ import json
 import os
 import sqlite3
 import threading
+from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import Callable, Optional
 from urllib.parse import urlparse
@@ -41,6 +42,8 @@ TOKEN_URI = "https://oauth2.googleapis.com/token"
 LOGIN_PORT = 4611
 STATE_KEY = "drive.auth_state"        # ok | expired | missing
 STATE_DETAIL_KEY = "drive.auth_detail"
+PENDING_KEY = "drive.login_pending"   # JSON {state, verifier, at}: a sign-in started, waiting for the return page
+PENDING_MINUTES = 15
 
 
 class DriveAuthError(RuntimeError):
@@ -154,11 +157,67 @@ def return_address(pasted: str) -> str:
     return text
 
 
-def login(conn: Optional[sqlite3.Connection] = None, *, prompt=input, out=print, wait_seconds: float = 0) -> None:
-    """Interactive sign-in. Prints the link; takes the redirect from the local
-    listener (when wait_seconds > 0) or from a pasted address."""
+def start_login(conn: Optional[sqlite3.Connection]) -> tuple[str, dict]:
+    """The Google link, and the flow's state and PKCE verifier the finish needs. With `conn` they wait in
+    settings for PENDING_MINUTES, so the dashboard can finish in another request (Chris, 2026-10-13: the
+    sign-in from the phone, no terminal)."""
     flow = make_flow()
-    url, _state = flow.authorization_url(access_type="offline", prompt="consent", include_granted_scopes="false")
+    url, state = flow.authorization_url(access_type="offline", prompt="consent", include_granted_scopes="false")
+    pending = {"state": state, "verifier": flow.code_verifier, "at": db.utcnow()}
+    if conn is not None:
+        settings.set(conn, PENDING_KEY, json.dumps(pending))
+    return url, pending
+
+
+def pending_login(conn: Optional[sqlite3.Connection]) -> Optional[dict]:
+    """The sign-in waiting for its return page, or None (none, or older than PENDING_MINUTES)."""
+    if conn is None:
+        return None
+    try:
+        data = json.loads(settings.get(conn, PENDING_KEY) or "null")
+    except ValueError:
+        return None
+    if not isinstance(data, dict) or not data.get("state") or not data.get("verifier"):
+        return None
+    try:
+        started = datetime.fromisoformat(data["at"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    if started.tzinfo is None:
+        started = started.replace(tzinfo=timezone.utc)
+    if datetime.now(timezone.utc) - started > timedelta(minutes=PENDING_MINUTES):
+        return None
+    return data
+
+
+def finish_login(conn: Optional[sqlite3.Connection], pasted: str, pending: Optional[dict] = None,
+                 detail: str = "signed in") -> None:
+    """The pasted return page completes the sign-in start_login began. Refuses a foreign host, a sign-in that
+    is not waiting any more, and (save_credentials) any scope but drive.readonly."""
+    pending = pending or pending_login(conn)
+    if pending is None:
+        raise DriveAuthError("no sign-in is waiting (it lasts 15 minutes): press Sign in to Google Drive again")
+    redirected = return_address(pasted)
+    if urlparse(redirected).hostname not in ("127.0.0.1", "localhost"):
+        raise DriveAuthError("that address is not the sign-in return page")
+    cfg = client_config()
+    if cfg is None:
+        raise DriveAuthError("GOOGLE_OAUTH_CLIENT_ID / GOOGLE_OAUTH_CLIENT_SECRET are not set (docs/SETUP.md)")
+    from google_auth_oauthlib.flow import Flow
+    flow = Flow.from_client_config(cfg, scopes=list(SCOPES), redirect_uri=f"http://127.0.0.1:{LOGIN_PORT}/",
+                                   state=pending["state"], code_verifier=pending["verifier"])
+    os.environ.setdefault("OAUTHLIB_INSECURE_TRANSPORT", "1")  # the loopback redirect is plain http by design
+    flow.fetch_token(authorization_response=redirected)
+    save_credentials(flow.credentials)
+    if conn is not None:
+        settings.set(conn, PENDING_KEY, "")
+    set_state(conn, "ok", detail)
+
+
+def login(conn: Optional[sqlite3.Connection] = None, *, prompt=input, out=print, wait_seconds: float = 0) -> None:
+    """Interactive sign-in (bin/ccs drive login). Prints the link; takes the redirect from the local
+    listener (when wait_seconds > 0) or from a pasted address. The same two steps as the dashboard's."""
+    url, pending = start_login(conn)
     out("Open this link, sign in as the Google account that holds the photos, and approve read-only Drive access:\n")
     out(url + "\n")
     redirected = None
@@ -169,12 +228,7 @@ def login(conn: Optional[sqlite3.Connection] = None, *, prompt=input, out=print,
         t.join(wait_seconds + 1)
         redirected = holder.get("url")
     if not redirected:
-        redirected = return_address(prompt("After approving, the browser lands on a page that may not load. "
-                                           "Paste that page's full address here: "))
-    if urlparse(redirected).hostname not in ("127.0.0.1", "localhost"):
-        raise DriveAuthError("that address is not the sign-in return page")
-    os.environ.setdefault("OAUTHLIB_INSECURE_TRANSPORT", "1")  # the loopback redirect is plain http by design
-    flow.fetch_token(authorization_response=redirected)
-    save_credentials(flow.credentials)
-    set_state(conn, "ok", "signed in")
+        redirected = prompt("After approving, the browser lands on a page that may not load. "
+                            "Paste that page's full address here: ")
+    finish_login(conn, redirected, pending=pending)
     out("Google Drive is signed in, read only.")

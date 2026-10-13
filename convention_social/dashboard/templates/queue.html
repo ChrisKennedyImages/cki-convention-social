@@ -19,8 +19,11 @@
     {% if it.scheduled_for %}<span class="muted">{{ it.scheduled_for.replace('T',' ') }}</span>{% endif %}
   </div>
   {% if it.video %}<video class="reel" src="/media/render/{{ it.id }}/9x16/1"{% if it.cover %} poster="/media/render/{{ it.id }}/cover/1"{% endif %} controls playsinline muted loop preload="metadata"></video>{% endif %}
-  {% if it.renders %}<div class="thumbs" style="margin:10px 0">{% for aspect, idx in it.renders.items() %}{% for i in idx %}<img src="/media/render/{{ it.id }}/{{ aspect.replace(':','x') }}/{{ i }}" alt="">{% endfor %}{% endfor %}</div>{% endif %}
+  {% if it.renders %}<div class="thumbs" style="margin:10px 0">{% for aspect, idx in it.renders.items() %}{% for i in idx %}<a href="/media/render/{{ it.id }}/{{ aspect.replace(':','x') }}/{{ i }}"><img src="/media/render/{{ it.id }}/{{ aspect.replace(':','x') }}/{{ i }}" alt=""></a>{% endfor %}{% endfor %}</div>{% endif %}
   <div class="caption">{{ it.captions.get('instagram') or (it.captions.values()|list)[0] if it.captions else '' }}</div>
+  {% if it.captions|length > 1 %}<details style="margin-top:6px"><summary class="muted">The other captions</summary>
+    {% for n, text in it.captions.items() if n != 'instagram' %}<div class="muted" style="margin-top:6px">{{ n|capitalize }}</div><div class="caption">{{ text }}</div>{% endfor %}</details>{% endif %}
+  {% set verdict = it.art.verdict if it.art else '' %}
   <div class="row" style="margin-top:10px">
     <span class="muted">to {{ it.targets|join(', ') }}</span>
     {% if it.blocked_networks %}<span class="rule block">rules block: {{ it.blocked_networks|join(', ') }}</span>
@@ -28,7 +31,11 @@
     {% else %}<span class="rule ok">rules pass{{ ', rewritten by the suite' if it.mended else '' }}</span>{% endif %}
     {% if it.last_error %}<span class="rule block">{{ it.last_error }}</span>{% endif %}
     {% if it.art and it.art.verdict %}<span class="muted">Art director: {{ it.art.verdict }}{% if it.art.notes %}, {{ it.art.notes }}{% endif %}</span>{% endif %}
-    <a class="btn primary" href="/queue/{{ it.id }}" style="margin-left:auto">Review</a>
+    <span style="margin-left:auto"></span>
+    {% if it.status == 'draft' and not it.blocked_networks and not it.ineligible and it.targets and verdict in ('pass', 'not reviewed', '') %}
+    <form method="post" action="/queue/{{ it.id }}/approve" class="inline"><button class="ok" type="submit">Approve</button></form>
+    {% endif %}
+    <a class="btn primary" href="/queue/{{ it.id }}">Review</a>
   </div>
 </div>
 {% endfor %}

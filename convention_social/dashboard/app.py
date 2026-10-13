@@ -17,7 +17,6 @@ import hmac
 import json
 import os
 import re
-import secrets as pysecrets
 import subprocess
 import threading
 import time
@@ -26,7 +25,7 @@ from typing import Optional
 from urllib.parse import quote_plus
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile, status
-from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from ..agents import AGENTS, is_built
@@ -35,7 +34,7 @@ from ..ai import names as ai_names
 from ..ai.claude import NETWORKS
 from ..buffer import payloads as buffer_payloads
 from ..buffer.client import BufferBudgetExceeded, BufferClient, BufferError, BufferRateLimited
-from ..core import auth, config, db, runner, secrets, settings, state_io
+from ..core import approve_token, auth, config, db, runner, secrets, settings, state_io
 from .. import music
 from ..library import eligibility, report
 
@@ -47,14 +46,7 @@ ID_IN_LINK = re.compile(r"(?:/d/|/folders/|[?&]id=)([A-Za-z0-9_-]{2,})")
 
 
 # ---------------------------------------------------------------------- session
-def _session_secret() -> bytes:
-    cfg = config.get_config()
-    cfg.locks_dir.mkdir(parents=True, exist_ok=True)
-    path = cfg.locks_dir / "dashboard.secret"
-    if not path.exists():
-        path.write_text(pysecrets.token_hex(32))
-        path.chmod(0o600)
-    return path.read_text().strip().encode()
+_session_secret = approve_token.secret      # one secret file signs the session cookie and the pings' approve tokens
 
 
 def make_token(user: str, now: Optional[float] = None) -> str:
@@ -547,8 +539,24 @@ def create_app() -> FastAPI:
         return render(request, "detail.html", item=queue_view(conn, row), networks=NETWORKS, msg=msg or mended,
                       shot_choices=SHOT_CHOICES)
 
+    def approve_gates(conn, row) -> str:
+        """The one Approve, wherever it is pressed (the draft page, the Queue list, Save and approve, the ping's
+        button): the suite's rewrite first, then the rules, the photos and the targets. The message word."""
+        row, mended = mended_row(conn, row)
+        item = queue_view(conn, row)
+        if item["blocked_networks"]:
+            return "mend_failed" if mended == "mend_failed" else "blocked"
+        if item["ineligible"]:
+            return "ineligible"
+        if not item["targets"]:
+            return "notargets"
+        now = db.utcnow()
+        conn.execute("UPDATE content_queue SET status='approved', approved_at=?, last_error=NULL, updated_at=? WHERE id=?", (now, now, row["id"]))
+        return "approved"
+
     @app.post("/queue/{qid}/save")
     async def queue_save(qid: int, request: Request, user: str = Depends(require_user), conn=Depends(conn_dep)):
+        """Save, or Save and approve (2026-10-13: one form, two buttons; an edit without Save used to be lost)."""
         load_queue_row(conn, qid)
         form = await request.form()
         captions = {n: (form.get(f"caption_{n}") or "").strip() for n in NETWORKS}
@@ -556,6 +564,10 @@ def create_app() -> FastAPI:
         scheduled = (form.get("scheduled_for") or "").strip() or None
         conn.execute("UPDATE content_queue SET caption=?, targets=?, scheduled_for=?, updated_at=? WHERE id=?",
                      (json.dumps(captions), json.dumps(targets), scheduled, db.utcnow(), qid))
+        if form.get("do") == "approve":
+            row = load_queue_row(conn, qid)
+            if row["status"] == "draft":
+                return RedirectResponse(f"/queue/{qid}?msg={approve_gates(conn, row)}", status_code=303)
         return RedirectResponse(f"/queue/{qid}?msg=saved", status_code=303)
 
     @app.post("/queue/{qid}/approve")
@@ -563,17 +575,50 @@ def create_app() -> FastAPI:
         row = load_queue_row(conn, qid)
         if row["status"] != "draft":
             return RedirectResponse(f"/queue/{qid}", status_code=303)
-        row, mended = mended_row(conn, row)
-        item = queue_view(conn, row)
-        if item["blocked_networks"]:
-            return RedirectResponse(f"/queue/{qid}?msg={'mend_failed' if mended == 'mend_failed' else 'blocked'}", status_code=303)
-        if item["ineligible"]:
-            return RedirectResponse(f"/queue/{qid}?msg=ineligible", status_code=303)
-        if not item["targets"]:
-            return RedirectResponse(f"/queue/{qid}?msg=notargets", status_code=303)
-        now = db.utcnow()
-        conn.execute("UPDATE content_queue SET status='approved', approved_at=?, last_error=NULL, updated_at=? WHERE id=?", (now, now, qid))
-        return RedirectResponse(f"/queue/{qid}?msg=approved", status_code=303)
+        return RedirectResponse(f"/queue/{qid}?msg={approve_gates(conn, row)}", status_code=303)
+
+    TOKEN_REFUSALS = {"blocked": "A caption still breaks a rule after the suite rewrote it; it tries again on its next run. Open the draft to see it.",
+                      "mend_failed": "A caption breaks a rule and the suite could not rewrite it just now. Open the draft to see it.",
+                      "ineligible": "A photo in it can no longer be used. Open the draft.",
+                      "notargets": "No network is picked for it. Open the draft."}
+
+    def goes_out_words(conn, row) -> str:
+        from ..agents import pacing, publisher
+        try:
+            when = pacing.plan(conn, json.loads(row["targets"] or "[]"), row["scheduled_for"], None, config.get_config(),
+                               include_dry=settings.dry_run(conn, "publisher"), not_before=publisher.for_day_of(row))
+            slots = sorted(v for v in when.values() if v)
+            if slots:
+                first = __import__("datetime").datetime.fromisoformat(slots[0])
+                return f"It goes out {first:%A} {first:%H:%M}."
+        except Exception:  # noqa: BLE001  the time is a courtesy; the approval stands
+            pass
+        return "It goes out at its time."
+
+    @app.get("/queue/{qid}/approve-by-token", response_class=HTMLResponse)
+    def queue_approve_by_token_page(qid: int, request: Request, conn=Depends(conn_dep), token: str = ""):
+        """A GET never approves (a link preview, a browser prefetch): a page with the button, and nothing more."""
+        row = load_queue_row(conn, qid)
+        return render(request, "approve_token.html", qid=qid, token=token, status=row["status"])
+
+    @app.post("/queue/{qid}/approve-by-token")
+    async def queue_approve_by_token(qid: int, request: Request, conn=Depends(conn_dep)):
+        """Chris, 2026-10-13: Approve from the morning ping. The body carries the signed, single-use token
+        (core/approve_token); the gates are the page's own; the answer is a sentence for the phone."""
+        from urllib.parse import parse_qs
+        row = load_queue_row(conn, qid)
+        raw = (await request.body()).decode("utf-8", "replace")
+        token = (parse_qs(raw).get("token") or [raw.strip()])[0]
+        ok, why = approve_token.check(conn, row, token)
+        if not ok:
+            return PlainTextResponse(why, status_code=409)
+        if row["status"] != "draft":
+            return PlainTextResponse(f"Post {qid} is {row['status'].replace('_', ' ')}; nothing to approve.", status_code=409)
+        word = approve_gates(conn, row)
+        if word != "approved":
+            return PlainTextResponse(TOKEN_REFUSALS.get(word, word), status_code=409)
+        approve_token.spend(conn, qid)
+        return PlainTextResponse(f"Approved post {qid}. {goes_out_words(conn, load_queue_row(conn, qid))}")
 
     @app.post("/queue/{qid}/requeue")
     def queue_requeue(qid: int, user: str = Depends(require_user), conn=Depends(conn_dep)):
@@ -627,6 +672,22 @@ def create_app() -> FastAPI:
         if not 1 <= index <= len(paths) or not inside_data_root(Path(paths[index - 1])):
             raise HTTPException(404)
         return FileResponse(paths[index - 1], media_type=MEDIA_TYPES.get(Path(paths[index - 1]).suffix.lower(), "image/jpeg"))
+
+    @app.get("/media/card/{qid}/{name}")
+    def media_card(qid: int, name: str, conn=Depends(conn_dep)):
+        """The draft's card for the ping (ntfy `Attach`): fetched by the phone with the ping's token, no login.
+        The token is checked like the button's, so an old or spent one serves nothing."""
+        if not name.endswith(".jpg"):
+            raise HTTPException(404)
+        row = db.one(conn, "SELECT * FROM content_queue WHERE id=?", (qid,))
+        if row is None or not approve_token.check(conn, row, name[:-4])[0]:
+            raise HTTPException(404)
+        renders = json.loads(row["render_paths"] or "{}")
+        for aspect in ("4:5", "2:3", "cover"):
+            paths = renders.get(aspect) or []
+            if paths and inside_data_root(Path(paths[0])):
+                return FileResponse(paths[0], media_type=MEDIA_TYPES.get(Path(paths[0]).suffix.lower(), "image/jpeg"))
+        raise HTTPException(404)
 
     @app.get("/media/thumb/{photo_id}")
     def media_thumb(photo_id: int, user: str = Depends(require_user), conn=Depends(conn_dep)):
@@ -948,14 +1009,22 @@ def create_app() -> FastAPI:
 
     @app.post("/inquiries/{iid}/reply")
     def inquiry_reply(iid: int, user: str = Depends(require_user), conn=Depends(conn_dep), subject: str = Form(""),
-                      body: str = Form(""), deposit_link: str = Form("")):
+                      body: str = Form(""), deposit_link: str = Form(""), do: str = Form("save")):
+        """Save, or Save and approve (2026-10-13): the price he typed is kept either way."""
         row = db.one(conn, "SELECT reply_status FROM inquiries WHERE id=?", (iid,))
         if row is None:
             raise HTTPException(404)
         if row["reply_status"] in ("sent",):
             return RedirectResponse(f"/inquiries/{iid}?msg=already_sent", status_code=303)
+        subject, body = subject.strip(), body.replace("\r\n", "\n").strip()
         conn.execute("UPDATE inquiries SET reply_subject=?, reply_body=?, reply_status='draft', deposit_link=?, updated_at=? WHERE id=?",
-                     (subject.strip(), body.replace("\r\n", "\n").strip(), deposit_link.strip() or None, db.utcnow(), iid))
+                     (subject, body, deposit_link.strip() or None, db.utcnow(), iid))
+        if do == "approve":
+            from ..ai import reply as reply_mod
+            if reply_mod.ready_to_send(subject, body):
+                return RedirectResponse(f"/inquiries/{iid}?msg=not_ready", status_code=303)
+            conn.execute("UPDATE inquiries SET reply_status='approved', updated_at=? WHERE id=?", (db.utcnow(), iid))
+            return RedirectResponse(f"/inquiries/{iid}?msg=approved", status_code=303)
         return RedirectResponse(f"/inquiries/{iid}?msg=saved", status_code=303)
 
     @app.post("/inquiries/{iid}/approve")
@@ -1012,13 +1081,39 @@ def create_app() -> FastAPI:
 
     # ------------------------------------------------------------------ drive
     @app.get("/drive", response_class=HTMLResponse)
-    def drive(request: Request, user: str = Depends(require_user), conn=Depends(conn_dep)):
+    def drive(request: Request, user: str = Depends(require_user), conn=Depends(conn_dep), msg: str = ""):
+        from ..drive import oauth
         from ..library import report
         renders = sorted((config.get_config().data_root / "renders").glob("library-report-*.html"))
         return render(request, "drive.html", state=settings.get(conn, "drive.auth_state") or "missing",
                       detail=settings.get(conn, "drive.auth_detail") or "", summary=report.summary(conn),
-                      report_name=renders[-1].name if renders else "",
+                      report_name=renders[-1].name if renders else "", msg=msg,
+                      pending=oauth.pending_login(conn) is not None, client_set=oauth.client_config() is not None,
                       unmatched=settings.get(conn, "credits.unmatched") or "")
+
+    @app.get("/drive/login")
+    def drive_login(user: str = Depends(require_user), conn=Depends(conn_dep)):
+        """Chris, 2026-10-13: the Drive sign-in from the phone, no terminal and no Google console change. Google
+        sends the browser to the loopback return page, which does not load on the phone; he pastes its address
+        below (drive/oauth.start_login, finish_login). Scope: drive.readonly, as ever."""
+        from ..drive import oauth
+        try:
+            url, _pending = oauth.start_login(conn)
+        except oauth.DriveAuthError as e:
+            return RedirectResponse("/drive?msg=" + quote_plus(str(e)), status_code=303)
+        return RedirectResponse(url, status_code=303)
+
+    @app.post("/drive/login/finish")
+    def drive_login_finish(user: str = Depends(require_user), conn=Depends(conn_dep), address: str = Form("")):
+        from ..drive import oauth
+        try:
+            oauth.finish_login(conn, address, detail="signed in from the dashboard")
+        except oauth.DriveAuthError as e:
+            return RedirectResponse("/drive?msg=" + quote_plus(str(e)), status_code=303)
+        except Exception as e:  # noqa: BLE001  Google refused the code, the network: said on the page, nothing saved
+            return RedirectResponse("/drive?msg=" + quote_plus(f"Google did not complete the sign-in ({type(e).__name__}: {str(e)[:160]}). Try again."),
+                                    status_code=303)
+        return RedirectResponse("/drive?msg=signed_in", status_code=303)
 
     @app.get("/drive/report/{name}")
     def drive_report(name: str, user: str = Depends(require_user)):
@@ -1231,7 +1326,18 @@ def create_app() -> FastAPI:
              "fields": [f("ANTHROPIC_API_KEY", "Anthropic API key", secret=True), f("AI_MONTHLY_CAP_USD", "Monthly cap, USD")]},
             {"title": "Buffer", "note": "This company's own Buffer account. After the key, link the channels on the Buffer page.",
              "fields": [f("BUFFER_API_KEY", "Buffer API key", secret=True), f("BUFFER_PLAN", "Buffer plan", choices=["free", "essentials", "team"]),
-                        f("PINTEREST_BOARD_ID", "Pinterest board id")]},
+                        f("PINTEREST_BOARD_ID", "Pinterest board id"), f("PINTEREST_LINK", "Page a pin opens (blank: the quote page)")]},
+            {"title": "Posting", "note": "Blank keeps the default. Times are local. Post times: one per network (facebook=09:30) or "
+                                         "weekdays/weekends (instagram=11:30/10:00); the building day is the weekday for building photos.",
+             "fields": [f("POST_TIMES", "Post times (default instagram 11:30 weekdays and 10:00 weekends, facebook 09:30, pinterest 20:30)"),
+                        f("BUILDING_WEEKDAY", "Building day (default wednesday)"), f("VARIETY_DAYS", "No same event or person twice inside, days (default 14)"),
+                        f("PHOTO_REPEAT_DAYS", "A photo sits out after it airs, days (default 180)"),
+                        f("TIMEZONE", "Time zone (default America/New_York)"), f("DIGEST_HOUR", "Morning brief hour (default 7)")]},
+            {"title": "Scout and outreach", "note": "Where the scout looks for events, in plain words; how far ahead; the daily caps on "
+                                                    "organizer drafts and approved sends. Notes still leave only on your Approve.",
+             "fields": [f("SCOUT_REGION", "Region to search (for example Washington DC, Maryland and Virginia)"),
+                        f("SCOUT_MONTHS", "Months ahead (default 9)"), f("OUTREACH_DAILY_DRAFTS", "Organizer drafts a day (default 5)"),
+                        f("OUTREACH_DAILY_SENDS", "Approved sends a day (default 10)")]},
             {"title": "Image hosting", "note": "Where Buffer fetches post images from.",
              "fields": [f("MEDIA_BASE_URL", "Image address"), f("MEDIA_UPLOAD_TOKEN", "Upload token", secret=True)]},
             {"title": "Phone alerts", "note": "This company's own ntfy topic. Pings: a post ready to approve, a post that went out, "
@@ -1249,6 +1355,7 @@ def create_app() -> FastAPI:
         ]
 
     key_names = {fld["name"] for g in key_groups() for fld in g["fields"]}
+    clearable = {fld["name"] for g in key_groups() for fld in g["fields"] if not fld["secret"] and not fld["choices"]}
 
     @app.get("/keys", response_class=HTMLResponse)
     def keys(request: Request, user: str = Depends(require_user), msg: str = ""):
@@ -1256,9 +1363,16 @@ def create_app() -> FastAPI:
 
     @app.post("/keys")
     async def keys_save(request: Request, user: str = Depends(require_user)):
+        """Blank keeps what is there; the Clear box next to a plain setting writes it empty, so the default
+        stands again (2026-10-13: a value could never be taken back from here). Secrets are replaced, never cleared."""
         form = await request.form()
-        updates = {}
+        updates, cleared = {}, 0
         for name in key_names:
+            if name in clearable and form.get(f"clear_{name}"):
+                if config.getenv(name) is not None:
+                    updates[name] = ""
+                    cleared += 1
+                continue
             value = (form.get(name) or "").strip()
             if not value or value == (config.getenv(name) or ""):
                 continue
@@ -1269,7 +1383,8 @@ def create_app() -> FastAPI:
             updates[name] = value
         if updates:
             config.write_env(updates)
-        return RedirectResponse(f"/keys?msg=saved+{len(updates)}", status_code=303)
+        note = f"saved {len(updates) - cleared}" + (f", cleared {cleared}" if cleared else "")
+        return RedirectResponse("/keys?msg=" + quote_plus(note), status_code=303)
 
     @app.post("/keys/test-alert")
     def keys_test_alert(user: str = Depends(require_user)):

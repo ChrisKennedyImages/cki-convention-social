@@ -158,7 +158,9 @@ def register(app, require_user, conn_dep, render) -> None:
                       approvable=row["status"] in APPROVABLE and not compliance.never_for_row(row))
 
     @app.post("/outreach/{oid}/save")
-    def outreach_save(oid: int, user: str = Depends(require_user), conn=Depends(conn_dep), subject: str = Form(""), body: str = Form("")):
+    def outreach_save(oid: int, user: str = Depends(require_user), conn=Depends(conn_dep), subject: str = Form(""), body: str = Form(""),
+                      do: str = Form("save")):
+        """Save, or Save and approve (2026-10-13: one form, two buttons; the compliance gates still hold)."""
         row = load_row(conn, oid)
         if row["status"] not in EDITABLE:
             return _see(f"/outreach/{oid}?msg=locked")
@@ -166,6 +168,13 @@ def register(app, require_user, conn_dep, render) -> None:
         model = "chris" if row["status"] == "queued" else row["model"]
         conn.execute("UPDATE outreach SET subject=?, body=?, status='draft', model=?, approved_at=NULL, updated_at=? WHERE id=?",
                      (subject.strip(), body.replace("\r\n", "\n").strip(), model, db.utcnow(), oid))
+        if do == "approve":
+            row = load_row(conn, oid)
+            if compliance.never_for_row(row) or [p for p in compliance.problems(conn, row) if p.code != "follow_up_wait"]:
+                return _see(f"/outreach/{oid}?msg=not_ready")
+            now = db.utcnow()
+            conn.execute("UPDATE outreach SET status='approved', approved_at=?, notes=NULL, updated_at=? WHERE id=?", (now, now, oid))
+            return _see(f"/outreach/{oid}?msg=approved")
         return _see(f"/outreach/{oid}?msg=saved")
 
     @app.post("/outreach/{oid}/approve")

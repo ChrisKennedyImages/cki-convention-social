@@ -2,7 +2,7 @@
 {% block body %}
 <h1>Keys</h1>
 {% if msg %}<div class="msg">{{ msg }}</div>{% endif %}
-<div class="card muted">Paste a key and save. Blank fields keep what is there. Saved secrets are never shown again, only whether they are set. Everything lands in the <code>.env</code> file on this machine.</div>
+<div class="card muted">Paste a key and save. Blank fields keep what is there; tick "clear it" under a setting to go back to its default. Saved secrets are never shown again, only whether they are set. Everything lands in the <code>.env</code> file on this machine.</div>
 <form method="post" action="/keys">
 {% for group in groups %}
 <div class="card"><strong>{{ group.title }}</strong><div class="muted">{{ group.note }}</div>
@@ -12,6 +12,7 @@
     {% elif f.secret %}<input type="password" name="{{ f.name }}" autocomplete="off" placeholder="{{ 'leave blank to keep' if f.set else 'paste here' }}">
     {% else %}<input type="text" name="{{ f.name }}" value="{{ f.value }}" autocomplete="off">{% endif %}
   </label>
+  {% if not f.secret and not f.choices %}<label class="row" style="margin:0 0 8px;font-size:13px"><input type="checkbox" name="clear_{{ f.name }}" style="width:auto"> clear it (back to the default)</label>{% endif %}
   {% endfor %}
 </div>
 {% endfor %}

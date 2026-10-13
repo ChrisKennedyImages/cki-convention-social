@@ -12,7 +12,7 @@
 {% for b in rows %}
 <div class="card row"><strong>{{ b.title }}</strong><span class="muted">{{ b.start_date }}{% if b.end_date != b.start_date %} to {{ b.end_date }}{% endif %}{% if b.who %} · {{ b.who }}{% endif %}</span>
   <span class="badge {{ 'ok' if b.status == 'booked' else ('draft' if b.status == 'hold' else 'blocked') }}">{{ b.status }}</span>
-  {% if b.status != 'cancelled' %}<form method="post" action="/bookings/{{ b.id }}/status" class="inline" style="margin-left:auto"><input type="hidden" name="status" value="cancelled"><button class="small danger" type="submit">Cancel</button></form>{% endif %}
+  {% if b.status != 'cancelled' %}<form method="post" action="/bookings/{{ b.id }}/status" class="inline" style="margin-left:auto" onsubmit="return confirm('Cancel this booking? The dates open up on the site.')"><input type="hidden" name="status" value="cancelled"><button class="small danger" type="submit">Cancel</button></form>{% endif %}
 </div>
 {% endfor %}
 {% endblock %}

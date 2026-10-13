@@ -250,6 +250,135 @@ class Dashboard(IsolatedCase):
         self.assertNotIn("approved+in+dry+run", r.headers["location"])
         self.assertTrue(settings.dry_run(self.conn, "publisher"))
 
+    def rendered_draft(self, **kw):
+        """A draft with its cards on disk and a passing art verdict, as the content agent leaves it."""
+        from tests._fakes import write_render
+        q = self.draft(**kw)
+        folder = config.get_config().data_root / "renders"
+        paths = {"4:5": [write_render(folder, f"q{q}-45.jpg")], "2:3": [write_render(folder, f"q{q}-23.jpg")]}
+        self.conn.execute("UPDATE content_queue SET render_paths=?, rule_report=? WHERE id=?",
+                          (json.dumps(paths), json.dumps({"for_day": "2026-10-14", "art": {"verdict": "pass", "notes": "Fine."}}), q))
+        return q
+
+    def test_save_and_approve_is_one_tap_and_keeps_the_edit(self):
+        """4.1 (2026-10-13): an edit without Save was lost on Approve. One form, two buttons; the gates still hold."""
+        c = self.signed_in()
+        q = self.draft()
+        self.assertIn('name="do" value="approve"', c.get(f"/queue/{q}").text)
+        words = "Green room before the keynote, calm and ready. Request a quote for your event."
+        data = {"caption_instagram": words, "caption_facebook": words, "caption_pinterest": words, "do": "approve"}
+        r = c.post(f"/queue/{q}/save", data=data, follow_redirects=False)
+        self.assertIn("msg=notargets", r.headers["location"], "the gates still hold; the edit is kept")
+        row = db.one(self.conn, "SELECT status, caption FROM content_queue WHERE id=?", (q,))
+        self.assertEqual((row["status"], json.loads(row["caption"])["instagram"]), ("draft", words))
+        r = c.post(f"/queue/{q}/save", data={**data, "target_instagram": "on"}, follow_redirects=False)
+        self.assertIn("msg=approved", r.headers["location"])
+        row = db.one(self.conn, "SELECT status, caption, targets FROM content_queue WHERE id=?", (q,))
+        self.assertEqual((row["status"], json.loads(row["caption"])["facebook"], json.loads(row["targets"])), ("approved", words, ["instagram"]))
+        q2 = self.draft()
+        r = c.post(f"/queue/{q2}/save", data={**data, "target_instagram": "on", "do": "save"}, follow_redirects=False)
+        self.assertIn("msg=saved", r.headers["location"])
+        self.assertEqual(db.one(self.conn, "SELECT status FROM content_queue WHERE id=?", (q2,))["status"], "draft")
+
+    def test_the_list_approves_only_when_the_gates_pass_and_shows_the_card(self):
+        """4.2: Approve on the Queue list for a draft whose rules pass, photos usable, art verdict pass or not
+        reviewed; the thumbnail opens the full card; every caption is there to read."""
+        c = self.signed_in()
+        good = self.rendered_draft()
+        bad = self.draft("Coverage from $500 a day.")
+        plain = self.draft()
+        page = c.get("/").text
+        self.assertIn(f'action="/queue/{good}/approve"', page)
+        self.assertIn(f'action="/queue/{plain}/approve"', page, "no art verdict (no render) is not a hold")
+        self.assertNotIn(f'action="/queue/{bad}/approve"', page)
+        self.assertIn(f'<a href="/media/render/{good}/4x5/1"', page, "the thumbnail opens the full card")
+        self.assertIn("<details", page)
+        self.assertEqual(page.count("Request a quote for your event."), 6, "all three captions of both clean drafts")
+        c.post(f"/queue/{good}/approve")
+        self.assertEqual(db.one(self.conn, "SELECT status FROM content_queue WHERE id=?", (good,))["status"], "approved")
+        self.assertNotIn(f'action="/queue/{good}/approve"', c.get("/").text)
+        redo = self.rendered_draft()
+        self.conn.execute("UPDATE content_queue SET rule_report=? WHERE id=?", (json.dumps({"art": {"verdict": "redo", "notes": "Crop tighter."}}), redo))
+        self.assertNotIn(f'action="/queue/{redo}/approve"', c.get("/").text, "an art director redo is his to look at")
+
+    def test_destructive_buttons_ask_first(self):
+        """4.2: Reject, Delete, Cancel, Exclude, Switch everything live, Remove and Spam each ask on the phone;
+        the small buttons are tall enough for a thumb."""
+        from convention_social.outreach import compliance
+        c = self.signed_in()
+        now = db.utcnow()
+        q = self.draft()
+        db.insert(self.conn, "do_not_use", kind="handle", value="@x", added_at=now)
+        c.post("/calendar/save", data={"name": "Big Con", "kind": "business"})
+        c.post("/bookings/add", data={"title": "Sample", "start_date": "2027-03-05", "status": "booked"})
+        iid = db.insert(self.conn, "inquiries", remote_id="r1", received_at=now, name="Dana", email="dana@example.org", updated_at=now)
+        compliance.block(self.conn, "stop@example.org", source="reply")
+        self.seed_library()
+
+        def form_tag(page, action):
+            m = re.search(rf'<form[^>]*action="{re.escape(action)}"[^>]*>', page)
+            self.assertIsNotNone(m, action)
+            return m.group(0)
+        self.assertIn("confirm(", form_tag(c.get(f"/queue/{q}").text, f"/queue/{q}/reject"))
+        rid = db.one(self.conn, "SELECT id FROM do_not_use")["id"]
+        self.assertIn("confirm(", form_tag(c.get("/donotuse").text, f"/donotuse/{rid}/remove"))
+        cid = db.one(self.conn, "SELECT id FROM conventions")["id"]
+        self.assertIn("confirm(", form_tag(c.get("/calendar").text, f"/calendar/{cid}/delete"))
+        bid = db.one(self.conn, "SELECT id FROM bookings")["id"]
+        self.assertIn("confirm(", form_tag(c.get("/bookings").text, f"/bookings/{bid}/status"))
+        did = db.one(self.conn, "SELECT id FROM do_not_contact")["id"]
+        self.assertIn("confirm(", form_tag(c.get("/outreach/donotcontact").text, f"/outreach/donotcontact/{did}/remove"))
+        self.assertIn("confirm(", form_tag(c.get("/agents").text, "/agents/all/dry-run"))
+        inquiry = c.get(f"/inquiries/{iid}").text
+        self.assertRegex(inquiry, r'<form[^>]*onsubmit="return confirm\([^"]*\)"[^>]*><input type="hidden" name="status" value="spam">')
+        self.assertNotRegex(inquiry, r'<form[^>]*confirm\([^"]*\)"[^>]*><input type="hidden" name="status" value="quoted">')
+        folder = c.get("/library/folder/fcon").text
+        self.assertRegex(folder, r'<form[^>]*onsubmit="return confirm\([^"]*\)"[^>]*><input type="hidden" name="state" value="excluded">')
+        self.assertNotRegex(folder, r'<form[^>]*confirm\([^"]*\)"[^>]*><input type="hidden" name="state" value="cleared">')
+        self.assertIn("button.small{min-height:40px", c.get("/").text)
+
+    def test_words_match_the_law(self):
+        """4.4: the draft page never tells him to fix a caption; a folder-approved photo says so instead of a no-op Undo."""
+        c = self.signed_in()
+        page = c.get(f"/queue/{self.draft()}?msg=blocked").text
+        self.assertIn("Nothing for you to do", page)
+        self.assertNotIn("Fix it and save first", page)
+        pid = self.seed_library()
+        c.post("/library/folder/fcon/clearance", data={"state": "cleared"})
+        approved = c.get("/library?view=approved").text
+        self.assertIn("approved by its folder", approved)
+        self.assertNotIn(">Undo<", approved)
+        c.post(f"/library/photo/{pid}/clearance", data={"state": "cleared"})
+        approved = c.get("/library?view=approved").text
+        self.assertIn(">Undo<", approved)
+        self.assertNotIn("approved by its folder", approved)
+
+    def test_keys_page_has_every_setting_and_can_clear_one(self):
+        """4.5: every setting the code reads is on the page (the Scout page pointed at a field that was not there),
+        and a non-secret can be cleared back to its default."""
+        c = self.signed_in()
+        page = c.get("/keys").text
+        for name in ("SCOUT_REGION", "SCOUT_MONTHS", "POST_TIMES", "BUILDING_WEEKDAY", "DIGEST_HOUR", "TIMEZONE", "VARIETY_DAYS",
+                     "PHOTO_REPEAT_DAYS", "OUTREACH_DAILY_DRAFTS", "OUTREACH_DAILY_SENDS", "PINTEREST_LINK"):
+            self.assertIn(f'name="{name}"', page, name)
+            self.assertIn(f'name="clear_{name}"', page, name)
+        self.assertNotIn('name="clear_ANTHROPIC_API_KEY"', page, "a secret is replaced, never cleared from here")
+        c.post("/keys", data={"SCOUT_REGION": "Washington DC, Maryland and Virginia", "DIGEST_HOUR": "6"})
+        config.reset()
+        self.assertEqual(config.getenv("SCOUT_REGION"), "Washington DC, Maryland and Virginia")
+        self.assertEqual(config.get_config().digest_hour, 6)
+        self.assertIn('value="Washington DC, Maryland and Virginia"', c.get("/keys").text)
+        r = c.post("/keys", data={"SCOUT_REGION": "Washington DC, Maryland and Virginia", "clear_SCOUT_REGION": "on"}, follow_redirects=False)
+        config.reset()
+        self.assertIsNone(config.getenv("SCOUT_REGION"), "cleared: the default stands again")
+        self.assertIn("cleared", r.headers["location"])
+        self.assertEqual(config.get_config().digest_hour, 6, "the other field kept its value")
+        c.post("/keys", data={"ANTHROPIC_API_KEY": "sk-secret-value", "BUFFER_PLAN": "team"})
+        c.post("/keys", data={"clear_ANTHROPIC_API_KEY": "on", "clear_BUFFER_PLAN": "on"})
+        config.reset()
+        self.assertEqual(config.getenv("ANTHROPIC_API_KEY"), "sk-secret-value", "a secret is never cleared from the page")
+        self.assertEqual(config.getenv("BUFFER_PLAN"), "team", "a choice has no clear")
+
     def test_keys_page_writes_env_and_never_shows_secrets(self):
         c = self.signed_in()
         c.post("/keys", data={"ANTHROPIC_API_KEY": "sk-secret-value", "BRAND_NAME": "New Name",

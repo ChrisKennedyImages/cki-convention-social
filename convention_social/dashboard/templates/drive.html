@@ -1,10 +1,22 @@
 {% extends "base.html" %}
 {% block body %}
 <h1>Google Drive</h1>
+{% if msg == 'signed_in' %}<div class="msg">Signed in, read only. The next scan reads the library.</div>{% elif msg %}<div class="msg bad">{{ msg }}</div>{% endif %}
 <div class="card">
   <div class="row"><strong>Sign-in</strong><span class="badge {{ 'ok' if state == 'ok' else 'blocked' }}">{{ {'ok':'signed in, read only','expired':'expired','missing':'not signed in'}.get(state, state) }}</span></div>
   <div class="muted">{{ detail }}</div>
-  {% if state != 'ok' %}<p>To sign in, run <code>bin/ccs drive login</code> on the Mini and follow the link it prints.</p>{% endif %}
+  {% if not client_set %}<p class="muted">The Google OAuth client id and secret are not set yet (Keys page, Google Drive).</p>
+  {% else %}
+  <p class="muted">Sign in as the Google account that holds the photos and approve read-only access. Google then sends the browser to a page that does not load (127.0.0.1); copy that page's address and paste it below. Nothing in Drive is ever changed.</p>
+  <div class="row"><a class="btn primary" href="/drive/login">{{ 'Sign in again' if state == 'ok' else 'Sign in to Google Drive' }}</a></div>
+  {% if pending %}
+  <form method="post" action="/drive/login/finish" style="margin-top:12px">
+    <label>Paste the address of the page Google sent you to (it starts with 127.0.0.1)</label>
+    <input type="text" name="address" autocomplete="off" inputmode="url" placeholder="127.0.0.1:4611/?state=...&code=...">
+    <div class="row" style="margin-top:8px"><button class="ok" type="submit">Finish signing in</button></div>
+  </form>
+  {% endif %}
+  {% endif %}
 </div>
 <div class="card">
   <strong>{{ summary.convention_photos }} convention photos found</strong>

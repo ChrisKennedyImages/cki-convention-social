@@ -21,7 +21,7 @@
   <strong>{{ r.name }}</strong><span class="muted">{{ r.start_date or 'no date' }}{% if r.city %}, {{ r.city }}{% endif %}</span>
   {% if r.attending %}<span class="badge ok">attending</span>{% endif %}{% if r.official %}<span class="badge approved">official</span>{% endif %}
   <a class="btn small" href="/calendar?edit={{ r.id }}" style="margin-left:auto">Edit</a>
-  <form method="post" action="/calendar/{{ r.id }}/delete" class="inline"><button class="small danger" type="submit">Delete</button></form>
+  <form method="post" action="/calendar/{{ r.id }}/delete" class="inline" onsubmit="return confirm('Delete this event from the calendar?')"><button class="small danger" type="submit">Delete</button></form>
 </div>
 {% endfor %}
 {% endblock %}
