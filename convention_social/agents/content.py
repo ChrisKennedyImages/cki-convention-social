@@ -20,6 +20,7 @@ agent runs live. Live: the final check and Claude's captions, under the cap.
 """
 from __future__ import annotations
 
+import hashlib
 import io
 import json
 import sqlite3
@@ -31,7 +32,7 @@ from zoneinfo import ZoneInfo
 from PIL import Image
 
 from ..ai import claude, copy_rules, names, seo_plan
-from ..core import config, db, notify, runner
+from ..core import config, db, notify, runner, settings
 from ..library import classify, eligibility
 
 from . import art_director, learner
@@ -47,6 +48,11 @@ except ImportError:  # pragma: no cover
 WEEKDAYS = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
 TARGETS = ("instagram", "facebook", "pinterest")
 MAX_TRIES = 5
+# 2026-10-13: the watchdog reads what the last run found (agents/watchdog.check_content_window) and starts this
+# agent again inside the day's window when the reason was passing or the inputs changed
+LAST_ATTEMPT_KEY = "content.last_attempt"
+NO_DRAFT_PINGED_KEY = "content.no_draft_pinged"       # "day|reason": the phone hears each reason once a day
+TRANSIENT_WORDS = ("could not run", "could not", "not signed in")
 
 
 def target_day(cfg, now: Optional[datetime] = None) -> date:
@@ -61,6 +67,24 @@ def subject_for(day: date) -> str:
 def already_drafted(conn: sqlite3.Connection, day: date) -> bool:
     return bool(db.one(conn, "SELECT 1 FROM content_queue WHERE kind='photo' AND status != 'rejected' AND rule_report LIKE ?",
                        (f'%"for_day": "{day.isoformat()}"%',)))
+
+
+def inputs_fingerprint(conn: sqlite3.Connection) -> str:
+    """What a draft is made from, in one short string: the approved photos and folders, the sort, the final
+    checks, the do-not-use list, the set-aside posts. When it changes, a day that found nothing is worth another try."""
+    parts = []
+    for sql in ("SELECT COUNT(*), MAX(clearance_at) FROM photos WHERE clearance != 'inherit'",
+                "SELECT COUNT(*), MAX(clearance_at) FROM drive_folders WHERE clearance != 'not_cleared'",
+                "SELECT COUNT(*), MAX(classified_at) FROM classifications WHERE method IN ('ollama', 'vision')",
+                "SELECT COUNT(*), MAX(checked_at) FROM final_checks",
+                "SELECT COUNT(*), MAX(added_at) FROM do_not_use",
+                "SELECT COUNT(*), MAX(updated_at) FROM content_queue WHERE status = 'rejected'"):
+        try:
+            r = conn.execute(sql).fetchone()
+            parts.append(f"{r[0]}:{r[1] or ''}")
+        except sqlite3.OperationalError:
+            parts.append("?")
+    return hashlib.sha1("|".join(parts).encode()).hexdigest()[:16]
 
 
 def recent_use(conn: sqlite3.Connection, days: int) -> tuple[set, set, set]:
@@ -100,15 +124,27 @@ def candidates(conn: sqlite3.Connection, subject: str) -> list[dict]:
     return out
 
 
-def write_captions(drafter, facts: claude.PostFacts, photo: Path, known_names) -> tuple[dict, str, dict, str]:
+def write_captions(drafter, facts: claude.PostFacts, photo: Path, known_names, *, conn=None,
+                   agent: str = "content") -> tuple[dict, str, dict, str]:
     """(captions, alt text, what happened, who wrote them). Chris, 2026-10-11: "Make sure the captions are SEO
     optimized painstakingly". The writer gets the post's search plan (ai/seo_plan.py); the hashtags and the
     link are put in place for it; a draft that misses the plan or breaks a rule is written once more with
-    the misses named, and after a second miss the template, which meets the plan by construction, stands in."""
+    the misses named, and after a second miss the template, which meets the plan by construction, stands in.
+    A writer that cannot write at all (the cap, a refusal, the API, the network) is the same: the template
+    writes, and with `conn` the reason is recorded once (2026-10-13: never a dead run)."""
     plan, link = facts.plan, facts.quote_link
-    tries, notes, draft, caps, misses = [], (), None, {}, []
+    tries, notes, draft, caps, misses, writer_error = [], (), None, {}, [], ""
     for _ in range(2):
-        draft = drafter.draft(facts, photo, notes=notes)
+        try:
+            draft = drafter.draft(facts, photo, notes=notes)
+        except claude.DraftError as e:
+            writer_error = f"{type(e).__name__}: {e}"
+            tries.append({"by": "template", "missed": [], "error": writer_error})
+            misses = [f"the writer could not write ({writer_error})"]
+            if conn is not None:
+                runner.record_error_once(conn, agent, "captions",
+                                         f"The caption writer could not write ({writer_error}); the template wrote instead.")
+            break
         caps = seo_plan.finish(draft.captions, plan, link)
         misses = seo_plan.problems(caps, plan) + [f"the {n} caption {b.message}" for n, t in caps.items()
                                                   for b in copy_rules.check(t, names=known_names, social=True).blocks]
@@ -116,15 +152,17 @@ def write_captions(drafter, facts: claude.PostFacts, photo: Path, known_names) -
         if not misses or draft.model == "template":
             break
         notes = misses
-    writer = draft.model
+    writer = draft.model if draft is not None else "template"
     if misses:
         caps, writer = seo_plan.template_captions(plan, link, facts.brand_name), "template"
     from ..seo.photo_text import SHOT_WORDS
-    alt = draft.alt_text
+    alt = draft.alt_text if draft is not None else ""
     if not alt or len(alt) > 125 or not copy_rules.check(alt, names=known_names, social=True).ok:
         alt = seo_plan.alt_text(plan, SHOT_WORDS.get(facts.shot_type, ""), facts.brand_name)
     record = {"primary": plan.primary, "related": list(plan.related), "hashtags": list(plan.hashtags), "area": plan.area,
               "tries": tries, "fell_back": bool(misses)}
+    if writer_error:
+        record["writer_error"] = writer_error
     return caps, alt, record, writer
 
 
@@ -173,11 +211,8 @@ def mend_captions(conn: sqlite3.Connection, row, *, drafter=None, agent: str = "
     if drafter is None:
         # the writer looks at the photo; without a copy of it here the template, which cannot miss, writes
         drafter = claude.get_drafter(conn, agent=agent) if photo is not None and photo.exists() else claude.TemplateDrafter()
-    try:
-        fixed, alt, record, writer = write_captions(drafter, facts, photo or Path("none"), known_names)
-    except claude.DraftError as e:                   # the cap, a refusal: the template stands in, said so
-        fixed, alt, record, writer = write_captions(claude.TemplateDrafter(), facts, Path("none"), known_names)
-        record["writer_error"] = f"{type(e).__name__}: {e}"
+    # the cap, a refusal, the API: the template stands in and the record says so (write_captions)
+    fixed, alt, record, writer = write_captions(drafter, facts, photo or Path("none"), known_names, conn=conn, agent=agent)
     reports = {n: copy_rules.check(t, names=known_names, social=True).as_dict() for n, t in fixed.items()}
     mend = {"at": db.utcnow(), "by": writer, "fixed": broken, "was": {n: captions[n] for n in broken}}
     # the card comes from the same day as the captions: drawn again with today's words where the photos are here
@@ -296,13 +331,17 @@ def make_renderer(conn: sqlite3.Connection, agent: str, *, design: str, rows: li
             else:
                 return {"9:16": [str(video)], "cover": [str(stills[0])], **single(focus, ("2:3",)),
                         "stills": [str(p) for p in stills[1:]]}
+        # every design carries the hero as a 2:3 card for Pinterest (2026-10-13: without one the publisher fell back
+        # to the photo's own .img copy, which it refuses, and the whole post failed on every network)
         if design in ("carousel", "reel"):        # the reel's fallback takes the same 4 to 6 photos
-            return {"4:5": [str(p) for p in motion.carousel(shots, copy, out_dir=out_dir / tag, meta=seo)]}
+            return {"4:5": [str(p) for p in motion.carousel(shots, copy, out_dir=out_dir / tag, meta=seo)], **single(focus, ("2:3",))}
         ordered = middle_first(shots, shots[0])
         mid = ordered.index(shots[0])
         if design == "fan":
-            return {"4:5": [str(motion.fan_post(ordered, copy, out=out_dir / f"{tag}.jpg", focus=mid, meta=seo))]}
-        return {"4:5": [str(motion.spotlight_post(ordered, copy, out=out_dir / f"{tag}.jpg", index=mid, meta=seo))]}
+            return {"4:5": [str(motion.fan_post(ordered, copy, out=out_dir / f"{tag}.jpg", focus=mid, meta=seo))],
+                    **single(focus, ("2:3",))}
+        return {"4:5": [str(motion.spotlight_post(ordered, copy, out=out_dir / f"{tag}.jpg", index=mid, meta=seo))],
+                **single(focus, ("2:3",))}
 
     return render, reel_failed
 
@@ -362,10 +401,17 @@ def draft_one(ctx: runner.Context, fetch: Callable[[dict], bytes], *, now: Optio
     if TAKES[design] > 1:
         pool = rooms_first(pool)
     chosen: list[tuple[dict, bytes]] = []
+    check_errors: list[str] = []
     for row in pool[:TAKES[design] + MAX_TRIES - 1]:
         data = fetch(row)
         if not ctx.dry_run:
-            verdict = classify.final_check(ctx.conn, row["id"], data, client=check_client, agent=ctx.agent)
+            try:
+                verdict = classify.final_check(ctx.conn, row["id"], data, client=check_client, agent=ctx.agent)
+            except Exception as e:  # noqa: BLE001  the API or the network, not the photo: said once; the watchdog tries again
+                check_errors.append(f"{type(e).__name__}: {e}")
+                runner.record_error_once(ctx.conn, ctx.agent, "final_check",
+                                         f"The final check could not run ({type(e).__name__}: {e}); nothing is drafted until it can.")
+                continue
             if not (verdict and eligibility.is_eligible(ctx.conn, row["id"])[0]):
                 continue
             if verdict.get("shot_type") in classify.SHOT_TYPES:
@@ -376,6 +422,8 @@ def draft_one(ctx: runner.Context, fetch: Callable[[dict], bytes], *, now: Optio
         if len(chosen) >= TAKES[design]:
             break
     if not chosen:
+        if check_errors:
+            return f"the final check could not run for {day} ({check_errors[-1]})"
         return f"no photo passed the final check for {day} (tried {min(len(pool), MAX_TRIES)})"
     asked = design
     if len(chosen) < NEEDS[design]:
@@ -396,7 +444,7 @@ def draft_one(ctx: runner.Context, fetch: Callable[[dict], bytes], *, now: Optio
                              design=design)
     facts.plan = plan
     captions, alt, seo_record, writer = write_captions(drafter, facts, ctx.cfg.data_root / "photos" / f"{hero['drive_id']}.img",
-                                                       known_names)
+                                                       known_names, conn=ctx.conn, agent=ctx.agent)
     reports = {n: copy_rules.check(t, names=known_names, social=True).as_dict() for n, t in captions.items()}
     images = {r["id"]: Image.open(io.BytesIO(d)) for r, d in chosen}
     out_dir = ctx.cfg.data_root / "renders" / "posts" / day.isoformat()
@@ -444,6 +492,7 @@ def draft_one(ctx: runner.Context, fetch: Callable[[dict], bytes], *, now: Optio
 
 
 def run(ctx: runner.Context, fetch: Optional[Callable[[dict], bytes]] = None) -> str:
+    summary, mended = None, 0
     if fetch is None:
         from ..drive import oauth
         from ..drive.api import DriveReader
@@ -452,22 +501,32 @@ def run(ctx: runner.Context, fetch: Optional[Callable[[dict], bytes]] = None) ->
             reader = DriveReader(lambda: oauth.access_token(ctx.conn), conn=ctx.conn, agent=ctx.agent)
         except oauth.DriveAuthError as e:
             runner.record_error_once(ctx.conn, ctx.agent, "drive_auth", str(e))
-            return f"not signed in: {e}"
-
-        def fetch(row):
-            cached = ctx.cfg.data_root / "photos" / f"{row['drive_id']}.img"
-            return cached.read_bytes() if cached.exists() else reader.download(row["drive_id"])
-    mended = 0 if ctx.dry_run else mend_queue(ctx.conn, agent=ctx.agent)
-    summary = draft_one(ctx, fetch)
+            summary = f"not signed in: {e}"          # a no-draft morning like any other: said below, tried again
+        else:
+            def fetch(row):
+                cached = ctx.cfg.data_root / "photos" / f"{row['drive_id']}.img"
+                return cached.read_bytes() if cached.exists() else reader.download(row["drive_id"])
+    if summary is None:
+        mended = 0 if ctx.dry_run else mend_queue(ctx.conn, agent=ctx.agent)
+        summary = draft_one(ctx, fetch)
+    day = target_day(ctx.cfg)
+    # what this run found, for the watchdog's draft window (2026-10-13): a reason that was passing, or inputs that
+    # changed since, mean another try inside the day; the same reason on the same inputs means waiting
+    settings.set(ctx.conn, LAST_ATTEMPT_KEY, json.dumps({
+        "day": day.isoformat(), "at": db.utcnow(), "summary": summary[:300], "fingerprint": inputs_fingerprint(ctx.conn),
+        "transient": any(w in summary for w in TRANSIENT_WORDS)}))
     if "drafted post" not in summary and "already drafted" not in summary:
         # 2026-10-12: "the render didn't land this morning at 8am". A morning with no draft is said out loud, with
-        # the reason, on the phone and on the Agents page; never a quiet summary line.
+        # the reason, on the phone and on the Agents page; never a quiet summary line. The phone hears each
+        # reason once a day; the Agents page keeps the line.
         from ..ai import spend
-        day = target_day(ctx.cfg)
         why = summary + ("; the monthly AI cap is reached (Keys page, AI)" if spend.cap_reached(ctx.conn) else "")
         runner.record_error_once(ctx.conn, ctx.agent, "no_draft", f"No post was drafted for {day}: {why}")
-        notify.push(f"{ctx.cfg.brand_name}: no post drafted for {day:%A}", why, dry_run=ctx.dry_run, click=notify.link("/agents"),
-                    conn=ctx.conn, agent=ctx.agent)
+        key = f"{day.isoformat()}|{why}"
+        if settings.get(ctx.conn, NO_DRAFT_PINGED_KEY) != key:
+            notify.push(f"{ctx.cfg.brand_name}: no post drafted for {day:%A}", why, dry_run=ctx.dry_run, click=notify.link("/agents"),
+                        conn=ctx.conn, agent=ctx.agent)
+            settings.set(ctx.conn, NO_DRAFT_PINGED_KEY, key)
     return (f"rewrote the captions of {mended} queued draft(s) that broke a rule; " if mended else "") + summary
 
 

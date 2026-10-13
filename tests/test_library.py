@@ -652,7 +652,9 @@ class ScannerAgent(IsolatedCase):
             self.assertEqual(runner.run("content", content.run), runner.EXIT_OK)
         rows = [dict(r) for r in db.rows(conn, "SELECT id, agent, kind, ts, alerted FROM errors ORDER BY id")]
         self.assertTrue(rows)
-        self.assertEqual(sorted((r["agent"], r["kind"]) for r in rows), [("content", "drive_auth"), ("scanner", "drive_auth")])
+        # a dead sign-in is a no-draft morning like any other (2026-10-13), said once as well
+        self.assertEqual(sorted((r["agent"], r["kind"]) for r in rows),
+                         [("content", "drive_auth"), ("content", "no_draft"), ("scanner", "drive_auth")])
         first = rows[0]
         conn.execute("UPDATE errors SET ts='2000-01-01T00:00:00+00:00' WHERE id=?", (first["id"],))
         runner.run(first["agent"], {"scanner": scanner.run, "content": content.run}[first["agent"]])

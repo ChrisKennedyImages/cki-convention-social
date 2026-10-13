@@ -1,6 +1,7 @@
 """Watchdog: Drive sign-in, channels, posts, spend, missed runs, one alert email, the daily digest. No network."""
 from __future__ import annotations
 
+import json
 import os
 import re
 from collections import namedtuple
@@ -50,10 +51,10 @@ class WatchCase(AgentCase):
 
     def run_at(self, now, **kw):
         self.fresh_runs(now)
+        kw.setdefault("start", mock.Mock())
         kw.setdefault("client", None)
         kw.setdefault("probe", ok_probe)
         kw.setdefault("force_digest", False)
-        from unittest import mock
         # these tests pin the watchdog's own digest; with the Chief of staff built, the brief replaces it
         with mock.patch.object(watchdog, "is_built", lambda name: name != "chief"):
             return watchdog.run(self.ctx, now=now, **kw)
@@ -214,6 +215,95 @@ class Checks(WatchCase):
         self.assertEqual(settings.get(self.conn, metrics.PULLED_KEY), "2026-10-09")
 
 
+NINE_NY = datetime(2026, 10, 9, 13, 0, tzinfo=timezone.utc)           # 09:00 New York, Friday; tomorrow is Saturday
+
+
+class TheDraftWindow(WatchCase):
+    """2026-10-13: the 08:00 draft fires once; a Mini asleep at 8, a Drive hiccup or an API blip lost the day.
+    The hourly watchdog starts the content agent again inside the day's window until a draft lands."""
+
+    def tomorrow(self):
+        from convention_social.agents import content
+        return content.target_day(self.ctx.cfg, NINE_NY)
+
+    def drafted(self):
+        db.insert(self.conn, "content_queue", kind="photo", photo_ids="[]", targets='["instagram"]', caption="{}",
+                  rule_report=json.dumps({"for_day": self.tomorrow().isoformat()}), created_at=db.utcnow(), updated_at=db.utcnow())
+
+    def test_nothing_drafted_at_nine_starts_the_content_agent_once(self):
+        start = mock.Mock()
+        summary = self.run_at(NINE_NY, start=start)
+        start.assert_called_once_with("content")
+        self.assertIn("alerts: 0 found", summary)
+        notes = json.loads(settings.get(self.conn, "watchdog.notes"))
+        self.assertTrue(any("content started again" in n for n in notes), notes)
+
+    def test_a_draft_for_tomorrow_means_nothing_to_do(self):
+        self.drafted()
+        start = mock.Mock()
+        self.run_at(NINE_NY, start=start)
+        self.run_at(NINE_NY + timedelta(hours=12), start=start)
+        start.assert_not_called()
+        self.assertEqual(outbox(self.ctx.cfg), [])
+
+    def test_the_same_inputs_after_a_try_that_found_nothing_wait_until_something_changes(self):
+        from convention_social.agents import content
+        settings.set(self.conn, content.LAST_ATTEMPT_KEY, json.dumps({
+            "day": self.tomorrow().isoformat(), "summary": "no photo ready for tomorrow: clear folders on the Library page",
+            "fingerprint": content.inputs_fingerprint(self.conn), "transient": False}))
+        start = mock.Mock()
+        self.run_at(NINE_NY, start=start)
+        start.assert_not_called()
+        self.assertTrue(any("nothing has changed" in n for n in json.loads(settings.get(self.conn, "watchdog.notes"))))
+        now = db.utcnow()
+        db.insert(self.conn, "drive_folders", drive_id="f1", name="Con", clearance="cleared", clearance_at=now,
+                  first_seen_at=now, last_seen_at=now)                     # he approved a folder: worth another try
+        self.run_at(NINE_NY + timedelta(hours=1), start=start)
+        start.assert_called_once_with("content")
+
+    def test_a_transient_reason_or_a_crashed_run_is_tried_again(self):
+        from convention_social.agents import content
+        settings.set(self.conn, content.LAST_ATTEMPT_KEY, json.dumps({
+            "day": self.tomorrow().isoformat(), "summary": "the final check could not run for tomorrow: ConnectionError",
+            "fingerprint": content.inputs_fingerprint(self.conn), "transient": True}))
+        start = mock.Mock()
+        self.run_at(NINE_NY, start=start)
+        start.assert_called_once_with("content")
+        settings.set(self.conn, content.LAST_ATTEMPT_KEY, json.dumps({
+            "day": self.tomorrow().isoformat(), "summary": "no photo ready", "fingerprint": content.inputs_fingerprint(self.conn),
+            "transient": False}))
+        db.insert(self.conn, "agent_runs", agent="content", started_at=(NINE_NY + timedelta(minutes=30)).isoformat(),
+                  finished_at=(NINE_NY + timedelta(minutes=31)).isoformat(), ok=0, dry_run=0, summary="KeyError: x")
+        self.run_at(NINE_NY + timedelta(hours=1), start=start)
+        self.assertEqual(start.call_count, 2, "a run that crashed is tried again whatever the inputs")
+
+    def test_before_eight_after_four_tries_and_during_a_run_it_waits(self):
+        start = mock.Mock()
+        self.run_at(NINE_NY - timedelta(hours=2), start=start)                  # 07:00: the 08:00 job has not had its turn
+        start.assert_not_called()
+        for i in range(4):
+            db.insert(self.conn, "agent_runs", agent="content", started_at=(NINE_NY - timedelta(minutes=50 - i)).isoformat(),
+                      finished_at=(NINE_NY - timedelta(minutes=49 - i)).isoformat(), ok=1, dry_run=0, summary="no photo ready")
+        self.run_at(NINE_NY, start=start)
+        start.assert_not_called()
+        self.assertTrue(any("no more by itself today" in n for n in json.loads(settings.get(self.conn, "watchdog.notes"))))
+        self.conn.execute("DELETE FROM agent_runs")
+        db.insert(self.conn, "agent_runs", agent="content", started_at=(NINE_NY - timedelta(minutes=5)).isoformat(), dry_run=0)
+        self.run_at(NINE_NY, start=start)
+        start.assert_not_called()
+
+    def test_after_eight_in_the_evening_a_missing_post_is_said_loudly_once(self):
+        start = mock.Mock()
+        with mock.patch.object(watchdog.notify, "push", return_value=False) as push:
+            summary = self.run_at(NINE_NY + timedelta(hours=12), start=start)       # 21:00
+        start.assert_not_called()
+        self.assertIn("1 sent", summary)
+        _, body, _ = read_mail(alert_mails(self.ctx.cfg)[0])
+        self.assertIn("has no post drafted", body)
+        self.assertEqual(push.call_args.kwargs["priority"], "urgent")
+        self.assertIn("0 sent", self.run_at(NINE_NY + timedelta(hours=13), start=start))
+
+
 class Digest(WatchCase):
     def test_digest_goes_dry_to_the_outbox_once_at_the_digest_hour(self):
         add_channels(self.conn, "instagram")
@@ -247,7 +337,8 @@ class Digest(WatchCase):
         self.assertEqual(len(digest_mails(self.ctx.cfg)), 1)
 
     def test_runner_end_to_end(self):
-        self.assertEqual(runner.run("watchdog", lambda ctx: watchdog.run(ctx, probe=ok_probe, force_digest=False)), runner.EXIT_OK)
+        self.assertEqual(runner.run("watchdog", lambda ctx: watchdog.run(ctx, probe=ok_probe, force_digest=False, start=mock.Mock())),
+                         runner.EXIT_OK)
         summary = db.one(self.conn, "SELECT summary FROM agent_runs WHERE agent='watchdog' ORDER BY id DESC LIMIT 1")["summary"]
         self.assertTrue(summary)
         self.assertIn("alerts:", summary)

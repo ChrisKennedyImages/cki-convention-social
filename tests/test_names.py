@@ -166,14 +166,18 @@ class Gates(AgentCase):
         self.assertIn("msg=ineligible", r.headers["location"], "the photo gate still holds; the name never does the blocking")
         self.assertEqual(db.one(self.conn, "SELECT status FROM content_queue WHERE id=?", (qid,))["status"], "draft")
 
-    def test_the_publisher_turns_back_a_post_that_names_the_event(self):
+    def test_the_publisher_rewrites_a_post_that_names_the_event_before_it_goes(self):
+        """The door used to send it back to Chris; since 2026-10-13 it rewrites first and checks again."""
         qid = self.named_post("approved")
         with mock.patch.object(publisher, "_eligibility_module", return_value=all_eligible()):
             stats = publisher.publish_ready(make_ctx(self.conn), now=datetime(2026, 10, 12, 12, tzinfo=timezone.utc))
-        self.assertEqual((stats["turned_back"], stats["would_publish"]), (1, 0))
-        row = db.one(self.conn, "SELECT status, last_error FROM content_queue WHERE id=?", (qid,))
-        self.assertEqual(row["status"], "draft")
-        self.assertIn("CPAC", row["last_error"])
+        self.assertEqual((stats["turned_back"], stats["would_publish"]), (0, 1))
+        row = db.one(self.conn, "SELECT status, caption, payload, rule_report FROM content_queue WHERE id=?", (qid,))
+        self.assertEqual(row["status"], "would_publish")
+        for text in (row["caption"], row["payload"]):
+            self.assertNotIn("CPAC", text)
+            self.assertNotIn("Jordan", text)
+        self.assertIn("CPAC", json.dumps(json.loads(row["rule_report"])["mended"][-1]["fixed"]), "the record names the rule")
 
 
 class DailyDraft(IsolatedCase):

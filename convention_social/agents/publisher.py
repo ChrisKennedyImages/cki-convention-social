@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import importlib
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -52,6 +52,8 @@ ELIGIBILITY_MODULE = "convention_social.library.eligibility"
 
 NO_CHANNELS = "No connected Buffer channel for any network on this post. Connect them in Buffer, then this goes out on the next run."
 NO_DAY = "No open day in the next {days} days for {nets}. Choose a time on the draft."
+CAPTION_BACK = "caption no longer passes the rules"
+MEND_AGAIN_AFTER = timedelta(hours=1)      # a caption the suite rewrote this recently and that still breaks goes back, not round again
 
 
 # ------------------------------------------------------------------ small readers
@@ -111,6 +113,27 @@ def record_once(conn, agent: str, kind: str, message: str) -> None:
     runner.record_error(conn, agent, kind, message)
 
 
+def for_day_of(row) -> Optional[date]:
+    """The day the content agent drafted the post for (rule_report for_day), or None."""
+    meta = _json(row["rule_report"], {}) if "rule_report" in row.keys() else {}
+    try:
+        return date.fromisoformat((meta or {}).get("for_day") or "") if isinstance(meta, dict) else None
+    except ValueError:
+        return None
+
+
+def mended_lately(row, now: Optional[datetime] = None) -> bool:
+    meta = _json(row["rule_report"], {}) if "rule_report" in row.keys() else {}
+    mends = (meta or {}).get("mended") or [] if isinstance(meta, dict) else []
+    try:
+        last = datetime.fromisoformat(mends[-1]["at"])
+    except (IndexError, KeyError, TypeError, ValueError):
+        return False
+    if last.tzinfo is None:
+        last = last.replace(tzinfo=timezone.utc)
+    return (now or datetime.now(timezone.utc)) - last < MEND_AGAIN_AFTER
+
+
 def _set_last_error(conn, row, why: Optional[str]) -> None:
     if row["last_error"] != why:
         conn.execute("UPDATE content_queue SET last_error=?, updated_at=? WHERE id=?", (why, db.utcnow(), row["id"]))
@@ -154,7 +177,7 @@ def door(ctx: runner.Context, row) -> Optional[tuple[str, str]]:
     for net in targets_of(row):
         report = copy_rules.check(captions.get(net, ""), official=official, names=known_names, social=True)
         if not report.ok:
-            return "back", f"The {net} caption no longer passes the rules: {report.blocks[0].message}. Fix it and approve again."
+            return "back", f"The {net} {CAPTION_BACK}: {report.blocks[0].message}."
     ids = photo_ids_of(row)
     if ids is None:
         return "back", "The photo list on this post could not be read. Pick the photo again."
@@ -176,6 +199,33 @@ def door(ctx: runner.Context, row) -> Optional[tuple[str, str]]:
         pid, qid = repeat
         return "back", f"Photo {pid} already went out as post #{qid} in the last {days} days. Pick another photo."
     return None
+
+
+def check_in(ctx: runner.Context, row) -> tuple[Optional[tuple[str, str]], object]:
+    """The door, with the suite's own rewrite first. Chris, 2026-10-12: "I don't want to change any captions": a
+    caption that breaks a rule now is rewritten here (agents/content.mend_captions, the template in dry run so
+    nothing is spent) and checked again; one rewritten within the hour that still breaks goes back to him.
+    Returns (stop, row): the row is reloaded after a rewrite so what goes out is the rewrite."""
+    stop = door(ctx, row)
+    if not (stop and stop[0] == "back" and CAPTION_BACK in stop[1]):
+        return stop, row
+    if mended_lately(row):
+        return ("back", f"The suite rewrote the captions within the hour and one still breaks a rule. {stop[1]}"), row
+    from ..ai import claude
+    from . import content
+    try:
+        mend = content.mend_captions(ctx.conn, row, drafter=claude.TemplateDrafter() if ctx.dry_run else None, agent=ctx.agent)
+    except Exception as e:  # noqa: BLE001  the rewrite could not run: said once; the row goes back as before
+        runner.record_error_once(ctx.conn, ctx.agent, "mend", f"post {row['id']}: the captions could not be rewritten at the door: "
+                                                              f"{type(e).__name__}: {e}")
+        mend = None
+    if mend is None:
+        return stop, row
+    row = db.one(ctx.conn, "SELECT * FROM content_queue WHERE id=?", (row["id"],))
+    stop = door(ctx, row)
+    if stop and stop[0] == "back" and CAPTION_BACK in stop[1]:
+        stop = ("back", f"The suite rewrote the captions and one still breaks a rule. {stop[1]}")
+    return stop, row
 
 
 # ------------------------------------------------------------------ media
@@ -381,7 +431,7 @@ def publish_ready(ctx: runner.Context, client: Optional[BufferClient] = None, up
         return alt_read[0]
 
     for row in rows:
-        stop = door(ctx, row)
+        stop, row = check_in(ctx, row)
         if stop:
             action, why = stop
             if action == "back":
@@ -399,14 +449,18 @@ def publish_ready(ctx: runner.Context, client: Optional[BufferClient] = None, up
         skip_note = ("Not sent to " + "; ".join(f"{n} ({why})" for n, why in skipped.items()) + ".") if skipped else None
         if not channels:
             _set_last_error(ctx.conn, row, NO_CHANNELS + (" " + skip_note if skip_note else ""))
+            record_once(ctx.conn, ctx.agent, "no_channel", f"post {row['id']}: {NO_CHANNELS}")     # said once, not per run
             stats["waiting_for_channels"] = stats.get("waiting_for_channels", 0) + 1
             continue
         if skipped:
             record_once(ctx.conn, ctx.agent, "no_channel", f"post {row['id']}: {skip_note}")
-        when = pacing.plan(ctx.conn, list(channels), row["scheduled_for"], now, ctx.cfg, include_dry=not live)
+        when = pacing.plan(ctx.conn, list(channels), row["scheduled_for"], now, ctx.cfg, include_dry=not live,
+                           not_before=for_day_of(row))
         no_day = [n for n, v in when.items() if v is None]
         if no_day:
-            _set_last_error(ctx.conn, row, NO_DAY.format(days=pacing.HORIZON_DAYS, nets=", ".join(no_day)))
+            why = NO_DAY.format(days=pacing.HORIZON_DAYS, nets=", ".join(no_day))
+            _set_last_error(ctx.conn, row, why)
+            record_once(ctx.conn, ctx.agent, "no_day", f"post {row['id']}: {why}")
             continue
         post_ids: dict[str, str] = {}
         built: dict[str, dict] = {}

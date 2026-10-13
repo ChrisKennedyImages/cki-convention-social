@@ -29,7 +29,7 @@ from PIL import Image
 
 from ..ai import claude as claude_mod
 from ..ai import spend
-from ..core import config, secrets
+from ..core import config, runner, secrets
 
 MODEL = "claude-opus-5"
 MAX_REDOS = 2
@@ -80,11 +80,16 @@ def look(conn: sqlite3.Connection, paths: list[Path], *, client=None, agent: str
         client = anthropic.Anthropic(api_key=secrets.get_secret("ANTHROPIC_API_KEY"))
     model = config.getenv("ART_MODEL") or MODEL
     content = [_block(p) for p in paths] + [{"type": "text", "text": "Review this post."}]
-    response = client.beta.messages.create(
-        model=model, max_tokens=3000, betas=[claude_mod.FALLBACK_BETA], fallbacks="default", thinking={"type": "adaptive"},
-        output_config={"effort": "medium", "format": {"type": "json_schema", "schema": SCHEMA}},
-        system=[{"type": "text", "text": SYSTEM, "cache_control": {"type": "ephemeral"}}],
-        messages=[{"role": "user", "content": content}])
+    try:
+        response = client.beta.messages.create(
+            model=model, max_tokens=3000, betas=[claude_mod.FALLBACK_BETA], fallbacks="default", thinking={"type": "adaptive"},
+            output_config={"effort": "medium", "format": {"type": "json_schema", "schema": SCHEMA}},
+            system=[{"type": "text", "text": SYSTEM, "cache_control": {"type": "ephemeral"}}],
+            messages=[{"role": "user", "content": content}])
+    except Exception as e:  # noqa: BLE001  the API or the network: the draft goes to Chris not reviewed, said once, never a dead run
+        runner.record_error_once(conn, agent, "art_director",
+                                 f"The art director could not look ({type(e).__name__}: {e}); the draft goes to Chris not reviewed.")
+        return None
     u = response.usage
     spend.record(conn, agent, getattr(response, "model", None) or model, int(u.input_tokens or 0), int(u.output_tokens or 0), "art review")
     text = next((b.text for b in response.content if b.type == "text"), None)
