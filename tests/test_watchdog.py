@@ -11,7 +11,7 @@ from convention_social.agents import watchdog
 from convention_social.ai import copy_rules
 from convention_social.buffer import budget, metrics
 from convention_social.buffer.client import BufferClient
-from convention_social.core import config, db, runner, settings
+from convention_social.core import config, db, mail, runner, settings
 from convention_social.drive import oauth
 from tests._fakes import AgentCase, FakeBuffer, add_channels, make_ctx, outbox, read_mail
 
@@ -77,6 +77,7 @@ class Drive(WatchCase):
         self.assertIn(watchdog.DRIVE_EXPIRED, plain)
         self.assertTrue(push.call_args_list)
         self.assertEqual(push.call_args.kwargs["priority"], "urgent")
+        self.assertIs(push.call_args.kwargs["conn"], self.conn, "a ping that fails is recorded as an error")
         # an hour later, and seven hours later (past the usual six hour pause): still the same day, still quiet
         self.assertIn("0 sent", self.run_at(NOON_UTC + timedelta(hours=1)))
         self.assertIn("0 sent", self.run_at(NOON_UTC + timedelta(hours=7)))
@@ -130,6 +131,41 @@ class Checks(WatchCase):
         self.assertIn("Buffer could not send it", body)
         self.assertIn("media_missing", body)
         self.assertIsNotNone(db.one(self.conn, "SELECT notified_at FROM errors")["notified_at"])
+
+    def test_each_error_row_is_alerted_and_a_second_of_the_same_kind_is_not_swallowed(self):
+        """Keyed by kind alone, the second `door` error inside six hours was never sent, yet marked as sent."""
+        db.insert(self.conn, "errors", ts=db.utcnow(), agent="publisher", kind="door", message="post 7: caption breaks a rule", alerted=0)
+        self.run_at(NOON_UTC)
+        db.insert(self.conn, "errors", ts=db.utcnow(), agent="publisher", kind="door", message="post 8: photo no longer usable", alerted=0)
+        summary = self.run_at(NOON_UTC + timedelta(minutes=10))
+        self.assertIn("1 sent", summary)
+        mails = alert_mails(self.ctx.cfg)
+        self.assertEqual(len(mails), 2)
+        _, body, _ = read_mail(mails[1])
+        self.assertIn("post 8: photo no longer usable", body)
+        self.assertNotIn("post 7", body, "said once, in the first mail")
+        self.assertEqual(db.one(self.conn, "SELECT COUNT(*) n FROM errors WHERE notified_at IS NULL")["n"], 0)
+
+    def test_an_alert_that_could_not_be_delivered_stays_unsent_and_is_said(self):
+        db.insert(self.conn, "errors", ts=db.utcnow(), agent="publisher", kind="door", message="post 7: caption breaks a rule", alerted=0)
+        failed = mail.MailResult(sent=False, dry_run=False, error="SMTPAuthenticationError: bad password")
+        with mock.patch.object(watchdog.mail, "send", return_value=failed), \
+             mock.patch.object(watchdog.notify, "_push", return_value="could not reach ntfy (ConnectionError: no route)"):
+            summary = self.run_at(NOON_UTC)
+        self.assertIn("1 found, 0 sent", summary)
+        self.assertIsNone(db.one(self.conn, "SELECT notified_at FROM errors WHERE kind='door'")["notified_at"], "not sent, so not marked sent")
+        kinds = {r["kind"] for r in db.rows(self.conn, "SELECT kind FROM errors WHERE agent='watchdog'")}
+        self.assertEqual(kinds, {"alert_mail", "ntfy"})
+        self.assertIsNone(settings.get(self.conn, "watchdog.alert.error:door:1"), "no suppression for an alert that never went")
+        summary = self.run_at(NOON_UTC + timedelta(minutes=10))        # the mail works again: everything unsent goes now
+        self.assertIn("sent", summary)
+        _, body, _ = read_mail(alert_mails(self.ctx.cfg)[-1])
+        self.assertIn("post 7: caption breaks a rule", body)
+        self.assertIn("alert_mail", body, "the watchdog's own trouble is said too")
+        self.assertEqual(db.one(self.conn, "SELECT COUNT(*) n FROM errors WHERE notified_at IS NULL")["n"], 0)
+
+    def test_every_agent_on_a_schedule_has_a_gap(self):
+        self.assertEqual(set(watchdog.MAX_GAP), set(watchdog.AGENTS) - {"dashboard", "art_director"})
 
     def test_stuck_scheduled_post_alerts(self):
         qid = db.insert(self.conn, "content_queue", kind="photo", photo_ids="[]", targets='["instagram"]', caption='{"instagram":"x"}',

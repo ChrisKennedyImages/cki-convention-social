@@ -315,6 +315,7 @@ def cmd_design(args) -> int:
         about = json.loads((out / "about.json").read_text())
         design_samples.write_status("done", f"made on {len(about['photos'])} of your approved photos", folder=out.name,
                                     failed=about.get("failed") or [])
+        design_samples.made(conn)
         print(f"design samples: {out / 'index.html'}")
         return 0
     finally:

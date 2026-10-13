@@ -3,6 +3,7 @@
 {% set notes = {'saved': ('Saved.', ''), 'approved': ('Approved. It goes out at its time.', ''), 'requeued': ('Back in drafts.', ''),
                 'blocked': ('Not approved: a caption still breaks a rule after the suite rewrote it. Fix it and save first.', 'bad'),
                 'mended': ('A caption broke a rule that came after it was written; the suite rewrote it. Nothing to fix.', ''),
+                'mend_failed': ('A caption breaks a rule, and the suite could not rewrite the caption just now (the API or the network). Its next run tries again. Nothing for you to do.', 'bad'),
                 'ineligible': ('Not approved: a photo in it can no longer be used.', 'bad'),
                 'notargets': ('Not approved: pick at least one place to post.', 'bad')} %}
 {% if msg in notes %}<div class="msg {{ notes[msg][1] }}">{{ notes[msg][0] }}</div>{% endif %}

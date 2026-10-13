@@ -492,7 +492,7 @@ def verify_scheduled(ctx: runner.Context, client: Optional[BufferClient] = None)
             ctx.conn.execute("UPDATE content_queue SET status='published', published_at=?, updated_at=? WHERE id=?", (now, now, row["id"]))
             stats["published"] += 1
             notify.push(f"{ctx.cfg.brand_name}: posted", f"Post {row['id']} went out on {', '.join(infos)}. Tap to see it.",
-                        dry_run=ctx.dry_run, priority="default", click=notify.link(f"/queue/{row['id']}"))
+                        dry_run=ctx.dry_run, priority="default", click=notify.link(f"/queue/{row['id']}"), conn=ctx.conn, agent=ctx.agent)
     return stats
 
 

@@ -36,7 +36,9 @@ LIVE_CONFIG = "wrangler.live.jsonc"
 STATUS_FILE = "site-deploy.json"                     # DATA_ROOT/site: what the last deploy did, for the Photos page
 STALE_RUNNING = 40 * 60                              # a "running" status older than this was a run that died
 DEPLOYED_KEY = "site.deployed_commit"                # the code commit the site on Cloudflare was built from
-FAILED_KEY = "site.deploy_failed_for"                # a commit whose deploy failed: not retried by itself
+FAILED_KEY = "site.deploy_failed_for"                # JSON {commit, tries, last_at}: a failed deploy is tried again, up to MAX_TRIES
+MAX_TRIES = 3                                        # per commit, by itself; Publish on the Photos page always tries
+RETRY_AFTER = 30 * 60                                # seconds between tries
 BUILD_TIMEOUT = 20 * 60
 DEPLOY_TIMEOUT = 10 * 60
 CHECK_WAIT = 5 * 60
@@ -85,6 +87,32 @@ def read_status() -> dict:
     return st
 
 
+# ------------------------------------------------------------------ a failed deploy, tried again
+
+def failure_record(conn) -> dict:
+    """{commit, tries, last_at} of the last failed deploy, or {} when the last one went. A bare commit, as
+    an older suite wrote it, counts as one failure at no known time."""
+    raw = settings.get(conn, FAILED_KEY) or ""
+    if not raw:
+        return {}
+    try:
+        rec = json.loads(raw)
+    except ValueError:
+        rec = None
+    if not isinstance(rec, dict):
+        return {"commit": raw, "tries": 1, "last_at": None}
+    return {"commit": rec.get("commit") or "", "tries": int(rec.get("tries") or 0), "last_at": rec.get("last_at")}
+
+
+def record_failure(conn, head: str, now: Optional[datetime] = None) -> int:
+    """One more failed try of this commit (a new commit starts at one). Returns the count."""
+    rec = failure_record(conn)
+    tries = rec["tries"] + 1 if rec.get("commit") == head else 1
+    settings.set(conn, FAILED_KEY, json.dumps({"commit": head, "tries": tries,
+                                               "last_at": (now or datetime.now()).isoformat(timespec="seconds")}))
+    return tries
+
+
 # ------------------------------------------------------------------ is the site behind the code?
 
 def _git(repo: Path, *args: str) -> str:
@@ -92,9 +120,10 @@ def _git(repo: Path, *args: str) -> str:
     return r.stdout.strip() if r.returncode == 0 else ""
 
 
-def wanted(conn, repo: Optional[Path] = None) -> tuple[bool, str]:
+def wanted(conn, repo: Optional[Path] = None, now: Optional[datetime] = None) -> tuple[bool, str]:
     """(deploy now?, why) for the updater: the site is behind the code when the commit it was built from
-    is not this one and the commits in between touch the site, or when the suite has never deployed it."""
+    is not this one and the commits in between touch the site, or when the suite has never deployed it.
+    A failed deploy is tried again after RETRY_AFTER, up to MAX_TRIES per commit (2026-10-13)."""
     repo = Path(repo or config.REPO_ROOT)
     head = _git(repo, "rev-parse", "HEAD")
     if not head:
@@ -102,8 +131,20 @@ def wanted(conn, repo: Optional[Path] = None) -> tuple[bool, str]:
     deployed = settings.get(conn, DEPLOYED_KEY) or ""
     if deployed == head:
         return False, f"the site is on {head[:7]}, the same as the code"
-    if settings.get(conn, FAILED_KEY) == head:
-        return False, f"the deploy of {head[:7]} failed; not trying again by itself (Publish on the Photos page does)"
+    failed = failure_record(conn)
+    if failed.get("commit") == head:
+        tries = failed["tries"]
+        if tries >= MAX_TRIES:
+            return False, f"the deploy of {head[:7]} failed {tries} times; not trying again by itself (Publish on the Photos page does)"
+        last = None
+        try:
+            last = datetime.fromisoformat(failed["last_at"]) if failed.get("last_at") else None
+        except ValueError:
+            pass
+        if last and ((now or datetime.now()) - last).total_seconds() < RETRY_AFTER:
+            return False, (f"the deploy of {head[:7]} failed (try {tries} of {MAX_TRIES}); trying again "
+                           f"{RETRY_AFTER // 60} minutes after {last.strftime('%H:%M')}")
+        return True, f"the deploy of {head[:7]} failed (try {tries} of {MAX_TRIES}); trying again"
     if not deployed:
         return True, "the suite has not deployed the site yet"
     if _git(repo, "cat-file", "-t", deployed) != "commit":
@@ -235,7 +276,8 @@ def tell_engines(post=None) -> tuple[bool, str]:
 
 
 def _failed(conn, head: str, say: Callable[[str], None], what: str, detail: str) -> int:
-    settings.set(conn, FAILED_KEY, head)
+    tries = record_failure(conn, head)
+    what = f"{what} (try {tries} of {MAX_TRIES})"
     write_status("failed", what, commit=head, detail=detail[:2000])
     say(f"not live: {what}")
     if detail:

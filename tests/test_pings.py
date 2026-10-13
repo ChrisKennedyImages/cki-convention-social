@@ -45,6 +45,28 @@ class Result(IsolatedCase):
         self.assertIn("could not reach ntfy", notify.push_result("t", "m", dry_run=False, transport=down))
         self.assertFalse(notify.push("t", "m", dry_run=False, transport=down))
 
+    def test_a_ping_that_did_not_go_is_recorded_once(self):
+        """A failed push used to be a False nobody read. Failures are said out loud: one errors row per reason."""
+        os.environ["NTFY_TOPIC"] = "event-caliber-abc"
+        config.reset()
+        conn = db.connect()
+
+        def down(url, **kw):
+            raise ConnectionError("no route")
+        self.assertFalse(notify.push("t", "m", dry_run=False, transport=down, conn=conn, agent="content"))
+        self.assertFalse(notify.push("t", "m", dry_run=False, transport=down, conn=conn, agent="content"))
+        rows = db.rows(conn, "SELECT * FROM errors")
+        self.assertEqual(len(rows), 1, "said once while it stands")
+        self.assertEqual((rows[0]["agent"], rows[0]["kind"]), ("content", "ntfy"))
+        self.assertIn("could not reach ntfy", rows[0]["message"])
+        notify.push("t", "m", dry_run=True, transport=down, conn=conn, agent="content")
+        self.assertEqual(db.one(conn, "SELECT COUNT(*) n FROM errors")["n"], 1, "a dry run sends nothing and that is not a failure")
+        os.environ.pop("NTFY_TOPIC")
+        config.reset()
+        notify.push("t", "m", dry_run=False, conn=conn, agent="publisher")
+        self.assertEqual(db.one(conn, "SELECT kind FROM errors WHERE agent='publisher'")["kind"], "ntfy", "live with no topic is a failure too")
+        conn.close()
+
 
 class Draft(IsolatedCase):
     def test_a_new_draft_pings_the_phone_with_a_link_to_it(self):
@@ -62,6 +84,7 @@ class Draft(IsolatedCase):
         self.assertEqual(args[0], "Event Caliber: a post to approve")
         self.assertIn("single with 1 photo(s) for Wednesday", args[1])
         self.assertEqual((kw["click"], kw["dry_run"]), (f"https://mac-mini.example:8443/queue/{qid}", True))
+        self.assertIs(kw["conn"], conn, "a ping that fails is recorded as an error")
         conn.close()
 
 
@@ -80,6 +103,7 @@ class Posted(PublisherCase):
         self.assertIn(f"Post {qid} went out on instagram, facebook, pinterest", args[1])
         self.assertEqual(kw["dry_run"], False)
         self.assertTrue(kw["click"].endswith(f"/queue/{qid}"))
+        self.assertIs(kw["conn"], self.conn, "a ping that fails is recorded as an error")
 
     def test_a_post_buffer_could_not_send_never_says_posted(self):
         _, qid = self.rendered_post()

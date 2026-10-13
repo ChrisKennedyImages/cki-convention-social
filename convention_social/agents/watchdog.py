@@ -9,7 +9,10 @@ errors the agents recorded since the last look.
 
 Anything urgent goes out at once (one email to ALERT_EMAIL, plus a phone push
 when NTFY_TOPIC is set), with a 6 hour suppression per problem so a broken
-channel does not page every hour. An expired Drive sign-in is loud (urgent
+channel does not page every hour. Each recorded error is its own problem, so
+a second error of the same kind is never swallowed by the first, and an
+error is marked as sent only when the mail or the push really went; a mail
+that could not go is itself an error (2026-10-13: failures said once, out loud). An expired Drive sign-in is loud (urgent
 push) and goes out once per local day. At DIGEST_HOUR local the digest goes
 out once: posted, waiting, broke, spend. In dry run every email is written to
 DATA_ROOT/outbox-dry instead.
@@ -33,6 +36,7 @@ from . import pacing
 
 # how long after its cadence an agent may be silent before we call it missed
 MAX_GAP = {"scanner": timedelta(hours=3), "content": timedelta(hours=30), "publisher": timedelta(hours=1),
+           "inbox": timedelta(hours=1), "chief": timedelta(hours=2),
            "watchdog": timedelta(hours=2), "backup": timedelta(hours=36),
            "learner": timedelta(hours=30), "seo": timedelta(days=8),
            "scout": timedelta(days=8), "outreach": timedelta(hours=30), "updater": timedelta(hours=1)}
@@ -211,9 +215,7 @@ def collect_new_errors(ctx: runner.Context, f: Findings) -> list[int]:
     ids = []
     for r in rows:
         ids.append(r["id"])
-        if r["agent"] == ctx.agent:
-            continue
-        f.alert(f"error:{r['kind']}", f"{r['agent']}: {r['kind']}: {r['message'][:200]}")
+        f.alert(f"error:{r['kind']}:{r['id']}", f"{r['agent']}: {r['kind']}: {r['message'][:200]}")
     return ids
 
 
@@ -226,10 +228,12 @@ def suppressed(ctx: runner.Context, f: Findings, code: str, now: datetime) -> bo
     return bool(last and now - last < SUPPRESS)
 
 
-def send_alerts(ctx: runner.Context, f: Findings, now: datetime) -> int:
+def send_alerts(ctx: runner.Context, f: Findings, now: datetime) -> tuple[int, bool]:
+    """(alerts sent, delivered): delivered is false when neither the mail nor the push went, and then
+    nothing is marked as sent or suppressed; the next run says it all again."""
     fresh = [(c, m) for c, m in f.alerts if not suppressed(ctx, f, c, now)]
     if not fresh:
-        return 0
+        return 0, True
     fresh.sort(key=lambda cm: cm[0] not in f.loud)       # the loud ones lead the subject
     body_lines = "".join(f"<li>{html.escape(m)}</li>" for _, m in fresh)
     plain = "\n".join(f"* {m}" for _, m in fresh)
@@ -238,12 +242,18 @@ def send_alerts(ctx: runner.Context, f: Findings, now: datetime) -> int:
     res = mail.send(subject, f"<h2>{html.escape(ctx.cfg.brand_name)} watchdog</h2><ul>{body_lines}</ul>"
                     f"<p style='color:#666'>Dashboard: {html.escape(dashboard_url(ctx.cfg))}/</p>",
                     to=ctx.cfg.alert_email, plain=plain, dry_run=ctx.dry_run)
-    notify.push(f"{ctx.cfg.brand_name}: {fresh[0][1][:60]}" if loud else f"{ctx.cfg.brand_name}: {len(fresh)} alert(s)",
-                plain[:500], dry_run=ctx.dry_run, priority="urgent" if loud else "high", click=dashboard_url(ctx.cfg))
+    pushed = notify.push(f"{ctx.cfg.brand_name}: {fresh[0][1][:60]}" if loud else f"{ctx.cfg.brand_name}: {len(fresh)} alert(s)",
+                         plain[:500], dry_run=ctx.dry_run, priority="urgent" if loud else "high", click=dashboard_url(ctx.cfg),
+                         conn=ctx.conn, agent=ctx.agent)
+    mailed = res.sent or res.dry_run
+    if not mailed:
+        runner.record_error_once(ctx.conn, ctx.agent, "alert_mail", f"The alert email could not be sent: {res.error}")
+    ctx.log.warning("alerts %s: %s", "written to outbox-dry" if res.dry_run else ("sent" if res.sent else f"FAILED {res.error}"), plain)
+    if not (mailed or pushed):
+        return 0, False
     for code, _ in fresh:
         settings.set(ctx.conn, f"watchdog.alert.{code}", now.isoformat())
-    ctx.log.warning("alerts %s: %s", "written to outbox-dry" if res.dry_run else ("sent" if res.sent else f"FAILED {res.error}"), plain)
-    return len(fresh)
+    return len(fresh), True
 
 
 # ------------------------------------------------------------------ digest
@@ -361,8 +371,8 @@ def run(ctx: runner.Context, *, now: Optional[datetime] = None, client: Optional
             except Exception as e:  # noqa: BLE001
                 f.note(f"The post numbers refresh failed: {e}")
     error_ids = collect_new_errors(ctx, f)
-    sent = send_alerts(ctx, f, now)
-    if error_ids:
+    sent, delivered = send_alerts(ctx, f, now)
+    if error_ids and delivered:
         ctx.conn.execute(f"UPDATE errors SET notified_at=? WHERE id IN ({','.join('?' * len(error_ids))})", (db.utcnow(), *error_ids))
     settings.set(ctx.conn, "watchdog.notes", json.dumps(f.notes[:20]))      # the chief's brief reads these
     digest = False

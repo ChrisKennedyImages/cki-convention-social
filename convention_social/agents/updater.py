@@ -36,6 +36,7 @@ import shutil
 import signal
 import subprocess
 import time
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -195,8 +196,8 @@ def ensure_site(ctx: runner.Context, repo: Path, *, deploy: Callable[[Path], tup
     on Cloudflare follows the code: when the commit it was built from is behind this one on a site
     file (or the suite has never deployed it), deploy now. Every pass asks, not only the pass that
     moved the code, so the first deploy after this arrives happens on the next pass even though an
-    older updater did that merge. A failed deploy is recorded once and not retried by itself for the
-    same commit (site/deploy.py); the Publish button on the Photos page tries again."""
+    older updater did that merge. A failed deploy is recorded and tried again by itself after half an
+    hour, three times per commit (site/deploy.py); the Publish button on the Photos page always tries."""
     from ..site import deploy as site_deploy
     wanted, why = site_deploy.wanted(ctx.conn, repo)
     if not wanted:
@@ -207,9 +208,17 @@ def ensure_site(ctx: runner.Context, repo: Path, *, deploy: Callable[[Path], tup
         return f"site: behind the code, not deployable here ({hold})"
     if ctx.dry_run:
         return f"DRY RUN site: {why}; would deploy"
+    started = datetime.now()
     ok, tail = deploy(repo)
     if not ok:
-        settings.set(ctx.conn, site_deploy.FAILED_KEY, _out(repo, "rev-parse", "HEAD"))   # the deploy sets it too, unless it died
+        head = _out(repo, "rev-parse", "HEAD")
+        rec = site_deploy.failure_record(ctx.conn)                                    # the deploy records its own failure,
+        try:                                                                          # unless it died before it could
+            recorded_at = datetime.fromisoformat(rec["last_at"]) if rec.get("last_at") else None
+        except ValueError:
+            recorded_at = None
+        if rec.get("commit") != head or recorded_at is None or recorded_at < started - timedelta(seconds=1):
+            site_deploy.record_failure(ctx.conn, head)
         runner.record_error(ctx.conn, ctx.agent, "site_deploy",
                             f"The site did not go live ({why}). Press Publish on the Photos page to try again. {tail}"[:2000])
         return f"site: deploy FAILED ({why})"

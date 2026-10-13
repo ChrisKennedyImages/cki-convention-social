@@ -185,6 +185,22 @@ class OnTheDraftPage(Mend):
         self.assertEqual(content.mend_captions(self.conn, self.row(qid), drafter=Writer([CLEAN]))["by"], "claude-test")
         self.assertNotIn("Official", json.loads(self.row(qid)["caption"])["instagram"])
 
+    def test_a_rewrite_that_cannot_run_never_breaks_the_page(self):
+        """An API error inside the rewrite used to reach the crash page. The page answers, says so, records it once."""
+        qid = self.draft()
+        with mock.patch.object(content, "mend_captions", side_effect=ConnectionError("api down")):
+            r = self.client.get(f"/queue/{qid}")
+            self.assertEqual(r.status_code, 200)
+            self.assertIn("could not rewrite the caption just now", r.text)
+            self.assertIn("Nothing for you to do", r.text)
+            r = self.client.post(f"/queue/{qid}/approve", follow_redirects=False)
+            self.assertIn("msg=mend_failed", r.headers["location"])
+        self.assertEqual(self.row(qid)["status"], "draft")
+        err = db.one(self.conn, "SELECT agent, kind, message FROM errors")
+        self.assertEqual((err["agent"], err["kind"]), ("dashboard", "mend"))
+        self.assertIn("ConnectionError", err["message"])
+        self.assertEqual(db.one(self.conn, "SELECT COUNT(*) n FROM errors")["n"], 1, "said once while it stands")
+
     def test_a_draft_already_approved_is_not_touched_by_the_page(self):
         qid = self.draft(status="approved")
         self.client.get(f"/queue/{qid}")

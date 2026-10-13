@@ -36,7 +36,7 @@ from ..ai import names as ai_names
 from ..ai.claude import NETWORKS
 from ..buffer import payloads as buffer_payloads
 from ..buffer.client import BufferBudgetExceeded, BufferClient, BufferError, BufferRateLimited
-from ..core import auth, config, db, secrets, settings, state_io
+from ..core import auth, config, db, runner, secrets, settings, state_io
 from .. import music
 from ..library import eligibility, report
 
@@ -115,7 +115,7 @@ SECTIONS = (
      (("Requests", "/inquiries"), ("Bookings", "/bookings"), ("Calendar", "/calendar"))),
     ("More", "/more", ("/more", "/outreach", "/scout", "/seo", "/learner", "/agents", "/buffer", "/keys", "/errors"),
      (("Outreach", "/outreach"), ("Scout", "/scout"), ("Search", "/seo"), ("Learner", "/learner"),
-      ("Agents", "/agents"), ("Buffer", "/buffer"), ("Keys", "/keys"))),
+      ("Agents", "/agents"), ("Errors", "/errors"), ("Buffer", "/buffer"), ("Keys", "/keys"))),
 )
 
 
@@ -503,14 +503,20 @@ def create_app() -> FastAPI:
         break a rule now is rewritten by the suite first (agents/content.mend_captions); he never edits."""
         from ..agents import content
         if row["status"] in content.MENDABLE and queue_view(conn, row)["blocked_networks"]:
-            if content.mend_captions(conn, row, agent="dashboard") is not None:
-                return load_queue_row(conn, row["id"]), True
-        return row, False
+            try:
+                mended = content.mend_captions(conn, row, agent="dashboard")
+            except Exception as e:  # noqa: BLE001  the rewrite could not run (the API, the network): the page still answers
+                runner.record_error_once(conn, "dashboard", "mend",
+                                         f"The suite could not rewrite the captions of post {row['id']}: {type(e).__name__}: {e}")
+                return row, "mend_failed"
+            if mended is not None:
+                return load_queue_row(conn, row["id"]), "mended"
+        return row, ""
 
     @app.get("/queue/{qid}", response_class=HTMLResponse)
     def queue_detail(qid: int, request: Request, user: str = Depends(require_user), conn=Depends(conn_dep), msg: str = ""):
         row, mended = mended_row(conn, load_queue_row(conn, qid))
-        return render(request, "detail.html", item=queue_view(conn, row), networks=NETWORKS, msg=msg or ("mended" if mended else ""),
+        return render(request, "detail.html", item=queue_view(conn, row), networks=NETWORKS, msg=msg or mended,
                       shot_choices=SHOT_CHOICES)
 
     @app.post("/queue/{qid}/save")
@@ -529,10 +535,10 @@ def create_app() -> FastAPI:
         row = load_queue_row(conn, qid)
         if row["status"] != "draft":
             return RedirectResponse(f"/queue/{qid}", status_code=303)
-        row, _ = mended_row(conn, row)
+        row, mended = mended_row(conn, row)
         item = queue_view(conn, row)
         if item["blocked_networks"]:
-            return RedirectResponse(f"/queue/{qid}?msg=blocked", status_code=303)
+            return RedirectResponse(f"/queue/{qid}?msg={'mend_failed' if mended == 'mend_failed' else 'blocked'}", status_code=303)
         if item["ineligible"]:
             return RedirectResponse(f"/queue/{qid}?msg=ineligible", status_code=303)
         if not item["targets"]:
@@ -986,10 +992,9 @@ def create_app() -> FastAPI:
             rows.append({"name": name, "meta": meta, "built": is_built(name), "runnable": name in RUNNABLE,
                          "dry_run": settings.dry_run(conn, name) if name in settings.AGENTS_WITH_DRY_RUN else None,
                          "last": dict(last) if last else None})
-        errors = [dict(e) for e in db.rows(conn, "SELECT * FROM errors WHERE alerted=0 ORDER BY id DESC LIMIT 50")]
-        kinds = [dict(k) for k in db.rows(conn, "SELECT kind, COUNT(*) AS n FROM errors WHERE alerted=0 GROUP BY kind ORDER BY n DESC")]
+        errors, kinds = open_errors(conn)
         switches = [r for r in rows if r["dry_run"] is not None]
-        return render(request, "agents.html", agents=rows, errors=errors, kinds=kinds, msg=request.query_params.get("msg", ""),
+        return render(request, "agents.html", agents=rows, errors=errors, kinds=kinds, back="/agents", msg=request.query_params.get("msg", ""),
                       live_n=sum(1 for r in switches if not r["dry_run"]), switch_n=len(switches),
                       ai_mtd=spend.month_to_date(conn), ai_cap=config.get_config().ai_monthly_cap_usd)
 
@@ -1018,17 +1023,31 @@ def create_app() -> FastAPI:
         settings.set_dry_run(conn, name, state != "off")
         return RedirectResponse("/agents", status_code=303)
 
+    def open_errors(conn) -> tuple[list[dict], list[dict]]:
+        errors = [dict(e) for e in db.rows(conn, "SELECT * FROM errors WHERE alerted=0 ORDER BY id DESC LIMIT 50")]
+        kinds = [dict(k) for k in db.rows(conn, "SELECT kind, COUNT(*) AS n FROM errors WHERE alerted=0 GROUP BY kind ORDER BY n DESC")]
+        return errors, kinds
+
+    ERROR_PAGES = ("/agents", "/errors")
+
+    @app.get("/errors", response_class=HTMLResponse)
+    def errors_page(request: Request, user: str = Depends(require_user), conn=Depends(conn_dep)):
+        """The open errors on their own page (More listed it with nothing behind it, 2026-10-13)."""
+        errors, kinds = open_errors(conn)
+        return render(request, "errors.html", errors=errors, kinds=kinds, back="/errors", msg=request.query_params.get("msg", ""))
+
     @app.post("/errors/ack-kind")
-    def ack_kind(kind: str = Form(...), user: str = Depends(require_user), conn=Depends(conn_dep)):
+    def ack_kind(kind: str = Form(...), back: str = Form(default="/agents"), user: str = Depends(require_user), conn=Depends(conn_dep)):
         """Dismiss every open error of one kind (Chris, 2026-10-11: "the terminal command to dismiss
         all the drive errors"). A dismissed error stays in the table; it only leaves this list."""
         n = conn.execute("UPDATE errors SET alerted=1 WHERE alerted=0 AND kind=?", (kind,)).rowcount
-        return RedirectResponse(f"/agents?msg={n}+{kind.replace('_', '+')}+errors+dismissed", status_code=303)
+        page = back if back in ERROR_PAGES else "/agents"
+        return RedirectResponse(f"{page}?msg={n}+{kind.replace('_', '+')}+errors+dismissed", status_code=303)
 
     @app.post("/errors/{eid}/ack")
-    def ack_error(eid: int, user: str = Depends(require_user), conn=Depends(conn_dep)):
+    def ack_error(eid: int, back: str = Form(default="/agents"), user: str = Depends(require_user), conn=Depends(conn_dep)):
         conn.execute("UPDATE errors SET alerted=1 WHERE id=?", (eid,))
-        return RedirectResponse("/agents", status_code=303)
+        return RedirectResponse(back if back in ERROR_PAGES else "/agents", status_code=303)
 
     # ------------------------------------------------------------------ buffer
     # Chris, 2026-10-11: "A Buffer channel is not set up for this yet, but definitely get the plumbing in

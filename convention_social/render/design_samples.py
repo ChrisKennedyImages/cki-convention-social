@@ -46,7 +46,8 @@ OTHER = ("ON THE FLOOR", "In the moment.")
 COPY_VERSION = "2026-10-11b"             # bump when the words on the cards change: the samples are made again
 FOLDER_PREFIX = "design-"
 STATUS_FILE = "design-status.json"       # in DATA_ROOT/renders: what the designer did last, for the Design card
-LAST_SET_KEY = "designer.last_set"
+LAST_SET_KEY = "designer.last_set"         # the set the last finished run was made on (written by `ccs design` when done)
+PENDING_SET_KEY = "designer.pending_set"   # the set the run just started is on; it becomes LAST_SET_KEY only when it finishes
 STALE_RUNNING = 45 * 60                  # a "running" status older than this was a run that died
 MIN_PHOTOS = 3
 
@@ -125,10 +126,16 @@ def auto(conn) -> str:
     key = COPY_VERSION + ":" + ",".join(sorted(r["drive_id"] for r in rows))
     if settings.get(conn, LAST_SET_KEY) == key:
         return "design samples: up to date"
-    settings.set(conn, LAST_SET_KEY, key)
+    # the set is recorded as made only when the run finishes (made()); a run that fails is tried again next hour
+    settings.set(conn, PENDING_SET_KEY, key)
     write_status("running", "being made on your newest approved photos")
     start_in_background()
     return "design samples: started on the newest approved photos"
+
+
+def made(conn) -> None:
+    """`ccs design` finished: the set it started on is the set the samples are made on."""
+    settings.set(conn, LAST_SET_KEY, settings.get(conn, PENDING_SET_KEY) or "")
 
 
 def usable(conn, row) -> bool:

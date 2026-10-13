@@ -4,10 +4,12 @@ from __future__ import annotations
 import json
 import os
 import types
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+
+from unittest import mock
 
 from convention_social.agents import chief, watchdog
-from convention_social.core import config, db, runner, settings
+from convention_social.core import config, db, mail, runner, settings
 from tests._base import IsolatedCase
 
 BRIEF_UTC = datetime(2026, 10, 12, 11, 40, tzinfo=timezone.utc)     # 07:40 New York
@@ -62,6 +64,30 @@ class Chief(IsolatedCase):
         self.assertTrue(needs)
         self.assertEqual(needs.get("1 organizer email(s) drafted for your Approve."), "/outreach")
         self.assertEqual(needs.get("1 upcoming event(s) the scout found for you to look at."), "/scout")
+
+    def test_a_brief_that_could_not_be_mailed_is_not_marked_sent_and_the_push_goes_once(self):
+        failed = mail.MailResult(sent=False, dry_run=False, error="SMTPAuthenticationError: bad password")
+        os.environ["AI_MODEL"] = "template"
+        config.reset()
+        with mock.patch.object(chief.mail, "send", return_value=failed), mock.patch.object(chief.notify, "push") as push:
+            line = chief.run(self.ctx(dry=False), now=BRIEF_UTC)
+            self.assertIn("mail FAILED", line)
+            self.assertIsNone(settings.get(self.conn, chief.SENT_KEY), "not sent, so not marked sent: the next hour tries again")
+            err = db.one(self.conn, "SELECT agent, kind, message FROM errors")
+            self.assertEqual((err["agent"], err["kind"]), ("chief", "brief_mail"))
+            self.assertIn("bad password", err["message"])
+            self.assertEqual(push.call_count, 1)
+            self.assertIs(push.call_args.kwargs["conn"], self.conn)
+            chief.run(self.ctx(dry=False), now=BRIEF_UTC + timedelta(hours=1))
+            self.assertEqual(push.call_count, 1, "the phone is told once a day, however often the mail fails")
+            self.assertEqual(db.one(self.conn, "SELECT COUNT(*) n FROM errors")["n"], 1, "said once while it stands")
+        chief.run(self.ctx(), now=BRIEF_UTC + timedelta(hours=2))          # the mail works again (dry run: the outbox)
+        self.assertEqual(settings.get(self.conn, chief.SENT_KEY), "2026-10-12")
+
+    def test_a_disconnected_channel_links_to_the_buffer_page(self):
+        db.insert(self.conn, "channels", buffer_channel_id="ch-ig", service="instagram", display_name="Event Caliber", connected=0)
+        needs = dict(chief.gather(self.ctx(), BRIEF_UTC)["needs"])
+        self.assertEqual(needs.get("Instagram is disconnected in Buffer. Reconnect it there."), "/buffer")
 
     def test_not_before_the_hour(self):
         self.assertEqual(chief.run(self.ctx(), now=datetime(2026, 10, 12, 9, 0, tzinfo=timezone.utc)), "brief not due")

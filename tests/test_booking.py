@@ -81,6 +81,22 @@ class Inbox(IsolatedCase):
         inbox.run(self.ctx(), api=api)
         self.assertEqual(db.one(self.conn, "SELECT COUNT(*) n FROM inquiries")["n"], 1)
 
+    def test_a_site_outage_still_sends_approved_replies_and_is_said(self):
+        self._stored()
+        self.conn.execute("UPDATE inquiries SET reply_subject='Photography for Sample Con', reply_body='Hi Dana, here it is.\nChris', reply_status='approved'")
+
+        class Down:
+            def __call__(self, method, url, headers, payload):
+                raise ConnectionError("site down")
+        line = inbox.run(self.ctx(), api=SiteAPI("tok", base="https://eventcaliber.com", transport=Down()))
+        self.assertEqual(db.one(self.conn, "SELECT reply_status FROM inquiries")["reply_status"], "would_send", line)
+        err = db.one(self.conn, "SELECT agent, kind, message FROM errors")
+        self.assertEqual((err["agent"], err["kind"]), ("inbox", "site_pull"))
+        self.assertIn("ConnectionError", err["message"])
+        self.assertIn("could not be reached", line)
+        inbox.run(self.ctx(), api=SiteAPI("tok", base="https://eventcaliber.com", transport=Down()))
+        self.assertEqual(db.one(self.conn, "SELECT COUNT(*) n FROM errors")["n"], 1, "said once while it stands")
+
     def test_claude_draft_never_writes_a_price(self):
         row = self._stored()
 
