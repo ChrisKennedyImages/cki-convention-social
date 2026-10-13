@@ -36,9 +36,9 @@ class FakeD1 {
 }
 
 const pushes = [];
-globalThis.fetch = async (url, init) => { pushes.push({ url: String(url), body: init?.body }); return new Response("ok"); };
-const env = { DB: new FakeD1(), UPLOAD_TOKEN: "tok", NTFY_TOPIC: "topic-x", MEDIA: { async get() { return null; }, async put() {} },
-              ASSETS: { fetch: async () => new Response("site") } };
+globalThis.fetch = async (url, init) => { pushes.push({ url: String(url), body: init?.body, headers: init?.headers || {} }); return new Response("ok"); };
+const env = { DB: new FakeD1(), UPLOAD_TOKEN: "tok", NTFY_TOPIC: "topic-x", DASHBOARD_URL: "https://mac-mini.example:8443",
+              MEDIA: { async get() { return null; }, async put() {} }, ASSETS: { fetch: async () => new Response("site") } };
 const base = "https://eventcaliber.com";
 const form = (fields) => {
   const f = new FormData();
@@ -59,6 +59,12 @@ const body = JSON.parse(env.DB.quotes[0].body);
 ok(JSON.stringify(body.coverage) === JSON.stringify(["backstage", "on_site_delivery"]), "only known coverage kept");
 ok(pushes.length === 1 && pushes[0].url.endsWith("/topic-x"), "one push");
 ok(!pushes[0].body.includes("Dana") && !pushes[0].body.includes("dana@") && !pushes[0].body.includes("555"), "push carries no personal details");
+ok(pushes[0].headers.Click === "https://mac-mini.example:8443/inquiries", "the push opens the requests page (2026-10-13)");
+delete env.DASHBOARD_URL;
+await post({ name: "Eve", email: "eve@example.org", event_name: "Other Con" });
+ok(pushes.length === 2 && !("Click" in pushes[1].headers), "no dashboard address, no Click");
+env.DASHBOARD_URL = "https://mac-mini.example:8443";
+env.DB.quotes.pop();                                   // Eve's request leaves the counts below as they were
 
 // the honeypot drops quietly; a missing email is refused; the hourly limit holds
 r = await post({ name: "Bot", email: "b@example.org", website: "http://spam" });

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+from unittest import mock
 import re
 import types
 from pathlib import Path
@@ -80,6 +81,25 @@ class Inbox(IsolatedCase):
         site.items.append(REQ)
         inbox.run(self.ctx(), api=api)
         self.assertEqual(db.one(self.conn, "SELECT COUNT(*) n FROM inquiries")["n"], 1)
+
+    def test_a_drafted_reply_pings_the_phone_to_the_request_without_personal_details(self):
+        """6.2 (2026-10-13): the site's push said a request came in; nothing said the reply was ready."""
+        site = FakeSite([REQ])
+        api = SiteAPI("tok", base="https://eventcaliber.com", transport=site)
+        with mock.patch.object(inbox.notify, "push") as push:
+            inbox.run(self.ctx(), api=api)
+        iid = db.one(self.conn, "SELECT id FROM inquiries")["id"]
+        self.assertEqual(push.call_count, 1)
+        args, kw = push.call_args
+        self.assertIn("quote request", args[0].lower())
+        for secret in ("Dana", "dana@", "555"):
+            self.assertNotIn(secret, args[0] + args[1])
+        self.assertTrue(kw["click"].endswith(f"/inquiries/{iid}"))
+        self.assertIs(kw["conn"], self.conn)
+        self.assertEqual(kw["dry_run"], True, "the lane's own switch")
+        with mock.patch.object(inbox.notify, "push") as push:
+            inbox.run(self.ctx(), api=api)
+        self.assertEqual(push.call_count, 0, "once per request")
 
     def test_a_site_outage_still_sends_approved_replies_and_is_said(self):
         self._stored()

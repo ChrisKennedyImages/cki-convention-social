@@ -22,14 +22,18 @@ from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from ..ai import spend
-from ..core import config, db, runner, secrets
+from ..core import config, db, notify, runner, secrets
 from ..outreach import compliance, keys, research
 
 DEFAULT_MONTHS = 9
 
 
+DEFAULT_REGION = "Washington DC, Maryland and Virginia"      # Chris, 2026-10-13: the scout armed, around Washington DC
+
+
 def region() -> str:
-    return (config.getenv("SCOUT_REGION") or "").strip()
+    """SCOUT_REGION from the Keys page; blank means the default around Washington DC, not nothing."""
+    return (config.getenv("SCOUT_REGION") or "").strip() or DEFAULT_REGION
 
 
 def months() -> int:
@@ -123,6 +127,9 @@ def run(ctx: runner.Context, client=None) -> str:
     kept, dropped = research.vet(res, today=today, horizon=until)
     calendar = on_calendar(ctx.conn)
     new = sum(1 for ev in kept if store(ctx.conn, ev, res.model, calendar))
+    if new:
+        notify.push(f"{ctx.cfg.brand_name}: the scout found events", f"{new} new event{'s' if new != 1 else ''} around {where}. Tap to see them.",
+                    dry_run=ctx.dry_run, priority="default", click=notify.link("/scout"), conn=ctx.conn, agent=ctx.agent)
     with_email = sum(1 for ev in kept if ev["organizer_email"])
     gone = ", ".join(f"{k.replace('_', ' ')} {v}" for k, v in dropped.items() if v) or "none"
     notes = [n for n in (res.stopped, "structured by a second call" if res.structured else "",

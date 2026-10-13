@@ -483,6 +483,18 @@ class Dashboard(IsolatedCase):
         self.assertIn("publish", page.lower())
         self.assertIn("by itself in a few minutes with your photo changes", page)
 
+    def test_mail_is_google_workspace_on_the_keys_page_and_in_the_guide(self):
+        """6.5 (Chris, 2026-10-13: chris@eventcaliber.com on Google Workspace): the sender is plain SMTP with
+        STARTTLS on 587, which is smtp.gmail.com with an app password. The words say so where he looks."""
+        page = self.signed_in().get("/keys").text
+        self.assertIn("smtp.gmail.com", page)
+        self.assertIn("app password", page.lower())
+        guide = (config.REPO_ROOT / "docs" / "SETUP.md").read_text()
+        section = guide.split("## 4.")[1].split("## 5.")[0]
+        for words in ("Google Workspace", "smtp.gmail.com", "app password", "Email Routing", "MX", "SPF", "DKIM", "Send mail as"):
+            self.assertIn(words, section, words)
+        self.assertNotIn("Resend", section, "the sending-service recipe is gone")
+
     def test_keys_page_writes_env_and_never_shows_secrets(self):
         c = self.signed_in()
         c.post("/keys", data={"ANTHROPIC_API_KEY": "sk-secret-value", "BRAND_NAME": "New Name",

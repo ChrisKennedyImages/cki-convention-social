@@ -20,6 +20,7 @@ from convention_social import cli
 from convention_social.core import auth, config, db, runner, settings
 from convention_social.dashboard.app import COOKIE, create_app, make_token
 from convention_social.site import deploy
+from convention_social.site import deploy as site_deploy
 from tests._base import IsolatedCase
 from tests.test_updater import Repos
 
@@ -134,14 +135,26 @@ class Wanted(Repos):
 class Run(Repos):
     """build, wrangler, the check from outside, with the real lock, status file and record."""
 
+    LIVE = '{"name": "eventcaliber", "d1_databases": [{"binding": "DB", "database_id": "0123abcd-0000-4000-8000-000000000000"}]}'
+    COMMITTED = '{"name": "eventcaliber", "d1_databases": [{"binding": "DB", "database_id": "SET_AFTER_d1_create"}], "triggers": {"crons": []}}'
+
     def setUp(self):
         super().setUp()
-        (self.repo / "wrangler.live.jsonc").write_text("{}")
+        self.commit("wrangler.jsonc", self.COMMITTED)                     # the config in the code, with its placeholder
+        subprocess.run(["git", "-C", str(self.repo), "pull", "-q", "--ff-only"], check=True)
+        settings.set(self.conn, site_deploy.DEPLOYED_KEY, self.head())
+        (self.repo / "wrangler.live.jsonc").write_text(self.LIVE)          # what go-live wrote once: the real database id
         patcher = mock.patch("convention_social.site.deploy.shutil.which", return_value="/opt/homebrew/bin/npx")
         patcher.start()
         self.addCleanup(patcher.stop)
+        self.pushes = []
+        pusher = mock.patch.object(deploy.notify, "push", side_effect=lambda *a, **kw: self.pushes.append((a, kw)) or True)
+        pusher.start()
+        self.addCleanup(pusher.stop)
         self.said = []
         self.steps = []
+        self.puts = []
+        self.put_ok = True
 
     def go(self, *, build=None, deployer=None, checker=None, with_check=True):
         def build_(repo):
@@ -155,8 +168,64 @@ class Run(Repos):
         def check_():
             self.steps.append(("check", ""))
             return checker if checker is not None else (True, ["PASS  https://eventcaliber.com/", "PASS  booking API: accepted"])
+        def put_(repo, name, value):
+            self.puts.append((name, value))
+            return self.put_ok
         return deploy.run(repo=self.repo, conn=self.conn, say=self.said.append, with_check=with_check,
-                          build=build_, deploy=deploy_, checker=check_)
+                          build=build_, deploy=deploy_, checker=check_, put_secret=put_)
+
+    def test_the_live_config_follows_the_code(self):
+        """6.1 (2026-10-13): wrangler.live.jsonc was written once by go-live; a var or a cron added to wrangler.jsonc
+        never reached Cloudflare. Before every build the live file is the committed one with the database id."""
+        self.assertEqual(self.go(), 0)
+        live = (self.repo / "wrangler.live.jsonc").read_text()
+        self.assertEqual(live.rstrip("\n"), self.COMMITTED.replace("SET_AFTER_d1_create", "0123abcd-0000-4000-8000-000000000000"))
+        self.assertTrue(live.endswith("\n"))
+        self.assertIn('"crons": []', live, "the code's additions are in the live file")
+        self.assertNotIn("SET_AFTER_d1_create", live)
+        # a live file with no database id: nothing is built or deployed; the Photos card says why
+        (self.repo / "wrangler.live.jsonc").write_text("{}")
+        self.steps.clear()
+        self.assertEqual(self.go(), 1)
+        self.assertEqual(self.steps, [])
+        self.assertIn("no booking database id", deploy.read_status()["message"])
+        self.assertIn("go-live", deploy.read_status()["message"])
+
+    def test_the_sites_secrets_follow_the_env_after_each_deploy(self):
+        os.environ["NTFY_TOPIC"] = "event-caliber-abc"
+        os.environ["DASHBOARD_PUBLIC_URL"] = "https://mac-mini.example:8443"
+        config.reset()
+        self.assertEqual(self.go(), 0)
+        self.assertEqual(self.puts, [("NTFY_TOPIC", "event-caliber-abc"), ("DASHBOARD_URL", "https://mac-mini.example:8443")])
+        self.assertIn("deploy", [s for s, _ in self.steps])
+        self.puts.clear()
+        os.environ.pop("NTFY_TOPIC")
+        os.environ.pop("DASHBOARD_PUBLIC_URL")
+        config.reset()
+        settings.set(self.conn, deploy.DEPLOYED_KEY, "")
+        self.assertEqual(self.go(), 0)
+        self.assertEqual(self.puts, [], "nothing set, nothing put")
+        os.environ["NTFY_TOPIC"] = "event-caliber-abc"
+        config.reset()
+        self.put_ok = False
+        settings.set(self.conn, deploy.DEPLOYED_KEY, "")
+        self.assertEqual(self.go(), 0, "the site is live; a secret that could not be put is an error, not a failed deploy")
+        self.assertEqual(deploy.read_status()["state"], "done")
+        err = db.one(self.conn, "SELECT kind, message FROM errors WHERE kind='worker_secret'")
+        self.assertIsNotNone(err)
+        self.assertIn("NTFY_TOPIC", err["message"])
+
+    def test_a_site_that_went_live_pings_the_phone_to_the_photos_page(self):
+        self.assertEqual(self.go(), 0)
+        self.assertEqual(len(self.pushes), 1)
+        args, kw = self.pushes[0]
+        self.assertIn(f"live on {self.head()[:7]}", args[1])
+        self.assertTrue(kw["click"].endswith("/library?view=approved"))
+        self.assertIs(kw["conn"], self.conn)
+        self.pushes.clear()
+        settings.set(self.conn, deploy.DEPLOYED_KEY, "")
+        self.assertEqual(self.go(build=done("boom", 1)), 1)
+        self.assertEqual(self.pushes, [], "a failure is the watchdog's to tell")
 
     def test_live_records_the_commit_and_the_hero(self):
         settings.set(self.conn, deploy.DEPLOYED_KEY, "")
@@ -217,7 +286,7 @@ class Run(Repos):
     def test_a_step_that_hangs_is_a_failure_not_a_hang(self):
         def slow(repo):
             raise subprocess.TimeoutExpired(cmd=["npx", "wrangler"], timeout=600)
-        self.assertEqual(deploy.run(repo=self.repo, conn=self.conn, say=self.said.append, build=slow), 1)
+        self.assertEqual(deploy.run(repo=self.repo, conn=self.conn, say=self.said.append, build=slow, put_secret=lambda *a: True), 1)
         self.assertIn("a step took too long (npx, 600s)", deploy.read_status()["message"])
         self.assertEqual(deploy.failure_record(self.conn)["commit"], self.head())
 

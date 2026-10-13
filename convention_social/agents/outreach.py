@@ -22,7 +22,7 @@ import json
 from datetime import datetime, time, timedelta, timezone
 from zoneinfo import ZoneInfo
 
-from ..core import config, db, mail, runner
+from ..core import config, db, mail, notify, runner
 from ..outreach import compliance, draft, keys
 from ..outreach.site import UnsubscribeAPI
 
@@ -229,6 +229,10 @@ def run(ctx: runner.Context, api: UnsubscribeAPI | None = None, client=None) -> 
             runner.record_error(ctx.conn, ctx.agent, "opt_out_pull", f"{type(e).__name__}: {e}")
             opt = f"opt-outs not pulled ({type(e).__name__})"
     d = draft_new(ctx, client=client)
+    if d["drafted"]:
+        n = d["drafted"]
+        notify.push(f"{ctx.cfg.brand_name}: organizer notes to approve", f"{n} organizer note{'s' if n != 1 else ''} drafted. Tap to read them; nothing leaves without your Approve.",
+                    dry_run=ctx.dry_run, priority="default", click=notify.link("/outreach"), conn=ctx.conn, agent=ctx.agent)
     s = send_approved(ctx, opt_outs_synced=synced)
     return (f"{'DRY RUN ' if ctx.dry_run else ''}{opt}; drafted={d['drafted']} (claude={d['claude']} template={d['template']}, "
             f"left for tomorrow={d['left_for_tomorrow']}, on do-not-contact={d['skipped_blocked']}, never contacted={d['skipped_never']}); "

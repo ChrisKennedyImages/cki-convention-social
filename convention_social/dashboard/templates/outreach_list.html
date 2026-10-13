@@ -7,7 +7,8 @@
 {% if msg in notes %}<div class="msg {{ notes[msg][1] }}">{{ notes[msg][0] }}</div>{% endif %}
 <h1>Outreach</h1>
 <div class="card muted">Notes to event organizers. Nothing leaves until you press Approve, and every email carries your postal address, a one-click opt-out link and a reply STOP line.
-  <a href="/outreach/donotcontact">Do not contact</a></div>
+  The agent drafts up to {{ daily_drafts }} organizer drafts and {{ daily_sends }} approved sends a day (Keys, Scout and outreach);
+  {{ dnc_count }} address{{ 'es' if dnc_count != 1 else '' }} on the do-not-contact list (<a href="/outreach/donotcontact">open it</a>).</div>
 {% if not cfg_ok.sender or not cfg_ok.address %}
 <div class="card">
   {% if not cfg_ok.sender %}<div class="rule block">Mail sent from is not set to an address on {{ cfg_ok.domain }}: nothing can be approved or sent. Set BRAND_FROM_EMAIL on the <a href="/keys">Keys</a> page.</div>{% endif %}
