@@ -61,10 +61,12 @@ class Database(IsolatedCase):
 
 
 class DryRun(IsolatedCase):
-    def test_defaults_to_dry(self):
+    def test_defaults_to_dry_except_the_scout_he_armed(self):
+        """Every agent that sends or publishes starts in dry run. The scout only searches (inside the monthly
+        cap) and is armed by Chris's choice, 2026-10-13 (migration 0070_scout_armed)."""
         conn = db.connect()
         for agent in settings.AGENTS_WITH_DRY_RUN:
-            self.assertTrue(settings.dry_run(conn, agent))
+            self.assertEqual(settings.dry_run(conn, agent), agent != "scout", agent)
 
     def test_garbage_value_stays_dry(self):
         conn = db.connect()
