@@ -604,6 +604,38 @@ Batch 2 of the roadmap: the one post a day is never lost to a blip.
   breaks goes back with the reason. No connected channel and no open day
   are errors on the Agents page, said once.
 
+## 2026-10-13: silence never posts, and his Approve is honoured
+
+Batch 3 of the roadmap. Chris's choices for it, 2026-10-13: posts and replies
+he approved in dry run go out when the lane is switched live; silence is one
+nudge after eight hours, never a post set aside; the photos stay as they are.
+
+- A reject sets the post aside with him on the record
+  (`rule_report.rejected_by = "chris"`), its photo sits out for the repeat
+  window like the art director's (`content.recent_use`; the event and the
+  people are not "used", since nothing of it aired), and the content agent
+  is started at once so the day is drafted again: tomorrow's post when it is
+  missing, else today's when today's was the one set aside
+  (`content.set_aside_for`). Reject asks first. A post that already went
+  out cannot be rejected.
+- A draft waiting eight hours gets one push that opens it ("Still waiting:
+  Tuesday's post. Nothing goes out unless you approve it."),
+  `publisher.tend_drafts` on the ten-minute run; `rule_report.nudged_at`
+  keeps it to one. It is never set aside, and the nudge goes whether the
+  publisher is live or in dry run: the switch is about Buffer, the draft
+  waiting for him is real either way.
+- Switching a lane live (one, or everything at once) approves again what
+  the dry run marked `would_publish` / `would_send`; the message says how
+  many things go out. The publisher's door, `reply.ready_to_send` and
+  `compliance.problems` check every one before it leaves. What was sent
+  stays sent; back to dry run takes nothing back.
+- A do-not-use entry sets the posts it touches aside
+  (`rejected_by = "donotuse"`) with the reason and starts the content agent
+  once, instead of leaving them in drafts for him to notice.
+- An Approve can be taken back on the draft page ("Take back the
+  approval") while the publisher has not picked the post up; a post Buffer
+  already holds is pulled back from Buffer, not from here (roadmap 7.5).
+
 ## Standing rules from the brief
 
 - CPAC, the ACU and their affiliates are never contacted, by code

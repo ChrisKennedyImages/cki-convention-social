@@ -4,7 +4,7 @@
 {% if brief and brief.read %}<div class="card"><div class="muted">Morning brief, {{ brief.date }}</div><p style="margin:6px 0">{{ brief.read }}</p>
 {% for text, href in brief.needs %}<div class="row"><a href="{{ href }}">{{ text }}</a></div>{% endfor %}</div>{% endif %}
 <h1>Review queue</h1>
-{% if msg == 'rejected' %}<div class="msg">Post rejected.</div>{% endif %}
+{% if msg == 'rejected' %}<div class="msg">Set aside. A new post is being made in its place; it shows here in a few minutes, and your phone gets a ping.</div>{% endif %}
 {% if msg == 'redraft' %}<div class="msg">Fixed. That draft is set aside and a new one is being made with the right words; it shows here in a few minutes, and your phone gets a ping.</div>{% endif %}
 <div class="row" style="margin-bottom:12px">
   <a href="/?show=open" class="btn">Open</a><a href="/?show=published" class="btn">Published</a>
