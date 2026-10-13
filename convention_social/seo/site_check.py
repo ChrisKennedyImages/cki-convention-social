@@ -65,6 +65,7 @@ class PageScan(HTMLParser):
         self.images = 0
         self.images_without_alt = 0
         self.noindex = False
+        self.verification = ""                       # the Google Search Console tag's content, when the page has one
 
     def handle_starttag(self, tag, attrs):
         a = {k.lower(): (v or "") for k, v in attrs}
@@ -78,6 +79,8 @@ class PageScan(HTMLParser):
                 self.description = a.get("content", "").strip()
             elif name == "robots" and "noindex" in a.get("content", "").lower():
                 self.noindex = True
+            elif name == "google-site-verification":
+                self.verification = a.get("content", "").strip()
         elif tag == "h1":
             self.h1 += 1
         elif tag == "img":
@@ -104,7 +107,9 @@ class PageScan(HTMLParser):
             self.title += data
 
 
-def check_html(status: int, text: str) -> dict:
+def check_html(status: int, text: str, expected_tag: str = "") -> dict:
+    """`expected_tag`: the Search Console tag the Keys page holds; a live page without it fails (the tag
+    is what Search Console looks for, so it is checked where Search Console looks: on the live page)."""
     scan = PageScan()
     try:
         scan.feed(text or "")
@@ -125,6 +130,8 @@ def check_html(status: int, text: str) -> dict:
         r["problems"].append(f"{scan.images_without_alt} of {scan.images} images have no alt text")
     if scan.noindex:
         r["problems"].append("tells search engines not to list it (noindex)")
+    if expected_tag and status == 200 and scan.verification != expected_tag:
+        r["problems"].append("the Google Search Console tag is not on the page")
     r["ok"] = not r["problems"]
     return r
 
@@ -162,6 +169,14 @@ def check_key_file(status: int, text: str, key: str) -> dict:
     return {"title_ok": None, "description_ok": None, "h1_ok": None, "alt_ok": None, "problems": problems, "ok": not problems}
 
 
+def check_verification_file(status: int, text: str, name: str) -> dict:
+    """The Search Console HTML file method: the file at the root carries one line naming itself."""
+    problems = [] if status == 200 else [f"answered {status or 'nothing'}"]
+    if status == 200 and (text or "").strip() != f"google-site-verification: {name}":
+        problems.append("does not carry the Search Console line")
+    return {"title_ok": None, "description_ok": None, "h1_ok": None, "alt_ok": None, "problems": problems, "ok": not problems}
+
+
 def _flag(value) -> Optional[int]:
     return None if value is None else int(bool(value))
 
@@ -172,9 +187,12 @@ def check_all(cfg: Optional[config.Config] = None, *, transport: Optional[Transp
     cfg = cfg or config.get_config()
     transport = transport or requests_transport
     from . import indexnow
+    from ..site import build as site_build
     key_file = "/" + indexnow.key_file_name(indexnow.key()) if indexnow.key() else ""
+    expected_tag, verification_name = site_build.verification_value(), site_build.verification_file()
+    verification_path = "/" + verification_name if verification_name else ""
     results = []
-    for path in PATHS + ((key_file,) if key_file else ()):
+    for path in PATHS + ((key_file,) if key_file else ()) + ((verification_path,) if verification_path else ()):
         url = base_url(cfg) + path
         try:
             status, text = transport(url)
@@ -189,8 +207,10 @@ def check_all(cfg: Optional[config.Config] = None, *, transport: Optional[Transp
             r = check_robots(status, text)
         elif path == key_file:
             r = check_key_file(status, text, indexnow.key())
+        elif path == verification_path:
+            r = check_verification_file(status, text, verification_name)
         else:
-            r = check_html(status, text)
+            r = check_html(status, text, expected_tag=expected_tag)
         if reach:
             r["problems"] = [reach] + [p for p in r["problems"] if not p.startswith("answered")]
             r["ok"] = False

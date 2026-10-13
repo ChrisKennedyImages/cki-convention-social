@@ -114,6 +114,21 @@ class Wanted(Repos):
         self.assertFalse(deploy.wanted(self.conn, self.repo, now=t0 + timedelta(minutes=40))[0], "built after the change: nothing pending")
         self.assertEqual(deploy.photos_pending(self.conn, now=t0 + timedelta(minutes=40)), (False, ""))
 
+    def test_a_changed_search_console_tag_publishes_the_site_like_a_photo_change(self):
+        """2026-10-13: a Search Console value saved on the Keys page stamps site.tag_changed_at; the newer of the
+        two stamps names itself, and the same ten minutes of quiet apply."""
+        t0 = datetime(2026, 10, 13, 12, 0, tzinfo=timezone.utc)
+        settings.set(self.conn, deploy.DEPLOYED_AT_KEY, t0.isoformat())
+        settings.set(self.conn, deploy.TAG_CHANGED_KEY, (t0 + timedelta(minutes=5)).isoformat())
+        self.assertEqual(deploy.photos_pending(self.conn, now=t0 + timedelta(minutes=6)),
+                         (False, "the Search Console tag changed at 12:05; publishing them 10 minutes after the last change"))
+        self.assertEqual(deploy.photos_pending(self.conn, now=t0 + timedelta(minutes=16)), (True, "the Search Console tag changed at 12:05; publishing them"))
+        self.assertTrue(deploy.wanted(self.conn, self.repo, now=t0 + timedelta(minutes=16))[0])
+        settings.set(self.conn, deploy.PHOTOS_CHANGED_KEY, (t0 + timedelta(minutes=7)).isoformat())
+        self.assertEqual(deploy.photos_pending(self.conn, now=t0 + timedelta(minutes=20)), (True, "the approved photos changed at 12:07; publishing them"))
+        settings.set(self.conn, deploy.DEPLOYED_AT_KEY, (t0 + timedelta(minutes=21)).isoformat())
+        self.assertEqual(deploy.photos_pending(self.conn, now=t0 + timedelta(minutes=40)), (False, ""))
+
     def test_only_a_site_file_between_the_two_commits_counts(self):
         first = self.head()
         self.commit("convention_social/agents/content.py", "# agent")

@@ -149,11 +149,19 @@ exists. From your phone:
 
 1. Open https://search.google.com/search-console and add a property of the
    **URL prefix** kind: `https://eventcaliber.com/`.
-2. Under verification methods choose **HTML tag** and copy the tag.
-3. Dashboard, Keys, Search engines: paste the tag (or only its content value)
-   into **Google Search Console tag**, save.
-4. Dashboard, Photos, Approved: **Publish the site**. The tag is now on every
-   page.
+2. If Search Console verifies the property by itself (a Domain property
+   through Cloudflare's DNS, which is how it went on 2026-10-12), there is
+   nothing to paste: skip to step 5. If it asks you to prove ownership, pick
+   a method and copy what it shows: the **HTML tag** (or only its content
+   value), the **TXT record** (`google-site-verification=...`), or the
+   **HTML file** (its name).
+3. Dashboard, Keys, Search engines: paste it into **Google Search Console
+   tag**, save. Anything that is none of these is refused there, with the
+   reason; the Website card on the Photos page says the same.
+4. The site republishes itself within ten minutes (the Website card says so;
+   **Publish the site** starts it now). The tag is then on every page, or the
+   file is at the root, and the check from outside after every publish
+   confirms it is there.
 5. Back in Search Console press **Verify**. Then Sitemaps, enter `sitemap.xml`,
    Submit. Google reads the sitemap from then on; the first pages appear in
    its results within days, not minutes.

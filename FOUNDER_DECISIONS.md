@@ -785,6 +785,31 @@ Batch 8 of the roadmap, the last one.
   exist, and wiring it is the one way a caption could claim an affiliation
   (the affiliation rule above).
 
+## 2026-10-13, evening: the Search Console value is taken in every form Google gives, and said when it is not
+
+Chris: "It says Google search console tag is missing?" over a filled Keys
+field. The build kept only the HTML tag or its content value and dropped
+anything else without a word, so the Website card said "missing" and nothing
+said why.
+
+- `site/build.parse_verification` takes every form Search Console shows: the
+  HTML tag, its content value, the TXT record of a Domain property
+  (`google-site-verification=...`) and the HTML file's name or content; the
+  file method writes its file at the root of the site.
+- A value that is none of these is refused on the Keys page with the reason,
+  shown on the Website card as "unusable" with the reason, and recorded once
+  on the Agents page by a live build (`verification_tag`). Never a silent
+  blank.
+- A saved Search Console value makes the site republish itself ten minutes
+  later, like a photo change (`site.tag_changed_at`); no Publish tap.
+- The check from outside after every publish looks for the tag on every live
+  page (or the file at the root), where Search Console looks; a page without
+  it fails the publish and the card says so.
+- A property Search Console verified by itself (Chris: "it never asked for a
+  html tag for ownership when I verified"; a Domain property through
+  Cloudflare's DNS) needs nothing on the Keys page: the card says so in plain
+  words, with no badge. An empty field is not a fault.
+
 ## Standing rules from the brief
 
 - CPAC, the ACU and their affiliates are never contacted, by code

@@ -46,6 +46,7 @@ DEPLOYED_KEY = "site.deployed_commit"                # the code commit the site 
 FAILED_KEY = "site.deploy_failed_for"                # JSON {commit, tries, last_at}: a failed deploy is tried again, up to MAX_TRIES
 DEPLOYED_AT_KEY = "site.deployed_at"                 # when the last successful build STARTED: the photos it holds are as of then
 PHOTOS_CHANGED_KEY = "site.photos_changed_at"        # stamped by every Use / Don't use / folder decision / hero pick (2026-10-13)
+TAG_CHANGED_KEY = "site.tag_changed_at"              # the Search Console value on the Keys page changed (2026-10-13)
 PHOTOS_SETTLE = 10 * 60                              # seconds of quiet after the last photo change before the site publishes itself
 MAX_TRIES = 3                                        # per commit, by itself; Publish on the Photos page always tries
 RETRY_AFTER = 30 * 60                                # seconds between tries
@@ -187,12 +188,14 @@ def photos_pending(conn, now: Optional[datetime] = None) -> tuple[bool, str]:
     """(publish now?, why) from the photos alone: a Use, Don't use, folder decision or hero pick newer than
     the last build's start, and PHOTOS_SETTLE of quiet since (Chris, 2026-10-13: the site follows the photos
     by itself; Publish stays for the impatient). (False, "") when the site already holds the photos."""
-    changed = _stamp(settings.get(conn, PHOTOS_CHANGED_KEY))
+    stamps = [(_stamp(settings.get(conn, PHOTOS_CHANGED_KEY)), "the approved photos changed at"),
+              (_stamp(settings.get(conn, TAG_CHANGED_KEY)), "the Search Console tag changed at")]
+    changed, what = max(((t, w) for t, w in stamps if t is not None), default=(None, ""), key=lambda tw: tw[0])
     built = _stamp(settings.get(conn, DEPLOYED_AT_KEY))
     if changed is None or (built is not None and changed <= built):
         return False, ""
     at = now.astimezone(timezone.utc) if now is not None and now.tzinfo else datetime.now(timezone.utc)
-    words = f"the approved photos changed at {changed.astimezone(timezone.utc):%H:%M}"
+    words = f"{what} {changed.astimezone(timezone.utc):%H:%M}"
     if (at - changed).total_seconds() < PHOTOS_SETTLE:
         return False, f"{words}; publishing them {PHOTOS_SETTLE // 60} minutes after the last change"
     return True, f"{words}; publishing them"

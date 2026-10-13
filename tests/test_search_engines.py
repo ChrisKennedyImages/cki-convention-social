@@ -99,6 +99,90 @@ class GoogleTag(IsolatedCase):
         config.reset()
         self.assertEqual(build.verification_value(), "")
 
+    def test_every_form_search_console_hands_out_is_taken_and_any_other_is_said(self):
+        """2026-10-13: the Website card said "tag missing" over a filled Keys field, and nothing said why. Now the
+        tag, its content value, the TXT record of a Domain property and the HTML file's name are all taken, the
+        file method writes its file at the root, and a value that is none of these is said: on the Keys page when
+        it is pasted, on the Website card, and once on the Agents page by the build."""
+        tok = "AbC-123_xyzXYZ789"
+        for raw in (tok, f'<meta name="google-site-verification" content="{tok}" />', f"content='{tok}'",
+                    f"google-site-verification={tok}", f"  google-site-verification = {tok} ", f"Google-Site-Verification={tok}"):
+            self.assertEqual(build.parse_verification(raw), (tok, "", ""), raw)
+        name = "google1234567890abcdef.html"
+        for raw in (name, f"google-site-verification: {name}"):
+            self.assertEqual(build.parse_verification(raw), ("", name, ""), raw)
+        for raw in ("short", 'x"><script>alert(1)</script>', "google-site-verification=", "google-site-verification: nope.html",
+                    "https://eventcaliber.com/", "googlexyz.html"):
+            token, fname, problem = build.parse_verification(raw)
+            self.assertEqual((token, fname), ("", ""), raw)
+            self.assertIn("not a Search Console value", problem, raw)
+            self.assertIn("TXT record", problem)
+        self.assertEqual(build.parse_verification(""), ("", "", ""))
+        self.assertEqual(build.parse_verification("   "), ("", "", ""))
+        out = self.root / "dist"
+        os.environ["GOOGLE_SITE_VERIFICATION"] = name
+        config.reset()
+        self.assertEqual((build.verification_value(), build.verification_file(), build.verification_problem()), ("", name, ""))
+        build.build(None, photos(), out=out)
+        self.assertEqual((out / name).read_text(), f"google-site-verification: {name}\n")
+        self.assertNotIn("google-site-verification", (out / "index.html").read_text(), "the file method puts no tag on the pages")
+        build.build(None, photos(), out=out, preview=True)
+        self.assertFalse((out / name).exists(), "a preview is never verified")
+        os.environ["GOOGLE_SITE_VERIFICATION"] = "https://eventcaliber.com/"
+        config.reset()
+        self.assertEqual(build.verification_value(), "")
+        self.assertIn("not a Search Console value", build.verification_problem())
+        conn = db.connect()
+        build.build(conn, photos(), out=out)
+        build.build(conn, photos(), out=out)
+        errs = db.rows(conn, "SELECT agent, kind, message FROM errors")
+        self.assertEqual([(e["agent"], e["kind"]) for e in errs], [("site", "verification_tag")], "said once")
+        self.assertIn("not a Search Console value", errs[0]["message"])
+        self.assertNotIn("google-site-verification", (out / "index.html").read_text())
+        build.build(conn, photos(), out=out, preview=True)
+        self.assertEqual(db.one(conn, "SELECT COUNT(*) n FROM errors")["n"], 1, "a preview says nothing")
+        os.environ["GOOGLE_SITE_VERIFICATION"] = tok
+        config.reset()
+        build.build(conn, photos(), out=out)
+        self.assertEqual(db.one(conn, "SELECT COUNT(*) n FROM errors")["n"], 1, "a good value adds no error")
+        conn.close()
+
+    def test_the_live_check_looks_for_the_tag_where_search_console_does(self):
+        head = '<html><head><title>t</title><meta name="description" content="d">{tag}</head><body><h1>h</h1></body></html>'
+        tok = "AbC-123_xyzXYZ789"
+        with_tag = head.format(tag=f'<meta name="google-site-verification" content="{tok}">')
+        self.assertTrue(site_check.check_html(200, with_tag, expected_tag=tok)["ok"])
+        self.assertEqual(site_check.check_html(200, with_tag).get("ok"), True)
+        r = site_check.check_html(200, head.format(tag=""), expected_tag=tok)
+        self.assertEqual((r["ok"], r["problems"]), (False, ["the Google Search Console tag is not on the page"]))
+        r = site_check.check_html(200, head.format(tag='<meta name="google-site-verification" content="other">'), expected_tag=tok)
+        self.assertEqual(r["problems"], ["the Google Search Console tag is not on the page"], "another tag is not this one")
+        self.assertTrue(site_check.check_html(200, head.format(tag=""))["ok"], "no tag expected, none required")
+        self.assertEqual(site_check.check_html(404, head.format(tag=""), expected_tag=tok)["problems"], ["answered 404"],
+                         "a page that does not answer is not also blamed for the tag")
+        os.environ["GOOGLE_SITE_VERIFICATION"] = tok
+        config.reset()
+        pages = {f"https://eventcaliber.com{p}": (200, with_tag) for p in site_check.HTML_PATHS}
+        pages["https://eventcaliber.com/sitemap.xml"] = (200, markup.sitemap_xml("https://eventcaliber.com", build.PAGES))
+        pages["https://eventcaliber.com/robots.txt"] = (200, markup.robots_txt("https://eventcaliber.com"))
+        results = site_check.check_all(transport=lambda u: pages[u])
+        self.assertEqual(len(results), len(site_check.PATHS))
+        self.assertTrue(all(r["ok"] for r in results), [r for r in results if not r["ok"]])
+        pages["https://eventcaliber.com/about/"] = (200, head.format(tag=""))
+        bad = [r for r in site_check.check_all(transport=lambda u: pages[u]) if not r["ok"]]
+        self.assertEqual([(r["path"], r["problems"]) for r in bad], [("/about/", ["the Google Search Console tag is not on the page"])])
+        name = "google1234567890abcdef.html"
+        os.environ["GOOGLE_SITE_VERIFICATION"] = name
+        config.reset()
+        pages[f"https://eventcaliber.com/{name}"] = (200, f"google-site-verification: {name}\n")
+        results = site_check.check_all(transport=lambda u: pages[u])
+        self.assertEqual(results[-1]["path"], f"/{name}")
+        self.assertTrue(all(r["ok"] for r in results), [r for r in results if not r["ok"]])
+        pages[f"https://eventcaliber.com/{name}"] = (200, "something else")
+        self.assertEqual(site_check.check_all(transport=lambda u: pages[u])[-1]["problems"], ["does not carry the Search Console line"])
+        pages[f"https://eventcaliber.com/{name}"] = (404, "")
+        self.assertEqual(site_check.check_all(transport=lambda u: pages[u])[-1]["problems"], ["answered 404"])
+
 
 class IndexNow(IsolatedCase):
     def test_the_key_is_made_once_kept_in_env_and_served_from_the_root(self):
@@ -215,10 +299,41 @@ class OnTheDashboard(IsolatedCase):
         self.assertEqual(r.status_code, 303)
         self.assertEqual(build.verification_value(), "AbC-123_xyzXYZ789")
 
+    def test_the_keys_page_takes_the_txt_record_refuses_anything_else_and_the_site_follows(self):
+        from convention_social.site import deploy
+        r = self.client.post("/keys", data={"GOOGLE_SITE_VERIFICATION": "google-site-verification=AbC-123_xyzXYZ789"}, follow_redirects=False)
+        self.assertEqual(r.status_code, 303)
+        self.assertIn("republishes itself", r.headers["location"].replace("+", " "))
+        self.assertEqual(build.verification_value(), "AbC-123_xyzXYZ789")
+        self.assertTrue(settings.get(self.conn, deploy.TAG_CHANGED_KEY), "the site follows the tag by itself")
+        self.assertIn("the Search Console tag changed at", deploy.photos_pending(self.conn)[1])
+        r = self.client.post("/keys", data={"GOOGLE_SITE_VERIFICATION": "https://eventcaliber.com/"}, follow_redirects=False)
+        self.assertEqual(r.status_code, 303)
+        self.assertIn("not a Search Console value", r.headers["location"].replace("+", " "))
+        self.assertEqual(build.verification_value(), "AbC-123_xyzXYZ789", "a value that is none of Google's forms is refused, not saved")
+        r = self.client.post("/keys", data={"GOOGLE_SITE_VERIFICATION": "AbC-123_xyzXYZ789", "NTFY_TOPIC": "topic-x"}, follow_redirects=False)
+        self.assertIn("saved 1", r.headers["location"].replace("+", " "))
+        self.assertNotIn("republishes", r.headers["location"], "the same value again changes nothing for the site")
+
+    def test_the_website_card_says_when_the_value_is_unusable_or_a_file(self):
+        with mock.patch("convention_social.site.deploy.ready", return_value=(True, "ready")):
+            os.environ["GOOGLE_SITE_VERIFICATION"] = "https://eventcaliber.com/"
+            config.reset()
+            page = self.client.get("/library?view=approved").text
+            self.assertIn("Google Search Console value unusable", page)
+            self.assertIn("not a Search Console value", page)
+            self.assertNotIn("No Google Search Console tag on the", page)
+            os.environ["GOOGLE_SITE_VERIFICATION"] = "google1234567890abcdef.html"
+            config.reset()
+            page = self.client.get("/library?view=approved").text
+            self.assertIn("Google Search Console file google1234567890abcdef.html on the site", page)
+
     def test_the_website_card_says_what_the_engines_know(self):
         with mock.patch("convention_social.site.deploy.ready", return_value=(True, "ready")):
             page = self.client.get("/library?view=approved").text
-            self.assertIn("Google Search Console tag missing", page)
+            self.assertIn("No Google Search Console tag on the", page)
+            self.assertIn("verified another way", page, "Chris, 2026-10-13: Search Console never asked him for a tag; an empty field is not a fault")
+            self.assertNotIn('class="badge blocked">Google', page, "no badge for nothing wrong")
             self.assertIn("The IndexNow key is made on the first publish.", page)
             os.environ["GOOGLE_SITE_VERIFICATION"] = "AbC-123_xyzXYZ789"
             os.environ["INDEXNOW_KEY"] = "k" * 32
