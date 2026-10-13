@@ -52,6 +52,18 @@ class Chief(IsolatedCase):
         self.assertEqual(chief.run(self.ctx(), now=BRIEF_UTC), "brief not due")
         self.assertEqual(db.one(self.conn, "SELECT COUNT(*) n FROM api_usage")["n"], 0)
 
+    def test_needs_is_the_plain_sql_part_the_today_page_shares(self):
+        """7.3 (2026-10-13): the Today page shows what needs him without waiting for the morning brief."""
+        needs = chief.needs(self.conn)
+        hrefs = [h for _, h in needs]
+        self.assertIn("/inquiries", hrefs)
+        self.assertIn("/drive", hrefs)
+        self.assertIn("/", hrefs, "the draft the art director was not happy with")
+        self.assertEqual([t for t, h in needs if h == "/inquiries"], ["1 quote request(s) waiting for your reply."])
+        gathered = chief.gather(self.ctx(), BRIEF_UTC)["needs"]
+        for item in needs:
+            self.assertIn(item, gathered, "the brief carries the same lines")
+
     def test_counts_outreach_drafts_and_scout_finds(self):
         """The brief reads the tables migration 0040 really makes: outreach and scout_events."""
         now = db.utcnow()

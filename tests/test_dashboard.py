@@ -495,6 +495,107 @@ class Dashboard(IsolatedCase):
             self.assertIn(words, section, words)
         self.assertNotIn("Resend", section, "the sending-service recipe is gone")
 
+    def test_the_posts_page_shows_the_history_the_live_links_and_the_numbers(self):
+        """7.2 (2026-10-13): post_history and the metrics summary existed and were shown nowhere."""
+        from tests._fakes import write_render
+        c = self.signed_in()
+        q = self.draft()
+        folder = config.get_config().data_root / "renders"
+        self.conn.execute("UPDATE content_queue SET status='published', render_paths=? WHERE id=?",
+                          (json.dumps({"4:5": [write_render(folder, "p.jpg")]}), q))
+        from datetime import date, timedelta
+        sent = (date.today() - timedelta(days=4)).isoformat() + "T15:30:05Z"
+        captured = (date.today() - timedelta(days=1)).isoformat()
+        for pid, svc in (("post-1", "instagram"), ("post-2", "facebook")):
+            db.insert(self.conn, "post_history", buffer_post_id=pid, queue_id=q, service=svc, sent_at=sent,
+                      caption="Backstage.", external_link=f"https://{svc}.example/p/{pid}", metrics=json.dumps({"reach": 120, "likes": 7}))
+            db.insert(self.conn, "post_metrics", buffer_post_id=pid, service=svc, ours=1, sent_at=sent, text="Backstage.",
+                      captured_on=captured, metrics=json.dumps({"reach": 120, "likes": 7, "link_clicks": 3}), metrics_updated_at=captured + "T00:00:00Z")
+        self.assertIn('href="/posts"', c.get("/").text, "a chip on Today")
+        page = c.get("/posts").text
+        self.assertIn('href="https://instagram.example/p/post-1"', page)
+        self.assertIn("Open on Instagram", page)
+        self.assertIn(f'/media/render/{q}/4x5/1', page)
+        self.assertIn("240", page, "reach over the last 30 days, two posts")
+        self.assertIn("Last 30 days", page)
+        self.assertIn("Week of", page)
+
+    def test_today_says_what_needs_him(self):
+        """7.3: the Queue page shows the needs list and the open-error count before the morning brief exists."""
+        from convention_social.core import runner as runner_module
+        c = self.signed_in()
+        self.draft()
+        now = db.utcnow()
+        db.insert(self.conn, "inquiries", remote_id="r1", received_at=now, name="Dana", email="d@example.org", status="drafted",
+                  reply_status="draft", updated_at=now)
+        runner_module.record_error(self.conn, "content", "no_draft", "nothing drafted")
+        page = c.get("/").text
+        self.assertIn("Needs you", page)
+        self.assertIn("1 post(s) waiting for your Approve.", page)
+        self.assertIn("1 quote request(s) waiting for your reply.", page)
+        self.assertRegex(page, r'<a href="/errors">1 open error')
+
+    def test_pull_back_a_scheduled_post(self):
+        """7.5: a post Buffer already holds comes back to drafts, deleted there first; a draft is nothing to pull."""
+        from unittest import mock
+        from convention_social.buffer.client import BufferClient
+        from tests._fakes import FakeBuffer
+        c = self.signed_in()
+        q = self.draft()
+        self.conn.execute("UPDATE content_queue SET status='scheduled', buffer_post_ids=?, payload='{}' WHERE id=?",
+                          (json.dumps({"instagram": "post-1", "facebook": "post-2"}), q))
+        page = c.get(f"/queue/{q}").text
+        form = re.search(rf'<form[^>]*action="/queue/{q}/pullback"[^>]*>', page).group(0)
+        self.assertIn("confirm(", form)
+        fake = FakeBuffer()
+        with mock.patch.object(BufferClient, "from_config", return_value=BufferClient("test-key", conn=self.conn, transport=fake)):
+            r = c.post(f"/queue/{q}/pullback", follow_redirects=False)
+        self.assertIn("msg=pulled_back", r.headers["location"])
+        self.assertEqual(sorted(fake.deleted), ["post-1", "post-2"])
+        row = db.one(self.conn, "SELECT status, buffer_post_ids, payload, last_error FROM content_queue WHERE id=?", (q,))
+        self.assertEqual((row["status"], row["buffer_post_ids"], row["payload"]), ("draft", None, None))
+        self.assertIn("pulled back", row["last_error"].lower())
+        self.assertIn("pulled back", c.get(f"/queue/{q}?msg=pulled_back").text.lower())
+        with mock.patch.object(BufferClient, "from_config", return_value=BufferClient("test-key", conn=self.conn, transport=fake)):
+            c.post(f"/queue/{q}/pullback")
+        self.assertEqual(len(fake.deleted), 2, "a draft is nothing to pull back")
+        gone = self.draft()
+        self.conn.execute("UPDATE content_queue SET status='published', buffer_post_ids=? WHERE id=?", (json.dumps({"instagram": "post-5"}), gone))
+        with mock.patch.object(BufferClient, "from_config", return_value=BufferClient("test-key", conn=self.conn, transport=fake)):
+            c.post(f"/queue/{gone}/pullback")
+        self.assertEqual(len(fake.deleted), 2, "a post that went out is not pulled back from here")
+        self.assertEqual(db.one(self.conn, "SELECT status FROM content_queue WHERE id=?", (gone,))["status"], "published")
+        q2 = self.draft()
+        self.conn.execute("UPDATE content_queue SET status='scheduled', buffer_post_ids=? WHERE id=?", (json.dumps({"instagram": "post-9"}), q2))
+        with mock.patch.object(BufferClient, "from_config", return_value=None):
+            r = c.post(f"/queue/{q2}/pullback", follow_redirects=False)
+        self.assertIn("msg=no_buffer", r.headers["location"])
+        self.assertEqual(db.one(self.conn, "SELECT status FROM content_queue WHERE id=?", (q2,))["status"], "scheduled", "nothing changes without Buffer")
+        refusing = FakeBuffer(reject_at=("post-9",))
+        with mock.patch.object(BufferClient, "from_config", return_value=BufferClient("test-key", conn=self.conn, transport=refusing)):
+            r = c.post(f"/queue/{q2}/pullback", follow_redirects=False)
+        self.assertIn("msg=pullback_failed", r.headers["location"])
+        self.assertEqual(db.one(self.conn, "SELECT status FROM content_queue WHERE id=?", (q2,))["status"], "scheduled", "Buffer kept it: so do we")
+
+    def test_the_keys_page_tests_the_outside_watch(self):
+        """7.4: one button, and the answer says whether the site sent the alert."""
+        from unittest import mock
+        from convention_social.booking.remote import SiteAPI
+        c = self.signed_in()
+        self.assertIn("Test the outside watch", c.get("/keys").text)
+        with mock.patch.object(SiteAPI, "from_config", return_value=None):
+            r = c.post("/keys/test-watch", follow_redirects=False)
+        self.assertIn("MEDIA_UPLOAD_TOKEN", r.headers["location"])
+        calls = []
+
+        def transport(method, url, headers, payload):
+            calls.append((method, url))
+            return mock.Mock(json=lambda: {"ok": True, "sent": True})
+        with mock.patch.object(SiteAPI, "from_config", return_value=SiteAPI("tok", base="https://eventcaliber.com", transport=transport)):
+            r = c.post("/keys/test-watch", follow_redirects=False)
+        self.assertEqual(calls, [("POST", "https://eventcaliber.com/api/heartbeat/test")])
+        self.assertIn("sent", r.headers["location"].lower())
+
     def test_keys_page_writes_env_and_never_shows_secrets(self):
         c = self.signed_in()
         c.post("/keys", data={"ANTHROPIC_API_KEY": "sk-secret-value", "BRAND_NAME": "New Name",

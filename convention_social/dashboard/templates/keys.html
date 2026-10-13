@@ -23,6 +23,11 @@
   <div class="muted">Sends one ping to the ntfy topic saved above, so you know the pings reach your phone.</div>
   <button type="submit" style="margin-top:10px">Send a test ping</button>
 </form>
+<form method="post" action="/keys/test-watch" class="card">
+  <strong>The outside watch</strong>
+  <div class="muted">The site checks every half hour that the Mini has checked in during the last two hours, and rings your phone when it has not: the one watch that does not live on the Mini. This asks the site to send that ping now, marked as a test.</div>
+  <button type="submit" style="margin-top:10px">Test the outside watch</button>
+</form>
 <h2 style="margin-top:20px">Dashboard password</h2>
 <form method="post" action="/keys/password" class="card">
   <label>New password (8 or more characters)</label><input type="password" name="password" autocomplete="new-password">

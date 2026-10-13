@@ -48,3 +48,11 @@ class SiteAPI:
 
     def put_availability(self, days: list[str]) -> int:
         return int(self._call("PUT", "/api/availability", {"booked": days}).get("booked") or 0)
+
+    def heartbeat(self) -> dict:
+        """The Mini checks in (7.4, 2026-10-13): the site's cron rings the phone when these stop."""
+        return self._call("POST", "/api/heartbeat", {})
+
+    def test_watch(self) -> dict:
+        """Sends the outside watch's alert at once, marked as a test. {ok, sent}."""
+        return self._call("POST", "/api/heartbeat/test", {})

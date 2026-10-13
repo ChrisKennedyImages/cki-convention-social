@@ -74,7 +74,30 @@ class Client(AgentCase):
         self.assertTrue(boards)
         self.assertEqual(boards[0]["serviceId"], "board-123")
         info = c.post_info("post-9")
-        self.assertEqual((info["status"], info["error"]), ("error", "Image could not be fetched"))
+        self.assertEqual((info["status"], info["error"], info["external_link"]), ("error", "Image could not be fetched", None))
+        sent = BufferClient("test-key", conn=conn, transport=FakeBuffer(status_sequence=["sent"])).post_info("post-9")
+        self.assertEqual(sent["external_link"], "https://www.instagram.com/p/abc123/", "7.1 (2026-10-13): the live link is kept")
+
+    def test_delete_post_reads_the_input_shape_from_the_live_schema(self):
+        """7.5: pulling a scheduled post back from Buffer, with the mutation's input read from the schema, never recalled."""
+        conn = self.connect()
+        fake = FakeBuffer()
+        c = BufferClient("test-key", conn=conn, transport=fake)
+        self.assertTrue(c.delete_post("post-7"))
+        self.assertEqual(fake.deleted, ["post-7"])
+        self.assertIn(("DeletePostInput",), [(v.get("name"),) for op, v in fake.calls if "InputType" in op])
+        from tests._fakes import SCHEMA, field
+        odd = FakeBuffer(schema={**SCHEMA, "DeletePostInput": [field("postId", "PostId", True, "SCALAR")]})
+        with self.assertRaises(BufferError):
+            BufferClient("test-key", conn=conn, transport=odd).delete_post("post-7")
+        self.assertEqual(odd.deleted, [], "a shape we did not expect: nothing is deleted blind")
+        gone = FakeBuffer(schema={k: v for k, v in SCHEMA.items() if k != "DeletePostInput"})
+        with self.assertRaises(BufferError):
+            BufferClient("test-key", conn=conn, transport=gone).delete_post("post-7")
+        refused = FakeBuffer(reject_at=("post-8",))
+        with self.assertRaises(BufferError):
+            BufferClient("test-key", conn=conn, transport=refused).delete_post("post-8")
+        self.assertEqual(refused.deleted, [])
 
 
 class Payloads(AgentCase):

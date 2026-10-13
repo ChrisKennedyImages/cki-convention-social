@@ -98,7 +98,7 @@ def conn_dep():
 # Chris, 2026-10-11: "The navigation is not intuitive or smart!" Thirteen tabs became four, each
 # with its own short row of pages, so every page is one tap from its section and two from anywhere.
 SECTIONS = (
-    ("Today", "/", ("/queue",), (("Queue", "/"),)),
+    ("Today", "/", ("/queue", "/posts"), (("Queue", "/"), ("Posts", "/posts"))),
     ("Photos", "/library", ("/library", "/donotuse", "/drive"),
      (("To review", "/library"), ("Approved", "/library?view=approved"), ("Blocked", "/library?view=blocked"),
       ("Folders", "/library?view=folders"), ("Design", "/library?view=design"), ("Do not use", "/donotuse"), ("Drive", "/drive"))),
@@ -517,8 +517,53 @@ def create_app() -> FastAPI:
             brief = json.loads(settings.get(conn, "chief.brief") or "{}")
         except ValueError:
             brief = {}
+        from ..agents import chief
         return render(request, "queue.html", items=[queue_view(conn, r) for r in rows], show=show,
-                      auth_state=auth_state, msg=request.query_params.get("msg", ""), brief=brief)
+                      auth_state=auth_state, msg=request.query_params.get("msg", ""), brief=brief,
+                      needs=chief.needs(conn), open_n=db.one(conn, "SELECT COUNT(*) n FROM errors WHERE alerted=0")["n"])
+
+    @app.get("/posts", response_class=HTMLResponse)
+    def posts(request: Request, user: str = Depends(require_user), conn=Depends(conn_dep)):
+        """7.2 (2026-10-13): what went out, where it lives, and the numbers Buffer gives (buffer/metrics, written for
+        this and shown nowhere until now)."""
+        from ..buffer import metrics
+        rows = []
+        for h in db.rows(conn, "SELECT h.*, q.render_paths FROM post_history h LEFT JOIN content_queue q ON q.id = h.queue_id "
+                               "ORDER BY COALESCE(h.sent_at, '') DESC, h.id DESC LIMIT 200"):
+            try:
+                renders = json.loads(h["render_paths"] or "{}")
+            except ValueError:
+                renders = {}
+            try:
+                raw = json.loads(h["metrics"] or "{}")
+            except ValueError:
+                raw = {}
+            rows.append({**dict(h), "thumb": f"/media/render/{h['queue_id']}/4x5/1" if h["queue_id"] and renders.get("4:5") else "",
+                         "n": metrics.normalise(raw) if raw else None})
+        return render(request, "posts.html", rows=rows, summary=metrics.summary(conn, 30), trend=metrics.trend(conn, 12))
+
+    @app.post("/queue/{qid}/pullback")
+    def queue_pullback(qid: int, user: str = Depends(require_user), conn=Depends(conn_dep)):
+        """7.5: a post Buffer already holds comes back here as a draft, deleted in Buffer first (one network at a
+        time; what Buffer kept stays scheduled, with the reason on the Agents page)."""
+        row = load_queue_row(conn, qid)
+        if row["status"] != "scheduled":
+            return RedirectResponse(f"/queue/{qid}", status_code=303)
+        client = BufferClient.from_config(conn, "dashboard")
+        if client is None:
+            return RedirectResponse(f"/queue/{qid}?msg=no_buffer", status_code=303)
+        ids = dict(json.loads(row["buffer_post_ids"] or "{}"))
+        for net, pid in list(ids.items()):
+            try:
+                client.delete_post(pid)
+            except (BufferError, BufferBudgetExceeded, BufferRateLimited, OSError) as e:
+                runner.record_error(conn, "dashboard", "pullback", f"post {qid}, {net}: Buffer kept it: {e}")
+                conn.execute("UPDATE content_queue SET buffer_post_ids=?, updated_at=? WHERE id=?", (json.dumps(ids), db.utcnow(), qid))
+                return RedirectResponse(f"/queue/{qid}?msg=pullback_failed", status_code=303)
+            ids.pop(net)
+        conn.execute("UPDATE content_queue SET status='draft', buffer_post_ids=NULL, payload=NULL, last_error=?, updated_at=? WHERE id=?",
+                     ("Pulled back from Buffer by you. It will not go out until you approve it again.", db.utcnow(), qid))
+        return RedirectResponse(f"/queue/{qid}?msg=pulled_back", status_code=303)
 
     def mended_row(conn, row):
         """Chris, 2026-10-12: "the captions should auto correct themselves with the warnings they gave me
@@ -1432,6 +1477,23 @@ def create_app() -> FastAPI:
         result = notify.push_result(f"{config.get_config().brand_name}: test", "This is the dashboard's test ping. Tap to open it.",
                                     dry_run=False, priority="default", click=notify.link("/"))
         msg = "Test ping sent: it should be on your phone now" if result == "sent" else f"No ping: {result}"
+        return RedirectResponse("/keys?msg=" + quote_plus(msg), status_code=303)
+
+    @app.post("/keys/test-watch")
+    def keys_test_watch(user: str = Depends(require_user)):
+        """7.4: the outside watch's test ping, sent by the site at once. Verified at the consumer: the phone."""
+        from ..booking.remote import SiteAPI
+        api = SiteAPI.from_config()
+        if api is None:
+            msg = "No site token (MEDIA_UPLOAD_TOKEN is not set): the site cannot be asked."
+        else:
+            try:
+                res = api.test_watch()
+            except Exception as e:  # noqa: BLE001
+                msg = f"The site did not answer ({type(e).__name__}: {str(e)[:120]})."
+            else:
+                msg = ("Test sent by the site: the outside watch's ping should be on your phone now." if res.get("sent")
+                       else "The site answered but sent nothing: its NTFY_TOPIC secret is not set yet (it is put on the next deploy).")
         return RedirectResponse("/keys?msg=" + quote_plus(msg), status_code=303)
 
     @app.post("/keys/password")

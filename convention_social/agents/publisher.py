@@ -573,15 +573,17 @@ def verify_scheduled(ctx: runner.Context, client: Optional[BufferClient] = None)
         for net, info in infos.items():
             if info["status"] in TERMINAL_OK and not db.one(ctx.conn, "SELECT id FROM post_history WHERE buffer_post_id=?", (ids[net],)):
                 db.insert(ctx.conn, "post_history", buffer_post_id=ids[net], queue_id=row["id"], service=net,
-                          sent_at=info["sent_at"] or now, caption=captions.get(net, ""))
+                          sent_at=info["sent_at"] or now, caption=captions.get(net, ""), external_link=info.get("external_link"))
         if bad:
             ctx.conn.execute("UPDATE content_queue SET status='failed', updated_at=? WHERE id=?", (now, row["id"]))
             stats["failed"] += 1
         else:
             ctx.conn.execute("UPDATE content_queue SET status='published', published_at=?, updated_at=? WHERE id=?", (now, now, row["id"]))
             stats["published"] += 1
+            live = next((infos[n]["external_link"] for n in ("instagram", "facebook", "pinterest") if infos.get(n, {}).get("external_link")),
+                        next((i["external_link"] for i in infos.values() if i.get("external_link")), None))
             notify.push(f"{ctx.cfg.brand_name}: posted", f"Post {row['id']} went out on {', '.join(infos)}. Tap to see it.",
-                        dry_run=ctx.dry_run, priority="default", click=notify.link(f"/queue/{row['id']}"), conn=ctx.conn, agent=ctx.agent)
+                        dry_run=ctx.dry_run, priority="default", click=live or notify.link(f"/queue/{row['id']}"), conn=ctx.conn, agent=ctx.agent)
     return stats
 
 
