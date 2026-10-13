@@ -2,14 +2,15 @@
 {% block body %}
 {% set notes = {'added': ('On the calendar, with attending and official unticked.', ''), 'dismissed': ('Dismissed.', ''),
                 'already': ('That one is already on the calendar.', ''),
+                'started': ('Searching now. New finds show here in a few minutes, and your phone gets a ping.', ''),
                 'never': ('CPAC, the ACU and their affiliates are never listed or contacted. That is a hard rule, in the code.', 'bad')} %}
 {% if msg in notes %}<div class="msg {{ notes[msg][1] }}">{{ notes[msg][0] }}</div>{% endif %}
 <h1>Scout</h1>
 <div class="card muted">
-  {% if region %}Every Sunday the scout searches <strong>{{ region }}</strong> for conventions and conferences in the next {{ months }} months.
-  Only events a source backs are kept; an organizer email shows only when it is printed on the event's own site.
-  {% else %}<span class="rule block">No region set.</span> Add SCOUT_REGION (for example Washington DC, Maryland, Virginia) on the <a href="/keys">Keys</a> page; until then the scout searches nothing.{% endif %}
+  Every Sunday the scout searches <strong>{{ region }}</strong> for conventions and conferences in the next {{ months }} months
+  (change the region on the <a href="/keys">Keys</a> page, Scout and outreach). Only events a source backs are kept; an organizer email shows only when it is printed on the event's own site.
   {% if last %}<br>Last run: {{ last.started_at[:16].replace('T',' ') }} UTC, {{ last.summary or '' }}{% endif %}
+  <form method="post" action="/scout/run" class="row" style="margin-top:8px"><button class="small" type="submit">Search now</button></form>
 </div>
 <div class="row" style="margin-bottom:12px">
   {% for s, label in [('new', 'New'), ('added', 'On the calendar'), ('dismissed', 'Dismissed'), ('all', 'All')] %}

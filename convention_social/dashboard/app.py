@@ -1355,7 +1355,9 @@ def create_app() -> FastAPI:
             {"title": "Google Drive", "note": "From this company's own Google Cloud project. Read only.",
              "fields": [f("GOOGLE_OAUTH_CLIENT_ID", "OAuth client id"), f("GOOGLE_OAUTH_CLIENT_SECRET", "OAuth client secret", secret=True),
                         f("CREDITS_SHEET_ID", "Credits sheet (link or id)")]},
-            {"title": "Mail", "note": "The company mailbox. An app password, never the account password.",
+            {"title": "Mail", "note": "The company mailbox on Google Workspace (Chris, 2026-10-13): server smtp.gmail.com, login the "
+                                      "address itself, and a Google app password (2-Step Verification on), never the account password. "
+                                      "Mail sent from (Company) is that address, or a Send mail as alias Google has verified.",
              "fields": [f("SMTP_HOST", "Mail server"), f("SMTP_USER", "Mailbox login"), f("SMTP_PASSWORD", "App password", secret=True)]},
             {"title": "AI", "note": "Chris's Anthropic key, the one his other suite uses (his choice, 2026-10-11): "
                                     "bin/ccs copy-key ANTHROPIC_API_KEY --from <that .env> copies it without showing it. "

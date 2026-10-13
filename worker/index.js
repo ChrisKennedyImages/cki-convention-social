@@ -16,7 +16,9 @@
 //   POST /api/unsubscribes/ack  the Mini confirms it has them; they are then deleted here
 //   Opt-outs carry only the random token from the email, never the address; the Mini maps it back.
 //
-// Secrets (wrangler secret put): UPLOAD_TOKEN, and optionally NTFY_TOPIC and TURNSTILE_SECRET.
+// Secrets (wrangler secret put): UPLOAD_TOKEN, and optionally NTFY_TOPIC, DASHBOARD_URL (the dashboard's Tailscale
+// address, so a push opens the requests page) and TURNSTILE_SECRET. The suite puts NTFY_TOPIC and DASHBOARD_URL
+// from .env after every deploy (site/deploy.py).
 const ALLOWED = /^(image\/(jpeg|png|gif)|video\/mp4)$/;
 const PUBLIC_PREFIX = "convention-social/";
 const PRIVATE_PREFIX = "private/";
@@ -83,8 +85,9 @@ async function quote(request, env) {
   if (env.NTFY_TOPIC) {
     // no name, email or phone in the push: ntfy topics are not private
     const what = [rec.event_name || "an event", rec.start_date].filter(Boolean).join(", ");
-    await fetch(`https://ntfy.sh/${env.NTFY_TOPIC}`, { method: "POST", body: `New quote request: ${what}`,
-      headers: { Title: "Quote request", Priority: "high" } }).catch(() => {});
+    const headers = { Title: "Quote request", Priority: "high" };
+    if (env.DASHBOARD_URL) headers.Click = `${env.DASHBOARD_URL}/inquiries`;      // 2026-10-13: the ping ends where he can act
+    await fetch(`https://ntfy.sh/${env.NTFY_TOPIC}`, { method: "POST", body: `New quote request: ${what}`, headers }).catch(() => {});
   }
   return done(request, 200, { ok: true, id });
 }

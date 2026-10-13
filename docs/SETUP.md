@@ -51,24 +51,36 @@ and you get a phone push and an email within the hour.
 4. Paste the sheet's link into Keys (Credits sheet). The suite reads it
    every hour and never edits it.
 
-## 4. Mail on eventcaliber.com
+## 4. Mail on eventcaliber.com: Google Workspace
 
-Chris chose (2026-10-09): Cloudflare forwards incoming mail, a sending
-service sends outgoing mail.
+Chris chose (2026-10-13): `chris@eventcaliber.com` on Google Workspace. One
+mailbox sends and receives; the suite's sender is plain SMTP with STARTTLS on
+port 587, which is exactly what Gmail offers (`core/mail.py`, nothing to
+change in the code).
 
-1. Cloudflare dashboard, eventcaliber.com, Email, Email Routing: enable it,
-   add a custom address `hello@eventcaliber.com`, destination your own inbox
-   (verify the link Cloudflare emails you). Free.
-2. A sending service with SMTP for the domain (Resend, Postmark or Mailgun
-   are common; check each one's current free allowance, that is money).
-   Add the domain there; it shows DNS records (SPF, DKIM, a return path).
-   Add each one in Cloudflare DNS exactly as shown, then let the service
-   verify the domain.
-3. Keys (Mail): the service's SMTP server, login and password (its API key
-   is usually the password). Keys (Company): Mail sent from
-   `hello@eventcaliber.com`, and a postal address for the footer.
-4. Prove it: approve one reply to a test request you send yourself, with the
-   inbox agent switched live. It must land in your inbox, not spam.
+1. Workspace sign-up for eventcaliber.com, with `chris@eventcaliber.com` as
+   the first user. Google's setup wizard verifies the domain and gives the
+   DNS records: the MX records, SPF (a TXT on the root: `v=spf1
+   include:_spf.google.com ~all`) and DKIM (Admin console, Apps, Google
+   Workspace, Gmail, Authenticate email: generate the key, add the TXT it
+   shows). Add each one in Cloudflare DNS exactly as shown; keep the TXT
+   records the site already has.
+2. Cloudflare, eventcaliber.com, Email: switch Email Routing off if it is
+   on. Both want the MX records; with Workspace, Google receives the mail.
+   A `hello@` address, if you want one, is an alias on the Workspace user
+   (Admin console, Users, the user, Alternate email addresses), free.
+3. Gmail, the account: turn on 2-Step Verification, then make an app
+   password (Google Account, Security, 2-Step Verification, App passwords;
+   name it Event Caliber suite). That 16-character password is for the suite
+   only; the account password is never typed anywhere in the suite.
+4. Keys (Mail): server `smtp.gmail.com`, login `chris@eventcaliber.com`, the
+   app password. Keys (Company): Mail sent from `chris@eventcaliber.com`,
+   or an alias Google has verified (Gmail, Settings, Accounts, "Send mail as";
+   Gmail rewrites any other From address to the login), and a postal
+   address for the footer.
+5. Prove it: send yourself one quote request from the site, approve the
+   drafted reply with the inbox agent switched live. It must land in your
+   inbox, not spam (SPF and DKIM above are what keep it out of spam).
 
 ## 5. Buffer: the one publisher
 

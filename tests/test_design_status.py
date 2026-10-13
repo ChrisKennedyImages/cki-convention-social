@@ -132,10 +132,13 @@ class Command(Case):
             return out
         settings.set(self.conn, design_samples.PENDING_SET_KEY, "2026-10-11b:d1,d2,d3,d4")
         with mock.patch("convention_social.drive.oauth.access_token", return_value="tok"), \
-             mock.patch.object(design_samples, "make", make):
+             mock.patch.object(design_samples, "make", make), mock.patch.object(cli.notify, "push") as push:
             code, _ = self.run_design()
         self.assertEqual(code, 0)
         self.assertEqual(design_samples.read_status()["message"], "made on 4 of your approved photos")
+        self.assertEqual(push.call_count, 1, "6.2 (2026-10-13): the samples say they are ready")
+        self.assertTrue(push.call_args[1]["click"].endswith("/library?view=design"))
+        self.assertIsNotNone(push.call_args[1]["conn"], "a ping that fails is recorded as an error")
         self.assertEqual(settings.get(self.conn, design_samples.LAST_SET_KEY), "2026-10-11b:d1,d2,d3,d4", "made, now recorded as made")
 
 

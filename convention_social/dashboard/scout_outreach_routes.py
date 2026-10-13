@@ -21,7 +21,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 
 from ..agents import outreach as outreach_agent
 from ..agents import scout as scout_agent
-from ..core import config, db
+from ..core import config, db, runner
 from ..outreach import compliance, draft, keys
 
 EDITABLE = ("queued", "draft", "approved", "would_send", "failed")
@@ -46,6 +46,12 @@ def register(app, require_user, conn_dep, render) -> None:
         last = db.one(conn, "SELECT * FROM agent_runs WHERE agent='scout' ORDER BY id DESC LIMIT 1")
         return render(request, "scout_list.html", items=items, show=show, counts=counts, msg=msg,
                       region=scout_agent.region(), months=scout_agent.months(), last=dict(last) if last else None)
+
+    @app.post("/scout/run")
+    def scout_run_now(user: str = Depends(require_user)):
+        """Search now (2026-10-13): one scout run, as its Sunday schedule would start it, with its own switch and cap."""
+        runner.start_agent("scout")
+        return _see("/scout?msg=started")
 
     def load_scout(conn, sid: int):
         row = db.one(conn, "SELECT * FROM scout_events WHERE id=?", (sid,))
@@ -131,6 +137,7 @@ def register(app, require_user, conn_dep, render) -> None:
         cfg_ok = {"sender": compliance.sender_ok(cfg), "address": bool(cfg.brand_postal_address.strip()),
                   "from": cfg.brand_from_email, "domain": cfg.brand_domain}
         return render(request, "outreach_list.html", msg=msg, cfg_ok=cfg_ok, daily_drafts=outreach_agent.daily_drafts(),
+                      daily_sends=outreach_agent.daily_sends(), dnc_count=db.one(conn, "SELECT COUNT(*) n FROM do_not_contact")["n"],
                       drafts=group(("queued", "draft")), approved=group(("approved",)),
                       sent=group(("sent", "would_send", "failed")), closed=group(("rejected", "opted_out")))
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+from unittest import mock
 import types
 from datetime import timedelta
 
@@ -90,14 +91,25 @@ class ScoutCase(IsolatedCase):
 
 
 class Gates(ScoutCase):
-    def test_no_region_does_nothing_and_says_where_to_set_it(self):
+    def test_without_a_region_set_the_scout_searches_around_washington_dc(self):
+        """Chris, 2026-10-13: the scout armed, around Washington DC (DC, Maryland and Virginia). The Keys page
+        can change it; blank means the default, not nothing."""
         os.environ.pop("SCOUT_REGION")
         config.reset()
+        self.assertEqual(scout.region(), scout.DEFAULT_REGION)
+        self.assertEqual(scout.DEFAULT_REGION, "Washington DC, Maryland and Virginia")
         fake = FakeClaude()
-        line = scout.run(self.ctx(), client=fake)
-        self.assertIn("SCOUT_REGION", line)
-        self.assertIn("Keys page", line)
+        line = scout.run(self.ctx(dry=True), client=fake)
+        self.assertIn("would search Washington DC, Maryland and Virginia", line)
         self.assertEqual(fake.calls, [])
+
+    def test_the_scout_is_armed_on_a_fresh_database_and_outreach_is_not(self):
+        """His choice, 2026-10-13: the scout searches by itself (about a dollar a week inside the cap); organizer
+        notes still leave only on his Approve, and that lane stays dry until he switches it."""
+        from convention_social.core import settings
+        self.assertFalse(settings.dry_run(self.conn, "scout"))
+        self.assertTrue(settings.dry_run(self.conn, "outreach"))
+        self.assertTrue(settings.dry_run(self.conn, "publisher"))
 
     def test_dry_run_makes_no_paid_call(self):
         fake = FakeClaude(resp([text(answer([]))]))
@@ -164,6 +176,18 @@ class Research(ScoutCase):
         self.assertEqual(kw["output_config"], {"effort": "medium"})
         self.assertEqual(kw["tools"], [{"type": "web_search_20260209", "name": "web_search", "max_uses": 8}])
         self.assertIn("Washington DC, Maryland, Virginia", kw["messages"][0]["content"])
+
+    def test_new_finds_ping_the_phone_once_to_the_scout_page(self):
+        with mock.patch.object(scout.notify, "push") as push:
+            scout.run(self.ctx(), client=self.good_run())
+        self.assertEqual(push.call_count, 1)
+        args, kw = push.call_args
+        self.assertIn("new event", args[1])
+        self.assertTrue(kw["click"].endswith("/scout"))
+        self.assertIs(kw["conn"], self.conn)
+        with mock.patch.object(scout.notify, "push") as push:
+            scout.run(self.ctx(), client=self.good_run())
+        self.assertEqual(push.call_count, 0, "the same finds again are not news")
 
     def test_only_sourced_events_are_kept_and_emails_only_from_their_own_site(self):
         line = scout.run(self.ctx(), client=self.good_run())
@@ -311,6 +335,16 @@ class ScoutPages(ScoutCase):
         self.c.cookies.clear()
         self.assertEqual(self.c.get("/scout", follow_redirects=False).status_code, 307)
         self.assertEqual(self.c.post(f"/scout/{self.sid}/add").status_code, 401)
+
+    def test_search_now_starts_one_scout_run(self):
+        from convention_social.core import runner as runner_module
+        self.assertIn('action="/scout/run"', self.c.get("/scout").text)
+        with mock.patch.object(runner_module.subprocess, "Popen") as popen:
+            r = self.c.post("/scout/run", follow_redirects=False)
+        self.assertEqual(r.status_code, 303)
+        self.assertIn("msg=started", r.headers["location"])
+        self.assertEqual(popen.call_args[0][0][-2:], ["run", "scout"])
+        self.assertIn("Searching now", self.c.get("/scout?msg=started").text)
 
     def test_add_to_calendar_never_ticks_attending_or_official(self):
         r = self.c.post(f"/scout/{self.sid}/add", follow_redirects=False)

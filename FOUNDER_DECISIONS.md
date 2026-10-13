@@ -701,6 +701,37 @@ site that follows them.
   its start (`site.deployed_at`), so a tap during a build publishes again.
   Publish on the Website card starts it now instead of waiting.
 
+## 2026-10-13: more bookings from the same site
+
+Batch 6 of the roadmap. Chris's choices for it: the scout armed, around
+Washington DC (DC, Maryland and Virginia); `chris@eventcaliber.com` on Google
+Workspace ("I need a day to finish").
+
+- The live Worker config follows the code: before every build
+  `deploy.refresh_live_config` writes `wrangler.live.jsonc` from the
+  committed `wrangler.jsonc` (read from git) with the booking database id the
+  live file already holds; no id, no build. After every deploy the Worker's
+  `NTFY_TOPIC` and `DASHBOARD_URL` secrets are put again from `.env`; a put
+  that fails is an error on the Agents page, not a failed deploy.
+- Pings end where he can act: the site's quote push opens the requests page
+  (`Click`); a drafted reply pings once to its request (no name, email or
+  phone in the push); drafted organizer notes ping once to Outreach; new
+  scout finds ping once to Scout; a site that went live pings to the
+  approved photos; design samples ping when ready.
+- The scout is armed: `scout.dry_run` is switched off by migration 0070
+  (one research call a week, about a dollar, inside the monthly cap); the
+  region defaults to Washington DC, Maryland and Virginia when the Keys
+  field is blank; "Search now" on the Scout page starts one run. Outreach
+  stays as it was: it drafts, and a note leaves only on his Approve; that
+  lane goes live only by his tap on the Agents page. The Outreach page
+  shows the daily caps and the do-not-contact count.
+- Mail is Google Workspace: `docs/SETUP.md` section 4 is the Workspace
+  recipe (Google's DNS wizard for MX, SPF and DKIM; Email Routing off;
+  `hello@` an alias if wanted; Keys, Mail = `smtp.gmail.com`, the address,
+  a Google app password; Mail sent from = the address or a verified "Send
+  mail as" alias). No code path changes; the proof is the test reply
+  landing in his inbox once he finishes.
+
 ## Standing rules from the brief
 
 - CPAC, the ACU and their affiliates are never contacted, by code

@@ -18,7 +18,7 @@ from datetime import date, timedelta
 
 from ..ai import reply
 from ..booking.remote import SiteAPI
-from ..core import db, mail, runner, settings
+from ..core import db, mail, notify, runner, settings
 
 AVAILABILITY_HASH = "availability.pushed_hash"
 COLUMNS = ("name", "email", "phone", "organization", "event_name", "event_kind", "start_date", "end_date",
@@ -53,6 +53,9 @@ def draft_new(ctx: runner.Context, client=None) -> int:
         ctx.conn.execute("UPDATE inquiries SET reply_subject=?, reply_body=?, reply_status='draft', status='drafted', updated_at=? WHERE id=?",
                          (d.subject, d.body, db.utcnow(), inq["id"]))
         n += 1
+        # 2026-10-13: the ping ends where he can act. No name, email or phone: ntfy topics are not private.
+        notify.push(f"{ctx.cfg.brand_name}: a quote request to answer", "A reply is drafted for a new quote request. Tap to read it and approve it.",
+                    dry_run=ctx.dry_run, priority="default", click=notify.link(f"/inquiries/{inq['id']}"), conn=ctx.conn, agent=ctx.agent)
     return n
 
 

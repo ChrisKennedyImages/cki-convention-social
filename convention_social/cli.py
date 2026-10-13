@@ -30,7 +30,7 @@ import importlib
 import sys
 
 from .agents import AGENTS, is_built
-from .core import auth, config, db, secrets, settings
+from .core import auth, config, db, notify, secrets, settings
 
 LAUNCHD_PREFIX = "com.chriskennedyimages.conventionsocial."
 
@@ -316,6 +316,8 @@ def cmd_design(args) -> int:
         design_samples.write_status("done", f"made on {len(about['photos'])} of your approved photos", folder=out.name,
                                     failed=about.get("failed") or [])
         design_samples.made(conn)
+        notify.push(f"{config.get_config().brand_name}: design samples are ready", f"New design samples on {len(about['photos'])} of your approved photos. Tap to see them.",
+                    dry_run=False, priority="default", click=notify.link("/library?view=design"), conn=conn, agent="designer")
         print(f"design samples: {out / 'index.html'}")
         return 0
     finally:

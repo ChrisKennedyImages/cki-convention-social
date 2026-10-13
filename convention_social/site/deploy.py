@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -29,10 +30,16 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Optional
 
-from ..core import config, db, runner, settings
+from ..core import config, db, notify, runner, settings
 
 WRANGLER = ("npx", "--yes", "wrangler@4.149.0")       # the same pin as scripts/go-live.sh
 LIVE_CONFIG = "wrangler.live.jsonc"
+COMMITTED_CONFIG = "wrangler.jsonc"
+PLACEHOLDER = "SET_AFTER_d1_create"                  # wrangler.jsonc's stand-in for the booking database id
+DB_ID = re.compile(r'"database_id":\s*"([0-9a-f-]{36})"')
+# Worker secrets that follow .env after every deploy (go-live put UPLOAD_TOKEN once; it never changes):
+# the Worker's name, the .env key it is read from
+WORKER_SECRETS = (("NTFY_TOPIC", "NTFY_TOPIC"), ("DASHBOARD_URL", "DASHBOARD_PUBLIC_URL"))
 STATUS_FILE = "site-deploy.json"                     # DATA_ROOT/site: what the last deploy did, for the Photos page
 STALE_RUNNING = 40 * 60                              # a "running" status older than this was a run that died
 DEPLOYED_KEY = "site.deployed_commit"                # the code commit the site on Cloudflare was built from
@@ -51,6 +58,51 @@ SITE_PATHS = ("convention_social/site/", "site/", "worker/", "offer.json", "wran
 
 def live_config(repo: Optional[Path] = None) -> Path:
     return Path(repo or config.REPO_ROOT) / LIVE_CONFIG
+
+
+class LiveConfigError(RuntimeError):
+    """The live Worker config cannot be made from the code; the message is for the Photos card."""
+
+
+def refresh_live_config(repo: Optional[Path] = None) -> str:
+    """6.1 (2026-10-13): wrangler.live.jsonc was written once by go-live, so a var or a cron added to
+    wrangler.jsonc never reached Cloudflare. Before every build the live file is the committed config (read
+    from git, so an edit wrangler made to the working copy never reaches the deploy) with the booking
+    database id the live file already holds. Returns the id; refuses when there is none to keep."""
+    repo = Path(repo or config.REPO_ROOT)
+    live = live_config(repo)
+    found = DB_ID.search(live.read_text()) if live.is_file() else None
+    if not found:
+        raise LiveConfigError(f"{LIVE_CONFIG} has no booking database id to keep; run scripts/go-live.sh once on the Mini")
+    src = _git(repo, "show", f"HEAD:{COMMITTED_CONFIG}")
+    if src.count(PLACEHOLDER) != 1:
+        raise LiveConfigError(f"{COMMITTED_CONFIG} in the code does not carry its {PLACEHOLDER} placeholder exactly once")
+    live.write_text(src.replace(PLACEHOLDER, found.group(1)) + ("\n" if not src.endswith("\n") else ""))
+    return found.group(1)
+
+
+def _put_secret(repo: Path, name: str, value: str) -> bool:
+    """`wrangler secret put NAME` with the value on stdin (never on the command line)."""
+    env = {**os.environ, "WRANGLER_SEND_METRICS": "false"}
+    r = subprocess.run([*WRANGLER, "secret", "put", name, "-c", LIVE_CONFIG], cwd=str(repo), capture_output=True, text=True,
+                       timeout=DEPLOY_TIMEOUT, input=value, env=env)
+    return r.returncode == 0
+
+
+def put_secrets(repo: Path, conn, put: Callable[[Path, str, str], bool] = _put_secret) -> list[str]:
+    """After each deploy: the Worker's secrets that follow .env (WORKER_SECRETS), each put when set. A put that
+    fails is an error on the Agents page, not a failed deploy: the site is live. The names put."""
+    done = []
+    for name, env_key in WORKER_SECRETS:
+        value = (config.getenv(env_key) or "").strip()
+        if not value:
+            continue
+        if put(repo, name, value):
+            done.append(name)
+        else:
+            runner.record_error_once(conn, "site", "worker_secret",
+                                     f"The site is live, but its {name} secret could not be set from {env_key}; the next deploy tries again.")
+    return done
 
 
 def ready(repo: Optional[Path] = None) -> tuple[bool, str]:
@@ -247,7 +299,8 @@ def check(wait: float = CHECK_WAIT, *, sleep: Optional[Callable[[float], None]] 
 def run(*, repo: Optional[Path] = None, conn=None, say: Callable[[str], None] = print, with_check: bool = True,
         build: Callable[[Path], subprocess.CompletedProcess] = _build,
         deploy: Callable[[Path], subprocess.CompletedProcess] = _deploy,
-        checker: Callable[[], tuple[bool, list[str]]] = lambda: check()) -> int:
+        checker: Callable[[], tuple[bool, list[str]]] = lambda: check(),
+        put_secret: Callable[[Path, str, str], bool] = _put_secret) -> int:
     """Build, deploy, check. Exit code 0 when the site is live on this commit; 2 when it cannot start
     (no go-live yet, or a deploy already running); 1 when a step failed (the status says which)."""
     repo = Path(repo or config.REPO_ROOT)
@@ -267,6 +320,10 @@ def run(*, repo: Optional[Path] = None, conn=None, say: Callable[[str], None] = 
     try:
         from ..seo import indexnow
         indexnow.ensure_key()                      # once: the key the site hosts and the pings carry (kept in .env)
+        try:
+            refresh_live_config(repo)              # the Worker config in the code, with the live database id (6.1)
+        except LiveConfigError as e:
+            return _failed(conn, head, say, "the live config could not be refreshed", str(e))
         write_status("running", "building the pages", commit=head)
         say("building the site")
         r = build(repo)
@@ -278,6 +335,9 @@ def run(*, repo: Optional[Path] = None, conn=None, say: Callable[[str], None] = 
         r = deploy(repo)
         if r.returncode != 0:
             return _failed(conn, head, say, "Cloudflare did not take the deploy", _tail((r.stdout or "") + "\n" + (r.stderr or "")))
+        put = put_secrets(repo, conn, put=put_secret)
+        if put:
+            say(f"site secrets set from .env: {', '.join(put)}")
         if with_check:
             write_status("running", "checking the live site", commit=head, hero=hero)
             say("checking the live site")
@@ -294,6 +354,8 @@ def run(*, repo: Optional[Path] = None, conn=None, say: Callable[[str], None] = 
         write_status("done", f"live on {head[:7]}" + (f"; hero: {hero}" if hero else ""), commit=head, hero=hero,
                      engines=engines, engines_told=told)
         say(f"LIVE on {head[:7]}" + (f" (hero: {hero})" if hero else ""))
+        notify.push(f"{config.get_config().brand_name}: the site is live", f"eventcaliber.com is live on {head[:7]}. Tap to see the photos it shows.",
+                    dry_run=False, priority="default", click=notify.link("/library?view=approved"), conn=conn, agent="site")
         return 0
     except subprocess.TimeoutExpired as e:
         return _failed(conn, head, say, f"a step took too long ({Path(str(e.cmd[0])).name}, {e.timeout:.0f}s)", "")
@@ -315,7 +377,7 @@ def tell_engines(post=None) -> tuple[bool, str]:
 def _failed(conn, head: str, say: Callable[[str], None], what: str, detail: str) -> int:
     tries = record_failure(conn, head)
     what = f"{what} (try {tries} of {MAX_TRIES})"
-    write_status("failed", what, commit=head, detail=detail[:2000])
+    write_status("failed", f"{what}: {detail}" if what.startswith("the live config") else what, commit=head, detail=detail[:2000])
     say(f"not live: {what}")
     if detail:
         say(detail)

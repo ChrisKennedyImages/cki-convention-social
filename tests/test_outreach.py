@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+from unittest import mock
 import re
 import sqlite3
 import types
@@ -248,6 +249,20 @@ class Agent(OutreachCase):
         self.scout_event(name="Fall Con", start=200)
         outreach.run(self.ctx(), api=self.api())
         self.assertEqual(db.one(self.conn, "SELECT COUNT(*) n FROM outreach")["n"], 1)
+
+    def test_drafted_notes_ping_the_phone_once_to_the_outreach_page(self):
+        """6.2 (2026-10-13): a note drafted for his Approve used to wait unseen."""
+        self.scout_event()
+        with mock.patch.object(outreach.notify, "push") as push:
+            outreach.run(self.ctx(), api=self.api())
+        self.assertEqual(push.call_count, 1)
+        args, kw = push.call_args
+        self.assertIn("1 organizer note", args[1])
+        self.assertTrue(kw["click"].endswith("/outreach"))
+        self.assertIs(kw["conn"], self.conn)
+        with mock.patch.object(outreach.notify, "push") as push:
+            outreach.run(self.ctx(), api=self.api())
+        self.assertEqual(push.call_count, 0, "nothing new drafted, no ping")
 
     def test_prospects_added_by_hand_are_drafted(self):
         now = db.utcnow()
@@ -504,6 +519,13 @@ class Pages(OutreachCase):
                                                        "do": "approve"}, follow_redirects=False)
         self.assertIn("approved", r.headers["location"])
         self.assertEqual(self.status(oid), "approved")
+
+    def test_the_page_shows_the_caps_and_the_do_not_contact_count(self):
+        page = self.c.get("/outreach").text
+        self.assertIn("up to 5 organizer drafts and 10 approved sends a day", page)
+        self.assertIn("0 addresses on the do-not-contact list", page)
+        compliance.block(self.conn, "stop@example.org", source="reply")
+        self.assertIn("1 address on the do-not-contact list", self.c.get("/outreach").text)
 
     def test_reject(self):
         oid = self.row(status="draft")
