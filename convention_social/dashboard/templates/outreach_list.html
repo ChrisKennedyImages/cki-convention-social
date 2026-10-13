@@ -1,7 +1,8 @@
 {% extends "base.html" %}
 {% block body %}
 {% set notes = {'queued': ('Added. The next outreach run drafts it for you.', ''), 'rejected': ('Rejected.', ''),
-                'blocked': ('That address is on the do-not-contact list.', 'bad'), 'exists': ('There is already a note to that address for that event.', 'bad'),
+                'blocked': ('That address is on the do-not-contact list.', 'bad'),
+                'never': ('CPAC, the ACU and their affiliates are never contacted. That is a hard rule, in the code.', 'bad'), 'exists': ('There is already a note to that address for that event.', 'bad'),
                 'bad_prospect': ('An event name and a valid email address are needed.', 'bad')} %}
 {% if msg in notes %}<div class="msg {{ notes[msg][1] }}">{{ notes[msg][0] }}</div>{% endif %}
 <h1>Outreach</h1>

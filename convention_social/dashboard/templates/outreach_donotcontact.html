@@ -6,6 +6,8 @@
 <h1>Do not contact</h1>
 <div class="card muted">No outreach email is drafted for or sent to these addresses. Opt-out links add themselves on the next outreach run;
   add anyone who replies STOP, or asks not to hear from you, here.</div>
+<div class="card"><strong>Never, by rule:</strong> {{ never }}. Every address at {{ never_domains|join(', ') }} or any site with cpac in its name,
+  and every event or organizer that names them. This is in the code and cannot be removed here.</div>
 <form method="post" action="/outreach/donotcontact/add" class="card">
   <label>Email address</label><input type="text" name="email" required>
   <label>Why</label><select name="source"><option value="reply">Replied STOP or asked not to be contacted</option><option value="bounce">The address bounced</option><option value="manual">Other</option></select>

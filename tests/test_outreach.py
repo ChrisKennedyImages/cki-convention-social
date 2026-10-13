@@ -259,6 +259,59 @@ class Agent(OutreachCase):
         self.assertIn("Hand Con", r["body"])
 
 
+# ---------------------------------------------------------------------- never CPAC, never the ACU
+class NeverContacted(OutreachCase):
+    """Chris, 2026-10-13: "never outreach to CPAC or the ACU or any affiliates! NEVER and that's a hard rule."
+    The rule is code: no page can remove it, and it is checked at the scout, the drafter, the send and the hand add."""
+
+    def test_the_rule_is_code_not_a_list(self):
+        for email, names, urls in (("press@cpac.org", (), ()), ("Media@CPAC.Conservative.org", (), ()),
+                                   ("hello@texascpac.com", (), ()), ("info@acuf.org", (), ()),
+                                   ("events@sample.org", ("CPAC 2027",), ()), ("events@sample.org", ("Sample Expo", "American Conservative Union"), ()),
+                                   ("events@sample.org", ("Conservative Political Action Conference",), ()),
+                                   ("events@sample.org", ("Sample Expo",), ("https://www.conservative.org/cpac/2027",)),
+                                   ("events@sample.org", ("Regional Conservative Union Gala",), ())):
+            why = compliance.never_contact(email=email, names=names, urls=urls)
+            self.assertIsNotNone(why, (email, names, urls))
+            self.assertIn("never contacted", why)
+        for email, names, urls in (("events@sample.org", ("Sample Con 2027", "Sample Events LLC"), ("https://samplecon.example",)),
+                                   ("hello@acupuncture-summit.example", ("Acupuncture Summit",), ()),
+                                   ("x@vacuum.example", ("Vacuum Tech Expo",), ()), ("", (), ())):
+            self.assertIsNone(compliance.never_contact(email=email, names=names, urls=urls), (email, names, urls))
+
+    def test_scout_finds_and_hand_prospects_are_never_drafted(self):
+        self.scout_event(name="CPAC 2027", email="press@samplecon.example")
+        self.scout_event(name="Sample Con 2027", email="press@samplecon.example", start=50)
+        now = db.utcnow()
+        hand = db.insert(self.conn, "outreach", event_key=keys.event_key("Hand Con", None), event_name="Hand Con", email="press@cpac.org",
+                         status="queued", token=keys.new_token(), created_at=now, updated_at=now)
+        line = outreach.run(self.ctx(), api=self.api())
+        drafted = db.rows(self.conn, "SELECT * FROM outreach WHERE status='draft'")
+        self.assertEqual([r["event_name"] for r in drafted], ["Sample Con 2027"], line)
+        r = db.one(self.conn, "SELECT * FROM outreach WHERE id=?", (hand,))
+        self.assertEqual(r["status"], "rejected")
+        self.assertIn("never contacted", r["notes"])
+        self.assertIn("never contacted=2", line)
+
+    def test_an_approved_note_is_refused_at_send(self):
+        oid = self.row(email="Media@CPAC.Conservative.org", status="approved")
+        named = self.row(email="events@sample.org", status="approved", name="CPAC 2027")
+        line = outreach.run(self.ctx(), api=self.api())
+        for rid in (oid, named):
+            r = db.one(self.conn, "SELECT * FROM outreach WHERE id=?", (rid,))
+            self.assertEqual(r["status"], "rejected", line)
+            self.assertIn("never contacted", r["notes"])
+        self.assertEqual(self.outbox(), [])
+        self.assertIn("never=2", line)
+
+    def test_no_follow_up_either(self):
+        sent = (datetime.now(timezone.utc) - timedelta(days=9)).replace(microsecond=0).isoformat()
+        oid = self.row(email="press@cpac.org", status="sent", sent_at=sent)
+        why = compliance.follow_up_allowed(self.conn, db.one(self.conn, "SELECT * FROM outreach WHERE id=?", (oid,)))
+        self.assertIsNotNone(why)
+        self.assertIn("never contacted", why)
+
+
 # ---------------------------------------------------------------------- sending
 class Sending(OutreachCase):
     def test_approved_dry_run_writes_a_compliant_email(self):
@@ -456,6 +509,22 @@ class Pages(OutreachCase):
         compliance.block(self.conn, "x@blocked.example")
         self.assertIn("blocked", self.c.post("/outreach/add", data=dict(data, email="x@blocked.example"),
                                              follow_redirects=False).headers["location"])
+
+    def test_cpac_and_the_acu_are_refused_on_every_page(self):
+        data = {"event_name": "Hand Con", "email": "press@cpac.org"}
+        self.assertIn("never", self.c.post("/outreach/add", data=data, follow_redirects=False).headers["location"])
+        self.assertIn("never", self.c.post("/outreach/add", data={"event_name": "CPAC 2027", "email": "org@hand.example"},
+                                           follow_redirects=False).headers["location"])
+        self.assertIsNone(db.one(self.conn, "SELECT 1 FROM outreach"))
+        oid = self.row(status="draft", name="CPAC 2027", email="events@sample.org")
+        page = self.c.get(f"/outreach/{oid}").text
+        self.assertIn("never contacted", page)
+        self.assertNotIn(f"/outreach/{oid}/approve", page)
+        self.assertIn("not_ready", self.c.post(f"/outreach/{oid}/approve", follow_redirects=False).headers["location"])
+        self.assertEqual(self.status(oid), "draft")
+        dnc = self.c.get("/outreach/donotcontact").text
+        self.assertIn("CPAC", dnc)
+        self.assertIn("cannot be removed", dnc)
 
     def test_do_not_contact_closes_open_notes(self):
         oid = self.row(status="approved")

@@ -186,6 +186,24 @@ class Research(ScoutCase):
         # a web search error is recorded, not swallowed
         self.assertEqual(db.one(self.conn, "SELECT kind FROM errors")["kind"], "web_search")
 
+    def test_cpac_and_the_acu_are_never_stored(self):
+        """Chris, 2026-10-13: never CPAC, never the ACU, never an affiliate. Dropped by the vetting, refused by the store."""
+        cpac = "https://cpac.conservative.org/"
+        events = [ev("CPAC 2027", self.day(40), kind="business", website=cpac, sources=[cpac, self.LISTING]),
+                  ev("ACU Policy Summit", self.day(50), kind="business", sources=[self.LISTING]),
+                  ev("Regional Expo", self.day(60), kind="business", organizer="American Conservative Union", sources=[self.LISTING]),
+                  ev("Sample Con 2027", self.day(40), sources=[self.SITE]),
+                  ev("Vacuum Tech Summit", self.day(45), kind="business", sources=[self.LISTING])]
+        fake = FakeClaude(resp([search_block(self.SITE, self.LISTING, cpac), text(answer(events))], searches=2))
+        line = scout.run(self.ctx(), client=fake)
+        names = {r["name"] for r in db.rows(self.conn, "SELECT name FROM scout_events")}
+        self.assertEqual(names, {"Sample Con 2027", "Vacuum Tech Summit"}, line)
+        self.assertIn("never 3", line)
+        self.assertIn("CPAC", fake.calls[0]["system"][0]["text"])
+        self.assertFalse(scout.store(self.conn, {"name": "CPAC Texas", "kind": "business", "start_date": self.day(30), "end_date": "",
+                                                "sources": [self.LISTING]}, "m", set()))
+        self.assertEqual(db.one(self.conn, "SELECT COUNT(*) n FROM scout_events")["n"], 2)
+
     def test_spend_is_recorded_for_tokens_and_searches(self):
         scout.run(self.ctx(), client=self.good_run())
         rows = db.rows(self.conn, "SELECT * FROM api_usage ORDER BY id")
@@ -305,6 +323,17 @@ class ScoutPages(ScoutCase):
         self.assertEqual((row["status"], row["convention_id"]), ("added", conv["id"]))
         self.c.post(f"/scout/{self.sid}/add")
         self.assertEqual(db.one(self.conn, "SELECT COUNT(*) n FROM conventions")["n"], 1)
+
+    def test_a_cpac_row_stored_before_the_rule_is_never_shown_or_added(self):
+        now = db.utcnow()
+        old = db.insert(self.conn, "scout_events", dedup_key=f"cpac 2027|{self.day(40)}", name_key="cpac 2027", name="CPAC 2027",
+                        kind="business", start_date=self.day(40), website="https://cpac.conservative.org",
+                        sources=json.dumps(["https://cpac.conservative.org"]), status="new", found_at=now, updated_at=now)
+        page = self.c.get("/scout").text
+        self.assertIn("Sample Con", page)
+        self.assertNotIn("CPAC", page)
+        self.assertIn("msg=never", self.c.post(f"/scout/{old}/add", follow_redirects=False).headers["location"])
+        self.assertIsNone(db.one(self.conn, "SELECT 1 FROM conventions"))
 
     def test_dismiss(self):
         self.c.post(f"/scout/{self.sid}/dismiss")

@@ -6,6 +6,7 @@ An outreach email is refused (at Approve on the dashboard and again at send) unl
   subject    present, not dressed up as a reply or a forward, and it passes ai.copy_rules
   body       present, passes ai.copy_rules (price, dash, affiliation, promise) and CLAIMS below
   contact    a valid address
+  never      not CPAC, the ACU or an affiliate (Chris, 2026-10-13; the rule is code, no page removes it)
   blocked    the address is not on the do-not-contact list
   token      the row carries its own random opt-out token
   follow_up  at most one, only after the first note was sent, and not sooner than
@@ -19,13 +20,15 @@ only the row's token, never the address.
 from __future__ import annotations
 
 import html as htmllib
+import json
 import re
 import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Optional
+from urllib.parse import urlsplit
 
-from ..ai import copy_rules
+from ..ai import copy_rules, names
 from ..core import config, db
 from . import keys
 
@@ -41,6 +44,17 @@ CLAIMS = re.compile(
 )
 REPLY_PREFIX = re.compile(r"^\s*(?:re|fw|fwd|aw|sv)\s*:", re.IGNORECASE)
 
+# Chris, 2026-10-13: "never outreach to CPAC or the ACU or any affiliates! NEVER and that's a hard rule."
+# The rule lives here, in code: no page can remove it. The names are the ones he gave (ai/names.ALWAYS); the
+# domains are the ACU's own site (which also hosts CPAC), cpac.org and the ACU Foundation; any host with "cpac" in it
+# is how the state CPACs are named; an affiliate named after the parent carries one of the NEVER_NAME_WORDS.
+# The domain list could not be read from the sites themselves from the build sandbox (its network is closed); the
+# names and the "cpac" host word are the gate that needs no list.
+NEVER_DOMAINS = ("conservative.org", "cpac.org", "acuf.org")
+NEVER_HOST_WORDS = ("cpac",)
+NEVER_NAME_WORDS = ("conservative union", "conservative political action")
+NEVER_MESSAGE = "CPAC, the ACU and their affiliates are never contacted (Chris, 2026-10-13)"
+
 HOLD_CODES = {"sender", "address", "token", "follow_up", "follow_up_wait"}   # fix the setting or wait: stays approved
 REDRAFT_CODES = {"subject", "body", "claims", "contact"}                     # the words or the address: back to draft
 
@@ -49,6 +63,74 @@ REDRAFT_CODES = {"subject", "body", "claims", "contact"}                     # t
 class Problem:
     code: str
     message: str
+
+
+# ---------------------------------------------------------------------- never: CPAC, the ACU, affiliates
+def never_host(host: str) -> bool:
+    host = (host or "").lower().strip().rstrip(".")
+    if not host:
+        return False
+    if any(host == d or host.endswith("." + d) for d in NEVER_DOMAINS):
+        return True
+    return any(word in host for word in NEVER_HOST_WORDS)
+
+
+def never_name(text: str) -> bool:
+    """A name that is, or names, CPAC or the ACU: on letter boundaries, so "vacuum" and "acupuncture" are not the ACU."""
+    text = text or ""
+    low = text.lower()
+    if any(words in low for words in NEVER_NAME_WORDS):
+        return True
+    return any(re.search(r"(?<![A-Za-z])" + re.escape(n) + r"(?![A-Za-z])", text, re.IGNORECASE) for n in names.ALWAYS)
+
+
+def _host_of_url(url: str) -> str:
+    url = (url or "").strip()
+    if not url:
+        return ""
+    if "://" not in url:
+        url = "https://" + url
+    return (urlsplit(url).hostname or "").lower()
+
+
+def never_contact(*, email: str = "", names: tuple = (), urls: tuple = ()) -> Optional[str]:
+    """The reason this prospect is never contacted, or None. Checked at the scout, the drafter, the send and the hand add."""
+    email = keys.normalize_email(email or "")
+    if "@" in email and never_host(email.rsplit("@", 1)[1]):
+        return f"{NEVER_MESSAGE}: the address is at {email.rsplit('@', 1)[1]}."
+    for name in names:
+        if name and never_name(str(name)):
+            return f"{NEVER_MESSAGE}: {str(name).strip()[:80]!r} names them."
+    for url in urls:
+        host = _host_of_url(str(url or ""))
+        if host and never_host(host):
+            return f"{NEVER_MESSAGE}: a source is on {host}."
+    return None
+
+
+def _field(row, key: str):
+    try:
+        return row[key]
+    except (KeyError, IndexError, TypeError):
+        return None
+
+
+def never_for_row(row) -> Optional[str]:
+    """For an outreach row or the facts a draft is made from."""
+    return never_contact(email=_field(row, "email") or "", names=(_field(row, "event_name"), _field(row, "organizer")),
+                         urls=(_field(row, "website"),))
+
+
+def never_for_event(ev) -> Optional[str]:
+    """For a scout find (a vetted candidate dict or a scout_events row): name, organizer, address, site and every source."""
+    sources = _field(ev, "sources") or []
+    if isinstance(sources, str):
+        try:
+            sources = json.loads(sources or "[]")
+        except ValueError:
+            sources = []
+    return never_contact(email=_field(ev, "organizer_email") or "", names=(_field(ev, "name"), _field(ev, "organizer")),
+                         urls=(_field(ev, "website"), _field(ev, "email_source_url"), *sources))
 
 
 # ---------------------------------------------------------------------- do not contact
@@ -153,6 +235,9 @@ def problems(conn: sqlite3.Connection, row, *, subject: Optional[str] = None, bo
     cfg = cfg or config.get_config()
     now = now or datetime.now(timezone.utc)
     out: list[Problem] = []
+    never = never_for_row(row)
+    if never:
+        out.append(Problem("never", never))
     if not sender_ok(cfg):
         out.append(Problem("sender", f"Set BRAND_FROM_EMAIL on the Keys page to an address on {cfg.brand_domain or 'BRAND_DOMAIN'}."))
     if not cfg.brand_postal_address.strip():
@@ -182,6 +267,9 @@ def follow_up_allowed(conn: sqlite3.Connection, row, *, now: Optional[datetime] 
     now = now or datetime.now(timezone.utc)
     if row["kind"] != "first" or row["status"] != "sent" or not row["sent_at"]:
         return "Only a first note that was really sent can have a follow-up."
+    never = never_for_row(row)
+    if never:
+        return never
     if db.one(conn, "SELECT 1 FROM outreach WHERE email=? AND event_key=? AND kind='follow_up'", (row["email"], row["event_key"])):
         return "This note already has its one follow-up."
     if blocked(conn, row["email"]):

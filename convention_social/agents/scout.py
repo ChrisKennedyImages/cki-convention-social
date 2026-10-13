@@ -10,7 +10,8 @@
    organizer email only when printed on the event's own site; dates only
    when real) and stores each event once in scout_events (status new),
    de-duplicated by normalized name and start date, and skipping anything
-   already on the calendar.
+   already on the calendar. CPAC, the ACU and their affiliates are never
+   stored (outreach/compliance.never_contact; Chris, 2026-10-13).
 Nothing reaches the calendar until Chris presses "Add to calendar" on the
 dashboard's Scout page, and then with attending and official unticked.
 """
@@ -22,7 +23,7 @@ from zoneinfo import ZoneInfo
 
 from ..ai import spend
 from ..core import config, db, runner, secrets
-from ..outreach import keys, research
+from ..outreach import compliance, keys, research
 
 DEFAULT_MONTHS = 9
 
@@ -73,7 +74,9 @@ def on_calendar(conn) -> set[tuple[str, str]]:
 
 
 def store(conn, ev: dict, model: str, calendar: set[tuple[str, str]]) -> bool:
-    """Insert one vetted event; False when it is already known (here or on the calendar)."""
+    """Insert one vetted event; False when it is already known (here or on the calendar), or never listed."""
+    if compliance.never_for_event(ev):
+        return False
     nk = keys.name_key(ev["name"])
     start = ev.get("start_date") or ""
     if not nk or (nk, start) in calendar or (not start and any(k == nk for k, _ in calendar)):

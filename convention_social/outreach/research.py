@@ -33,7 +33,7 @@ from urllib.parse import urlsplit, urlunsplit
 from ..ai import spend
 from ..ai.claude import FALLBACK_BETA
 from ..core import config, db
-from . import keys
+from . import compliance, keys
 
 DEFAULT_MODEL = "claude-opus-5"
 SEARCH_TOOL = {"type": "web_search_20260209", "name": "web_search", "max_uses": 8}
@@ -51,6 +51,7 @@ Rules:
 4. organizer_email: only a public contact address printed on the event's own website (organizers, press, media or general contact), with the page it is printed on in email_source_url. Never guess an address, never build one from a name or a pattern, never take one from a third party listing. If there is none, leave both empty.
 5. kind is business or other. website is the event's own site, never a ticket seller or a listing.
 6. Skip events in the already known list.
+7. Leave out CPAC, the American Conservative Union (ACU), their state affiliates and any event they run or sponsor. They are never contacted.
 When you are done, end your answer with one fenced json block: {"events": [...]}, each event an object with exactly these keys: name, kind, start_date, end_date, city, venue, website, organizer, organizer_email, email_source_url, sources (a list of URLs)."""
 
 STRUCTURE_SYSTEM = """You turn research notes about upcoming events into JSON. Use only what the notes state. A field the notes do not give is an empty string; never fill one in. Keep every source URL exactly as written in the notes. Leave out any event the notes give no source URL for."""
@@ -256,7 +257,7 @@ def _clip(value, key: str) -> str:
 def vet(res: Research, *, today: date, horizon: date) -> tuple[list[dict], dict[str, int]]:
     """Keep what a seen source backs; blank what it does not; drop what cannot stand. Returns (kept, dropped counts)."""
     kept: list[dict] = []
-    dropped = {"no_name": 0, "no_source": 0, "past": 0, "beyond_horizon": 0}
+    dropped = {"no_name": 0, "no_source": 0, "past": 0, "beyond_horizon": 0, "never": 0}
     seen_hosts = {urlsplit(u).hostname for u in res.seen}
     for cand in res.candidates:
         name = _clip(cand.get("name"), "name")
@@ -287,6 +288,11 @@ def vet(res: Research, *, today: date, horizon: date) -> tuple[list[dict], dict[
             website, site = "", ""
         email, email_url = own_site_email(res, cand, site)
         kind = str(cand.get("kind") or "").strip().lower()
+        # Chris, 2026-10-13: never CPAC, never the ACU, never an affiliate; the prompt says so and the code makes sure
+        if compliance.never_contact(email=email, names=(name, _clip(cand.get("organizer"), "organizer")),
+                                    urls=(website, email_url, *sources)):
+            dropped["never"] += 1
+            continue
         kept.append({"name": name, "kind": kind if kind in KINDS else "other", "start_date": start, "end_date": end,
                      "city": _clip(cand.get("city"), "city"), "venue": _clip(cand.get("venue"), "venue"),
                      "website": website, "organizer": _clip(cand.get("organizer"), "organizer"),
