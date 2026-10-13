@@ -806,7 +806,8 @@ def create_app() -> FastAPI:
         from ..seo import indexnow
         from ..site import build as site_build
         site = {"status": deploy.read_status(), "ready": deploy.ready(), "deployed": (settings.get(conn, deploy.DEPLOYED_KEY) or "")[:7],
-                "google": bool(site_build.verification_value()), "indexnow": bool(indexnow.key()),
+                "google": bool(site_build.verification_value()), "google_file": site_build.verification_file(),
+                "google_problem": site_build.verification_problem(), "indexnow": bool(indexnow.key()),
                 "photos_pending": deploy.photos_pending(conn)}
         return render(request, "library.html", items=shown, page=page, pages=pages, total=total, subject=subject,
                       subject_counts=subject_counts, subject_words=SUBJECT_WORDS, site=site,
@@ -1431,10 +1432,12 @@ def create_app() -> FastAPI:
              "fields": [f("OLLAMA_MODEL", "Ollama model"), f("CLASSIFY_BACKEND", "Sorter", choices=["auto", "ollama", "claude"])]},
             {"title": "This dashboard", "note": "The address you open this dashboard at from your phone.",
              "fields": [f("DASHBOARD_PUBLIC_URL", "Dashboard address")]},
-            {"title": "Search engines", "note": "Google: in Search Console add the property https://eventcaliber.com/, choose the "
-                                               "HTML tag, paste the tag (or its content value) here, press Publish the site on the Photos "
-                                               "page, then Verify in Search Console and submit sitemap.xml there once. Bing and the other "
-                                               "IndexNow engines are told after every publish with the key below, made by itself.",
+            {"title": "Search engines", "note": "Google: in Search Console add the property https://eventcaliber.com/ and paste here "
+                                               "what it shows for one of its methods: the HTML tag or its content value, the TXT record "
+                                               "(google-site-verification=...) or the HTML file's name (google....html). The site "
+                                               "republishes itself within minutes; then press Verify in Search Console and submit "
+                                               "sitemap.xml there once. Bing and the other IndexNow engines are told after every publish "
+                                               "with the key below, made by itself.",
              "fields": [f("GOOGLE_SITE_VERIFICATION", "Google Search Console tag"), f("INDEXNOW_KEY", "IndexNow key (made on the first publish)")]},
         ]
 
@@ -1446,11 +1449,15 @@ def create_app() -> FastAPI:
         return render(request, "keys.html", groups=key_groups(), msg=msg.replace("+", " "))
 
     @app.post("/keys")
-    async def keys_save(request: Request, user: str = Depends(require_user)):
+    async def keys_save(request: Request, user: str = Depends(require_user), conn=Depends(conn_dep)):
         """Blank keeps what is there; the Clear box next to a plain setting writes it empty, so the default
-        stands again (2026-10-13: a value could never be taken back from here). Secrets are replaced, never cleared."""
+        stands again (2026-10-13: a value could never be taken back from here). Secrets are replaced, never cleared.
+        The Search Console value is checked here, where he pastes it: a value that is none of Google's forms is
+        refused with the reason, and a good one makes the site republish itself (deploy.photos_pending)."""
+        from ..site import build as site_build
+        from ..site import deploy
         form = await request.form()
-        updates, cleared = {}, 0
+        updates, cleared, refused = {}, 0, ""
         for name in key_names:
             if name in clearable and form.get(f"clear_{name}"):
                 if config.getenv(name) is not None:
@@ -1464,10 +1471,23 @@ def create_app() -> FastAPI:
                 continue
             if name == "CREDITS_SHEET_ID":
                 value = drive_id_from(value)
+            if name == site_build.VERIFICATION_KEY:
+                parsed = site_build.parse_verification(value)
+                if parsed[2]:
+                    refused = f"the Search Console value was not saved: {parsed[2]}"
+                    continue
+                if parsed[:2] == site_build.parse_verification(config.getenv(name) or "")[:2]:
+                    continue                      # the same tag in another of Google's forms: nothing changes for the site
             updates[name] = value
         if updates:
             config.write_env(updates)
+            if site_build.VERIFICATION_KEY in updates:
+                settings.set(conn, deploy.TAG_CHANGED_KEY, db.utcnow())
         note = f"saved {len(updates) - cleared}" + (f", cleared {cleared}" if cleared else "")
+        if site_build.VERIFICATION_KEY in updates:
+            note += "; the site republishes itself in a few minutes with the Search Console change, then press Verify there"
+        if refused:
+            note += "; " + refused
         return RedirectResponse("/keys?msg=" + quote_plus(note), status_code=303)
 
     @app.post("/keys/test-alert")

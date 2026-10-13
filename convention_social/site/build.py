@@ -329,14 +329,57 @@ def home_body(t: dict, hero: str, frames: list[tuple[str, str]], stack: list[str
 <a class="huge" href="/book/">Request a quote</a><p>{e(t['cta_p'])}</p></section>"""
 
 
-def verification_value() -> str:
-    """The Google Search Console tag's content value from the Keys page. Chris may paste the whole
-    <meta> tag; only its content survives, and only a value that could not break the page."""
+TOKEN = r"[A-Za-z0-9_-]{8,128}"                 # the content value of the HTML tag, or the TXT record's value
+FILE_NAME = r"google[0-9a-f]{16}\.html"          # the HTML file method: the file's name, served at the root
+VERIFICATION_HELP = ("paste what Search Console shows for one of its methods: the HTML tag or its content value, "
+                     "the TXT record (google-site-verification=...), or the HTML file's name (google....html)")
+
+
+def parse_verification(raw: str) -> tuple[str, str, str]:
+    """(token, file name, problem) from what was pasted on the Keys page. Chris may paste the whole <meta>
+    tag, only its content value, the TXT record Search Console offers for a Domain property, or the HTML
+    file's name or content; only the token or the file name survives, and only a value that could not break
+    the page. A value that is none of these is a problem said in plain words, never a silent blank
+    (2026-10-13: the Website card said "tag missing" over a filled field, and nothing said why)."""
+    raw = "".join((raw or "").split())            # a secret never carries whitespace (core/secrets); the same here
+    if not raw:
+        return "", "", ""
+    m = re.search(r'content=["\']?([^"\'>/\s]+)', raw)
+    if m:
+        token = m.group(1)
+    elif raw.lower().startswith("google-site-verification="):
+        token = raw.split("=", 1)[1]
+    elif raw.lower().startswith("google-site-verification:"):
+        name = raw.split(":", 1)[1]
+        return ("", name, "") if re.fullmatch(FILE_NAME, name) else ("", "", f"not a Search Console value; {VERIFICATION_HELP}")
+    elif re.fullmatch(FILE_NAME, raw):
+        return "", raw, ""
+    else:
+        token = raw
+    if re.fullmatch(TOKEN, token):
+        return token, "", ""
+    return "", "", f"not a Search Console value; {VERIFICATION_HELP}"
+
+
+def _verification() -> tuple[str, str, str]:
     from ..core import secrets
-    raw = (secrets.get_secret(VERIFICATION_KEY) or "").strip()
-    m = re.search(r'content\s*=\s*["\']([^"\']+)["\']', raw)
-    value = m.group(1).strip() if m else raw
-    return value if re.fullmatch(r"[A-Za-z0-9_-]{8,128}", value) else ""
+    return parse_verification(secrets.get_secret(VERIFICATION_KEY) or "")
+
+
+def verification_value() -> str:
+    """The Google Search Console tag's content value from the Keys page ("" when none, or when the HTML file
+    method was pasted instead)."""
+    return _verification()[0]
+
+
+def verification_file() -> str:
+    """The HTML file method's file name from the Keys page, or ""."""
+    return _verification()[1]
+
+
+def verification_problem() -> str:
+    """Why the Keys page's value cannot reach the site, or "" when it is empty or usable."""
+    return _verification()[2]
 
 
 def _lastmod_path() -> Path:
@@ -385,7 +428,11 @@ def build(conn: Optional[sqlite3.Connection], photos: SitePhotos, *, out: Path =
     o = offer.load()
     cfg = config.get_config()
     brand = cfg.brand_name
-    verification = verification_value()
+    verification, verification_name, verification_bad = _verification()
+    if verification_bad and conn is not None and not preview:
+        from ..core import runner
+        runner.record_error_once(conn, "site", "verification_tag",
+                                 f"The Google Search Console value on the Keys page is {verification_bad}. The site is built without it.")
     t = copy_text()
     check_copy([v if isinstance(v, str) else " ".join(x for pair in v for x in pair) for v in t.values()] + offer.coverage_labels()
                + [c["note"] for c in o["coverage"] if c.get("note")])
@@ -516,6 +563,9 @@ It is never sold or shared. The website holds it only until the booking inbox co
     # a preview is never crawled; the live site lists its public pages and every photo on them, each with the
     # date its content last changed (Chris, 2026-10-12: "no site map or Google search indexing")
     (out / "robots.txt").write_text("User-agent: *\nDisallow: /\n" if preview else markup.robots_txt(base))
+    if verification_name and not preview:
+        # the HTML file method: Search Console reads this file at the root, with this one line in it
+        (out / verification_name).write_text(f"google-site-verification: {verification_name}\n")
     rels = {p: ("index.html" if p == "/" else p.strip("/") + "/index.html") for p in PAGES}
     (out / "sitemap.xml").write_text(markup.sitemap_xml(
         base, list(PAGES),
