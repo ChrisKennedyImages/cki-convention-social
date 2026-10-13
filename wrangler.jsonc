@@ -15,6 +15,10 @@
   "assets": { "directory": "site/dist", "binding": "ASSETS", "not_found_handling": "404-page" },
   "r2_buckets": [{ "binding": "MEDIA", "bucket_name": "eventcaliber-media" }],
   "d1_databases": [{ "binding": "DB", "database_name": "eventcaliber-booking", "database_id": "SET_AFTER_d1_create" }],
+  // the outside watch (7.4, 2026-10-13): every 30 minutes, UTC. Cron Triggers are on the Workers Free plan
+  // (5 per account; developers.cloudflare.com/workers/platform/limits, read 2026-10-13); site/deploy.py carries
+  // this file to Cloudflare on every deploy.
+  "triggers": { "crons": ["*/30 * * * *"] },
   "workers_dev": false,
   "routes": [
     { "pattern": "eventcaliber.com", "custom_domain": true },

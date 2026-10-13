@@ -14,6 +14,11 @@
 //   POST /api/unsubscribe       the opt-out page's button: the token is stored in D1 (rate limited like /api/quote)
 //   GET  /api/unsubscribes      the Mini pulls opt-out tokens (Bearer UPLOAD_TOKEN)
 //   POST /api/unsubscribes/ack  the Mini confirms it has them; they are then deleted here
+//   POST /api/heartbeat         the Mini checks in (Bearer UPLOAD_TOKEN); private/heartbeat.json in R2 (7.4, 2026-10-13)
+//   POST /api/heartbeat/test    sends the outside watch's alert at once, marked as a test (Bearer UPLOAD_TOKEN)
+//   scheduled (cron, every 30 min): the outside watch. A heartbeat older than QUIET_MS and no alert yet: one urgent
+//                               push "the Mini has not checked in since"; a fresh heartbeat after an alert: "back";
+//                               no heartbeat ever: nothing. The only watch that does not live on the Mini.
 //   Opt-outs carry only the random token from the email, never the address; the Mini maps it back.
 //
 // Secrets (wrangler secret put): UPLOAD_TOKEN, and optionally NTFY_TOPIC, DASHBOARD_URL (the dashboard's Tailscale
@@ -29,6 +34,9 @@ const COVERAGE = ["backstage", "green_room", "breakouts", "evening_events", "din
 const PER_HOUR = 5;
 const OPT_OUT_TOKEN = /^[a-f0-9]{32}$/;
 const OPT_OUTS_PER_HOUR = 20;     // per address; mail providers send one-click opt-outs from shared addresses
+const HEARTBEAT_KEY = `${PRIVATE_PREFIX}heartbeat.json`;
+const ALERTED_KEY = `${PRIVATE_PREFIX}heartbeat-alerted.json`;
+const QUIET_MS = 2 * 3600e3;      // the Mini checks in hourly; two hours of silence is the alarm
 
 const authed = (request, env) =>
   Boolean(env.UPLOAD_TOKEN) && (request.headers.get("authorization") || "") === `Bearer ${env.UPLOAD_TOKEN}`;
@@ -185,6 +193,53 @@ async function unsubscribes(request, env, url) {
   return new Response("method not allowed", { status: 405 });
 }
 
+async function readJson(env, key) {
+  const obj = await env.MEDIA.get(key);
+  if (!obj) return null;
+  try { return JSON.parse(await obj.text()); } catch { return null; }
+}
+
+async function push(env, title, body, priority) {
+  if (!env.NTFY_TOPIC) return false;
+  const headers = { Title: title, Priority: priority };
+  if (env.DASHBOARD_URL) headers.Click = env.DASHBOARD_URL;
+  await fetch(`https://ntfy.sh/${env.NTFY_TOPIC}`, { method: "POST", body, headers }).catch(() => {});
+  return true;
+}
+
+async function heartbeat(request, env, url) {
+  if (!authed(request, env)) return new Response("forbidden", { status: 403 });
+  if (request.method !== "POST") return new Response("method not allowed", { status: 405 });
+  if (url.pathname === "/api/heartbeat/test") {
+    const sent = await push(env, "Event Caliber: the Mini is silent (test)",
+      "This is the outside watch's test ping. If the Mini stops checking in for two hours, this is what you get. (test)", "urgent");
+    return Response.json({ ok: true, sent });
+  }
+  const at = new Date(Date.now()).toISOString();
+  await env.MEDIA.put(HEARTBEAT_KEY, JSON.stringify({ at }), { httpMetadata: { contentType: "application/json" } });
+  return Response.json({ ok: true, at });
+}
+
+async function watch(env) {
+  const beat = await readJson(env, HEARTBEAT_KEY);
+  if (!beat || !beat.at) return { state: "never" };            // never set up: silence is not news
+  const alerted = await readJson(env, ALERTED_KEY);
+  if (Date.now() - Date.parse(beat.at) > QUIET_MS) {
+    if (alerted) return { state: "silent", pushed: false };
+    await push(env, "Event Caliber: the Mini is silent",
+      `The Mini has not checked in since ${beat.at}. Nothing posts, drafts or answers until it is back. Tap for the dashboard.`, "urgent");
+    await env.MEDIA.put(ALERTED_KEY, JSON.stringify({ at: new Date(Date.now()).toISOString(), since: beat.at }),
+      { httpMetadata: { contentType: "application/json" } });
+    return { state: "silent", pushed: true };
+  }
+  if (alerted) {
+    await push(env, "Event Caliber: the Mini is back", `The Mini is back: it checked in at ${beat.at}.`, "default");
+    await env.MEDIA.delete(ALERTED_KEY);
+    return { state: "back", pushed: true };
+  }
+  return { state: "fine" };
+}
+
 async function media(request, env, url) {
   let key;
   try { key = decodeURIComponent(url.pathname.slice(3)); } catch { return new Response("bad key", { status: 400 }); }
@@ -228,7 +283,11 @@ export default {
       return request.method === "POST" ? optOut(request, env, url) : new Response("method not allowed", { status: 405 });
     }
     if (url.pathname === "/api/unsubscribes" || url.pathname === "/api/unsubscribes/ack") return unsubscribes(request, env, url);
+    if (url.pathname === "/api/heartbeat" || url.pathname === "/api/heartbeat/test") return heartbeat(request, env, url);
     if (url.pathname.startsWith("/api/")) return new Response("not found", { status: 404 });
     return env.ASSETS ? env.ASSETS.fetch(request) : new Response("not found", { status: 404 });
+  },
+  async scheduled(controller, env, ctx) {
+    await watch(env);
   },
 };

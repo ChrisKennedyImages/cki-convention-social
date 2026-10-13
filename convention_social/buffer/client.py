@@ -58,7 +58,16 @@ mutation CreatePost($input: CreatePostInput!) {
 """
 Q_POST_STATUS = """
 query PostStatus($input: PostInput!) {
-  post(input: $input) { id status sentAt error { message } }
+  post(input: $input) { id status sentAt externalLink error { message } }
+}
+"""
+M_DELETE_POST = """
+mutation DeletePost($input: DeletePostInput!) {
+  deletePost(input: $input) {
+    __typename
+    ... on PostActionSuccess { post { id } }
+    ... on MutationError { message }
+  }
 }
 """
 Q_POSTS = """
@@ -269,13 +278,26 @@ class BufferClient:
         return post_id
 
     def post_info(self, post_id: str) -> dict:
-        """{status: lowercased or None, error: Buffer's publishing error message or None, sent_at: or None}."""
+        """{status: lowercased or None, error: Buffer's publishing error message or None, sent_at: or None,
+        external_link: the live post's address once sent (7.1, 2026-10-13), or None}."""
         data = self._gql(Q_POST_STATUS, {"input": {"id": post_id}}, op="PostStatus")
         post = data.get("post") or {}
         status = post.get("status")
         return {"status": str(status).lower() if status else None,
                 "error": (post.get("error") or {}).get("message"),
-                "sent_at": post.get("sentAt")}
+                "sent_at": post.get("sentAt"), "external_link": post.get("externalLink") or None}
+
+    def delete_post(self, post_id: str) -> bool:
+        """Pull a post back from Buffer (7.5, 2026-10-13). The mutation's input is read from the live schema
+        first (DeletePostInput must take an id), never recalled; a refusal is a BufferError with Buffer's words."""
+        fields = {f["name"] for f in self.input_fields("DeletePostInput")}
+        if "id" not in fields:
+            raise BufferError(f"Buffer's DeletePostInput has no id field (it has {sorted(fields)}); not deleting blind")
+        data = self._gql(M_DELETE_POST, {"input": {"id": post_id}}, op="DeletePost")
+        result = data.get("deletePost") or {}
+        if result.get("__typename") != "PostActionSuccess":
+            raise BufferError(f"deletePost refused ({result.get('__typename')}): {result.get('message') or json.dumps(result)[:200]}")
+        return True
 
     def post_status(self, post_id: str) -> Optional[str]:
         return self.post_info(post_id)["status"]

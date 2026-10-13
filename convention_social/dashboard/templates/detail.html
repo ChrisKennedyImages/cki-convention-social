@@ -2,6 +2,9 @@
 {% block body %}
 {% set notes = {'saved': ('Saved.', ''), 'approved': ('Approved. It goes out at its time.', ''), 'requeued': ('Back in drafts.', ''),
                 'unapproved': ('Back in drafts. It will not go out until you approve it again.', ''),
+                'pulled_back': ('Pulled back from Buffer. It is a draft again and will not go out until you approve it.', ''),
+                'no_buffer': ('Buffer is not set up here (no API key), so nothing could be pulled back.', 'bad'),
+                'pullback_failed': ('Buffer kept it: the pull back did not go through. The Agents page has the reason.', 'bad'),
                 'blocked': ('Not approved: a caption still breaks a rule after the suite rewrote it. It tries again on its next run. Nothing for you to do.', 'bad'),
                 'mended': ('A caption broke a rule that came after it was written; the suite rewrote it. Nothing to fix.', ''),
                 'mend_failed': ('A caption breaks a rule, and the suite could not rewrite the caption just now (the API or the network). Its next run tries again. Nothing for you to do.', 'bad'),
@@ -37,6 +40,8 @@
   <form method="post" action="/queue/{{ item.id }}/reject" class="inline" onsubmit="return confirm('Set this post aside? A new one is drafted in its place.')"><button class="danger" type="submit">Reject</button></form>
   {% elif item.status == 'approved' %}
   <form method="post" action="/queue/{{ item.id }}/unapprove" class="inline"><button type="submit">Take back the approval</button></form>
+  {% elif item.status == 'scheduled' %}
+  <form method="post" action="/queue/{{ item.id }}/pullback" class="inline" onsubmit="return confirm('Pull this post back from Buffer? It comes back here as a draft and does not go out.')"><button class="danger" type="submit">Pull back from Buffer</button></form>
   {% elif item.status in ('would_publish', 'failed') %}
   <form method="post" action="/queue/{{ item.id }}/requeue" class="inline"><button type="submit">Back to drafts</button></form>
   {% endif %}

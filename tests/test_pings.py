@@ -263,7 +263,7 @@ class Posted(PublisherCase):
         self.assertEqual(args[0], "Event Caliber: posted")
         self.assertIn(f"Post {qid} went out on instagram, facebook, pinterest", args[1])
         self.assertEqual(kw["dry_run"], False)
-        self.assertTrue(kw["click"].endswith(f"/queue/{qid}"))
+        self.assertEqual(kw["click"], "https://www.instagram.com/p/abc123/", "7.1 (2026-10-13): the ping opens the live post")
         self.assertIs(kw["conn"], self.conn, "a ping that fails is recorded as an error")
 
     def test_a_post_buffer_could_not_send_never_says_posted(self):

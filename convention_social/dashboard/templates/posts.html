@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block body %}
+<h1>Posts</h1>
+<div class="card">
+  <strong>Last {{ summary.days }} days</strong>
+  <div class="muted">{{ summary.totals.posts }} post{{ 's' if summary.totals.posts != 1 else '' }} since {{ summary.since }}{% if summary.last_pull %}; numbers from Buffer as of {{ summary.last_pull }}{% else %}; no numbers pulled from Buffer yet (the watchdog pulls them once a day){% endif %}.</div>
+  <table style="margin-top:8px"><tr><th>Where</th><th>Posts</th><th>Reach</th><th>Engagement</th><th>Clicks</th></tr>
+    <tr><td>All</td><td>{{ summary.totals.posts }}</td><td>{{ summary.totals.reach|int }}</td><td>{{ summary.totals.engagement|int }}</td><td>{{ summary.totals.clicks|int }}</td></tr>
+    {% for net, n in summary.per_network.items() %}<tr><td>{{ net|capitalize }}</td><td>{{ n.posts }}</td><td>{{ n.reach|int }}</td><td>{{ n.engagement|int }}</td><td>{{ n.clicks|int }}</td></tr>{% endfor %}
+  </table>
+  {% if summary.best %}<div class="muted" style="margin-top:6px">Best engagement: {{ summary.best.service|capitalize }}, {{ (summary.best.sent_at or '')[:10] }}, {{ summary.best.n.engagement|int }}.</div>{% endif %}
+</div>
+<div class="card">
+  <strong>By week</strong>
+  <table style="margin-top:8px"><tr><th>Week of</th><th>Posts</th><th>Reach</th><th>Engagement</th></tr>
+    {% for w in trend %}<tr><td>{{ w.week }}</td><td>{{ w.posts }}</td><td>{{ w.reach|int }}</td><td>{{ w.engagement|int }}</td></tr>{% endfor %}
+  </table>
+</div>
+<h2>What went out</h2>
+{% if not rows %}<div class="card muted">Nothing has gone out yet. The first post lands here once Buffer sends it.</div>{% endif %}
+{% for r in rows %}
+<div class="card">
+  <div class="row">
+    {% if r.thumb %}<a href="{{ r.thumb }}"><img src="{{ r.thumb }}" style="height:90px;border-radius:6px" alt=""></a>{% endif %}
+    <div>
+      <div><strong>{{ r.service|capitalize }}</strong> <span class="muted">{{ (r.sent_at or '')[:16].replace('T', ' ') }}</span>{% if r.queue_id %} <a href="/queue/{{ r.queue_id }}" class="muted">post #{{ r.queue_id }}</a>{% endif %}</div>
+      {% if r.n %}<div class="muted">reach {{ r.n.reach|int }}, engagement {{ r.n.engagement|int }}, clicks {{ r.n.clicks|int }}</div>{% endif %}
+      {% if r.external_link %}<div><a href="{{ r.external_link }}" rel="noopener noreferrer" target="_blank">Open on {{ r.service|capitalize }}</a></div>{% endif %}
+    </div>
+  </div>
+</div>
+{% endfor %}
+{% endblock %}

@@ -53,11 +53,51 @@ class WatchCase(AgentCase):
         self.fresh_runs(now)
         kw.setdefault("start", mock.Mock())
         kw.setdefault("client", None)
+        kw.setdefault("api", None)
         kw.setdefault("probe", ok_probe)
         kw.setdefault("force_digest", False)
         # these tests pin the watchdog's own digest; with the Chief of staff built, the brief replaces it
         with mock.patch.object(watchdog, "is_built", lambda name: name != "chief"):
             return watchdog.run(self.ctx, now=now, **kw)
+
+
+class Heartbeat(WatchCase):
+    """7.4 (2026-10-13): the one watch that does not live on the Mini. The watchdog checks in with the site
+    hourly; the site's cron tells the phone when the Mini goes quiet."""
+
+    def site(self, fail=False):
+        from convention_social.booking.remote import SiteAPI
+        calls = []
+
+        def transport(method, url, headers, payload):
+            calls.append((method, url, headers.get("Authorization")))
+            if fail:
+                raise ConnectionError("site down")
+            return mock.Mock(json=lambda: {"ok": True, "at": "2026-10-09T16:00:00.000Z"})
+        return SiteAPI("tok", base="https://eventcaliber.com", transport=transport), calls
+
+    def test_checks_in_hourly_and_says_so(self):
+        api, calls = self.site()
+        self.run_at(NOON_UTC, api=api)
+        self.assertEqual(calls, [("POST", "https://eventcaliber.com/api/heartbeat", "Bearer tok")])
+        self.assertEqual(settings.get(self.conn, watchdog.HEARTBEAT_KEY), NOON_UTC.isoformat())
+        self.run_at(NOON_UTC + timedelta(minutes=10), api=api)
+        self.assertEqual(len(calls), 1, "once an hour, not every run")
+        self.run_at(NOON_UTC + timedelta(minutes=61), api=api)
+        self.assertEqual(len(calls), 2)
+        self.run_at(NOON_UTC + timedelta(minutes=70), api=None)
+        self.assertEqual(len(calls), 2, "no site token, no heartbeat, no error")
+        self.assertIsNone(db.one(self.conn, "SELECT id FROM errors WHERE kind='heartbeat'"))
+
+    def test_a_site_that_does_not_answer_is_said_once(self):
+        api, calls = self.site(fail=True)
+        self.run_at(NOON_UTC, api=api)
+        self.run_at(NOON_UTC + timedelta(minutes=61), api=api)
+        self.assertEqual(len(calls), 2, "tried again the next hour")
+        rows = db.rows(self.conn, "SELECT message FROM errors WHERE kind='heartbeat'")
+        self.assertEqual(len(rows), 1)
+        self.assertIn("ConnectionError", rows[0]["message"])
+        self.assertNotEqual(settings.get(self.conn, watchdog.HEARTBEAT_KEY), NOON_UTC.isoformat(), "not recorded as checked in")
 
 
 class Drive(WatchCase):

@@ -3,6 +3,9 @@
 {% if auth_state != 'ok' %}<div class="msg bad">Google Drive is {{ 'not signed in yet' if auth_state == 'missing' else 'signed out (the sign-in expired)' }}. <a href="/drive">Drive page</a></div>{% endif %}
 {% if brief and brief.read %}<div class="card"><div class="muted">Morning brief, {{ brief.date }}</div><p style="margin:6px 0">{{ brief.read }}</p>
 {% for text, href in brief.needs %}<div class="row"><a href="{{ href }}">{{ text }}</a></div>{% endfor %}</div>{% endif %}
+{% if needs or open_n %}<div class="card"><strong>Needs you</strong>
+{% for text, href in needs %}<div class="row"><a href="{{ href }}">{{ text }}</a></div>{% endfor %}
+{% if open_n %}<div class="row"><a href="/errors">{{ open_n }} open error{{ 's' if open_n != 1 else '' }} on the Agents page.</a></div>{% endif %}</div>{% endif %}
 <h1>Review queue</h1>
 {% if msg == 'rejected' %}<div class="msg">Set aside. A new post is being made in its place; it shows here in a few minutes, and your phone gets a ping.</div>{% endif %}
 {% if msg == 'redraft' %}<div class="msg">Fixed. That draft is set aside and a new one is being made with the right words; it shows here in a few minutes, and your phone gets a ping.</div>{% endif %}

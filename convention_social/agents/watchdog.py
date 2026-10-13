@@ -31,6 +31,7 @@ from ..agents import AGENTS, is_built
 from ..ai import spend
 from ..buffer import budget
 from ..buffer.client import BufferClient, BufferError
+from ..booking.remote import SiteAPI
 from ..core import config, db, mail, notify, runner, settings
 from . import pacing
 
@@ -222,6 +223,34 @@ def check_content_window(ctx: runner.Context, f: Findings, now: datetime, start=
     f.note(f"content started again for {day} (try {tries + 1} of {CONTENT_TRIES_A_DAY} today).")
 
 
+HEARTBEAT_KEY = "watchdog.heartbeat_at"
+HEARTBEAT_EVERY = timedelta(hours=1)
+
+
+def check_heartbeat(ctx: runner.Context, f: Findings, now: datetime, api=None) -> None:
+    """7.4 (2026-10-13): the one watch that does not live on the Mini. The Mini checks in with the site hourly
+    (SiteAPI.heartbeat); the site's cron tells the phone when two hours pass without one. No site token, no
+    heartbeat and no error; a site that does not answer is an error said once, and tried again next hour."""
+    api = api or SiteAPI.from_config()
+    if api is None:
+        return
+    last = settings.get(ctx.conn, HEARTBEAT_KEY)
+    try:
+        if last and now - datetime.fromisoformat(last) < HEARTBEAT_EVERY:
+            return
+    except (TypeError, ValueError):
+        pass
+    try:
+        api.heartbeat()
+    except Exception as e:  # noqa: BLE001  the site, the network
+        runner.record_error_once(ctx.conn, ctx.agent, "heartbeat",
+                                 f"The Mini could not check in with the site ({type(e).__name__}: {e}); the outside watch may ring while this lasts.")
+        f.note(f"The check-in with the site failed ({type(e).__name__}).")
+        return
+    settings.set(ctx.conn, HEARTBEAT_KEY, now.isoformat())
+    f.note(f"Checked in with the site at {local_now(ctx.cfg, now):%H:%M}: the outside watch knows the Mini is up.")
+
+
 def check_dashboard(ctx: runner.Context, f: Findings, probe=None) -> None:
     url = f"http://127.0.0.1:{ctx.cfg.dashboard_port}/login"
     try:
@@ -389,7 +418,7 @@ def send_digest(ctx: runner.Context, notes: list[str], now: datetime) -> bool:
 # ------------------------------------------------------------------ entry
 
 def run(ctx: runner.Context, *, now: Optional[datetime] = None, client: Optional[BufferClient] = None,
-        probe=None, force_digest: Optional[bool] = None, start=None) -> str:
+        probe=None, force_digest: Optional[bool] = None, start=None, api=None) -> str:
     now = now or now_utc()
     if force_digest is None:
         force_digest = "--digest" in sys.argv
@@ -403,6 +432,7 @@ def run(ctx: runner.Context, *, now: Optional[datetime] = None, client: Optional
     check_content_window(ctx, f, now, start)
     check_dashboard(ctx, f, probe)
     check_disk_and_backups(ctx, f, now)
+    check_heartbeat(ctx, f, now, api)
     if client is not None:
         from ..buffer import metrics
         local_today = local_now(ctx.cfg, now).date()

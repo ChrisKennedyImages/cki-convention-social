@@ -393,10 +393,11 @@ class Live(PublisherCase):
         self.assertEqual(publisher.verify_scheduled(ctx, client=client), {"published": 0, "failed": 0, "pending": 1})
         self.assertEqual(publisher.verify_scheduled(ctx, client=client)["published"], 1)
         self.assertEqual(self.row(qid)["status"], "published")
-        history = db.rows(self.conn, "SELECT service, sent_at FROM post_history ORDER BY id")
+        history = db.rows(self.conn, "SELECT service, sent_at, external_link FROM post_history ORDER BY id")
         self.assertTrue(history)
         self.assertEqual([h["service"] for h in history], ["instagram", "facebook", "pinterest"])
         self.assertEqual(history[0]["sent_at"], "2026-10-09T15:30:05Z")
+        self.assertEqual({h["external_link"] for h in history}, {"https://www.instagram.com/p/abc123/"}, "7.1: the live link is kept")
 
     def test_a_raw_photo_is_uploaded_without_any_metadata(self):
         from PIL import Image

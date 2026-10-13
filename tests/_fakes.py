@@ -34,7 +34,9 @@ SCHEMA = {
     "ImageAssetInput": [field("url", "String", True, "SCALAR"), field("thumbnailUrl", "String", False, "SCALAR"),
                         field("metadata", "ImageMetadataInput")],
     "ImageMetadataInput": [field("altText", "String", False, "SCALAR")],
+    "DeletePostInput": [field("id", "PostId", True, "SCALAR")],
 }
+LIVE_LINK = "https://www.instagram.com/p/abc123/"
 
 
 class FakeBuffer:
@@ -47,6 +49,7 @@ class FakeBuffer:
         self.channels = channels if channels is not None else [(svc, cid, f"Event Caliber {svc}") for svc, cid in CHANNEL_IDS.items()]
         self.calls = []
         self.created = []
+        self.deleted = []
         self.status_sequence = list(status_sequence or ["scheduled", "sent"])
         self.reject_at = set(reject_at)          # 1-based createPost calls to refuse
         self.http_status = http_status
@@ -92,8 +95,15 @@ class FakeBuffer:
             self.n_status += 1
             post = {"id": payload["variables"]["input"]["id"], "status": status,
                     "sentAt": "2026-10-09T15:30:05Z" if status == "sent" else None,
+                    "externalLink": LIVE_LINK if status == "sent" else None,
                     "error": {"message": self.error_message} if status == "error" else None}
             return Response(200, {}, {"data": {"post": post}})
+        if "DeletePost" in op:
+            pid = payload["variables"]["input"]["id"]
+            if pid in self.reject_at:
+                return Response(200, {}, {"data": {"deletePost": {"__typename": "MutationError", "message": "post already sent"}}})
+            self.deleted.append(pid)
+            return Response(200, {}, {"data": {"deletePost": {"__typename": "PostActionSuccess", "post": {"id": pid}}}})
         if "Posts" in op:
             return Response(200, {}, {"data": {"posts": {"edges": [{"node": {
                 "id": "post-1", "channelId": "ch-ig", "channelService": "instagram", "status": "sent",

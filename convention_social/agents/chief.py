@@ -50,31 +50,40 @@ def _rows(conn, sql: str, params=()) -> list:
         return []
 
 
+def needs(conn: sqlite3.Connection) -> list[tuple[str, str]]:
+    """What needs Chris, from the database alone (7.3, 2026-10-13: the Today page shows this without waiting for
+    the morning brief). The brief adds what needs Buffer (a disconnected channel) after these."""
+    out: list[tuple[str, str]] = []
+    waiting = _count(conn, "SELECT COUNT(*) FROM content_queue WHERE status='draft'")
+    if waiting:
+        out.append((f"{waiting} post(s) waiting for your Approve.", "/"))
+    req = _count(conn, "SELECT COUNT(*) FROM inquiries WHERE status IN ('new','drafted') AND reply_status IN ('none','draft')")
+    if req:
+        out.append((f"{req} quote request(s) waiting for your reply.", "/inquiries"))
+    outreach = _count(conn, "SELECT COUNT(*) FROM outreach WHERE status='draft'")
+    if outreach:
+        out.append((f"{outreach} organizer email(s) drafted for your Approve.", "/outreach"))
+    scout = _count(conn, "SELECT COUNT(*) FROM scout_events WHERE status='new'")
+    if scout:
+        out.append((f"{scout} upcoming event(s) the scout found for you to look at.", "/scout"))
+    drive = settings.get(conn, "drive.auth_state") or "missing"
+    if drive in ("expired", "missing"):
+        out.append(("Google Drive is " + ("signed out. Sign in again." if drive == "expired" else "not signed in yet."), "/drive"))
+    turned_back = [r for r in _rows(conn, "SELECT id, rule_report FROM content_queue WHERE status='draft'")
+                   if (json.loads(r["rule_report"] or "{}").get("art") or {}).get("verdict") in ("redo", "reject")]
+    if turned_back:
+        out.append((f"{len(turned_back)} draft(s) the Art director was not happy with.", "/"))
+    return out
+
+
 def gather(ctx: runner.Context, now: datetime) -> dict:
     conn = ctx.conn
     d = watchdog.digest_data(ctx, now)
     since = (now - timedelta(hours=24)).isoformat()
-    turned_back = [r for r in _rows(conn, "SELECT id, rule_report FROM content_queue WHERE status='draft'")
-                   if (json.loads(r["rule_report"] or "{}").get("art") or {}).get("verdict") in ("redo", "reject")]
-    needs = []
-    if d["waiting"]:
-        needs.append((f"{len(d['waiting'])} post(s) waiting for your Approve.", "/"))
-    req = _count(conn, "SELECT COUNT(*) FROM inquiries WHERE status IN ('new','drafted') AND reply_status IN ('none','draft')")
-    if req:
-        needs.append((f"{req} quote request(s) waiting for your reply.", "/inquiries"))
-    outreach = _count(conn, "SELECT COUNT(*) FROM outreach WHERE status='draft'")
-    if outreach:
-        needs.append((f"{outreach} organizer email(s) drafted for your Approve.", "/outreach"))
-    scout = _count(conn, "SELECT COUNT(*) FROM scout_events WHERE status='new'")
-    if scout:
-        needs.append((f"{scout} upcoming event(s) the scout found for you to look at.", "/scout"))
-    if d["drive"] in ("expired", "missing"):
-        needs.append(("Google Drive is " + ("signed out. Sign in again." if d["drive"] == "expired" else "not signed in yet."), "/drive"))
+    needs_list = needs(conn)
     for c in d["channels"]:
         if not c["connected"]:
-            needs.append((f"{c['service'].capitalize()} is disconnected in Buffer. Reconnect it there.", "/buffer"))
-    if turned_back:
-        needs.append((f"{len(turned_back)} draft(s) the Art director was not happy with.", "/"))
+            needs_list.append((f"{c['service'].capitalize()} is disconnected in Buffer. Reconnect it there.", "/buffer"))
     done = []
     if d["published"]:
         done.append(f"Posted {len(d['published'])} time(s): " + ", ".join(sorted({p['service'] for p in d['published']})) + ".")
@@ -95,7 +104,7 @@ def gather(ctx: runner.Context, now: datetime) -> dict:
         watching += json.loads(settings.get(conn, "watchdog.notes") or "[]")[:6]
     except ValueError:
         pass
-    return {"needs": needs, "done": done, "watching": watching, "failed": d["failed"], "errors": d["errors"],
+    return {"needs": needs_list, "done": done, "watching": watching, "failed": d["failed"], "errors": d["errors"],
             "would_publish": d["would_publish"]}
 
 

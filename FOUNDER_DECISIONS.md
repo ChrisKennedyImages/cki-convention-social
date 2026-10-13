@@ -732,6 +732,35 @@ Workspace ("I need a day to finish").
   mail as" alias). No code path changes; the proof is the test reply
   landing in his inbox once he finishes.
 
+## 2026-10-13: see it: history, numbers, Today, the outside watch
+
+Batch 7 of the roadmap.
+
+- The live post's address rides with the history (`post_history.external_link`,
+  migration 0071): the "posted" ping opens the post itself, and the Posts
+  page links "Open on Instagram".
+- A Posts page (a chip on Today): what went out, where it lives, the reach,
+  engagement and clicks Buffer gives, the last 30 days and the last 12 weeks
+  in plain tables (`buffer/metrics.summary`, `trend`, written for this and
+  shown nowhere until now).
+- Today says what needs him before the morning brief exists: `chief.needs`
+  is the plain SQL half of the brief, shown at the top of the Queue page
+  with the open-error count linking to the Agents page.
+- The outside watch, free: the Mini checks in with the site hourly
+  (`watchdog.check_heartbeat`, `POST /api/heartbeat`); the Worker's cron,
+  every 30 minutes (`wrangler.jsonc` `triggers.crons`, on the Workers Free
+  plan: five per account, read from developers.cloudflare.com on
+  2026-10-13), rings the phone once, urgent, when two hours pass without a
+  heartbeat, says "back" once when one returns, and says nothing while no
+  heartbeat was ever posted. "Test the outside watch" on the Keys page asks
+  the site to send that ping now, marked as a test. The one watch that does
+  not live on the Mini.
+- A scheduled post can be pulled back from Buffer ("Pull back from Buffer"
+  on the draft page): deleted there one network at a time
+  (`BufferClient.delete_post`, the mutation's input read from the live
+  schema), then a draft again; what Buffer keeps stays scheduled, with the
+  reason on the Agents page.
+
 ## Standing rules from the brief
 
 - CPAC, the ACU and their affiliates are never contacted, by code

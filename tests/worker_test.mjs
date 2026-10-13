@@ -37,8 +37,18 @@ class FakeD1 {
 
 const pushes = [];
 globalThis.fetch = async (url, init) => { pushes.push({ url: String(url), body: init?.body, headers: init?.headers || {} }); return new Response("ok"); };
+class FakeR2 {
+  constructor() { this.store = new Map(); }
+  async get(key) {
+    if (!this.store.has(key)) return null;
+    const text = this.store.get(key);
+    return { text: async () => text, json: async () => JSON.parse(text), body: text, httpEtag: "x", writeHttpMetadata() {} };
+  }
+  async put(key, body) { this.store.set(key, typeof body === "string" ? body : await new Response(body).text()); }
+  async delete(key) { this.store.delete(key); }
+}
 const env = { DB: new FakeD1(), UPLOAD_TOKEN: "tok", NTFY_TOPIC: "topic-x", DASHBOARD_URL: "https://mac-mini.example:8443",
-              MEDIA: { async get() { return null; }, async put() {} }, ASSETS: { fetch: async () => new Response("site") } };
+              MEDIA: new FakeR2(), ASSETS: { fetch: async () => new Response("site") } };
 const base = "https://eventcaliber.com";
 const form = (fields) => {
   const f = new FormData();
@@ -141,4 +151,42 @@ r = await worker.fetch(new Request(`${base}/api/unsubscribes/ack`, { method: "PO
 ok((await r.json()).deleted === 2 && env.DB.unsubs.length === 21, "acked opt-outs deleted");
 r = await worker.fetch(new Request(`${base}/api/unsubscribes/ack`, { method: "POST", body: JSON.stringify({ tokens: [tokC] }) }), env);
 ok(r.status === 403 && env.DB.unsubs.length === 21, "ack needs the token");
+// the outside watch (7.4, 2026-10-13): the Mini posts a heartbeat; the cron tells the phone when it stops
+const realNow = Date.now;
+const T0 = Date.parse("2026-10-13T12:00:00Z");
+Date.now = () => T0;
+const cron = () => worker.scheduled({ scheduledTime: Date.now(), cron: "*/30 * * * *" }, env, { waitUntil() {} });
+const beat = (init = {}) => worker.fetch(new Request(`${base}/api/heartbeat`, { method: "POST", headers: { authorization: "Bearer tok" }, ...init }), env);
+pushes.length = 0;
+await cron();
+ok(pushes.length === 0, "no heartbeat ever: the watch says nothing");
+r = await worker.fetch(new Request(`${base}/api/heartbeat`, { method: "POST" }), env);
+ok(r.status === 403, "the heartbeat needs the token");
+r = await worker.fetch(new Request(`${base}/api/heartbeat`, { headers: { authorization: "Bearer tok" } }), env);
+ok(r.status === 405, "a GET is not a heartbeat");
+r = await beat();
+ok(r.status === 200 && (await r.json()).at === "2026-10-13T12:00:00.000Z", "the heartbeat is stored with its time");
+ok(env.MEDIA.store.has("private/heartbeat.json"), "under private/, never served");
+await cron();
+ok(pushes.length === 0, "a fresh heartbeat: quiet");
+Date.now = () => T0 + 3 * 3600e3;
+await cron();
+ok(pushes.length === 1 && pushes[0].body.includes("has not checked in since 2026-10-13T12:00:00.000Z"), "three hours of silence: one urgent ping");
+ok(pushes[0].headers.Priority === "urgent" && pushes[0].headers.Click === "https://mac-mini.example:8443", "urgent, and it opens the dashboard");
+await cron();
+ok(pushes.length === 1, "said once, not every half hour");
+Date.now = () => T0 + 4 * 3600e3;
+await beat();
+await cron();
+ok(pushes.length === 2 && pushes[1].body.includes("The Mini is back"), "a fresh heartbeat after the alert: it is back");
+await cron();
+ok(pushes.length === 2, "and that is said once too");
+Date.now = () => T0 + 7 * 3600e3;
+await cron();
+ok(pushes.length === 3, "silent again later: a new alert");
+r = await worker.fetch(new Request(`${base}/api/heartbeat/test`, { method: "POST", headers: { authorization: "Bearer tok" } }), env);
+ok(r.status === 200 && (await r.json()).sent === true && pushes.length === 4 && pushes[3].body.includes("(test)"), "Test the outside watch sends the alert at once, marked as a test");
+r = await worker.fetch(new Request(`${base}/api/heartbeat/test`, { method: "POST" }), env);
+ok(r.status === 403, "the test needs the token too");
+Date.now = realNow;
 console.log(`worker: ${checks} checks passed`);
