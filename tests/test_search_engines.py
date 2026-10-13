@@ -322,7 +322,7 @@ class OnTheDashboard(IsolatedCase):
             page = self.client.get("/library?view=approved").text
             self.assertIn("Google Search Console value unusable", page)
             self.assertIn("not a Search Console value", page)
-            self.assertNotIn("Google Search Console tag missing", page)
+            self.assertNotIn("No Google Search Console tag on the", page)
             os.environ["GOOGLE_SITE_VERIFICATION"] = "google1234567890abcdef.html"
             config.reset()
             page = self.client.get("/library?view=approved").text
@@ -331,7 +331,9 @@ class OnTheDashboard(IsolatedCase):
     def test_the_website_card_says_what_the_engines_know(self):
         with mock.patch("convention_social.site.deploy.ready", return_value=(True, "ready")):
             page = self.client.get("/library?view=approved").text
-            self.assertIn("Google Search Console tag missing", page)
+            self.assertIn("No Google Search Console tag on the", page)
+            self.assertIn("verified another way", page, "Chris, 2026-10-13: Search Console never asked him for a tag; an empty field is not a fault")
+            self.assertNotIn('class="badge blocked">Google', page, "no badge for nothing wrong")
             self.assertIn("The IndexNow key is made on the first publish.", page)
             os.environ["GOOGLE_SITE_VERIFICATION"] = "AbC-123_xyzXYZ789"
             os.environ["INDEXNOW_KEY"] = "k" * 32

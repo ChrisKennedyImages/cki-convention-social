@@ -1432,12 +1432,12 @@ def create_app() -> FastAPI:
              "fields": [f("OLLAMA_MODEL", "Ollama model"), f("CLASSIFY_BACKEND", "Sorter", choices=["auto", "ollama", "claude"])]},
             {"title": "This dashboard", "note": "The address you open this dashboard at from your phone.",
              "fields": [f("DASHBOARD_PUBLIC_URL", "Dashboard address")]},
-            {"title": "Search engines", "note": "Google: in Search Console add the property https://eventcaliber.com/ and paste here "
-                                               "what it shows for one of its methods: the HTML tag or its content value, the TXT record "
-                                               "(google-site-verification=...) or the HTML file's name (google....html). The site "
-                                               "republishes itself within minutes; then press Verify in Search Console and submit "
-                                               "sitemap.xml there once. Bing and the other IndexNow engines are told after every publish "
-                                               "with the key below, made by itself.",
+            {"title": "Search engines", "note": "Google: if Search Console verified the property by itself (through Cloudflare's DNS), "
+                                               "nothing goes here; submit sitemap.xml there once and you are done. If it asks you to prove "
+                                               "ownership, paste what it shows for one of its methods: the HTML tag or its content value, "
+                                               "the TXT record (google-site-verification=...) or the HTML file's name (google....html); "
+                                               "the site republishes itself within minutes, then press Verify there. Bing and the other "
+                                               "IndexNow engines are told after every publish with the key below, made by itself.",
              "fields": [f("GOOGLE_SITE_VERIFICATION", "Google Search Console tag"), f("INDEXNOW_KEY", "IndexNow key (made on the first publish)")]},
         ]
 

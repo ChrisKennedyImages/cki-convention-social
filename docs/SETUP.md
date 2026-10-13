@@ -149,9 +149,12 @@ exists. From your phone:
 
 1. Open https://search.google.com/search-console and add a property of the
    **URL prefix** kind: `https://eventcaliber.com/`.
-2. Under verification methods pick one and copy what it shows: the **HTML
-   tag** (or only its content value), the **TXT record** a Domain property
-   offers (`google-site-verification=...`), or the **HTML file** (its name).
+2. If Search Console verifies the property by itself (a Domain property
+   through Cloudflare's DNS, which is how it went on 2026-10-12), there is
+   nothing to paste: skip to step 5. If it asks you to prove ownership, pick
+   a method and copy what it shows: the **HTML tag** (or only its content
+   value), the **TXT record** (`google-site-verification=...`), or the
+   **HTML file** (its name).
 3. Dashboard, Keys, Search engines: paste it into **Google Search Console
    tag**, save. Anything that is none of these is refused there, with the
    reason; the Website card on the Photos page says the same.

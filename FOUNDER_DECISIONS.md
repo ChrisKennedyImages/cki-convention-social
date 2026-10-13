@@ -805,6 +805,10 @@ said why.
 - The check from outside after every publish looks for the tag on every live
   page (or the file at the root), where Search Console looks; a page without
   it fails the publish and the card says so.
+- A property Search Console verified by itself (Chris: "it never asked for a
+  html tag for ownership when I verified"; a Domain property through
+  Cloudflare's DNS) needs nothing on the Keys page: the card says so in plain
+  words, with no badge. An empty field is not a fault.
 
 ## Standing rules from the brief
 
