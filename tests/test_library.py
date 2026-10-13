@@ -157,6 +157,31 @@ class Eligibility(IsolatedCase):
         self.conn.execute("UPDATE drive_folders SET clearance='excluded' WHERE drive_id='fcos'")
         self.assertEqual(eligibility.is_eligible(self.conn, self.pid("p1"))[0], False)
 
+    def test_an_excluded_folder_keeps_out_even_a_photo_he_tapped_use_on(self):
+        """5.2 (2026-10-13): the folder page promised "even photos you tapped Use on"; the code let the tap win.
+        Fail closed: an excluded folder anywhere above the photo wins, in the walker and in the one-pass map."""
+        self.vision()
+        self.final("p1")
+        self.conn.execute("UPDATE photos SET clearance='cleared' WHERE drive_id='p1'")
+        self.assertEqual(eligibility.is_eligible(self.conn, self.pid("p1")), (True, "ok"))
+        for folder in ("fcos", "fcon"):                    # the photo's own folder, then the one above it
+            self.conn.execute("UPDATE drive_folders SET clearance='excluded' WHERE drive_id=?", (folder,))
+            self.assertEqual(eligibility.is_candidate(self.conn, self.pid("p1")), (False, "its folder is excluded"), folder)
+            photo = db.one(self.conn, "SELECT * FROM photos WHERE drive_id='p1'")
+            self.assertEqual(eligibility.decision_of(photo, eligibility.folder_decisions(self.conn)), "excluded", folder)
+            self.conn.execute("UPDATE drive_folders SET clearance='not_cleared' WHERE drive_id=?", (folder,))
+        self.assertEqual(eligibility.is_eligible(self.conn, self.pid("p1")), (True, "ok"), "back to the tap once the folder is undecided")
+        # the photo's own folder cleared, the one above it excluded: the exclusion still wins (the old map let the nearer decision win)
+        self.conn.execute("UPDATE drive_folders SET clearance='cleared' WHERE drive_id='fcos'")
+        self.conn.execute("UPDATE drive_folders SET clearance='excluded' WHERE drive_id='fcon'")
+        self.assertEqual(eligibility.is_candidate(self.conn, self.pid("p1")), (False, "its folder is excluded"))
+        photo = db.one(self.conn, "SELECT * FROM photos WHERE drive_id='p1'")
+        self.assertEqual(eligibility.decision_of(photo, eligibility.folder_decisions(self.conn)), "excluded")
+        self.conn.execute("UPDATE drive_folders SET clearance='not_cleared' WHERE drive_id IN ('fcos', 'fcon')")
+        self.conn.execute("UPDATE photos SET clearance='blocked' WHERE drive_id='p1'")
+        self.conn.execute("UPDATE drive_folders SET clearance='cleared' WHERE drive_id='fcon'")
+        self.assertEqual(eligibility.is_candidate(self.conn, self.pid("p1")), (False, "Chris blocked this photo"), "Don't use still wins over a cleared folder")
+
     def test_final_check_minor_or_details_blocks(self):
         self.conn.execute("UPDATE drive_folders SET clearance='cleared' WHERE drive_id='fcon'")
         self.vision()

@@ -100,8 +100,8 @@ def conn_dep():
 SECTIONS = (
     ("Today", "/", ("/queue",), (("Queue", "/"),)),
     ("Photos", "/library", ("/library", "/donotuse", "/drive"),
-     (("To review", "/library"), ("Approved", "/library?view=approved"), ("Folders", "/library?view=folders"),
-      ("Design", "/library?view=design"), ("Do not use", "/donotuse"), ("Drive", "/drive"))),
+     (("To review", "/library"), ("Approved", "/library?view=approved"), ("Blocked", "/library?view=blocked"),
+      ("Folders", "/library?view=folders"), ("Design", "/library?view=design"), ("Do not use", "/donotuse"), ("Drive", "/drive"))),
     ("Bookings", "/inquiries", ("/inquiries", "/bookings", "/calendar"),
      (("Requests", "/inquiries"), ("Bookings", "/bookings"), ("Calendar", "/calendar"))),
     ("More", "/more", ("/more", "/outreach", "/scout", "/seo", "/learner", "/agents", "/buffer", "/keys", "/errors"),
@@ -283,7 +283,8 @@ SORTED = "c.method IN ('ollama', 'vision')"
 STRENGTH = """CASE WHEN c.light IS NULL AND c.moment IS NULL THEN COALESCE(c.quality, 0) * 1.0
                    ELSE MAX(0.0, (COALESCE(c.quality, 0) + COALESCE(c.light, 0) + COALESCE(c.moment, 0)
                                   - CASE WHEN c.sharp = 0 THEN 6 ELSE 0 END) * 10.0 / 15) END"""
-DECISION = "CASE WHEN p.clearance IN ('blocked', 'cleared') THEN p.clearance ELSE COALESCE(fd.decision, 'not_cleared') END"
+DECISION = ("CASE WHEN p.clearance = 'blocked' THEN 'blocked' WHEN fd.decision = 'excluded' THEN 'excluded' "
+            "WHEN p.clearance = 'cleared' THEN 'cleared' ELSE COALESCE(fd.decision, 'not_cleared') END")
 PAGE_FROM = """FROM photos p LEFT JOIN classifications c ON c.photo_id = p.id
                LEFT JOIN drive_folders f ON f.drive_id = p.folder_id
                LEFT JOIN temp.folder_decision fd ON fd.drive_id = p.folder_id"""
@@ -298,6 +299,8 @@ VIEWS = {
     # Everything Chris cleared, by the photo itself or by its folder. Sorted ones first, strongest first.
     "approved": (f"p.trashed = 0 AND {DECISION} = 'cleared'",
                  f"CASE WHEN {SORTED} THEN 0 ELSE 1 END, CASE WHEN {SORTED} THEN ({STRENGTH}) ELSE 0 END DESC, p.id"),
+    # Every photo Chris marked Don't use, newest decision first (2026-10-13: a Don't use was invisible afterwards).
+    "blocked": (f"p.trashed = 0 AND {DECISION} = 'blocked'", "COALESCE(p.clearance_at, '') DESC, p.id DESC"),
 }
 
 
@@ -739,7 +742,7 @@ def create_app() -> FastAPI:
             from ..render import design_samples
             return render(request, "library.html", renders=latest_renders(), design=latest_design(), tracks=music.tracks(conn),
                           design_status=design_samples.read_status(), readiness=design_samples.readiness(conn), **common)
-        view = "approved" if view == "approved" else "review"
+        view = view if view in ("approved", "blocked") else "review"
         subject = subject if subject in SUBJECTS else "event"
         subject_counts = {s: count_photos(conn, view, s) for s, _ in SUBJECT_WORDS}
         total = subject_counts[subject]
@@ -758,7 +761,8 @@ def create_app() -> FastAPI:
         from ..seo import indexnow
         from ..site import build as site_build
         site = {"status": deploy.read_status(), "ready": deploy.ready(), "deployed": (settings.get(conn, deploy.DEPLOYED_KEY) or "")[:7],
-                "google": bool(site_build.verification_value()), "indexnow": bool(indexnow.key())}
+                "google": bool(site_build.verification_value()), "indexnow": bool(indexnow.key()),
+                "photos_pending": deploy.photos_pending(conn)}
         return render(request, "library.html", items=shown, page=page, pages=pages, total=total, subject=subject,
                       subject_counts=subject_counts, subject_words=SUBJECT_WORDS, site=site,
                       hero_id=int(hero) if hero and hero.isdigit() else None, hero_upload=hero_upload.status(conn), **common)
@@ -836,7 +840,8 @@ def create_app() -> FastAPI:
         if state not in ("cleared", "excluded", "not_cleared"):
             raise HTTPException(400)
         conn.execute("UPDATE drive_folders SET clearance=?, clearance_at=? WHERE drive_id=?", (state, db.utcnow(), fid))
-        return RedirectResponse(back if back.startswith("/") and not back.startswith("//") else "/library", status_code=303)
+        photos_changed(conn)
+        return RedirectResponse(safe_back(back), status_code=303)
 
     @app.get("/library/folder/{fid}", response_class=HTMLResponse)
     def folder(fid: str, request: Request, user: str = Depends(require_user), conn=Depends(conn_dep)):
@@ -850,13 +855,43 @@ def create_app() -> FastAPI:
         picked = sum(1 for p in photos if p["clearance"] == "cleared")
         return render(request, "folder.html", folder=f, items=items, picked=picked)
 
+    TAP_WORDS = {"cleared": "Approved.", "blocked": "Kept out.", "inherit": "Back where it was."}
+
+    def photos_changed(conn) -> None:
+        """Chris, 2026-10-13: the site follows the photos by itself (site/deploy.photos_pending reads this)."""
+        from ..site import deploy
+        settings.set(conn, deploy.PHOTOS_CHANGED_KEY, db.utcnow())
+
+    def safe_back(back: str, default: str = "/library") -> str:
+        return back if back.startswith("/") and not back.startswith("//") else default
+
     @app.post("/library/photo/{pid}/clearance")
-    def photo_clearance(pid: int, user: str = Depends(require_user), conn=Depends(conn_dep), state: str = Form(...),
+    def photo_clearance(pid: int, request: Request, user: str = Depends(require_user), conn=Depends(conn_dep), state: str = Form(...),
                         back: str = Form(default="/library")):
-        if state not in ("cleared", "blocked", "inherit"):
+        """One tap. The page's own script asks for JSON and swaps the badge in place (2026-10-13: a tap was a
+        whole page); the plain form, with no script, still gets the redirect."""
+        if state not in TAP_WORDS:
             raise HTTPException(400)
         conn.execute("UPDATE photos SET clearance=?, clearance_at=? WHERE id=?", (state, db.utcnow(), pid))
-        return RedirectResponse(back if back.startswith("/") and not back.startswith("//") else "/library", status_code=303)
+        photos_changed(conn)
+        if "application/json" in request.headers.get("accept", ""):
+            return {"id": pid, "state": state, "words": TAP_WORDS[state]}
+        return RedirectResponse(safe_back(back), status_code=303)
+
+    @app.post("/library/photos/clearance")
+    async def photos_clearance(request: Request, user: str = Depends(require_user), conn=Depends(conn_dep)):
+        """Use selected / Don't use selected: the ticked photos, one tap (2026-10-13)."""
+        form = await request.form()
+        state = form.get("state") or ""
+        if state not in ("cleared", "blocked"):
+            raise HTTPException(400)
+        ids = [int(x) for x in form.getlist("ids") if str(x).isdigit()]
+        now = db.utcnow()
+        for pid in ids:
+            conn.execute("UPDATE photos SET clearance=?, clearance_at=? WHERE id=?", (state, now, pid))
+        if ids:
+            photos_changed(conn)
+        return RedirectResponse(safe_back(form.get("back") or "/library"), status_code=303)
 
     def publish_now() -> str:
         """Chris, 2026-10-12: a hero he sends, removes or picks reaches the site by itself, with nobody at a
@@ -919,6 +954,7 @@ def create_app() -> FastAPI:
         else:
             settings.set(conn, HERO_KEY, str(pid))
             msg = "Site hero: this photo."
+        photos_changed(conn)
         msg = f"{msg} {publish_now()}"
         back = back if back.startswith("/") and not back.startswith("//") else "/library"
         path, _, anchor = back.partition("#")
@@ -932,7 +968,7 @@ def create_app() -> FastAPI:
 
     @app.post("/donotuse/add")
     def donotuse_add(user: str = Depends(require_user), conn=Depends(conn_dep), kind: str = Form(...), value: str = Form(...),
-                     reason: str = Form(default="")):
+                     reason: str = Form(default=""), back: str = Form(default="")):
         if kind not in ("photo", "folder", "person", "handle"):
             raise HTTPException(400)
         value = drive_id_from(value) if kind in ("photo", "folder") else value.strip().lower()
@@ -948,7 +984,8 @@ def create_app() -> FastAPI:
                     hit = True
             if hit:
                 start_agent("content")
-        return RedirectResponse("/donotuse", status_code=303)
+            photos_changed(conn)
+        return RedirectResponse(safe_back(back, "/donotuse") if back else "/donotuse", status_code=303)
 
     @app.post("/donotuse/{rid}/remove")
     def donotuse_remove(rid: int, user: str = Depends(require_user), conn=Depends(conn_dep)):

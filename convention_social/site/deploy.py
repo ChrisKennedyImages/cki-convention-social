@@ -25,7 +25,7 @@ import shutil
 import subprocess
 import sys
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -37,6 +37,9 @@ STATUS_FILE = "site-deploy.json"                     # DATA_ROOT/site: what the 
 STALE_RUNNING = 40 * 60                              # a "running" status older than this was a run that died
 DEPLOYED_KEY = "site.deployed_commit"                # the code commit the site on Cloudflare was built from
 FAILED_KEY = "site.deploy_failed_for"                # JSON {commit, tries, last_at}: a failed deploy is tried again, up to MAX_TRIES
+DEPLOYED_AT_KEY = "site.deployed_at"                 # when the last successful build STARTED: the photos it holds are as of then
+PHOTOS_CHANGED_KEY = "site.photos_changed_at"        # stamped by every Use / Don't use / folder decision / hero pick (2026-10-13)
+PHOTOS_SETTLE = 10 * 60                              # seconds of quiet after the last photo change before the site publishes itself
 MAX_TRIES = 3                                        # per commit, by itself; Publish on the Photos page always tries
 RETRY_AFTER = 30 * 60                                # seconds between tries
 BUILD_TIMEOUT = 20 * 60
@@ -120,17 +123,44 @@ def _git(repo: Path, *args: str) -> str:
     return r.stdout.strip() if r.returncode == 0 else ""
 
 
+def _stamp(value: Optional[str]) -> Optional[datetime]:
+    try:
+        t = datetime.fromisoformat(value) if value else None
+    except ValueError:
+        return None
+    return t.replace(tzinfo=timezone.utc) if t is not None and t.tzinfo is None else t
+
+
+def photos_pending(conn, now: Optional[datetime] = None) -> tuple[bool, str]:
+    """(publish now?, why) from the photos alone: a Use, Don't use, folder decision or hero pick newer than
+    the last build's start, and PHOTOS_SETTLE of quiet since (Chris, 2026-10-13: the site follows the photos
+    by itself; Publish stays for the impatient). (False, "") when the site already holds the photos."""
+    changed = _stamp(settings.get(conn, PHOTOS_CHANGED_KEY))
+    built = _stamp(settings.get(conn, DEPLOYED_AT_KEY))
+    if changed is None or (built is not None and changed <= built):
+        return False, ""
+    at = now.astimezone(timezone.utc) if now is not None and now.tzinfo else datetime.now(timezone.utc)
+    words = f"the approved photos changed at {changed.astimezone(timezone.utc):%H:%M}"
+    if (at - changed).total_seconds() < PHOTOS_SETTLE:
+        return False, f"{words}; publishing them {PHOTOS_SETTLE // 60} minutes after the last change"
+    return True, f"{words}; publishing them"
+
+
 def wanted(conn, repo: Optional[Path] = None, now: Optional[datetime] = None) -> tuple[bool, str]:
     """(deploy now?, why) for the updater: the site is behind the code when the commit it was built from
-    is not this one and the commits in between touch the site, or when the suite has never deployed it.
-    A failed deploy is tried again after RETRY_AFTER, up to MAX_TRIES per commit (2026-10-13)."""
+    is not this one and the commits in between touch the site, or when the suite has never deployed it;
+    behind the photos when they changed since the last build (photos_pending). A failed deploy is tried
+    again after RETRY_AFTER, up to MAX_TRIES per commit (2026-10-13)."""
     repo = Path(repo or config.REPO_ROOT)
     head = _git(repo, "rev-parse", "HEAD")
     if not head:
         return False, "not a git checkout"
     deployed = settings.get(conn, DEPLOYED_KEY) or ""
+    photos_why = ""
     if deployed == head:
-        return False, f"the site is on {head[:7]}, the same as the code"
+        photos, photos_why = photos_pending(conn, now)
+        if not photos:
+            return False, photos_why or f"the site is on {head[:7]}, the same as the code"
     failed = failure_record(conn)
     if failed.get("commit") == head:
         tries = failed["tries"]
@@ -141,10 +171,15 @@ def wanted(conn, repo: Optional[Path] = None, now: Optional[datetime] = None) ->
             last = datetime.fromisoformat(failed["last_at"]) if failed.get("last_at") else None
         except ValueError:
             pass
-        if last and ((now or datetime.now()) - last).total_seconds() < RETRY_AFTER:
+        at = now or datetime.now()
+        if last is not None and (at.tzinfo is None) != (last.tzinfo is None):     # the record is naive local time
+            at = at.replace(tzinfo=None) if last.tzinfo is None else at.replace(tzinfo=timezone.utc)
+        if last and (at - last).total_seconds() < RETRY_AFTER:
             return False, (f"the deploy of {head[:7]} failed (try {tries} of {MAX_TRIES}); trying again "
                            f"{RETRY_AFTER // 60} minutes after {last.strftime('%H:%M')}")
         return True, f"the deploy of {head[:7]} failed (try {tries} of {MAX_TRIES}); trying again"
+    if photos_why:
+        return True, photos_why
     if not deployed:
         return True, "the suite has not deployed the site yet"
     if _git(repo, "cat-file", "-t", deployed) != "commit":
@@ -228,6 +263,7 @@ def run(*, repo: Optional[Path] = None, conn=None, say: Callable[[str], None] = 
     own = conn is None
     conn = conn or db.connect()
     head = _git(repo, "rev-parse", "HEAD")
+    started = db.utcnow()                      # the photos the build holds are as of now; a tap during it publishes again
     try:
         from ..seo import indexnow
         indexnow.ensure_key()                      # once: the key the site hosts and the pings carry (kept in .env)
@@ -251,6 +287,7 @@ def run(*, repo: Optional[Path] = None, conn=None, say: Callable[[str], None] = 
             if not passed:
                 return _failed(conn, head, say, "deployed, but the check from outside did not pass", "\n".join(lines))
         settings.set(conn, DEPLOYED_KEY, head)
+        settings.set(conn, DEPLOYED_AT_KEY, started)
         settings.set(conn, FAILED_KEY, "")
         told, engines = tell_engines()            # the site is live either way; the card says whether they heard
         say(engines)
