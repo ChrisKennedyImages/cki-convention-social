@@ -8,7 +8,9 @@ Outreach: drafts, approved, sent. Chris edits a note, then Approves or
 Rejects it; Approve is refused while outreach.compliance finds a problem.
 Editing an approved note sends it back to draft. The one follow-up can be
 started only 7 days or more after the first note was really sent. Do not
-contact: the list every draft and every send is checked against.
+contact: the list every draft and every send is checked against. CPAC, the
+ACU and their affiliates are never shown, added, approved or sent to; that
+rule is code (outreach/compliance.never_contact), not a row on any page.
 """
 from __future__ import annotations
 
@@ -39,7 +41,7 @@ def register(app, require_user, conn_dep, render) -> None:
         where, params = ("1=1", ()) if show == "all" else ("status=?", (show,))
         rows = db.rows(conn, f"SELECT * FROM scout_events WHERE {where} ORDER BY COALESCE(start_date,'9999'), id LIMIT 300", params)
         items = [{**dict(r), "source_list": json.loads(r["sources"] or "[]"),
-                  "dates": keys.dates_in_words(r["start_date"], r["end_date"])} for r in rows]
+                  "dates": keys.dates_in_words(r["start_date"], r["end_date"])} for r in rows if not compliance.never_for_event(r)]
         counts = {r["status"]: r["n"] for r in db.rows(conn, "SELECT status, COUNT(*) n FROM scout_events GROUP BY status")}
         last = db.one(conn, "SELECT * FROM agent_runs WHERE agent='scout' ORDER BY id DESC LIMIT 1")
         return render(request, "scout_list.html", items=items, show=show, counts=counts, msg=msg,
@@ -54,6 +56,8 @@ def register(app, require_user, conn_dep, render) -> None:
     @app.post("/scout/{sid}/add")
     def scout_add(sid: int, user: str = Depends(require_user), conn=Depends(conn_dep)):
         row = load_scout(conn, sid)
+        if compliance.never_for_event(row):
+            return _see("/scout?msg=never")
         if row["status"] == "added" and row["convention_id"]:
             return _see("/scout?msg=already")
         now = db.utcnow()
@@ -75,7 +79,8 @@ def register(app, require_user, conn_dep, render) -> None:
     @app.get("/outreach/donotcontact", response_class=HTMLResponse)
     def dnc_list(request: Request, user: str = Depends(require_user), conn=Depends(conn_dep), msg: str = ""):
         rows = db.rows(conn, "SELECT * FROM do_not_contact ORDER BY id DESC LIMIT 1000")
-        return render(request, "outreach_donotcontact.html", rows=rows, msg=msg)
+        return render(request, "outreach_donotcontact.html", rows=rows, msg=msg, never=compliance.NEVER_MESSAGE,
+                      never_domains=compliance.NEVER_DOMAINS)
 
     @app.post("/outreach/donotcontact/add")
     def dnc_add(user: str = Depends(require_user), conn=Depends(conn_dep), email: str = Form(...), reason: str = Form(default=""),
@@ -100,6 +105,8 @@ def register(app, require_user, conn_dep, render) -> None:
         name, email = event_name.strip()[:200], keys.normalize_email(email)
         if not name or not keys.valid_email(email):
             return _see("/outreach?msg=bad_prospect")
+        if compliance.never_contact(email=email, names=(name, organizer), urls=(website,)):
+            return _see("/outreach?msg=never")
         if compliance.blocked(conn, email):
             return _see("/outreach?msg=blocked")
         start = keys.iso_day(start_date)
@@ -148,7 +155,7 @@ def register(app, require_user, conn_dep, render) -> None:
                       sources=json.loads(scout_row["sources"] or "[]") if scout_row else [],
                       dates=keys.dates_in_words(row["start_date"], row["end_date"]),
                       follow_up=follow_up, follow_up_why=follow_up_why, editable=row["status"] in EDITABLE,
-                      approvable=row["status"] in APPROVABLE)
+                      approvable=row["status"] in APPROVABLE and not compliance.never_for_row(row))
 
     @app.post("/outreach/{oid}/save")
     def outreach_save(oid: int, user: str = Depends(require_user), conn=Depends(conn_dep), subject: str = Form(""), body: str = Form("")):

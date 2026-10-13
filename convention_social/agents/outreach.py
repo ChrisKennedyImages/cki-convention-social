@@ -7,6 +7,8 @@
 2. Draft up to OUTREACH_DAILY_DRAFTS (default 5) a day: prospects Chris added
    by hand first, then scout events with an organizer email that is not on
    do-not-contact, one note per address per event (outreach/draft.py).
+   CPAC, the ACU and their affiliates are never drafted for, never sent to and
+   never added by hand (outreach/compliance.never_contact; Chris, 2026-10-13).
 3. Send only what Chris approved, at most OUTREACH_DAILY_SENDS (default 10) a
    day, each through outreach.compliance (accurate From, postal address in
    the footer, opt-out link and reply STOP line, List-Unsubscribe headers,
@@ -16,6 +18,7 @@
 """
 from __future__ import annotations
 
+import json
 from datetime import datetime, time, timedelta, timezone
 from zoneinfo import ZoneInfo
 
@@ -90,7 +93,7 @@ def _save_draft(ctx: runner.Context, row_id: int, d: draft.OutreachDraft) -> Non
 
 
 def draft_new(ctx: runner.Context, client=None) -> dict:
-    stats = {"drafted": 0, "claude": 0, "template": 0, "skipped_blocked": 0, "left_for_tomorrow": 0}
+    stats = {"drafted": 0, "claude": 0, "template": 0, "skipped_blocked": 0, "skipped_never": 0, "left_for_tomorrow": 0}
     made_today = db.one(ctx.conn, "SELECT COUNT(*) n FROM outreach WHERE kind='first' AND drafted_at >= ?",
                         (start_of_today(ctx.cfg),))["n"]
     room = max(0, daily_drafts() - made_today)
@@ -102,6 +105,11 @@ def draft_new(ctx: runner.Context, client=None) -> dict:
 
     # prospects Chris added by hand
     for row in db.rows(ctx.conn, "SELECT * FROM outreach WHERE status='queued' ORDER BY id"):
+        never = compliance.never_for_row(row)
+        if never:
+            ctx.conn.execute("UPDATE outreach SET status='rejected', notes=?, updated_at=? WHERE id=?", (never, db.utcnow(), row["id"]))
+            stats["skipped_never"] += 1
+            continue
         if compliance.blocked(ctx.conn, row["email"]):
             compliance.block(ctx.conn, row["email"])          # closes it with the reason
             stats["skipped_blocked"] += 1
@@ -120,6 +128,9 @@ def draft_new(ctx: runner.Context, client=None) -> dict:
                                 "AND (start_date IS NULL OR start_date >= ?) ORDER BY COALESCE(start_date,'9999'), id", (today,)):
         email = keys.normalize_email(ev["organizer_email"])
         if not keys.valid_email(email):
+            continue
+        if compliance.never_for_event(ev):
+            stats["skipped_never"] += 1
             continue
         if compliance.blocked(ctx.conn, email):
             stats["skipped_blocked"] += 1
@@ -147,7 +158,7 @@ def draft_new(ctx: runner.Context, client=None) -> dict:
 
 # ---------------------------------------------------------------------- 3. sends
 def send_approved(ctx: runner.Context, *, opt_outs_synced: bool) -> dict:
-    stats = {"sent": 0, "would_send": 0, "failed": 0, "held": 0, "redrafted": 0, "opted_out": 0, "over_cap": 0}
+    stats = {"sent": 0, "would_send": 0, "failed": 0, "held": 0, "redrafted": 0, "opted_out": 0, "never": 0, "over_cap": 0}
     used = db.one(ctx.conn, "SELECT COUNT(*) n FROM outreach WHERE status IN ('sent','would_send') AND last_attempt_at >= ?",
                   (start_of_today(ctx.cfg),))["n"]
     room = max(0, daily_sends() - used)
@@ -155,6 +166,11 @@ def send_approved(ctx: runner.Context, *, opt_outs_synced: bool) -> dict:
         found = compliance.problems(ctx.conn, row, cfg=ctx.cfg)
         codes = {p.code for p in found}
         now = db.utcnow()
+        if "never" in codes:                       # the hard rule, checked again at the door, whatever was approved
+            ctx.conn.execute("UPDATE outreach SET status='rejected', notes=?, updated_at=? WHERE id=?",
+                             (next(p.message for p in found if p.code == "never"), now, row["id"]))
+            stats["never"] += 1
+            continue
         if "blocked" in codes:
             ctx.conn.execute("UPDATE outreach SET status='opted_out', notes=?, updated_at=? WHERE id=?",
                              ("On the do-not-contact list; not sent.", now, row["id"]))
@@ -215,9 +231,9 @@ def run(ctx: runner.Context, api: UnsubscribeAPI | None = None, client=None) -> 
     d = draft_new(ctx, client=client)
     s = send_approved(ctx, opt_outs_synced=synced)
     return (f"{'DRY RUN ' if ctx.dry_run else ''}{opt}; drafted={d['drafted']} (claude={d['claude']} template={d['template']}, "
-            f"left for tomorrow={d['left_for_tomorrow']}, on do-not-contact={d['skipped_blocked']}); "
+            f"left for tomorrow={d['left_for_tomorrow']}, on do-not-contact={d['skipped_blocked']}, never contacted={d['skipped_never']}); "
             f"sent={s['sent']} would_send={s['would_send']} failed={s['failed']} held={s['held']} back to draft={s['redrafted']} "
-            f"opted out={s['opted_out']} over the daily cap={s['over_cap']}")
+            f"opted out={s['opted_out']} never={s['never']} over the daily cap={s['over_cap']}")
 
 
 if __name__ == "__main__":

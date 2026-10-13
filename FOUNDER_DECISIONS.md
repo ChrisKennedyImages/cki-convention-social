@@ -538,7 +538,23 @@ only when Chris says so.
   writer is told the same and told never to say every attendee gets one.
   Attendee portraits are not advertised.
 
+## 2026-10-13: never CPAC, never the ACU, never an affiliate
+
+- "Also, never outreach to CPAC or the ACU or any affiliates! NEVER and
+  that's a hard rule." The rule is code, not a row on a page
+  (`outreach/compliance.never_contact`): the names he gave (`ai/names.ALWAYS`),
+  the ACU's and CPAC's own domains, any host with "cpac" in its name, and any
+  event or organizer named after them. The scout never stores such an event
+  (`agents/scout.store`, `outreach/research.vet`), the outreach agent never
+  drafts for one and refuses one at the door even when approved, the hand add
+  on the Outreach page refuses it, a follow-up is refused, and the do-not-contact
+  page says so with nothing to remove. Pinned in `tests/test_outreach.py`
+  (`NeverContacted`, `Pages`) and `tests/test_scout.py`.
+
 ## Standing rules from the brief
+
+- CPAC, the ACU and their affiliates are never contacted, by code
+  (2026-10-13, above).
 
 - Nothing publishes without Chris's Approve on the dashboard, until he says
   otherwise. Every agent that sends or publishes starts in dry run
