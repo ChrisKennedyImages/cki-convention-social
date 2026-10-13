@@ -55,21 +55,27 @@ NOT_OFFERED_KIND_WHY = "a wedding or a private occasion: Event Caliber photograp
 
 
 def clearance_of(conn: sqlite3.Connection, photo: sqlite3.Row) -> str:
-    """'cleared' | 'blocked' | 'excluded' | 'not_cleared' — the decision that applies to this photo."""
+    """'cleared' | 'blocked' | 'excluded' | 'not_cleared' — the decision that applies to this photo. Fail
+    closed (2026-10-13): Don't use on the photo wins over everything; an excluded folder anywhere above it
+    wins over a Use on the photo ("kept out, even photos you tapped Use on"); then the photo's own Use; then
+    the nearest cleared folder."""
     if photo["clearance"] == "blocked":
         return "blocked"
+    chain = folder_chain(conn, photo["folder_id"])
+    if any(f["clearance"] == "excluded" for f in chain):
+        return "excluded"
     if photo["clearance"] == "cleared":
         return "cleared"
-    for f in folder_chain(conn, photo["folder_id"]):
-        if f["clearance"] in ("cleared", "excluded"):
-            return f["clearance"]
+    for f in chain:
+        if f["clearance"] == "cleared":
+            return "cleared"
     return "not_cleared"
 
 
 def folder_decisions(conn: sqlite3.Connection) -> dict[str, str]:
-    """For every folder, the decision that reaches it: its own 'cleared' or 'excluded', else the
-    nearest folder above with one, else 'not_cleared'. One pass for the whole library, the same
-    rule clearance_of follows photo by photo."""
+    """For every folder, the decision that reaches it: 'excluded' when it or any folder above it is
+    excluded, else its own 'cleared', else the nearest cleared folder above, else 'not_cleared'. One pass
+    for the whole library, the same rule clearance_of follows photo by photo."""
     rows = {r["drive_id"]: (r["parent_id"], r["clearance"]) for r in db.rows(conn, "SELECT drive_id, parent_id, clearance FROM drive_folders")}
     out: dict[str, str] = {}
 
@@ -79,7 +85,8 @@ def folder_decisions(conn: sqlite3.Connection) -> dict[str, str]:
         if fid in out:
             return out[fid]
         parent, own = rows[fid]
-        out[fid] = own if own in ("cleared", "excluded") else resolve(parent, depth + 1)
+        above = resolve(parent, depth + 1)
+        out[fid] = "excluded" if own == "excluded" or above == "excluded" else ("cleared" if own == "cleared" else above)
         return out[fid]
     for fid in rows:
         resolve(fid)
@@ -88,9 +95,12 @@ def folder_decisions(conn: sqlite3.Connection) -> dict[str, str]:
 
 def decision_of(photo, decisions: dict[str, str]) -> str:
     """'cleared' | 'blocked' | 'excluded' | 'not_cleared', as clearance_of, from folder_decisions."""
-    if photo["clearance"] in ("blocked", "cleared"):
-        return photo["clearance"]
-    return decisions.get(photo["folder_id"], "not_cleared")
+    if photo["clearance"] == "blocked":
+        return "blocked"
+    folder = decisions.get(photo["folder_id"], "not_cleared")
+    if folder == "excluded":
+        return "excluded"
+    return "cleared" if photo["clearance"] == "cleared" else folder
 
 
 def credits_for(conn: sqlite3.Connection, photo: sqlite3.Row) -> list[sqlite3.Row]:

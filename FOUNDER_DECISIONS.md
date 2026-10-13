@@ -677,6 +677,30 @@ rendered card and an Approve button; it ships on.
   sign-in and any scope but `drive.readonly` are refused. No Google console
   change.
 
+## 2026-10-13: photos without the reload
+
+Batch 5 of the roadmap: the Photos tab on the phone, in fewer taps, and the
+site that follows them.
+
+- A tap on Use, Don't use, Undo or Unblock answers in place (the page's own
+  script asks for JSON; without it the form submits as before). Ticked
+  photos take one tap: Use selected, Don't use selected.
+- Exclude means out, fail closed: an excluded folder anywhere above a photo
+  wins over a Use tapped on the photo, in the walker
+  (`eligibility.clearance_of`), the one-pass map (`folder_decisions`,
+  `decision_of`) and the Photos page's SQL. Don't use on the photo still
+  wins over everything.
+- A Blocked chip lists every photo marked Don't use, with Unblock; every
+  card has Never use, which puts the photo on the do-not-use list and comes
+  back to the same page.
+- The site follows the photos: Use, Don't use, a folder decision, the hero
+  pick and a do-not-use entry stamp `site.photos_changed_at`; ten minutes
+  after the last change the updater's pass publishes by itself
+  (`deploy.photos_pending`, inside `deploy.wanted`), with the same three
+  tries half an hour apart as any deploy. The build holds the photos as of
+  its start (`site.deployed_at`), so a tap during a build publishes again.
+  Publish on the Website card starts it now instead of waiting.
+
 ## Standing rules from the brief
 
 - CPAC, the ACU and their affiliates are never contacted, by code

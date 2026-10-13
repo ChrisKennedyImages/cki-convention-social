@@ -3,14 +3,15 @@
 {% if msg %}<div class="msg">{{ msg }}</div>{% endif %}
 {% if drive_state != 'ok' and view in ('review', 'approved') %}<div class="msg bad">The pictures cannot load: Google Drive is {{ 'not signed in yet' if drive_state == 'missing' else 'signed out (the sign-in expired)' }}. Sign in on the <a href="/drive">Drive page</a>; the photos and your choices are all still here.</div>{% endif %}
 
-{% if view in ('review', 'approved') %}
-<h1>{{ 'To review' if view == 'review' else 'Approved' }} <span class="muted">{{ total }}</span></h1>
+{% if view in ('review', 'approved', 'blocked') %}
+<h1>{{ {'review': 'To review', 'approved': 'Approved', 'blocked': 'Blocked'}[view] }} <span class="muted">{{ total }}</span></h1>
 <div class="row" style="margin-bottom:12px">
   {% for key, label in subject_words %}<a class="btn{{ ' primary' if subject == key else '' }}" href="/library?view={{ view }}&subject={{ key }}">{{ label }} ({{ subject_counts[key] }})</a>{% endfor %}
 </div>
 <div class="card muted">
   {% if view == 'review' %}Only what you approve is ever used. These are the sorted photos you have not decided on yet, strongest first. Use approves one; Don't use keeps it out for good. Photos where someone may be under 18, or with a readable plate, house number or street sign, never show here and are never used. A name badge or a name in the photo is fine.
-  {% else %}Everything you approved, one photo at a time or by its folder. Only these are ever used: in posts, on the website and in the design samples. Undo puts a photo back to review; Don't use keeps it out for good.{% endif %}
+  {% elif view == 'approved' %}Everything you approved, one photo at a time or by its folder. Only these are ever used: in posts, on the website and in the design samples. Undo puts a photo back to review; Don't use keeps it out for good.
+  {% else %}Photos you marked Don't use. Unblock puts one back where it was (to review, or approved by its folder). Never use adds it to the do-not-use list for good.{% endif %}
 </div>
 {% if view == 'approved' and subject == 'event' %}
 <div class="card">
@@ -20,7 +21,8 @@
   {% elif st.state == 'done' %}<div class="msg">Live: {{ st.message }} ({{ st.at[:10] }} {{ st.at[11:16] }}).</div>
   {% elif st.state == 'failed' %}<div class="msg bad">Not published: {{ st.message }} ({{ st.at[:10] }} {{ st.at[11:16] }}).{% if st.detail %}<pre style="white-space:pre-wrap;margin:6px 0 0">{{ st.detail }}</pre>{% endif %}</div>
   {% endif %}
-  <div class="muted">eventcaliber.com is published by itself after a code change that touches it. Press Publish after you change the hero or the approved photos; it builds the pages, sends them to Cloudflare and checks every page from outside.{% if site.deployed %} The site is on code {{ site.deployed }}.{% endif %}</div>
+  <div class="muted">eventcaliber.com is published by itself after a code change that touches it, and by itself in a few minutes with your photo changes (Use, Don't use, a folder, the hero). Publish starts it now instead of waiting; it builds the pages, sends them to Cloudflare and checks every page from outside.{% if site.deployed %} The site is on code {{ site.deployed }}.{% endif %}</div>
+  {% if site.photos_pending[1] %}<div class="msg">Photo changes waiting: {{ site.photos_pending[1] }}.</div>{% endif %}
   <div class="muted" style="margin-top:6px">Search engines: {% if site.google %}Google Search Console tag on every page.{% else %}<span class="badge blocked">Google Search Console tag missing</span> paste it on the <a href="/keys">Keys page</a>, then publish and press Verify in Search Console.{% endif %}
     {% if st.engines %}Last publish: {{ st.engines }}.{% elif site.indexnow %}Bing and the other IndexNow engines are told after every publish.{% else %}The IndexNow key is made on the first publish.{% endif %}</div>
   <div class="row" style="margin-top:8px">
@@ -43,7 +45,15 @@
   </form>
 </div>
 {% endif %}
-{% if not items %}<div class="card muted">{{ ('No event photos to review right now.' if subject == 'event' else 'No building photos to review right now.') if view == 'review' else ('No event photos approved yet. Tap Use on a photo in To review, or Clear a whole folder in Folders.' if subject == 'event' else 'No building photos approved yet.') }}</div>{% endif %}
+{% if not items %}<div class="card muted">{{ ('No event photos to review right now.' if subject == 'event' else 'No building photos to review right now.') if view == 'review' else (('No event photos approved yet. Tap Use on a photo in To review, or Clear a whole folder in Folders.' if subject == 'event' else 'No building photos approved yet.') if view == 'approved' else 'Nothing blocked.') }}</div>{% endif %}
+{% if items and view != 'blocked' %}
+<form id="bulk" method="post" action="/library/photos/clearance" class="row" style="margin-bottom:10px">
+  <input type="hidden" name="back" value="/library?view={{ view }}&subject={{ subject }}&page={{ page }}">
+  <span class="muted">Ticked photos:</span>
+  {% if view == 'review' %}<button class="small ok" type="submit" name="state" value="cleared">Use selected</button>{% endif %}
+  <button class="small danger" type="submit" name="state" value="blocked" onsubmit="return true">Don't use selected</button>
+</form>
+{% endif %}
 <div class="grid">
 {% for p in items %}
   <div class="card{% if p.clearance == 'blocked' %} off{% endif %}" id="p{{ p.id }}" style="padding:8px;margin:0">
@@ -52,13 +62,20 @@
     <a class="muted" href="/library/folder/{{ p.folder_id }}">{{ p.folder_name or '' }}</a>
     {% if view == 'approved' %}<div><span class="badge {{ 'ok' if p.why[0] else 'blocked' }}">{{ 'ready to use' if p.why[0] else p.why[1] }}</span>{% if hero_id == p.id %} <span class="badge ok">site hero</span>{% endif %}</div>{% endif %}
     <div class="row" style="margin-top:6px">
+    {% if view != 'blocked' %}<label class="inline" style="margin:0"><input type="checkbox" form="bulk" name="ids" value="{{ p.id }}" style="width:auto;transform:scale(1.4)"></label>{% endif %}
     {% for state, label, cls in ([('cleared', 'Use', 'ok'), ('blocked', "Don't use", 'danger')] if view == 'review'
+                                 else [('inherit', 'Unblock', '')] if view == 'blocked'
                                  else ([('inherit', 'Undo', '')] if p.clearance == 'cleared' else []) + [('blocked', "Don't use", 'danger')]) %}
-      <form method="post" action="/library/photo/{{ p.id }}/clearance" class="inline">
+      <form method="post" action="/library/photo/{{ p.id }}/clearance" class="inline tap">
         <input type="hidden" name="back" value="{{ p.back }}">
         <input type="hidden" name="state" value="{{ state }}"><button class="small {{ cls }}" type="submit">{{ label }}</button>
       </form>
     {% endfor %}
+    <span class="tapped muted"></span>
+    <form method="post" action="/donotuse/add" class="inline" onsubmit="return confirm('Never use this photo? It goes on the do-not-use list; any draft with it is set aside.')">
+      <input type="hidden" name="kind" value="photo"><input type="hidden" name="value" value="{{ p.drive_id }}"><input type="hidden" name="back" value="{{ p.back }}">
+      <button class="small" type="submit">Never use</button>
+    </form>
     {% if view == 'approved' and p.clearance != 'cleared' %}<span class="muted">approved by its folder: <a href="/library/folder/{{ p.folder_id }}">open the folder to change that</a></span>{% endif %}
     {% if view == 'approved' %}
       <form method="post" action="/library/photo/{{ p.id }}/hero" class="inline">
@@ -74,6 +91,24 @@
   <span class="muted">Page {{ page }} of {{ pages }}</span>
   {% if page < pages %}<a class="btn" href="/library?view={{ view }}&subject={{ subject }}&page={{ page + 1 }}">Next</a>{% endif %}
 </div>{% endif %}
+<script>
+// A tap answers in place (2026-10-13: one tap was one full page). Without this script, or when the request
+// fails, the form submits as before and the page reloads.
+document.querySelectorAll('form.tap').forEach(function (form) {
+  form.addEventListener('submit', function (event) {
+    event.preventDefault();
+    var card = form.closest('.card');
+    fetch(form.action, {method: 'POST', body: new FormData(form), headers: {'Accept': 'application/json'}})
+      .then(function (r) { if (!r.ok) { throw new Error(r.status); } return r.json(); })
+      .then(function (d) {
+        card.querySelector('.tapped').textContent = d.words;
+        card.querySelectorAll('form.tap').forEach(function (f) { f.remove(); });
+        card.classList.toggle('off', d.state === 'blocked');
+      })
+      .catch(function () { form.submit(); });
+  });
+});
+</script>
 
 {% elif view == 'folders' %}
 <h1>Folders</h1>

@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 
 from convention_social.ai import copy_rules
 from convention_social.core import auth, config, db
+from convention_social.core.settings import get as settings_get
 from convention_social.dashboard.app import COOKIE, create_app, make_token
 from convention_social.drive import scan
 from convention_social.drive.api import DriveReader
@@ -378,6 +379,109 @@ class Dashboard(IsolatedCase):
         config.reset()
         self.assertEqual(config.getenv("ANTHROPIC_API_KEY"), "sk-secret-value", "a secret is never cleared from the page")
         self.assertEqual(config.getenv("BUFFER_PLAN"), "team", "a choice has no clear")
+
+    def test_a_tap_answers_without_a_reload_and_the_form_still_works_without_it(self):
+        """5.1 (2026-10-13): one tap was one full page. The page's own script asks for JSON and swaps the badge;
+        the plain form (no script) still gets the redirect."""
+        c = self.signed_in()
+        pid = self.seed_library()
+        page = c.get("/library").text
+        self.assertIn('class="inline tap"', page)
+        self.assertIn("fetch(", page)
+        self.assertIn("'Accept': 'application/json'", page)
+        r = c.post(f"/library/photo/{pid}/clearance", data={"state": "cleared", "back": "/library"}, headers={"Accept": "application/json"})
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.json(), {"id": pid, "state": "cleared", "words": "Approved."})
+        self.assertEqual(db.one(self.conn, "SELECT clearance FROM photos WHERE id=?", (pid,))["clearance"], "cleared")
+        r = c.post(f"/library/photo/{pid}/clearance", data={"state": "blocked", "back": "/library"}, headers={"Accept": "application/json"})
+        self.assertEqual(r.json()["words"], "Kept out.")
+        r = c.post(f"/library/photo/{pid}/clearance", data={"state": "inherit", "back": "/library?view=approved"}, follow_redirects=False)
+        self.assertEqual((r.status_code, r.headers["location"]), (303, "/library?view=approved"))
+
+    def test_bulk_use_and_dont_use(self):
+        """5.1: tick several, one tap for all of them."""
+        from convention_social.drive import scan
+        from convention_social.drive.api import DriveReader
+        from tests.fake_drive import FakeDrive
+        c = self.signed_in()
+        d = FakeDrive()
+        d.folder("fcon", "Katsucon 2025")
+        for i in (1, 2, 3):
+            d.image(f"p{i}", f"{i}.jpg", "fcon")
+        scan.full_inventory(self.conn, DriveReader("t", conn=self.conn, transport=d))
+        classify.folder_pass(self.conn)
+        self.conn.execute("UPDATE classifications SET method='ollama', subject='event', possible_minor=0, personal_details='[]'")
+        ids = [r["id"] for r in db.rows(self.conn, "SELECT id FROM photos ORDER BY id")]
+        page = c.get("/library").text
+        self.assertIn('id="bulk"', page)
+        self.assertIn('action="/library/photos/clearance"', page)
+        for pid in ids:
+            self.assertIn(f'form="bulk" name="ids" value="{pid}"', page)
+        r = c.post("/library/photos/clearance", data={"ids": [str(ids[0]), str(ids[1])], "state": "cleared", "back": "/library?view=review"},
+                   follow_redirects=False)
+        self.assertEqual((r.status_code, r.headers["location"]), (303, "/library?view=review"))
+        self.assertEqual([r["clearance"] for r in db.rows(self.conn, "SELECT clearance FROM photos ORDER BY id")], ["cleared", "cleared", "inherit"])
+        c.post("/library/photos/clearance", data={"ids": [str(ids[2])], "state": "blocked"})
+        self.assertEqual(db.one(self.conn, "SELECT clearance FROM photos WHERE id=?", (ids[2],))["clearance"], "blocked")
+        self.assertEqual(c.post("/library/photos/clearance", data={"ids": [str(ids[2])], "state": "excluded"}).status_code, 400)
+        self.assertTrue(self.conn.execute("SELECT value FROM settings WHERE key='site.photos_changed_at'").fetchone()[0], "the site follows")
+
+    def test_an_excluded_folder_keeps_a_tapped_photo_off_the_approved_page(self):
+        """5.2: the page's SQL follows the same rule as the walker."""
+        c = self.signed_in()
+        pid = self.seed_library()
+        c.post(f"/library/photo/{pid}/clearance", data={"state": "cleared"})
+        self.assertIn(f'id="p{pid}"', c.get("/library?view=approved").text)
+        c.post("/library/folder/fcon/clearance", data={"state": "excluded"})
+        self.assertNotIn(f'id="p{pid}"', c.get("/library?view=approved").text)
+        self.assertNotIn(f'id="p{pid}"', c.get("/library").text, "nor back in review: the folder is excluded")
+        self.assertIn("kept out, even photos you tapped Use on", c.get("/library/folder/fcon").text)
+
+    def test_blocked_photos_are_visible_and_never_use_is_one_tap_from_the_card(self):
+        """5.3: a Don't use was invisible afterwards; now a Blocked chip lists them with Unblock, and every card
+        has Never use (the do-not-use list) that comes back to the same page."""
+        c = self.signed_in()
+        pid = self.seed_library()
+        self.assertIn('href="/library?view=blocked"', c.get("/library").text)
+        self.assertNotIn(f'id="p{pid}"', c.get("/library?view=blocked").text)
+        c.post(f"/library/photo/{pid}/clearance", data={"state": "blocked"})
+        blocked = c.get("/library?view=blocked").text
+        self.assertIn(f'id="p{pid}"', blocked)
+        self.assertIn(">Unblock<", blocked)
+        self.assertIn('name="state" value="inherit"', blocked)
+        self.assertNotIn(f'id="p{pid}"', c.get("/library").text)
+        c.post(f"/library/photo/{pid}/clearance", data={"state": "inherit"})
+        review = c.get("/library").text
+        self.assertIn(f'id="p{pid}"', review)
+        form = re.search(r'<form[^>]*action="/donotuse/add"[^>]*>.*?</form>', review, flags=re.S).group(0)
+        self.assertIn("confirm(", form)
+        self.assertIn('name="kind" value="photo"', form)
+        self.assertIn('name="value" value="p1"', form)
+        r = c.post("/donotuse/add", data={"kind": "photo", "value": "p1", "back": "/library?view=review&page=1"}, follow_redirects=False)
+        self.assertEqual(r.headers["location"], "/library?view=review&page=1")
+        self.assertEqual(db.one(self.conn, "SELECT kind, value FROM do_not_use")["value"], "p1")
+        r = c.post("/donotuse/add", data={"kind": "handle", "value": "@x", "back": "//evil.example/x"}, follow_redirects=False)
+        self.assertEqual(r.headers["location"], "/donotuse")
+
+    def test_the_site_follows_the_photos(self):
+        """5.4: Use, Don't use, a folder decision and the hero pick stamp the change; the Website card says the
+        site publishes by itself; Publish stays for the impatient."""
+        from convention_social.site import deploy
+        c = self.signed_in()
+        pid = self.seed_library()
+        self.assertIsNone(settings_get(self.conn, deploy.PHOTOS_CHANGED_KEY))
+        c.post(f"/library/photo/{pid}/clearance", data={"state": "cleared"})
+        first = settings_get(self.conn, deploy.PHOTOS_CHANGED_KEY)
+        self.assertTrue(first)
+        from convention_social.core import settings as settings_mod
+        for path, data in (("/library/folder/fcon/clearance", {"state": "cleared"}), (f"/library/photo/{pid}/hero", {}),
+                           ("/donotuse/add", {"kind": "handle", "value": "@x"})):
+            settings_mod.set(self.conn, deploy.PHOTOS_CHANGED_KEY, "")
+            c.post(path, data=data)
+            self.assertTrue(settings_get(self.conn, deploy.PHOTOS_CHANGED_KEY), path)
+        page = c.get("/library?view=approved").text
+        self.assertIn("publish", page.lower())
+        self.assertIn("by itself in a few minutes with your photo changes", page)
 
     def test_keys_page_writes_env_and_never_shows_secrets(self):
         c = self.signed_in()

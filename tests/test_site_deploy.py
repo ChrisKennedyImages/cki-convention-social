@@ -10,7 +10,7 @@ import subprocess
 import sys
 import types
 from contextlib import redirect_stdout
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest import mock
 
@@ -87,6 +87,32 @@ class Wanted(Repos):
         self.assertTrue(deploy.wanted(self.conn, self.repo, now=t0)[0])
         self.assertEqual(deploy.wanted(self.conn, self.root / "not-a-repo"), (False, "not a git checkout"))
 
+    def test_the_approved_photos_publish_by_themselves(self):
+        """5.4 (2026-10-13): a photo change stamps site.photos_changed_at; ten minutes later the updater's pass
+        publishes, with the failure record's retries if the build fails; a stamp older than the last build is nothing."""
+        head = self.head()
+        t0 = datetime(2026, 10, 13, 12, 0, tzinfo=timezone.utc)
+        settings.set(self.conn, deploy.DEPLOYED_AT_KEY, t0.isoformat())
+        self.assertEqual(deploy.wanted(self.conn, self.repo, now=t0 + timedelta(minutes=30)), (False, f"the site is on {head[:7]}, the same as the code"))
+        settings.set(self.conn, deploy.PHOTOS_CHANGED_KEY, (t0 - timedelta(minutes=5)).isoformat())
+        self.assertFalse(deploy.wanted(self.conn, self.repo, now=t0 + timedelta(minutes=30))[0], "a change before the last build is on the site")
+        settings.set(self.conn, deploy.PHOTOS_CHANGED_KEY, (t0 + timedelta(minutes=5)).isoformat())
+        want, why = deploy.wanted(self.conn, self.repo, now=t0 + timedelta(minutes=6))
+        self.assertFalse(want)
+        self.assertIn("publishing them", why)
+        self.assertIn("12:05", why)
+        want, why = deploy.wanted(self.conn, self.repo, now=t0 + timedelta(minutes=16))
+        self.assertEqual((want, why), (True, "the approved photos changed at 12:05; publishing them"))
+        self.assertEqual(deploy.photos_pending(self.conn, now=t0 + timedelta(minutes=16)), (True, "the approved photos changed at 12:05; publishing them"))
+        self.assertEqual(deploy.record_failure(self.conn, head, now=datetime(2026, 10, 13, 12, 16)), 1)
+        want, why = deploy.wanted(self.conn, self.repo, now=t0 + timedelta(minutes=20))
+        self.assertFalse(want, "a failed photo publish waits its half hour like any failed deploy")
+        self.assertIn("try 1 of 3", why)
+        settings.set(self.conn, deploy.FAILED_KEY, "")
+        settings.set(self.conn, deploy.DEPLOYED_AT_KEY, (t0 + timedelta(minutes=16)).isoformat())
+        self.assertFalse(deploy.wanted(self.conn, self.repo, now=t0 + timedelta(minutes=40))[0], "built after the change: nothing pending")
+        self.assertEqual(deploy.photos_pending(self.conn, now=t0 + timedelta(minutes=40)), (False, ""))
+
     def test_only_a_site_file_between_the_two_commits_counts(self):
         first = self.head()
         self.commit("convention_social/agents/content.py", "# agent")
@@ -146,6 +172,18 @@ class Run(Repos):
         self.assertEqual(st["hero"], "your uploaded photo (checked by Claude)")
         self.assertIn(f"LIVE on {self.head()[:7]} (hero: your uploaded photo (checked by Claude))", self.said)
         self.assertIn("PASS  https://eventcaliber.com/", self.said)
+
+    def test_a_change_that_lands_during_the_build_is_published_again(self):
+        """The build holds the photos as of its start: a tap during it stamps later than that, so the next pass
+        publishes again instead of losing it."""
+        clock = iter(["2026-10-13T12:00:00+00:00"] + ["2026-10-13T12:04:00+00:00"] * 50)
+        with mock.patch.object(deploy.db, "utcnow", side_effect=lambda: next(clock)):
+            self.assertEqual(self.go(), 0)
+        built = datetime.fromisoformat(settings.get(self.conn, deploy.DEPLOYED_AT_KEY))
+        self.assertEqual(built, datetime(2026, 10, 13, 12, 0, tzinfo=timezone.utc), "the build's START, not its end")
+        settings.set(self.conn, deploy.PHOTOS_CHANGED_KEY, (built + timedelta(seconds=1)).isoformat())
+        self.assertTrue(deploy.wanted(self.conn, self.repo, now=built + timedelta(minutes=11))[0])
+        self.assertFalse(deploy.wanted(self.conn, self.repo, now=built + timedelta(minutes=2))[0], "ten minutes of quiet first")
 
     def test_no_check_skips_the_check_only(self):
         self.assertEqual(self.go(with_check=False), 0)
