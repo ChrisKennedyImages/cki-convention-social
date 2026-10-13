@@ -37,6 +37,8 @@ from . import heuristics
 
 DEFAULT_MODEL = "claude-haiku-4-5"
 FINAL_MODEL = "claude-opus-5"
+CAP_MESSAGE = ("The monthly AI cap is reached, or the next call would pass it (Keys page, AI, AI_MONTHLY_CAP_USD): Claude "
+               "cannot look at a photo or write a caption until the cap is raised or the month turns, so nothing is drafted.")
 FALLBACK_BETA = "server-side-fallback-2026-07-01"
 OLLAMA_URL = "http://127.0.0.1:11434"
 VISION_HINTS = ("llava", "vision", "-vl", "vl:", "qwen2.5vl", "qwen3-vl", "gemma3", "minicpm-v", "moondream", "bakllava", "granite3.2-vision", "mistral-small3")
@@ -428,8 +430,7 @@ def look(conn: sqlite3.Connection, image: bytes, *, client=None, agent: str = "c
     from ..core import runner
     if spend.cap_reached(conn):
         # 2026-10-12: a silent None here left a morning with no draft and nothing said; the Agents page says it now
-        runner.record_error_once(conn, agent, "ai_cap", "The monthly AI cap is reached (Keys page, AI, AI_MONTHLY_CAP_USD): Claude "
-                                 "cannot look at a photo or write a caption until the cap is raised or the month turns, so nothing is drafted.")
+        runner.record_error_once(conn, agent, "ai_cap", CAP_MESSAGE)
         return None
     model = config.getenv("FINAL_CHECK_MODEL") or FINAL_MODEL
     if client is None:
@@ -438,15 +439,23 @@ def look(conn: sqlite3.Connection, image: bytes, *, client=None, agent: str = "c
             return None
         import anthropic
         client = anthropic.Anthropic(api_key=secrets.get_secret("ANTHROPIC_API_KEY"))
-    response = client.beta.messages.create(
-        model=model, max_tokens=4000, betas=[FALLBACK_BETA], fallbacks="default", thinking={"type": "adaptive"},
-        output_config={"effort": "medium", "format": {"type": "json_schema", "schema": FINAL_SCHEMA}},
-        system=[{"type": "text", "text": FINAL_SYSTEM}],
-        messages=[{"role": "user", "content": [jpeg_block(image, 1568), {"type": "text", "text": "Check this photo."}]}],
-    )
+    held = spend.reserve(conn, agent, model)       # 8.2 (2026-10-13): the cap is held while the call is in flight
+    if held is None:
+        runner.record_error_once(conn, agent, "ai_cap", CAP_MESSAGE)
+        return None
+    try:
+        response = client.beta.messages.create(
+            model=model, max_tokens=4000, betas=[FALLBACK_BETA], fallbacks="default", thinking={"type": "adaptive"},
+            output_config={"effort": "medium", "format": {"type": "json_schema", "schema": FINAL_SCHEMA}},
+            system=[{"type": "text", "text": FINAL_SYSTEM}],
+            messages=[{"role": "user", "content": [jpeg_block(image, 1568), {"type": "text", "text": "Check this photo."}]}],
+        )
+    except Exception:
+        spend.release(conn, held)
+        raise
     u = response.usage
     answered = getattr(response, "model", None) or model
-    spend.record(conn, agent, answered, int(u.input_tokens or 0), int(u.output_tokens or 0), "final check")
+    spend.record(conn, agent, answered, int(u.input_tokens or 0), int(u.output_tokens or 0), "final check", reservation=held)
     if response.stop_reason == "refusal":
         return None
     text = next((b.text for b in response.content if b.type == "text"), None)

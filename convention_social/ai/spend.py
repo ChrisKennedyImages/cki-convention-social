@@ -7,9 +7,14 @@ when the price is unknown; the watchdog flags any zero-cost Anthropic row.
 from __future__ import annotations
 
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from typing import Optional
 
 from ..core import config, db
+
+RESERVE_USD = 0.15                 # what one call is held for before its real cost is known (8.2, 2026-10-13)
+RESERVE_SWEEP = timedelta(minutes=30)      # a reservation this old is a call that died: swept, not counted forever
+RESERVED = "reserved"              # the detail prefix of an in-flight row
 
 RATES = {
     # Longest matching prefix wins, so a family prefix covers every dated member of it:
@@ -42,12 +47,44 @@ def cost_usd(model: str, input_tokens: int, output_tokens: int) -> float:
 
 
 def record(conn: sqlite3.Connection, agent: str, model: str, input_tokens: int, output_tokens: int,
-           detail: str | None = None) -> float:
+           detail: str | None = None, reservation: Optional[int] = None) -> float:
+    """The call's real cost on the ledger. With `reservation`, the in-flight row becomes this one (no second
+    row); an unknown reservation (swept, or none) still records the call."""
     cost = cost_usd(model, input_tokens, output_tokens)
+    words = f"{model} in={input_tokens} out={output_tokens}" + (f" {detail}" if detail else "")
+    if reservation is not None:
+        done = conn.execute("UPDATE api_usage SET ts=?, agent=?, units=?, unit_kind='tokens', cost_usd=?, detail=? "
+                            "WHERE id=? AND detail LIKE ?", (db.utcnow(), agent, input_tokens + output_tokens, cost, words,
+                                                           reservation, f"{RESERVED} %")).rowcount
+        if done:
+            return cost
     db.insert(conn, "api_usage", ts=db.utcnow(), provider="anthropic", agent=agent,
-              units=input_tokens + output_tokens, unit_kind="tokens", cost_usd=cost,
-              detail=f"{model} in={input_tokens} out={output_tokens}" + (f" {detail}" if detail else ""))
+              units=input_tokens + output_tokens, unit_kind="tokens", cost_usd=cost, detail=words)
     return cost
+
+
+def sweep(conn: sqlite3.Connection, now: datetime | None = None) -> int:
+    """Reservations older than RESERVE_SWEEP are calls that never settled (a crash): gone, so the cap is not held
+    by ghosts. How many were swept."""
+    cutoff = ((now or datetime.now(timezone.utc)) - RESERVE_SWEEP).isoformat()
+    return conn.execute("DELETE FROM api_usage WHERE provider='anthropic' AND detail LIKE ? AND ts < ?", (f"{RESERVED} %", cutoff)).rowcount
+
+
+def reserve(conn: sqlite3.Connection, agent: str, model: str, estimate_usd: float = RESERVE_USD) -> Optional[int]:
+    """Hold `estimate_usd` on the ledger before a call, so two agents cannot each overshoot the cap by one call
+    (8.2, 2026-10-13). None when the cap would be passed: the caller does not call. The row's id is handed to
+    record() to settle, or to release() when the call failed."""
+    sweep(conn)
+    if cap_reached(conn, about_to_spend=estimate_usd):
+        return None
+    return db.insert(conn, "api_usage", ts=db.utcnow(), provider="anthropic", agent=agent, units=0, unit_kind="tokens",
+                     cost_usd=float(estimate_usd), detail=f"{RESERVED} {model}")
+
+
+def release(conn: sqlite3.Connection, reservation: Optional[int]) -> None:
+    """The call did not happen (or failed): nothing to count."""
+    if reservation is not None:
+        conn.execute("DELETE FROM api_usage WHERE id=? AND detail LIKE ?", (reservation, f"{RESERVED} %"))
 
 
 def month_to_date(conn: sqlite3.Connection, now: datetime | None = None) -> float:
@@ -57,7 +94,8 @@ def month_to_date(conn: sqlite3.Connection, now: datetime | None = None) -> floa
     return float(row["c"])
 
 
-def cap_reached(conn: sqlite3.Connection) -> bool:
-    """Fails closed: a cap of 0 or less means no paid calls at all."""
+def cap_reached(conn: sqlite3.Connection, about_to_spend: float = 0.0) -> bool:
+    """Fails closed: a cap of 0 or less means no paid calls at all. Reservations count (they are rows).
+    `about_to_spend` asks whether a call of that size would pass the cap."""
     cap = config.get_config().ai_monthly_cap_usd
-    return cap <= 0 or month_to_date(conn) >= cap
+    return cap <= 0 or month_to_date(conn) + max(0.0, about_to_spend) >= cap + (1e-9 if about_to_spend else 0)

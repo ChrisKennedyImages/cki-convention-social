@@ -79,6 +79,9 @@ def look(conn: sqlite3.Connection, paths: list[Path], *, client=None, agent: str
         import anthropic
         client = anthropic.Anthropic(api_key=secrets.get_secret("ANTHROPIC_API_KEY"))
     model = config.getenv("ART_MODEL") or MODEL
+    held = spend.reserve(conn, agent, model)
+    if held is None:
+        return None
     content = [_block(p) for p in paths] + [{"type": "text", "text": "Review this post."}]
     try:
         response = client.beta.messages.create(
@@ -87,11 +90,13 @@ def look(conn: sqlite3.Connection, paths: list[Path], *, client=None, agent: str
             system=[{"type": "text", "text": SYSTEM, "cache_control": {"type": "ephemeral"}}],
             messages=[{"role": "user", "content": content}])
     except Exception as e:  # noqa: BLE001  the API or the network: the draft goes to Chris not reviewed, said once, never a dead run
+        spend.release(conn, held)
         runner.record_error_once(conn, agent, "art_director",
                                  f"The art director could not look ({type(e).__name__}: {e}); the draft goes to Chris not reviewed.")
         return None
     u = response.usage
-    spend.record(conn, agent, getattr(response, "model", None) or model, int(u.input_tokens or 0), int(u.output_tokens or 0), "art review")
+    spend.record(conn, agent, getattr(response, "model", None) or model, int(u.input_tokens or 0), int(u.output_tokens or 0), "art review",
+                 reservation=held)
     text = next((b.text for b in response.content if b.type == "text"), None)
     if response.stop_reason == "refusal" or not text:
         return None

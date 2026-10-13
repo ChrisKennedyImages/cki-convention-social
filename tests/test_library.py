@@ -850,3 +850,52 @@ class FinalCheck(IsolatedCase):
         self.assertIsNone(classify.final_check(conn, pid, thumb_bytes(), client=Beta({})))
         self.assertEqual(len(calls), n)
         conn.close()
+
+    def test_the_final_check_holds_the_cap_while_its_call_is_in_flight(self):
+        """8.2 (2026-10-13): reserved before the call, settled to the real cost in one row, released when the call
+        fails, and no call at all when the reservation itself would pass the cap (said on the Agents page, as a
+        reached cap is)."""
+        from convention_social.ai import spend
+        from tests.fake_drive import thumb_bytes
+        conn = db.connect()
+        now = db.utcnow()
+        conn.execute("INSERT INTO photos (drive_id, name, first_seen_at, last_seen_at) VALUES ('x','x.jpg',?,?)", (now, now))
+        pid = db.one(conn, "SELECT id FROM photos")["id"]
+        os.environ["AI_MONTHLY_CAP_USD"] = "1"
+        config.reset()
+
+        class Beta:
+            def __init__(self, fail=False):
+                self.fail, self.calls = fail, 0
+                self.beta = self
+                self.messages = self
+
+            def create(self, **kw):
+                self.calls += 1
+                if self.fail:
+                    raise ConnectionError("api down")
+                block = types.SimpleNamespace(type="text", text=json.dumps({"possible_minor": False, "personal_details": [], "summary": "ok"}))
+                return types.SimpleNamespace(content=[block], stop_reason="end_turn", model=kw["model"],
+                                             usage=types.SimpleNamespace(input_tokens=1500, output_tokens=200))
+
+        def ledger():
+            return db.rows(conn, "SELECT cost_usd, detail FROM api_usage WHERE provider='anthropic' AND detail != 'x'")
+        self.assertIsNotNone(classify.final_check(conn, pid, thumb_bytes(), client=Beta()))
+        rows = ledger()
+        self.assertEqual(len(rows), 1, "the reservation settled into the one real row, not a second one")
+        self.assertIn("final check", rows[0]["detail"])
+        self.assertNotIn("reserved", rows[0]["detail"])
+        self.assertGreater(rows[0]["cost_usd"], 0)
+        self.assertLess(rows[0]["cost_usd"], spend.RESERVE_USD, "the real cost, not the estimate")
+        with self.assertRaises(ConnectionError):
+            classify.final_check(conn, pid, thumb_bytes(), client=Beta(fail=True))
+        self.assertEqual(len(ledger()), 1, "a call that failed holds nothing")
+        self.assertIsNone(db.one(conn, "SELECT 1 FROM errors WHERE kind='ai_cap'"))
+        db.insert(conn, "api_usage", ts=now, provider="anthropic", agent="t", units=1, unit_kind="tokens", cost_usd=0.85, detail="x")
+        client = Beta()                                       # under the cap, but one more call's reservation would pass it
+        self.assertIsNone(classify.final_check(conn, pid, thumb_bytes(), client=client))
+        self.assertEqual(client.calls, 0, "the reservation would pass the cap: no call")
+        self.assertEqual(len(ledger()), 1)
+        err = db.one(conn, "SELECT message FROM errors WHERE kind='ai_cap'")
+        self.assertIn("the next call would pass it", err["message"])
+        conn.close()

@@ -38,6 +38,7 @@ from . import compliance, keys
 DEFAULT_MODEL = "claude-opus-5"
 SEARCH_TOOL = {"type": "web_search_20260209", "name": "web_search", "max_uses": 8}
 WEB_SEARCH_USD = 0.01            # USD 10 per 1,000 searches
+RESEARCH_RESERVE_USD = 0.75     # a research call with searches is the suite's biggest (8.2); held while in flight
 MAX_CONTINUATIONS = 3            # pause_turn resumes before giving up on a run
 MAX_EVENTS = 25
 KINDS = ("fan", "business", "other")
@@ -142,11 +143,12 @@ def collect(res: Research, response) -> None:
                     res.citations.append((c, str(_get(cite, "cited_text", "") or "")))
 
 
-def record_usage(conn: sqlite3.Connection, agent: str, response, model: str, detail: str) -> tuple[str, int]:
+def record_usage(conn: sqlite3.Connection, agent: str, response, model: str, detail: str, reservation=None) -> tuple[str, int]:
     """Tokens through ai.spend at the model that answered; web searches as their own priced row. -> (model, searches)"""
     usage = _get(response, "usage", None)
     answered = _get(response, "model", None) or model
-    spend.record(conn, agent, answered, int(_get(usage, "input_tokens", 0) or 0), int(_get(usage, "output_tokens", 0) or 0), detail)
+    spend.record(conn, agent, answered, int(_get(usage, "input_tokens", 0) or 0), int(_get(usage, "output_tokens", 0) or 0), detail,
+                 reservation=reservation)
     server = _get(usage, "server_tool_use", None)
     n = int(_get(server, "web_search_requests", 0) or 0) if server is not None else 0
     if n:
@@ -202,10 +204,18 @@ def research(conn: sqlite3.Connection, client, *, region: str, today: date, hori
         if spend.cap_reached(conn):
             res.stopped = "the monthly AI cap was reached during research"
             break
-        response = _create(client, model, output_config={"effort": effort}, system=system,
-                           tools=[dict(SEARCH_TOOL)], messages=messages)
+        held = spend.reserve(conn, agent, model, estimate_usd=RESEARCH_RESERVE_USD)
+        if held is None:
+            res.stopped = "the monthly AI cap would be passed by another research call"
+            break
+        try:
+            response = _create(client, model, output_config={"effort": effort}, system=system,
+                               tools=[dict(SEARCH_TOOL)], messages=messages)
+        except Exception:
+            spend.release(conn, held)
+            raise
         res.calls += 1
-        res.model, n = record_usage(conn, agent, response, model, "scout research")
+        res.model, n = record_usage(conn, agent, response, model, "scout research", reservation=held)
         res.searches += n
         collect(res, response)
         stop = _get(response, "stop_reason", "")

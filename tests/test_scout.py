@@ -310,6 +310,28 @@ class Research(ScoutCase):
         self.assertEqual(research.canonical("javascript:alert(1)"), "")
 
 
+    def test_a_research_call_is_held_on_the_ledger_while_it_runs(self):
+        """8.2 (2026-10-13): the biggest call in the suite reserves RESEARCH_RESERVE_USD before it is made; a call
+        that fails holds nothing; when the reservation itself would pass the cap no call is made and the line says so."""
+        os.environ["AI_MONTHLY_CAP_USD"] = "1"
+        config.reset()
+
+        class Broken(FakeClaude):
+            def create(self, **kw):
+                self.calls.append(kw)
+                raise ConnectionError("api down")
+        with self.assertRaises(ConnectionError):
+            scout.run(self.ctx(), client=Broken())
+        self.assertIsNone(db.one(self.conn, "SELECT 1 FROM api_usage"), "a call that failed holds nothing")
+        self.assertEqual(research.RESEARCH_RESERVE_USD, 0.75)
+        spend.record(self.conn, "content", "claude-opus-5", 100_000, 0)      # $0.50 spent: under the cap, a $0.75 call would pass it
+        fake = self.good_run()
+        line = scout.run(self.ctx(), client=fake)
+        self.assertIn("the monthly AI cap would be passed by another research call", line)
+        self.assertEqual(fake.calls, [])
+        self.assertEqual(db.one(self.conn, "SELECT COUNT(*) n FROM api_usage")["n"], 1, "nothing reserved, nothing recorded")
+
+
 class ScoutPages(ScoutCase):
     def setUp(self):
         super().setUp()
