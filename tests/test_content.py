@@ -304,6 +304,83 @@ class TheDraftSurvivesTheAPI(ArtDirector):
             claude.ClaudeDrafter(self.conn, client=Raising()).draft(facts, photo)
 
 
+class TheCapIsHeldInFlight(ArtDirector):
+    """8.2 (2026-10-13): the cap was checked but never held, so two agents could each overshoot it by one call.
+    Every paid call reserves first, settles the reservation to its real cost (one row), lets it go when the call
+    fails, and makes no call at all when the reservation itself would pass the cap."""
+
+    def setUp(self):
+        super().setUp()
+        os.environ["AI_MONTHLY_CAP_USD"] = "1"
+        config.reset()
+
+    def spent(self, usd):
+        db.insert(self.conn, "api_usage", ts=db.utcnow(), provider="anthropic", agent="t", units=1, unit_kind="tokens", cost_usd=usd, detail="x")
+
+    def ledger(self):
+        return db.rows(self.conn, "SELECT cost_usd, detail FROM api_usage WHERE provider='anthropic' AND detail != 'x'")
+
+    def settled(self, rows, word):
+        from convention_social.ai import spend
+        self.assertEqual(len(rows), 1, "the reservation settled into the one real row, not a second one")
+        self.assertIn(word, rows[0]["detail"])
+        self.assertNotIn("reserved", rows[0]["detail"])
+        self.assertGreater(rows[0]["cost_usd"], 0)
+        self.assertLess(rows[0]["cost_usd"], spend.RESERVE_USD, "the real cost, not the estimate")
+
+    def test_the_caption_writer(self):
+        from convention_social.ai import claude
+
+        class Writer:
+            def __init__(self, fail=False):
+                self.fail, self.calls = fail, 0
+                self.beta = self
+                self.messages = self
+
+            def create(self, **kw):
+                self.calls += 1
+                if self.fail:
+                    raise ConnectionError("no route")
+                return types.SimpleNamespace(content=[], stop_reason="refusal", model=kw["model"],
+                                             usage=types.SimpleNamespace(input_tokens=10_000, output_tokens=1_000))
+        photo = self.root / "p.jpg"
+        photo.write_bytes(jpeg_bytes())
+        facts = claude.PostFacts(brand_name="Event Caliber", event_kind="business")
+        with self.assertRaises(claude.DraftError):            # a refusal: the call was made and is paid for
+            claude.ClaudeDrafter(self.conn, client=Writer()).draft(facts, photo)
+        self.settled(self.ledger(), "caption")
+        with self.assertRaises(claude.DraftError):
+            claude.ClaudeDrafter(self.conn, client=Writer(fail=True)).draft(facts, photo)
+        self.assertEqual(len(self.ledger()), 1, "a call that failed holds nothing")
+        self.spent(0.85)                                      # under the cap, but one more call's reservation would pass it
+        writer = Writer()
+        with self.assertRaises(claude.SpendCapReached):
+            claude.ClaudeDrafter(self.conn, client=writer).draft(facts, photo)
+        self.assertEqual(writer.calls, 0, "the reservation would pass the cap: no call")
+        self.assertEqual(len(self.ledger()), 1)
+
+    def test_the_art_director(self):
+        from convention_social.agents import art_director
+
+        class Broken(ArtClient):
+            def create(self, **kw):
+                self.calls += 1
+                raise ConnectionError("api down")
+        paths = []
+        for n in range(2):
+            paths.append(self.root / f"r{n}.jpg")
+            paths[-1].write_bytes(jpeg_bytes(seed=n))
+        self.assertEqual(art_director.look(self.conn, paths, client=ArtClient([say("pass")]))["verdict"], "pass")
+        self.settled(self.ledger(), "art review")
+        self.assertIsNone(art_director.look(self.conn, paths, client=Broken([])))
+        self.assertEqual(len(self.ledger()), 1, "a call that failed holds nothing")
+        self.spent(0.85)
+        client = ArtClient([say("pass")])
+        self.assertIsNone(art_director.look(self.conn, paths, client=client))
+        self.assertEqual(client.calls, 0, "the reservation would pass the cap: no call")
+        self.assertEqual(len(self.ledger()), 1)
+
+
 SUNDAY = datetime(2026, 10, 18, 10, 0, tzinfo=timezone.utc)         # tomorrow is Monday: spotlight
 WEDNESDAY = datetime(2026, 10, 14, 10, 0, tzinfo=timezone.utc)      # tomorrow is Thursday: carousel
 THURSDAY = datetime(2026, 10, 15, 10, 0, tzinfo=timezone.utc)       # tomorrow is Friday: fan

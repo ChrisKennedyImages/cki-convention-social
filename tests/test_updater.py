@@ -61,7 +61,7 @@ class Repos(IsolatedCase):
         git(self.seed, "push", "-q", "origin", "main")
         return git(self.seed, "rev-parse", "HEAD")
 
-    def run_updater(self, dry=False, suite_ok=True):
+    def run_updater(self, dry=False, suite_ok=True, req_fail_on=None):
         def suite(worktree):
             self.calls["suite"].append({"files": sorted(p.name for p in worktree.iterdir()),
                                         "b": (worktree / "b.txt").read_text() if (worktree / "b.txt").exists() else None})
@@ -69,6 +69,9 @@ class Repos(IsolatedCase):
 
         def requirements(repo, worktree):
             self.calls["requirements"] += 1
+            self.calls.setdefault("requirements_from", []).append(str(worktree))
+            if self.calls["requirements"] == req_fail_on:
+                raise OSError("pip: no network")
 
         def migrations(repo):
             self.calls["migrate"] += 1
@@ -145,6 +148,8 @@ class Updater(Repos):
         err = db.one(self.conn, "SELECT kind, message FROM errors WHERE agent='updater'")
         self.assertEqual(err["kind"], "update_tests")
         self.assertIn(target[:7], err["message"])
+        self.assertEqual(self.calls["requirements"], 0, "no new requirements: nothing installed, nothing to put back")
+        self.assertNotIn("put back", line)
 
     def test_dry_run_reports_and_changes_nothing(self):
         before = self.head()
@@ -176,6 +181,37 @@ class Updater(Repos):
         self.commit("requirements.txt", "requests\n")
         self.run_updater()
         self.assertEqual(self.calls["requirements"], 1)
+
+    def test_a_red_run_puts_the_requirements_back(self):
+        """8.1 (2026-10-13): new requirements went into the live venv before the tests; a red run left the venv
+        on the new ones while the code stayed on the old. Now the checkout's own requirements are installed
+        again, and the line says so."""
+        head = self.head()
+        self.commit("requirements.txt", "requests\n")
+        line = self.run_updater(suite_ok=False)
+        self.assertIn("tests failed", line)
+        self.assertIn("requirements put back", line)
+        self.assertEqual(self.calls["requirements"], 2)
+        self.assertEqual(self.calls["requirements_from"][-1], str(self.repo), "from the checkout, which is still on the old commit")
+        self.assertEqual(self.head(), head)
+        self.calls["requirements"] = 0
+        line = self.run_updater(suite_ok=True)
+        self.assertIn("tests passed", line)
+        self.assertNotIn("put back", line)
+        self.assertEqual(self.calls["requirements"], 1, "a green run installs once and keeps them")
+
+    def test_requirements_that_cannot_be_put_back_are_an_error_said_out_loud(self):
+        """8.1: the venv then holds the new commit's requirements while the code stays on the old one; the Agents
+        page says so, with the commits, and the line does too."""
+        self.commit("requirements.txt", "requests\n")
+        line = self.run_updater(suite_ok=False, req_fail_on=2)
+        self.assertIn("tests failed", line)
+        self.assertIn("could NOT be put back (OSError)", line)
+        kinds = [e["kind"] for e in db.rows(self.conn, "SELECT kind FROM errors WHERE agent='updater' ORDER BY id")]
+        self.assertEqual(kinds, ["update_requirements", "update_tests"])
+        err = db.one(self.conn, "SELECT message FROM errors WHERE kind='update_requirements'")
+        self.assertIn("pip: no network", err["message"])
+        self.assertIn("requirements while the code is on", err["message"])
 
     def test_github_out_of_reach_is_an_error_not_a_crash(self):
         git(self.repo, "remote", "set-url", "origin", str(self.root / "nowhere.git"))

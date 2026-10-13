@@ -147,6 +147,40 @@ class Spend(IsolatedCase):
         self.assertAlmostEqual(spend.month_to_date(conn, datetime.now(timezone.utc)), 30.0)
         self.assertTrue(spend.cap_reached(conn))
 
+    def test_a_reservation_holds_the_cap_until_the_call_settles(self):
+        """8.2 (2026-10-13): cap_reached checked but never reserved, so two agents could each overshoot by one call.
+        An in-flight row counts until the call records over it (or is released); a stale one is swept."""
+        os.environ["AI_MONTHLY_CAP_USD"] = "1"
+        config.reset()
+        conn = db.connect()
+        rid = spend.reserve(conn, "content", "claude-opus-5", estimate_usd=0.6)
+        self.assertIsNotNone(rid)
+        self.assertAlmostEqual(spend.month_to_date(conn), 0.6)
+        self.assertTrue(spend.cap_reached(conn, about_to_spend=0.6), "a second call of the same size would overshoot: refused while the first is in flight")
+        self.assertFalse(spend.cap_reached(conn), "the plain check still reads the ledger as it stands")
+        self.assertIsNone(spend.reserve(conn, "scout", "claude-opus-5", estimate_usd=0.6), "the second agent cannot reserve past the cap")
+        cost = spend.record(conn, "content", "claude-opus-5", 10_000, 1_000, "caption", reservation=rid)
+        self.assertAlmostEqual(cost, 0.075)
+        rows = db.rows(conn, "SELECT agent, cost_usd, detail FROM api_usage")
+        self.assertEqual(len(rows), 1, "the reservation row became the real one, not a second row")
+        self.assertAlmostEqual(rows[0]["cost_usd"], 0.075)
+        self.assertIn("caption", rows[0]["detail"])
+        self.assertNotIn("reserved", rows[0]["detail"])
+        rid2 = spend.reserve(conn, "scout", "claude-opus-5", estimate_usd=0.5)
+        self.assertIsNotNone(rid2)
+        spend.release(conn, rid2)
+        self.assertEqual(db.one(conn, "SELECT COUNT(*) n FROM api_usage")["n"], 1, "a call that failed leaves nothing")
+        stale = spend.reserve(conn, "chief", "claude-opus-5", estimate_usd=0.5)
+        conn.execute("UPDATE api_usage SET ts=? WHERE id=?", ("2026-10-13T00:00:00+00:00", stale))
+        self.assertAlmostEqual(spend.month_to_date(conn), 0.575, msg="held until swept")
+        self.assertIsNotNone(spend.reserve(conn, "content", "claude-opus-5", estimate_usd=0.1))
+        self.assertIsNone(db.one(conn, "SELECT id FROM api_usage WHERE cost_usd=0.5 AND detail LIKE 'reserved %'"),
+                          "a reservation older than the sweep window is a crashed call: swept by the next reserve")
+        self.assertAlmostEqual(spend.month_to_date(conn), 0.175)
+        spend.record(conn, "content", "claude-opus-5", 1, 1, "x", reservation=999999)
+        self.assertEqual(db.one(conn, "SELECT COUNT(*) n FROM api_usage WHERE detail LIKE '%x'")["n"], 1, "an unknown reservation still records the call")
+        conn.close()
+
     def test_zero_cap_fails_closed(self):
         os.environ["AI_MONTHLY_CAP_USD"] = "0"
         config.reset()

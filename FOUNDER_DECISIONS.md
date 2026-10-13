@@ -761,6 +761,30 @@ Batch 7 of the roadmap.
   schema), then a draft again; what Buffer keeps stays scheduled, with the
   reason on the Agents page.
 
+## 2026-10-13: leftovers
+
+Batch 8 of the roadmap, the last one.
+
+- A red update leaves the venv as it was (`agents/updater.update`): new
+  requirements are installed before the tests, so when the tests fail on the
+  Mini the checkout's own `requirements.txt` is installed again and the line
+  says "requirements put back". A put-back that fails is an error on the
+  Agents page (`update_requirements`) naming both commits, never a silent
+  venv on the wrong code.
+- Every paid Anthropic call holds its place on the ledger while it is in
+  flight (`ai/spend.reserve`, `release`, `record(..., reservation=)`):
+  the caption writer, the art director, the final check and the scout's
+  research each reserve before the call (USD 0.15; the research call USD
+  0.75), the reservation becomes the real row when the call settles, is
+  released when the call fails, and is swept after 30 minutes when the
+  process died. A reservation that would pass the monthly cap means no call,
+  said as the cap is said (the final check records `ai_cap`; the scout's
+  line says "would be passed by another research call"). Two agents can no
+  longer each overshoot the cap by one call.
+- Calendar attending/official stays out of the posts: no official events
+  exist, and wiring it is the one way a caption could claim an affiliation
+  (the affiliation rule above).
+
 ## Standing rules from the brief
 
 - CPAC, the ACU and their affiliates are never contacted, by code

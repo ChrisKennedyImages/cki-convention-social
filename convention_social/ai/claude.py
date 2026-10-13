@@ -175,15 +175,20 @@ class ClaudeDrafter:
     def draft(self, facts: PostFacts, photo: Path, notes: Sequence[str] = ()) -> Draft:
         if spend.cap_reached(self.conn):
             raise SpendCapReached("monthly AI spend cap reached; no caption drafted")
+        held = spend.reserve(self.conn, self.agent, self.model)       # 8.2: the cap is held while the call is in flight
+        if held is None:
+            raise SpendCapReached("monthly AI spend cap reached; no caption drafted")
         try:
             response = self._create(facts, photo, notes)
         except DraftError:
+            spend.release(self.conn, held)
             raise
         except Exception as e:  # noqa: BLE001  the API or the network: a DraftError the caller handles (the template writes), never a dead run
+            spend.release(self.conn, held)
             raise DraftError(f"{type(e).__name__}: {e}") from e
         usage = response.usage
         answered_by = getattr(response, "model", None) or self.model
-        spend.record(self.conn, self.agent, answered_by, int(usage.input_tokens or 0), int(usage.output_tokens or 0), "caption")
+        spend.record(self.conn, self.agent, answered_by, int(usage.input_tokens or 0), int(usage.output_tokens or 0), "caption", reservation=held)
         if response.stop_reason == "refusal":
             raise DraftError("model refused this photo")
         text = next((b.text for b in response.content if b.type == "text"), None)

@@ -269,20 +269,33 @@ def update(ctx: runner.Context, repo: Path, *, suite: Callable[[Path], tuple[boo
     _git(repo, "worktree", "remove", "--force", str(worktree))
     shutil.rmtree(worktree, ignore_errors=True)
     _out(repo, "worktree", "add", "--detach", str(worktree), target)
+    installed = False
     try:
         venv = repo / ".venv"
         if venv.exists():
             (worktree / ".venv").symlink_to(venv)
         if "requirements.txt" in changed:
             requirements(repo, worktree)
+            installed = True
         ok, tail = suite(worktree)
     finally:
         _git(repo, "worktree", "remove", "--force", str(worktree))
         shutil.rmtree(worktree, ignore_errors=True)
     if not ok:
+        put_back = ""
+        if installed:
+            # 8.1 (2026-10-13): the new requirements went into the live venv before the tests; the code stays on
+            # the old commit, so the venv goes back to the checkout's own requirements.txt
+            try:
+                requirements(repo, repo)
+                put_back = "; requirements put back"
+            except Exception as e:  # noqa: BLE001
+                put_back = f"; the requirements could NOT be put back ({type(e).__name__})"
+                runner.record_error(ctx.conn, ctx.agent, "update_requirements",
+                                    f"The venv holds {target[:7]}'s requirements while the code is on {head[:7]}: {e}")
         runner.record_error(ctx.conn, ctx.agent, "update_tests",
                             f"Update {target[:7]} held back: its tests did not pass on the Mini. {tail}")
-        return f"held back {target[:7]}: tests failed"
+        return f"held back {target[:7]}: tests failed{put_back}"
 
     _out(repo, "merge", "--ff-only", "--quiet", target)
     migrations(repo)
