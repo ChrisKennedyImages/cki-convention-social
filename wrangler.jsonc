@@ -12,7 +12,10 @@
   "main": "worker/index.js",
   "compatibility_date": "2026-09-21",
   "observability": { "enabled": true },
-  "assets": { "directory": "site/dist", "binding": "ASSETS", "not_found_handling": "404-page" },
+  // run_worker_first (2026-10-14): without it a request that matches a page is served from the assets and the Worker
+  // never runs, so www.eventcaliber.com/about/ answered 200 from the asset instead of the 301 to the apex (seen live
+  // after #64). With it every request runs the Worker, which hands the site's pages to the assets binding itself.
+  "assets": { "directory": "site/dist", "binding": "ASSETS", "not_found_handling": "404-page", "run_worker_first": true },
   "r2_buckets": [{ "binding": "MEDIA", "bucket_name": "eventcaliber-media" }],
   "d1_databases": [{ "binding": "DB", "database_name": "eventcaliber-booking", "database_id": "SET_AFTER_d1_create" }],
   // the outside watch (7.4, 2026-10-13): every 30 minutes, UTC. Cron Triggers are on the Workers Free plan
