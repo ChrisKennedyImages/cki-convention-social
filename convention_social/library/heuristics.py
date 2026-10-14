@@ -52,7 +52,8 @@ def _has(text: str, words) -> bool:
 
 
 def guess(path: str, taken_at: Optional[str] = None) -> FolderGuess:
-    leafs = [p for p in (path or "").split("/") if p and p != "My Drive" and not p.startswith("Shared drive:")]
+    # "Shared with me" is drive/scan.SHARED_ROOT: a gallery shared with the account, stripped like "My Drive"
+    leafs = [p for p in (path or "").split("/") if p and p not in ("My Drive", "Shared with me") and not p.startswith("Shared drive:")]
     low = " " + " ".join(leafs).lower() + " "
     kind = "fan" if _has(low, FAN_WORDS) else ("business" if _has(low, BUSINESS_WORDS) else "unknown")
     arch = _has(low, ARCH_WORDS)

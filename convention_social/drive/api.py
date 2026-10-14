@@ -19,9 +19,11 @@ PAGE_SIZE = 1000
 TIMEOUT = 60
 TOKEN_MAX_AGE = 300        # how long a token is reused before the provider is asked again
 
+SHARE_FIELDS = "ownedByMe,sharingUser(displayName),owners(displayName)"      # who shared it: a name only, never an address
 FILE_FIELDS = ("id,name,mimeType,md5Checksum,size,parents,modifiedTime,description,trashed,"
-               "thumbnailLink,hasThumbnail,driveId,"
+               "thumbnailLink,hasThumbnail,driveId," + SHARE_FIELDS + ","
                "imageMediaMetadata(width,height,rotation,time,cameraMake,cameraModel)")
+FOLDER_FIELDS = "id,name,parents,modifiedTime,driveId," + SHARE_FIELDS
 
 Transport = Callable[[str, dict, dict, bool], object]   # (url, params, headers, stream) -> response
 
@@ -115,10 +117,22 @@ class DriveReader:
                                       "supportsAllDrives": "true", "spaces": "drive"}, "files")
 
     def folders(self) -> Iterator[dict]:
-        return self.list_files(f"mimeType = '{FOLDER_MIME}' and trashed = false", "id,name,parents,modifiedTime,driveId")
+        return self.list_files(f"mimeType = '{FOLDER_MIME}' and trashed = false", FOLDER_FIELDS)
 
     def images(self) -> Iterator[dict]:
         return self.list_files("mimeType contains 'image/' and trashed = false")
+
+    def shared_with_me(self) -> Iterator[dict]:
+        """What was shared directly with this account: folders and images (2026-10-14, his brothers' galleries).
+        Drive lists only what was shared directly; what sits inside a shared folder is reached by children()."""
+        return self.list_files("sharedWithMe = true and trashed = false")
+
+    def children(self, folder_id: str) -> Iterator[dict]:
+        """The folders and images directly inside one folder (a read, like every call here)."""
+        import re
+        if not re.fullmatch(r"[\w-]+", folder_id or ""):
+            raise ValueError(f"not a Drive id: {folder_id!r}")
+        return self.list_files(f"'{folder_id}' in parents and trashed = false")
 
     def shared_drives(self) -> Iterator[dict]:
         return self._pages("/drives", {"pageSize": 100, "fields": "nextPageToken,drives(id,name)"}, "drives")

@@ -769,7 +769,7 @@ def create_app() -> FastAPI:
             where = "conv > 0" if show == "events" else ("f.clearance='cleared'" if show == "cleared" else "1=1")
             rows = db.rows(conn, f"""
                 SELECT * FROM (
-                  SELECT f.drive_id, f.name, f.path, f.clearance, f.image_count,
+                  SELECT f.drive_id, f.name, f.path, f.clearance, f.image_count, f.shared_by,
                          SUM(CASE WHEN c.is_convention=1 THEN 1 ELSE 0 END) AS conv,
                          SUM(CASE WHEN c.possible_minor=1 THEN 1 ELSE 0 END) AS minors
                   FROM drive_folders f LEFT JOIN photos p ON p.folder_id=f.drive_id AND p.trashed=0
@@ -778,7 +778,7 @@ def create_app() -> FastAPI:
                 WHERE image_count > 0 AND {where} ORDER BY conv DESC, image_count DESC LIMIT 400""")
             note = ""
             if show == "events" and not rows:
-                rows = db.rows(conn, """SELECT f.drive_id, f.name, f.path, f.clearance, f.image_count, 0 AS conv, 0 AS minors
+                rows = db.rows(conn, """SELECT f.drive_id, f.name, f.path, f.clearance, f.image_count, f.shared_by, 0 AS conv, 0 AS minors
                                         FROM drive_folders f WHERE f.image_count > 0 ORDER BY f.image_count DESC LIMIT 400""")
                 if rows:
                     note = "No folder has been recognised as event work yet, so every folder with photos is shown."
@@ -1168,8 +1168,12 @@ def create_app() -> FastAPI:
         from ..drive import oauth
         from ..library import report
         renders = sorted((config.get_config().data_root / "renders").glob("library-report-*.html"))
+        # 2026-10-14: the galleries shared with this account, by whom (a name only)
+        shared = [dict(r) for r in db.rows(conn, "SELECT name, shared_by FROM drive_folders "
+                                                 "WHERE shared_by IS NOT NULL AND parent_id IS NULL ORDER BY name")]
         return render(request, "drive.html", state=settings.get(conn, "drive.auth_state") or "missing",
-                      detail=settings.get(conn, "drive.auth_detail") or "", summary=report.summary(conn),
+                      detail=settings.get(conn, "drive.auth_detail") or "", summary=report.summary(conn), shared=shared,
+                      sharers=sorted({r["shared_by"] for r in shared}),
                       report_name=renders[-1].name if renders else "", msg=msg,
                       pending=oauth.pending_login(conn) is not None, client_set=oauth.client_config() is not None,
                       unmatched=settings.get(conn, "credits.unmatched") or "")
