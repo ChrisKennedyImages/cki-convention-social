@@ -668,7 +668,7 @@ def build(conn: Optional[sqlite3.Connection], photos: SitePhotos, *, out: Path =
 <section class="page contact"><div class="kick mono c">Contact</div><h1>Get in<br><span class="o">touch</span><b>.</b></h1>
 <p class="first">{e(t['contact_first'])}</p>
 <div class="hand"><div><div class="mono c">Email</div><a class="l" href="mailto:{e(contact_email())}">{e(contact_email())}</a></div>
-{f'<div><div class="mono c">Phone</div><a class="l" href="tel:{e(phone.replace(" ", ""))}">{e(phone)}</a></div>' if phone else ''}</div>
+{f'<div><div class="mono c">Phone</div><a class="l" href="{theme.tel_href(phone)}">{e(phone)}</a></div>' if phone else ''}</div>
 <p class="g" style="max-width:640px;margin-top:30px">{e(t['contact_p'])}</p>
 <p style="margin-top:30px"><a class="btn fill" href="/book/">Request a quote <span class="arr">&#8599;</span></a></p>
 <p class="mono g" style="margin-top:30px">{e(AREA_LINE)} <a href="/privacy/" class="c">Privacy and photo removal</a>.</p></section>""")

@@ -273,6 +273,13 @@ ICONS = {
 }
 
 
+def tel_href(phone: str) -> str:
+    """The tappable form of the number: digits and a leading plus only. The live site of 2026-10-14 carried
+    tel:(301)523-0841, the number as typed on the Keys page with its spaces removed; a dialer wants tel:3015230841."""
+    import re
+    return "tel:" + re.sub(r"(?!^\+)[^0-9]", "", phone.strip())
+
+
 def _current(href: str, path: str) -> str:
     """aria-current on the link of the page you are on: a section link counts for the home page, and the Coverage
     link counts on every coverage page under it (2026-10-14)."""
@@ -300,7 +307,7 @@ def shell(*, title: str, description: str, body: str, mark_svg: str, brand: str,
     nav = "".join(f'<a href="{h}"{_current(h, path)}>{label}</a>' for h, label in links)
     tabs = [(work, "work", "Work", ""), ("/about/", "about", "About", ""), ("/contact/", "contact", "Contact", ""), ("/book/", "quote", "Quote", " q")]
     tabbar = "".join(f'<a href="{h}" class="{icon}{cls}"{_current(h, path)}>{ICONS[icon]}<span>{label}</span></a>' for h, icon, label, cls in tabs)
-    tel = (f'<a class="tel mono" href="tel:{phone.replace(" ", "")}" aria-label="Call {phone}">{ICONS["phone"]}<span>{phone}</span></a>'
+    tel = (f'<a class="tel mono" href="{tel_href(phone)}" aria-label="Call {phone}">{ICONS["phone"]}<span>{phone}</span></a>'
            if phone else "")
     stamp = '<div class="preview mono">Preview, not live</div>' if preview else ""
     robots = '<meta name="robots" content="noindex,nofollow">' if preview or noindex else ""
@@ -311,7 +318,7 @@ def shell(*, title: str, description: str, body: str, mark_svg: str, brand: str,
     pre = f'<link rel="preload" as="image" imagesrcset="{preload}" imagesizes="100vw">' if preload else ""
     cover_links = "".join(f'<li><a href="/coverage/{k}/">{label}</a></li>' for k, label in coverage)
     social_links = "".join(f'<li><a href="{url}" rel="me noopener">{label}</a></li>' for label, url in socials)
-    phone_li = f'<li><a href="tel:{phone.replace(" ", "")}">{phone}</a></li>' if phone else ""
+    phone_li = f'<li><a href="{tel_href(phone)}">{phone}</a></li>' if phone else ""
     from datetime import date
     return f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>{title}</title>

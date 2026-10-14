@@ -532,6 +532,18 @@ class Contact(SizesCase):
             self.assertIn("</svg><span>202 555 0100</span></a>", text, rel)
             self.assertIn('<li><a href="tel:2025550100">202 555 0100</a></li>', text, rel)
         self.assertEqual(blocks_of(self.page(out, "index.html"))[0]["telephone"], "202 555 0100")
+        # the number as Chris typed it on the Keys page (2026-10-14): the words keep its brackets and dash, the links are digits
+        for raw, href in (("(301) 523-0841", "tel:3015230841"), ("+1 301 523 0841", "tel:+13015230841"), ("301.523.0841", "tel:3015230841")):
+            self.assertEqual(theme.tel_href(raw), href, raw)
+        os.environ["BRAND_PHONE"] = "(301) 523-0841"
+        config.reset()
+        out = self.built()
+        self.assertIn('<div class="mono c">Phone</div><a class="l" href="tel:3015230841">(301) 523-0841</a>', self.page(out, "contact/index.html"))
+        home = self.page(out, "index.html")
+        self.assertIn('<a class="tel mono" href="tel:3015230841" aria-label="Call (301) 523-0841">', home)
+        self.assertIn('<li><a href="tel:3015230841">(301) 523-0841</a></li>', home)
+        self.assertEqual(blocks_of(home)[0]["telephone"], "(301) 523-0841")
+        self.assertNotIn("tel:(", home)
         css = theme.CSS
         self.assertIn(".contact .hand{display:grid;grid-template-columns:1fr 1fr", css)
         self.assertIn(".contact .hand{grid-template-columns:1fr}", css[css.index("@media (max-width:760px)"):])
