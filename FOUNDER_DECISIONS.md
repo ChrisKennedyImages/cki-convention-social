@@ -833,6 +833,14 @@ Drive, shared to the account); every shared folder with photos is taken in.
 - In passing: a photo loose at the top of My Drive no longer gets a "(new
   folder)" stub row on a changes run (the root ids are remembered).
 
+## 2026-10-14: no picture follows the mouse
+
+Chris, on the site from his computer: "It just follows my mouse (that
+picture)." The coverage peek (a photo that trailed the cursor while the
+mouse was over the Coverage list) is removed from the home page, its style
+and its script. The cursor ring and the hero's web are the only things that
+answer the pointer; nothing else on the site moves with the mouse.
+
 ## Standing rules from the brief
 
 - CPAC, the ACU and their affiliates are never contacted, by code

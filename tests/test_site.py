@@ -174,6 +174,19 @@ class Site(IsolatedCase):
         from convention_social.seo import site_check
         self.assertIn("/about/", site_check.HTML_PATHS)
 
+    def test_nothing_but_the_cursor_ring_follows_the_pointer(self):
+        """Chris, 2026-10-14: "It just follows my mouse (that picture)". The coverage peek, a photo that trailed the
+        cursor over the Coverage list on a desktop, is gone; the cursor ring and the hero's web are the only things
+        that answer the pointer."""
+        from convention_social.site import theme
+        home = (self.built() / "index.html").read_text()
+        self.assertNotIn('class="peek"', home)
+        self.assertNotIn("data-img=", home)
+        self.assertIn('class="list rv"', home, "the Coverage list itself stays")
+        self.assertNotIn("peek", theme.JS)
+        self.assertNotIn(".peek", theme.CSS)
+        self.assertEqual(theme.JS.count("mousemove"), 2, "the cursor ring and the hero web, nothing else")
+
     def test_no_banned_copy_on_any_page(self):
         out = self.built()
         for page in out.rglob("*.html"):
