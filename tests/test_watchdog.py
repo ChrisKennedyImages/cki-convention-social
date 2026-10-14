@@ -206,7 +206,8 @@ class Checks(WatchCase):
         self.assertEqual(db.one(self.conn, "SELECT COUNT(*) n FROM errors WHERE notified_at IS NULL")["n"], 0)
 
     def test_every_agent_on_a_schedule_has_a_gap(self):
-        self.assertEqual(set(watchdog.MAX_GAP), set(watchdog.AGENTS) - {"dashboard", "art_director"})
+        # the phone agent runs when a photo is sent, not on a schedule (agents/phone.py): no gap to watch
+        self.assertEqual(set(watchdog.MAX_GAP), set(watchdog.AGENTS) - {"dashboard", "art_director", "phone"})
 
     def test_stuck_scheduled_post_alerts(self):
         qid = db.insert(self.conn, "content_queue", kind="photo", photo_ids="[]", targets='["instagram"]', caption='{"instagram":"x"}',

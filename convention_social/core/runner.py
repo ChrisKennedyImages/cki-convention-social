@@ -116,14 +116,17 @@ def run(agent: str, fn: Callable[[Context], Optional[str]], *, force_dry_run: Op
         lock.release()
 
 
-def start_agent(name: str) -> None:
+def start_agent(name: str, *, wait: bool = False) -> None:
     """One run now, exactly as its schedule would start it: its own lock, its own dry-run switch, its own
-    gates. The caller (the dashboard's Run now, the watchdog's draft window) only starts it and returns."""
+    gates. The caller (the dashboard's Run now, the watchdog's draft window) only starts it and returns.
+    `wait`: when another copy holds the lock, the run waits its turn instead of giving up (`ccs run --wait`),
+    so a photo sent from the phone while one is being drafted is drafted next, never lost."""
     cfg = config.get_config()
     cfg.ensure_dirs()
     with open(cfg.data_root / "logs" / f"{name}.manual.log", "ab") as log:
-        subprocess.Popen([sys.executable, "-m", "convention_social.cli", "run", name], cwd=str(config.REPO_ROOT),
-                         stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
+        subprocess.Popen([sys.executable, "-m", "convention_social.cli", "run", name] + (["--wait"] if wait else []),
+                         cwd=str(config.REPO_ROOT), stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT,
+                         start_new_session=True)
 
 
 def main_for(agent: str, fn: Callable[[Context], Optional[str]]) -> None:

@@ -249,8 +249,9 @@ def full_inventory(conn: sqlite3.Connection, reader: DriveReader) -> ScanStats:
             _ensure_parent_known(conn, parent, now)
             upsert_photo(conn, f, now)
             stats.images += 1
-        # anything not seen in this pass is gone from Drive (or now RAW-only): mark it trashed
-        cur = conn.execute("UPDATE photos SET trashed=1 WHERE last_seen_at < ? AND trashed=0", (now,))
+        # anything of Drive's not seen in this pass is gone from Drive (or now RAW-only): mark it trashed; a photo
+        # sent from the phone (agents/phone.py, source 'phone') was never in Drive and is never swept here
+        cur = conn.execute("UPDATE photos SET trashed=1 WHERE last_seen_at < ? AND trashed=0 AND source='drive'", (now,))
         stats.trashed = cur.rowcount
         refresh_counts(conn)
         settings.set(conn, CHANGES_TOKEN_KEY, token)

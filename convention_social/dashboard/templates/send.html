@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block body %}
+<h1>Send a photo</h1>
+{% if msg %}<div class="msg{{ ' bad' if msg.startswith('Not kept') else '' }}">{{ msg }}</div>{% endif %}
+<div class="card">
+  <div class="muted">A photo from your phone while you are shooting becomes a draft post for today within minutes: sorted, looked at by Claude (anyone who may be under 18, a readable plate, a wedding stop it and this page says so), captioned with your line, designed, and sent to your phone with Approve. Nothing posts until you approve it; approved, it goes out as soon as Buffer takes it, not at the day's usual time. The photo stays on the Mini, never in Drive.</div>
+  {% if lane_dry %}<div class="msg">The content lane is in dry run (Agents page): Claude does not look at the photo and the captions are the template's, so the draft cannot post until the lane is live.</div>{% endif %}
+  <form method="post" action="/send" enctype="multipart/form-data" style="margin-top:10px">
+    <label>The photo (the original from the camera roll, or take one now)</label><input type="file" name="file" accept="image/*" required>
+    <label>One line about it (optional)</label><input type="text" name="note" maxlength="140" placeholder="What the room was, in a few words. Never a name, never which event.">
+    <div class="row" style="margin-top:10px"><button class="primary" type="submit">Send</button></div>
+  </form>
+</div>
+{% if sends %}<h2>Sent</h2>
+{% for s in sends %}
+<div class="card" id="s{{ s.id }}">
+  <div class="row">
+    <img src="/media/thumb/{{ s.photo_id }}" alt="" style="width:96px;height:96px;object-fit:cover;border-radius:8px">
+    <div>
+      <div><span class="badge {{ 'ok' if s.status == 'drafted' else ('blocked' if s.status == 'failed' else '') }}">{{ s.status }}</span> <span class="muted">{{ s.created_at[:10] }} {{ s.created_at[11:16] }} UTC</span></div>
+      {% if s.note %}<div class="caption" style="margin-top:4px">{{ s.note }}</div>{% endif %}
+      <div class="muted send-line" style="margin-top:4px">{{ s.line }}{% if s.status == 'drafted' %} <a href="/queue/{{ s.queue_id }}">Open the draft</a>{% endif %}</div>
+    </div>
+  </div>
+</div>
+{% endfor %}{% endif %}
+{% if waiting %}<script>setTimeout(function(){location.replace('/send')}, 20000)</script>{% endif %}
+{% endblock %}

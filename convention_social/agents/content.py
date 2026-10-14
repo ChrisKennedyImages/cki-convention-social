@@ -455,7 +455,34 @@ def draft_one(ctx: runner.Context, fetch: Callable[[dict], bytes], *, now: Optio
     asked = design
     if len(chosen) < NEEDS[design]:
         design, chosen = "single", chosen[:1]
+    qid, art, line = make_draft(ctx, day, chosen, design, want=want, kind_used=kind_used, asked=asked, track=track,
+                                drafter=drafter, art_client=art_client, why=use_why(chosen[0][0], len(pool)))
+    if art.get("verdict") == "reject":
+        # the photos do not hold up: they sit out like used ones (make_draft kept the row), and this run drafts again
+        if _depth + 1 >= MAX_TRIES:
+            return f"{line}; no photo passed for {day} after {MAX_TRIES} tries"
+        return line + "; " + draft_one(ctx, fetch, now=now, check_client=check_client, drafter=drafter,
+                                       art_client=art_client, _depth=_depth + 1)
+    return line
+
+
+def photo_file(cfg, row) -> Path:
+    """Where a chosen photo's full-size copy lives: the file a phone send kept (agents/phone.py, its own file for
+    good), else the cache of the Drive original (photos/<drive id>.img, swept after a week)."""
+    if (row.get("source") or "drive") != "drive" and row.get("local_path"):
+        return Path(row["local_path"])
+    return cfg.data_root / "photos" / f"{row['drive_id']}.img"
+
+
+def make_draft(ctx: runner.Context, day: date, chosen: list[tuple[dict, bytes]], design: str, *, want: str, kind_used: str,
+               asked: str, track, drafter=None, art_client=None, why: str = "", note: str = "", extra_meta: Optional[dict] = None,
+               ping: Optional[tuple[str, str]] = None) -> tuple[int, dict, str]:
+    """One draft from photos already chosen and checked: the captions, the design, the art director, the queue row and
+    the ping. (queue id, the art director's verdict, the run line). The daily draft (draft_one) and a photo sent from
+    the phone (agents/phone.py) both end here. A turned-back draft is kept as a rejected row and said in the line."""
     for row, data in chosen:
+        if (row.get("source") or "drive") != "drive":
+            continue                        # a phone photo's own file is its copy for good; never the cache that is swept
         cache = ctx.cfg.data_root / "photos" / f"{row['drive_id']}.img"
         cache.parent.mkdir(parents=True, exist_ok=True)
         if not cache.exists():
@@ -464,14 +491,14 @@ def draft_one(ctx: runner.Context, fetch: Callable[[dict], bytes], *, now: Optio
     hero = chosen[0][0]
     facts = claude.PostFacts(brand_name=ctx.cfg.brand_name, event_kind=hero.get("event_kind") or "unknown",
                              shot_type=hero.get("shot_type") or "", subject=hero["subject"],
-                             quote_link=f"{ctx.cfg.brand_domain}/book" if ctx.cfg.brand_domain else "")
+                             quote_link=f"{ctx.cfg.brand_domain}/book" if ctx.cfg.brand_domain else "", note=note)
     drafter = drafter or (claude.TemplateDrafter() if ctx.dry_run else claude.get_drafter(ctx.conn, agent=ctx.agent))
     known_names = names.public_names(ctx.conn)
     plan = seo_plan.plan_for(subject=hero["subject"], event_kind=hero.get("event_kind"), shot_type=hero.get("shot_type"),
                              design=design)
     facts.plan = plan
-    captions, alt, seo_record, writer = write_captions(drafter, facts, ctx.cfg.data_root / "photos" / f"{hero['drive_id']}.img",
-                                                       known_names, conn=ctx.conn, agent=ctx.agent)
+    captions, alt, seo_record, writer = write_captions(drafter, facts, photo_file(ctx.cfg, hero), known_names, conn=ctx.conn,
+                                                       agent=ctx.agent)
     reports = {n: copy_rules.check(t, names=known_names, social=True).as_dict() for n, t in captions.items()}
     images = {r["id"]: Image.open(io.BytesIO(d)) for r, d in chosen}
     out_dir = ctx.cfg.data_root / "renders" / "posts" / day.isoformat()
@@ -484,23 +511,20 @@ def draft_one(ctx: runner.Context, fetch: Callable[[dict], bytes], *, now: Optio
         design = "carousel"
     photo_ids = [r["id"] for r, _ in chosen]
     if art.get("verdict") == "reject":
-        # the photos do not hold up: they sit out like used ones, and the next run drafts again
+        # the photos do not hold up: they sit out like used ones
         now_r = db.utcnow()
         qid_r = db.insert(ctx.conn, "content_queue", kind="photo", photo_ids=json.dumps(photo_ids), targets=json.dumps(list(TARGETS)),
-                  caption=json.dumps(captions), render_paths=json.dumps(render_paths), status="rejected",
-                  last_error=f"Art director: {art.get('notes', '')}",
-                  rule_report=json.dumps({"for_day": "turned back", "art": art, "subject": hero["subject"], "design": design}),
-                  created_at=now_r, updated_at=now_r)
+                          caption=json.dumps(captions), render_paths=json.dumps(render_paths), status="rejected",
+                          last_error=f"Art director: {art.get('notes', '')}",
+                          rule_report=json.dumps({"for_day": "turned back", "art": art, "subject": hero["subject"], "design": design,
+                                                  **(extra_meta or {})}),
+                          created_at=now_r, updated_at=now_r)
         report.record_use(ctx.conn, "post", photo_ids, ref=f"post:{qid_r}", now=now_r)
-        note = f"art director turned back photo {hero['id']}: {art.get('notes', '')}"
-        if _depth + 1 >= MAX_TRIES:
-            return f"{note}; no photo passed for {day} after {MAX_TRIES} tries"
-        return note + "; " + draft_one(ctx, fetch, now=now, check_client=check_client, drafter=drafter,
-                                       art_client=art_client, _depth=_depth + 1)
+        return qid_r, art, f"art director turned back photo {hero['id']}: {art.get('notes', '')}"
     people = [c for r, _ in chosen for c in (r["credit"] or "").split()]
     meta = {"for_day": day.isoformat(), "subject": hero["subject"], "event": hero.get("convention_name") or "",
             "people": people, "model": writer, "rules": reports, "wanted": want, "art": art, "design": design,
-            "design_wanted": asked, "seo": seo_record, "alt_text": alt}
+            "design_wanted": asked, "seo": seo_record, "alt_text": alt, **(extra_meta or {})}
     if design == "reel":
         meta.update(reel=reel_kind(day), music=track.name)
     if reel_failed:
@@ -514,15 +538,17 @@ def draft_one(ctx: runner.Context, fetch: Callable[[dict], bytes], *, now: Optio
     report.record_use(ctx.conn, "post", photo_ids, ref=f"post:{qid}", now=now_s)
     # the ping that opens the draft (Chris, 2026-10-11: "I haven't received any ntfy"); 2026-10-13: it carries the
     # card, and an Approve button when the art director passed the draft (core/approve_token: signed, single use)
-    notify.push(f"{ctx.cfg.brand_name}: a post to approve", f"{design} with {len(photo_ids)} photo(s) for {day:%A}. Tap to see it.",
-                dry_run=ctx.dry_run, priority="default", click=notify.link(f"/queue/{qid}"), conn=ctx.conn, agent=ctx.agent,
-                **ping_extras(ctx.conn, {"id": qid, "updated_at": now_s}, art))
+    title, message = ping or (f"{ctx.cfg.brand_name}: a post to approve",
+                              f"{design} with {len(photo_ids)} photo(s) for {day:%A}. Tap to see it.")
+    notify.push(title, message, dry_run=ctx.dry_run, priority="default", click=notify.link(f"/queue/{qid}"), conn=ctx.conn,
+                agent=ctx.agent, **ping_extras(ctx.conn, {"id": qid, "updated_at": now_s}, art))
     fell = (f", the reel could not be made ({reel_failed[0]})" if reel_failed
             else f", {asked} wanted but too few photos passed" if asked != design else "")
-    return (f"{'DRY RUN ' if ctx.dry_run else ''}drafted post #{qid} for {day} ({kind_used}"
+    line = (f"{'DRY RUN ' if ctx.dry_run else ''}drafted post #{qid} for {day} ({kind_used}"
             f"{', instead of ' + want if kind_used != want else ''}): {design} with {len(photo_ids)} photo(s){fell}, "
-            f"photo {hero['id']} first ({use_why(hero, len(pool))}), captions by {writer} for \"{plan.primary}\", "
+            f"photo {hero['id']} first{' (' + why + ')' if why else ''}, captions by {writer} for \"{plan.primary}\", "
             f"art director: {art.get('verdict')}")
+    return qid, art, line
 
 
 def ping_extras(conn: sqlite3.Connection, row, art: Optional[dict]) -> dict:
@@ -532,6 +558,14 @@ def ping_extras(conn: sqlite3.Connection, row, art: Optional[dict]) -> dict:
     passed = (art or {}).get("verdict") == "pass"
     return {"actions": notify.approve_actions(row["id"], token) if passed else notify.open_action(row["id"]),
             "attach": notify.card_link(row["id"], token), "filename": f"post-{row['id']}.jpg"}
+
+
+def read_photo(cfg, row, download: Callable[[str], bytes]) -> bytes:
+    """The full-size photo: the file a phone send kept, else the cache of the Drive original, else Drive."""
+    own = photo_file(cfg, row)
+    if own.exists():
+        return own.read_bytes()
+    return download(row["drive_id"])
 
 
 def run(ctx: runner.Context, fetch: Optional[Callable[[dict], bytes]] = None) -> str:
@@ -547,8 +581,7 @@ def run(ctx: runner.Context, fetch: Optional[Callable[[dict], bytes]] = None) ->
             summary = f"not signed in: {e}"          # a no-draft morning like any other: said below, tried again
         else:
             def fetch(row):
-                cached = ctx.cfg.data_root / "photos" / f"{row['drive_id']}.img"
-                return cached.read_bytes() if cached.exists() else reader.download(row["drive_id"])
+                return read_photo(ctx.cfg, row, reader.download)
     if summary is None:
         mended = 0 if ctx.dry_run else mend_queue(ctx.conn, agent=ctx.agent)
         summary = draft_one(ctx, fetch)

@@ -115,6 +115,19 @@ def record_once(conn, agent: str, kind: str, message: str) -> None:
     runner.record_error(conn, agent, kind, message)
 
 
+ASAP_AFTER = pacing.LEAD + timedelta(minutes=5)      # the first time Buffer takes: the lead the slots keep, and a little
+
+
+def asap_slot(ctx: runner.Context, row, now: Optional[datetime] = None) -> Optional[str]:
+    """A photo sent from the phone (agents/phone.py, `rule_report.asap`) goes out as soon as he approves it: the next
+    time Buffer takes, never the day's usual slot. None for every other post (the planner finds its day)."""
+    if not _json(row["rule_report"], {}).get("asap"):
+        return None
+    from zoneinfo import ZoneInfo
+    local = (now or datetime.now(timezone.utc)).astimezone(ZoneInfo(ctx.cfg.timezone)) + ASAP_AFTER
+    return pacing.slot_value(local)
+
+
 def for_day_of(row) -> Optional[date]:
     """The day the content agent drafted the post for (rule_report for_day), or None."""
     meta = _json(row["rule_report"], {}) if "rule_report" in row.keys() else {}
@@ -489,8 +502,8 @@ def publish_ready(ctx: runner.Context, client: Optional[BufferClient] = None, up
             continue
         if skipped:
             record_once(ctx.conn, ctx.agent, "no_channel", f"post {row['id']}: {skip_note}")
-        when = pacing.plan(ctx.conn, list(channels), row["scheduled_for"], now, ctx.cfg, include_dry=not live,
-                           not_before=for_day_of(row))
+        when = pacing.plan(ctx.conn, list(channels), row["scheduled_for"] or asap_slot(ctx, row, now), now, ctx.cfg,
+                           include_dry=not live, not_before=for_day_of(row))
         no_day = [n for n, v in when.items() if v is None]
         if no_day:
             why = NO_DAY.format(days=pacing.HORIZON_DAYS, nets=", ".join(no_day))
