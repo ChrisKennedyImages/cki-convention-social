@@ -1,20 +1,78 @@
 {
-  "_about": "What Event Caliber offers. Chris owns this file. No prices here, ever: every event is quoted on its own.",
+  "_about": "What Event Caliber offers. Chris owns this file. No prices here, ever: every event is quoted on its own. Each coverage item carries title, first and about (2026-10-14): its page's title before the place, its plain first sentence, and its paragraph; every sentence passes the copy rules at build.",
   "company": "Event Caliber",
   "legal_name": "CKI, LLC",
   "tagline": "Event and convention photography",
-  "event_kinds": ["Business, corporate and association conferences", "Conventions and trade shows", "Galas, receptions and award dinners"],
+  "event_kinds": [
+    "Business, corporate and association conferences",
+    "Conventions and trade shows",
+    "Galas, receptions and award dinners"
+  ],
   "coverage": [
-    {"key": "backstage", "label": "Backstage"},
-    {"key": "green_room", "label": "Green rooms"},
-    {"key": "breakouts", "label": "Breakouts and panels"},
-    {"key": "stage", "label": "Main stage and keynotes"},
-    {"key": "evening_events", "label": "Before, during and evening events"},
-    {"key": "dinners", "label": "Dinners and receptions"},
-    {"key": "portraits", "label": "Portraits",
-     "note": "Backstage, for the speakers and the people the event is about. Lit on site with our own lights and color gels, often lighting we build for the room, and finished in the camera."},
-    {"key": "exhibition_hall", "label": "Exhibition halls"},
-    {"key": "on_site_delivery", "label": "Instant delivery during the event"}
+    {
+      "key": "backstage",
+      "label": "Backstage",
+      "title": "Backstage event photography",
+      "first": "We photograph the minutes before the doors open: the wings, the last look at the notes, the crew at work.",
+      "about": "Backstage is where the event is still being made. We work quietly, with the light that is there and the lights we bring, so the speakers and the crew are seen as they are, before the room fills. These are the photographs organizers reach for afterward, when they tell the story of the day."
+    },
+    {
+      "key": "green_room",
+      "label": "Green rooms",
+      "title": "Green room photography",
+      "first": "The green room is where speakers wait, prepare and meet. We photograph it with care and without getting in the way.",
+      "about": "A green room is a working space. We read the room before we raise a camera, ask before we photograph anyone resting, and keep the images to what the organizer can use: speakers preparing, hosts briefing, the quiet before a keynote."
+    },
+    {
+      "key": "breakouts",
+      "label": "Breakouts and panels",
+      "title": "Breakout and panel photography",
+      "first": "Every breakout and panel is photographed the way the main stage is: the speakers, the room and the exchange between them.",
+      "about": "Breakouts run at the same time in different rooms, so the day is planned with you around the schedule. We move between rooms on that plan, and each session comes back with its speakers, the slides where they matter, the audience and the questions."
+    },
+    {
+      "key": "stage",
+      "label": "Main stage and keynotes",
+      "title": "Main stage and keynote photography",
+      "first": "The keynote is the photograph most events need first. We make it from the room, with the stage, the screens and the audience in one frame.",
+      "about": "We photograph the main stage from several positions: wide from the back for the scale of the room, close from the pit for the speaker, and from the side for the audience reacting. Stage lighting is read as it is, never flattened, so the photographs look the way the event felt."
+    },
+    {
+      "key": "evening_events",
+      "label": "Before, during and evening events",
+      "title": "Evening event photography",
+      "first": "Receptions, award evenings and after parties are photographed with the same care as the daytime sessions, in low light, without flash in the faces.",
+      "about": "Evenings are where people relax and talk. We work with the light where it is good and add our own where it is not, so the photographs are warm rather than harsh and the conversations go on."
+    },
+    {
+      "key": "dinners",
+      "label": "Dinners and receptions",
+      "title": "Dinner and reception photography",
+      "first": "Dinners and receptions: the room before the guests arrive, the tables, the toasts, the awards and the people meeting.",
+      "about": "We photograph the room set before the doors open, then the arrivals, the speeches and the awards from positions agreed with the planner, so nothing on the program is missed and nothing on the floor is disturbed."
+    },
+    {
+      "key": "portraits",
+      "label": "Portraits",
+      "note": "Backstage, for the speakers and the people the event is about. Lit on site with our own lights and color gels, often lighting we build for the room, and finished in the camera.",
+      "title": "Speaker and guest portraits on site",
+      "first": "Portraits are made backstage, for the speakers and the people the event is about, lit on site with our own lights and finished in the camera.",
+      "about": "A short session fits between sessions. We bring the lights and the color gels, often building the lighting for the room, and the portraits are finished in the camera, ready for the program, the press and the people in them."
+    },
+    {
+      "key": "exhibition_hall",
+      "label": "Exhibition halls",
+      "title": "Exhibition hall photography",
+      "first": "The exhibition floor, the booths and the people at them, photographed for the organizer and for the exhibitors.",
+      "about": "Exhibitors want their booth with people at it; organizers want the hall full and alive. We photograph both in a pass through the hall planned with you, and the images are sorted by booth when the exhibitors need them."
+    },
+    {
+      "key": "on_site_delivery",
+      "label": "Instant delivery during the event",
+      "title": "Instant photo delivery during the event",
+      "first": "Photos can reach the people in them while the event is still on, from every photographer in the room.",
+      "about": "It is one part of how we work, never the whole of it. Selects go out during the event to the people you choose, and the finished set follows after. The photography is the work."
+    }
   ],
   "quote_questions": [
     "Which days and hours you need covered",

@@ -47,6 +47,8 @@ FAILED_KEY = "site.deploy_failed_for"                # JSON {commit, tries, last
 DEPLOYED_AT_KEY = "site.deployed_at"                 # when the last successful build STARTED: the photos it holds are as of then
 PHOTOS_CHANGED_KEY = "site.photos_changed_at"        # stamped by every Use / Don't use / folder decision / hero pick (2026-10-13)
 TAG_CHANGED_KEY = "site.tag_changed_at"              # the Search Console value on the Keys page changed (2026-10-13)
+KEYS_CHANGED_KEY = "site.keys_changed_at"            # the phone number or a social address on the Keys page changed (2026-10-14)
+SITE_KEYS = ("BRAND_PHONE", "SOCIAL_INSTAGRAM", "SOCIAL_FACEBOOK", "SOCIAL_PINTEREST")   # Keys page values the site shows
 PHOTOS_SETTLE = 10 * 60                              # seconds of quiet after the last photo change before the site publishes itself
 MAX_TRIES = 3                                        # per commit, by itself; Publish on the Photos page always tries
 RETRY_AFTER = 30 * 60                                # seconds between tries
@@ -54,7 +56,8 @@ BUILD_TIMEOUT = 20 * 60
 DEPLOY_TIMEOUT = 10 * 60
 CHECK_WAIT = 5 * 60
 # a change under these paths changes the site; anything else does not need a deploy
-SITE_PATHS = ("convention_social/site/", "site/", "worker/", "offer.json", "wrangler.jsonc")
+SITE_PATHS = ("convention_social/site/", "site/", "worker/", "offer.json", "wrangler.jsonc",
+              "convention_social/seo/markup.py", "convention_social/seo/photo_text.py", "convention_social/offer.py")
 
 
 def live_config(repo: Optional[Path] = None) -> Path:
@@ -189,7 +192,8 @@ def photos_pending(conn, now: Optional[datetime] = None) -> tuple[bool, str]:
     the last build's start, and PHOTOS_SETTLE of quiet since (Chris, 2026-10-13: the site follows the photos
     by itself; Publish stays for the impatient). (False, "") when the site already holds the photos."""
     stamps = [(_stamp(settings.get(conn, PHOTOS_CHANGED_KEY)), "the approved photos changed at"),
-              (_stamp(settings.get(conn, TAG_CHANGED_KEY)), "the Search Console tag changed at")]
+              (_stamp(settings.get(conn, TAG_CHANGED_KEY)), "the Search Console tag changed at"),
+              (_stamp(settings.get(conn, KEYS_CHANGED_KEY)), "the website's contact details on the Keys page changed at")]
     changed, what = max(((t, w) for t, w in stamps if t is not None), default=(None, ""), key=lambda tw: tw[0])
     built = _stamp(settings.get(conn, DEPLOYED_AT_KEY))
     if changed is None or (built is not None and changed <= built):

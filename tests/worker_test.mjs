@@ -189,4 +189,13 @@ ok(r.status === 200 && (await r.json()).sent === true && pushes.length === 4 && 
 r = await worker.fetch(new Request(`${base}/api/heartbeat/test`, { method: "POST" }), env);
 ok(r.status === 403, "the test needs the token too");
 Date.now = realNow;
+
+// www. is the same site (2026-10-14): one address for the search engines, so www. answers 301 to the apex for good,
+// path and query kept, before any route; the apex itself serves the site
+r = await worker.fetch(new Request("https://www.eventcaliber.com/about/?x=1"), env);
+ok(r.status === 301 && r.headers.get("location") === "https://eventcaliber.com/about/?x=1", "www. answers 301 to the apex, path and query kept");
+r = await worker.fetch(new Request("https://www.eventcaliber.com/api/availability"), env);
+ok(r.status === 301 && r.headers.get("location") === "https://eventcaliber.com/api/availability", "the API too, before any route");
+r = await worker.fetch(new Request(`${base}/about/`), env);
+ok(r.status === 200 && (await r.text()) === "site", "the apex serves the site");
 console.log(`worker: ${checks} checks passed`);

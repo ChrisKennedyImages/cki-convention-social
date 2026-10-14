@@ -18,9 +18,10 @@ import xml.etree.ElementTree as ET
 from html.parser import HTMLParser
 from typing import Callable, Optional
 
+from .. import offer
 from ..core import config, db, runner
 
-HTML_PATHS = ("/", "/about/", "/book/", "/availability/", "/privacy/")
+HTML_PATHS = offer.public_pages()          # every public page (2026-10-14): the coverage pages and Contact included
 PATHS = HTML_PATHS + ("/sitemap.xml", "/robots.txt")
 USER_AGENT = "cki-convention-social/0.1 (weekly site check)"
 TIMEOUT = 20

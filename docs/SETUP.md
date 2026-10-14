@@ -193,6 +193,17 @@ The Scout searches only where you tell it: set `SCOUT_REGION` in `.env` in
 plain words (for example "Washington DC, Baltimore and Northern Virginia").
 Empty means it does not search.
 
+### 8c. The phone number and the social links on the site: the Keys page
+
+Dashboard, Keys, **Website contact** (2026-10-14): the phone number and the
+Instagram, Facebook and Pinterest addresses. Each one is blank until you fill
+it in, and a blank one shows nowhere. With a number set it is tappable at the
+top of every page on phones, on the Contact page, in the footer and in the
+business details search engines read; the social addresses go in the footer
+(https addresses only). Saving any of them republishes the site by itself
+within ten minutes, like a photo change; the Website card on the Photos page
+says when it went. Nothing else is needed: no terminal, no Publish tap.
+
 ## 8b. Ollama on the Mini (already installed)
 
 The scanner uses the first vision model Ollama has. If it has none:

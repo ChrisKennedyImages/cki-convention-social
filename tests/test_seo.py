@@ -410,11 +410,13 @@ class FakeSite:
 
 class Agent(SeoCase):
     def test_dry_run_uses_the_template_and_checks_nothing(self):
+        """2026-10-14: eighteen addresses (sixteen pages, the coverage pages and Contact among them, plus the sitemap
+        and robots.txt)."""
         pid = self.photo()
         fake, site = FakeClaude(), FakeSite(pages())
         summary = seo_agent.run(self.ctx(dry_run=True), client=fake, transport=site)
         self.assertTrue(summary.startswith("DRY RUN"))
-        self.assertIn("would GET 7 pages on https://eventcaliber.com", summary)
+        self.assertIn("would GET 18 pages on https://eventcaliber.com", summary)
         self.assertEqual(fake.calls, [])
         self.assertEqual(site.calls, [])
         self.assertEqual(self.spent(), 0)
@@ -422,14 +424,15 @@ class Agent(SeoCase):
         self.assertEqual(db.one(self.conn, "SELECT COUNT(*) n FROM site_checks")["n"], 0)
 
     def test_live_site_check_records_every_page_and_an_error_for_each_failure(self):
+        """2026-10-14: eighteen addresses are read (sixteen pages, the sitemap and robots.txt); one row each."""
         bad_privacy = ('<html><head><title>Privacy</title><meta name="description" content="d"></head>'
                        '<body><p>no heading</p><img src="/x.jpg"></body></html>')
         site = FakeSite(pages(**{"/privacy/": (200, bad_privacy), "/sitemap.xml": (404, "nope")}))
         summary = seo_agent.run(self.ctx(dry_run=False), client=FakeClaude(), transport=site)
-        self.assertIn("site check: 5 of 7 pages ok", summary)
+        self.assertIn("site check: 16 of 18 pages ok", summary)
         self.assertEqual(site.calls, [f"{BASE}{p}" for p in site_check.PATHS])
         rows = {r["path"]: r for r in site_check.latest(self.conn)}
-        self.assertEqual(len(rows), 7)
+        self.assertEqual(len(rows), 18)
         self.assertEqual(rows["/"]["ok"], 1)
         self.assertEqual((rows["/"]["title_ok"], rows["/"]["description_ok"], rows["/"]["h1_ok"], rows["/"]["alt_ok"]), (1, 1, 1, 1))
         self.assertEqual((rows["/privacy/"]["ok"], rows["/privacy/"]["h1_ok"], rows["/privacy/"]["alt_ok"]), (0, 0, 0))
@@ -452,14 +455,15 @@ class Agent(SeoCase):
         self.assertIn("blocks the whole site (Disallow: /)", by["/robots.txt"]["problems"])
 
     def test_the_real_site_build_passes_the_check(self):
-        """At the consumer: the pages site/build.py writes, served as the Worker would serve them."""
+        """At the consumer: the pages site/build.py writes, served as the Worker would serve them. 2026-10-14: all
+        sixteen pages (the coverage pages and Contact among them), so eighteen addresses with the sitemap and robots."""
         out = build.build(None, build.SitePhotos(), out=self.root / "dist", preview=False)
         table = {f"{BASE}{p}": (200, (out / (p.strip("/") + "/index.html" if p != "/" else "index.html")).read_text())
                  for p in site_check.HTML_PATHS}
         table[f"{BASE}/sitemap.xml"] = (200, seo.sitemap_xml(BASE, seo.DEFAULT_PAGES))
         table[f"{BASE}/robots.txt"] = (200, seo.robots_txt(BASE))
         res = site_check.run_check(self.conn, transport=FakeSite(table))
-        self.assertEqual(res["checked"], 7)
+        self.assertEqual(res["checked"], 18)
         self.assertEqual([(r["path"], r["problems"]) for r in res["results"] if not r["ok"]], [])
         preview = build.build(None, build.SitePhotos(), out=self.root / "preview", preview=True)
         self.assertIn("noindex", " ".join(site_check.check_html(200, (preview / "index.html").read_text())["problems"]))

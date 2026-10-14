@@ -31,6 +31,8 @@ __pycache__/
 
 # the built website (bin/ccs site build)
 site/dist/
+# the local contact sheets of the site at the three sizes (never shipped, never committed)
+site/sheets/
 
 # the deploy config with the real D1 id, written by scripts/go-live.sh on the Mini
 wrangler.live.jsonc
