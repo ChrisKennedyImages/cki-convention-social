@@ -63,8 +63,8 @@ class SitePhotos:
     coverage: list = field(default_factory=list)
     venues: list = field(default_factory=list)
     hero_note: str = ""                            # which photo is the hero and why, for the go-live output
-    ids: list = field(default_factory=list)        # every library photo shown (hero when from the library, grid, venues, coverage pages): a build records their use
-    grid_ids: list = field(default_factory=list)   # the home page's own: hero when from the library, grid, venues
+    ids: list = field(default_factory=list)        # every library photo shown (hero when from the library, grid, venues, coverage pages)
+    grid_ids: list = field(default_factory=list)   # the home page's own: hero when from the library, grid, venues; a build records their use
     links: list = field(default_factory=list)      # the coverage page each grid frame opens, one per coverage entry (2026-10-14)
     pages: dict = field(default_factory=dict)      # coverage key -> [(image, alt)], the photos of that kind of room (2026-10-14)
 
@@ -216,8 +216,14 @@ def pick_photos(conn: sqlite3.Connection, fetch: Callable[[dict], Image.Image],
 
 
 def coverage_key_for(row: dict) -> str:
-    """The coverage page a photo belongs on, by its kind of shot; the index when no page claims it."""
+    """The coverage page a photo belongs on, by its kind of shot: the page that lists the shot first (a stage shot is
+    the main stage, a panel is breakouts), else the first page that lists it at all; the index when no page claims it."""
     shot = row.get("shot_type") or ""
+    if not shot:
+        return ""
+    for key, shots in COVERAGE_SHOTS.items():
+        if shots and shots[0] == shot:
+            return key
     for key, shots in COVERAGE_SHOTS.items():
         if shot in shots:
             return key
@@ -233,6 +239,7 @@ def pick_page_photos(pool: list[dict]) -> dict[str, list[dict]]:
     for key in offer.coverage_keys():
         shots = COVERAGE_SHOTS.get(key, ())
         fit = [r for r in pool if (r.get("shot_type") or "") in shots]
+        fit.sort(key=lambda r: shots.index(r["shot_type"]))        # the room's own kind of shot before the kinds it borrows (a stable sort: the pool's order within a kind)
         pick = [r for r in fit if r["id"] not in taken][:PAGE_ROWS]
         if len(pick) < PAGE_ROWS:
             pick += [r for r in fit if r not in pick][:PAGE_ROWS - len(pick)]           # the same room again before another room
@@ -284,6 +291,16 @@ def save_web(im: Image.Image, out_dir: Path, stem: str, meta: Optional[ImageMeta
         save_jpeg(copy, out_dir / name, meta, quality=82)
         made[w] = name
     return made
+
+
+def aspect(im: Image.Image) -> str:
+    """The photo's width over its height as a CSS number, after the EXIF orientation (the shape of the saved file), so
+    the frame on the site has the photo's own shape and nothing is cropped (Chris, 2026-10-14: "the horizontal images
+    must not be cropped anywhere on any device"; the hero is the one picture he allows a crop)."""
+    w, h = im.size
+    if im.getexif().get(0x0112, 1) in (5, 6, 7, 8):
+        w, h = h, w
+    return f"{w / h:.4f}"
 
 
 def img_tag(files: dict, alt: str, sizes: str, cls: str = "", eager: bool = False, extra: str = "") -> str:
@@ -385,16 +402,18 @@ def coverage_rows(coverage: list[dict], skip: str = "") -> str:
         for i, c in enumerate(coverage) if c["key"] != skip)
 
 
-def home_body(t: dict, hero: str, frames: list[tuple[str, str, str]], stack: list[str], venues: list[tuple[str, str]]) -> str:
+def home_body(t: dict, hero: str, frames: list[tuple[str, str, str, str]], stack: list[tuple[str, str]], venues: list[tuple[str, str, str]]) -> str:
+    """`frames`: (img tag, caption, the coverage page it opens, the photo's shape); `stack`: (img tag, shape); `venues`:
+    (img tag, label, shape). The shape (--ar) gives every frame the photo's own proportions, so nothing is cropped."""
     e = html.escape
     coverage = offer.load()["coverage"]
     rows = coverage_rows(coverage)
-    reel = "".join(f'<div class="frame"><a href="{href}"><div class="ph">{img}</div><div class="cap mono"><span>FR {i + 1:02d} / {len(frames):02d}</span>'
-                   f'<span>{e(cap)}</span></div></a></div>' for i, (img, cap, href) in enumerate(frames))
+    reel = "".join(f'<div class="frame"><a href="{href}"><div class="ph" style="--ar:{ar}">{img}</div><div class="cap mono"><span>FR {i + 1:02d} / {len(frames):02d}</span>'
+                   f'<span>{e(cap)}</span></div></a></div>' for i, (img, cap, href, ar) in enumerate(frames))
     # the strip doubled, so it rolls round without a jump; the copy is hidden from readers and the keyboard
     again = reel.replace('<div class="frame">', '<div class="frame" aria-hidden="true">').replace("<a href=", '<a tabindex="-1" href=')
-    stack_html = "".join(f"<figure>{img}</figure>" for img in stack[:3])
-    venue_html = "".join(f'<figure>{img}<span class="mono">{e(label)}</span></figure>' for img, label in venues[:3])
+    stack_html = "".join(f'<figure style="--ar:{ar}">{img}</figure>' for img, ar in stack[:3])
+    venue_html = "".join(f'<figure style="--ar:{ar}">{img}<span class="mono">{e(label)}</span></figure>' for img, label, ar in venues[:3])
     steps = "".join(f'<div class="rv"><div class="n">{i:02d}</div><h3>{e(h)}</h3><p>{e(p)}</p></div>'
                     for i, (h, p) in enumerate(t["steps"], start=1))
     short = ["Backstage", "Green rooms", "Breakouts", "Main stage", "Evening events", "Dinners", "Portraits",
@@ -557,10 +576,10 @@ def build(conn: Optional[sqlite3.Connection], photos: SitePhotos, *, out: Path =
         im, alt, m = _photo(entry)
         files = save_web(im, assets, f"work-{i}", m)
         shown.append((f"/assets/{files[max(files)]}", alt, m))
-        tag = img_tag(files, alt, "(max-width:760px) 78vw, (max-width:1100px) 44vw, 34vw")
-        frames.append((tag, (m.title or alt)[:34], photos.links[i] if i < len(photos.links) else "/coverage/"))
+        tag = img_tag(files, alt, "(max-width:760px) 92vw, 62vw")        # a wide frame can be most of the screen: never a soft copy
+        frames.append((tag, (m.title or alt)[:34], photos.links[i] if i < len(photos.links) else "/coverage/", aspect(im)))
         if i < 3:
-            stack.append(tag)
+            stack.append((tag, aspect(im)))
     # the coverage pages' photos (2026-10-14), each saved once however many pages show it
     page_files: dict[str, list[tuple[dict, str, ImageMeta]]] = {}
     saved: dict[int, dict] = {}
@@ -570,13 +589,12 @@ def build(conn: Optional[sqlite3.Connection], photos: SitePhotos, *, out: Path =
             im, alt, m = _photo(entry)
             if id(im) not in saved:
                 saved[id(im)] = save_web(im, assets, f"cover-{key}-{j}", m)
-            page_files[key].append((saved[id(im)], alt, m))
+            page_files[key].append((saved[id(im)], alt, m, aspect(im)))
     for i, entry in enumerate(photos.venues):
         im, alt, m = _photo(entry)
         files = save_web(im, assets, f"venue-{i}", m)
         shown.append((f"/assets/{files[max(files)]}", alt, m))
-        venues.append((img_tag(files, alt, "(max-width:900px) 100vw, 60vw", extra=' data-speed="0.08"'),
-                       "Exterior" if i % 2 == 0 else "Interior"))
+        venues.append((img_tag(files, alt, "(max-width:760px) 100vw, 50vw"), "Exterior" if i % 2 == 0 else "Interior", aspect(im)))
     base = f"https://{cfg.brand_domain}"
     pages = {"index.html": (t["title"], t["description"], home_body(t, hero, frames, stack, venues))}
     page_shown: dict[str, list[tuple[str, str, ImageMeta]]] = {"/": list(shown)}     # per page, for the sitemap and the image blocks
@@ -594,15 +612,15 @@ def build(conn: Optional[sqlite3.Connection], photos: SitePhotos, *, out: Path =
     page_jsonld["coverage/index.html"] = markup.jsonld_script(markup.jsonld_breadcrumbs([(brand, base + "/"), ("Coverage", base + "/coverage/")]))
     for c in o["coverage"]:
         rel = f"coverage/{c['key']}/index.html"
-        figures = "".join(f"<figure>{img_tag(files, alt, '(max-width:760px) 50vw, (max-width:1100px) 50vw, 33vw')}</figure>"
-                          for files, alt, m in page_files.get(c["key"], []))
+        figures = "".join(f'<figure style="--ar:{ar}">{img_tag(files, alt, "(max-width:760px) 50vw, (max-width:1100px) 50vw, 33vw")}</figure>'
+                          for files, alt, m, ar in page_files.get(c["key"], []))
         pages[rel] = (f"{c['title']}, {AREA}", c["first"], f"""
 <section class="page cover"><div class="kick mono c"><a href="/coverage/">Coverage</a></div><h1>{e(c['label'])}<b>.</b></h1>
 <p class="first">{e(c['first'])}</p><div class="prose"><p>{e(c['about'])}</p></div>
 {f'<div class="grid">{figures}</div>' if figures else ''}
 <p style="margin-top:50px"><a class="btn fill" href="/book/">Request a quote <span class="arr">&#8599;</span></a></p>
 <div class="more"><div class="kick mono c">The rest of the coverage</div><div class="list">{coverage_rows(o['coverage'], skip=c['key'])}</div></div></section>""")
-        page_shown["/" + rel.replace("index.html", "")] = [(f"/assets/{files[max(files)]}", alt, m) for files, alt, m in page_files.get(c["key"], [])]
+        page_shown["/" + rel.replace("index.html", "")] = [(f"/assets/{files[max(files)]}", alt, m) for files, alt, m, _ in page_files.get(c["key"], [])]
         first_photo = page_shown["/" + rel.replace("index.html", "")]
         page_og[rel] = (base + first_photo[0][0]) if first_photo else ""
         page_url = f"{base}/coverage/{c['key']}/"
@@ -655,11 +673,11 @@ What moves the quote: the days and hours, the rooms covered at the same time, ho
 </form></div></div></section>
 <script>const q=new URLSearchParams(location.search).get("error");const m={{missing:"Please add your name and a working email.",busy:"A few requests just came from here. Please try again in an hour, or email us.",check:"The spam check did not pass. Please try again.",unreadable:"Something went wrong. Please try again."}};
 if(q)document.getElementById("err").innerHTML='<div class="err mono">'+(m[q]||m.unreadable)+'</div>';</script>""")
-    about_photos = "".join(f"<figure>{img}</figure>" for img, _, _ in frames[:2])
+    about_photos = "".join(f'<figure style="--ar:{ar}">{img}</figure>' for img, _, _, ar in frames[:2])
     about_paras = "".join(f"<p>{e(p)}</p>" for p in t["about"].split("\n\n"))
     pages["about/index.html"] = ("About us: two brothers, event photographers",
                                  f"Chris and Nic Kennedy, brothers, more than thirty years each behind the camera, based in {AREA} and travelling nationwide.", f"""
-<section class="page"><div class="kick mono c">About</div><h1>Two<br><span class="o">brothers</span><b>.</b></h1>
+<section class="page cover"><div class="kick mono c">About</div><h1>Two<br><span class="o">brothers</span><b>.</b></h1>
 <div class="prose" style="max-width:640px;margin-top:30px">{about_paras}
 <h3>Who will be at your event</h3><p>{e(t['who'])}</p><p>References available on request.</p></div>
 {f'<div class="grid" style="margin-top:50px">{about_photos}</div>' if about_photos else ''}
@@ -707,12 +725,15 @@ It is never sold or shared. The website holds it only until the booking inbox co
     page_jsonld["about/index.html"] = "".join(markup.jsonld_script(markup.jsonld_person(
         name, "Photographer", brand, base + "/", base + "/about/", alumni_of="The Corcoran, Washington, DC")) for name in ("Chris Kennedy", "Nic Kennedy"))
     page_noindex.update({"thanks/index.html", "404.html"})
-    for rel, (title, desc, body) in pages.items():
+    titles: dict[str, str] = {}
+    for rel, (title, desc, body) in pages.items():                  # every page is judged before any is written
         check_copy([desc])
-        full_title = title if rel == "index.html" else f"{title} | {brand}"
-        if len(full_title) > TITLE_MAX or len(desc) > DESCRIPTION_MAX:
-            raise SiteCopyRefused(f"{rel}: the title ({len(full_title)} characters, {TITLE_MAX} at most) or the description "
+        titles[rel] = title if rel == "index.html" else f"{title} | {brand}"
+        if len(titles[rel]) > TITLE_MAX or len(desc) > DESCRIPTION_MAX:
+            raise SiteCopyRefused(f"{rel}: the title ({len(titles[rel])} characters, {TITLE_MAX} at most) or the description "
                                   f"({len(desc)}, {DESCRIPTION_MAX} at most) is too long for a search result")
+    for rel, (title, desc, body) in pages.items():
+        full_title = titles[rel]
         dest = out / rel
         dest.parent.mkdir(parents=True, exist_ok=True)
         path = "/" + rel.replace("index.html", "")
@@ -737,11 +758,13 @@ It is never sold or shared. The website holds it only until the booking inbox co
         lastmod=page_dates(out, rels, preview=preview)))
     if not preview and indexnow.key():
         indexnow.write_key_file(out, indexnow.key())        # /<key>.txt: the proof the IndexNow pings are ours
-    if conn is not None and not preview and photos.ids:
-        # the rotation's memory (2026-10-14): the photos this build shows were used now, so the next build and the
-        # other surfaces reach for the rest first; a preview is a look, not a use
+    if conn is not None and not preview and photos.grid_ids:
+        # the rotation's memory (2026-10-14): the photos the home page shows were used now, so the next build and the
+        # other surfaces reach for the rest first; a preview is a look, not a use. The coverage pages are a view of
+        # the whole usable pool (six a room, least recently used first) and are not written here: recording them would
+        # put every approved photo on the same footing after each build, and the home page would stop rotating.
         from ..library import report
-        report.record_use(conn, "site", photos.ids, ref=f"site:{db.utcnow()}")
+        report.record_use(conn, "site", photos.grid_ids, ref=f"site:{db.utcnow()}")
     (out / "build.json").write_text(json.dumps({"preview": preview, "hero": len(photos.hero), "coverage": len(photos.coverage),
                                                 "venues": len(photos.venues), "mark": mark_key}))
     return out

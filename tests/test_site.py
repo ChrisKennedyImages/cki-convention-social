@@ -67,10 +67,12 @@ class Site(IsolatedCase):
         that clips (the slide-up animation), so a line wider than the hero's text box loses its end. In Michroma
         the longest line, EVERY ROOM., is 9.6 times the font size wide and BROTHERS, 8.08 (measured in Chromium
         with the real font); the hero's text box on a phone is the viewport less 100 pixels. So on phones the
-        size is capped at that width over 9.9, and every line stays whole and on one line at every width."""
+        size is capped at that width over 9.9, and every line stays whole and on one line at every width.
+        2026-10-14: the phone block is now `max-width:760px` (the three sizes: phone to 760, iPad to 1100, computer
+        above), so the slice moved; the cap itself is unchanged."""
         out = self.built()
         css = (out / "assets/site.css").read_text()
-        phone = css[css.index("@media (max-width:900px)"):]
+        phone = css[css.index("@media (max-width:760px)"):]
         self.assertIn(".mega{font-size:min(clamp(30px,10.4vw,64px),calc((100vw - 100px) / 9.9))}", phone)
         for width in (320, 375, 390, 430):
             self.assertLessEqual(min(max(30, 0.104 * width), (width - 100) / 9.9) * 9.6, width - 100, width)
@@ -147,13 +149,15 @@ class Site(IsolatedCase):
         self.assertIn("One of us is at every event.", home)
         self.assertIn("References available on request.", home)
         self.assertIn('href="/about/"', home)
-        self.assertIn("<b>05</b> About", home)
+        # 2026-10-14: the menu is words, not numbers ("<b>05</b> About" is gone): About has a real place in it
+        self.assertIn('<a href="/about/">About</a>', home[home.index('<nav class="mono" aria-label="Pages">'):home.index("</nav>")])
+        self.assertNotIn("<b>05</b>", home)
         self.assertNotIn("Scan.</div>", home)
         about = (out / "about/index.html").read_text()
         for word in ("Chris and Nic Kennedy, brothers", "Corcoran", "Nic finished in 1999, Chris in 2002", "darkroom at home",
                      "our father taught and had graduated before us", "Who will be at your event", "within 24 hours"):
             self.assertIn(word, about, word)
-        self.assertEqual(about.count("<figure>"), 2, "two of the work photos stand in until there are portraits")
+        self.assertEqual(about.count("<figure style="), 2, "two of the work photos stand in until there are portraits (each with its shape, 2026-10-14)")
         for rel in ("index.html", "about/index.html", "book/index.html"):
             page = (out / rel).read_text()
             self.assertIn("within 24 hours", page, rel)
@@ -199,16 +203,22 @@ class Site(IsolatedCase):
         self.assertIn("noindex", home)
 
     def test_search_files_and_structured_data(self):
+        """2026-10-14: the sitemap lists every public page in build.PAGES (the coverage index, nine coverage pages and
+        Contact joined the five), and the business block carries a locality and region (a service-area business), still
+        never a street."""
         out = self.built()
         robots = (out / "robots.txt").read_text()
         self.assertIn("Sitemap: https://eventcaliber.com/sitemap.xml", robots)
         self.assertNotIn("Disallow: /\n", robots)
         sitemap = (out / "sitemap.xml").read_text()
         locs = re.findall(r"<loc>([^<]+)</loc>", sitemap)
-        self.assertEqual(locs, ["https://eventcaliber.com/", "https://eventcaliber.com/about/", "https://eventcaliber.com/book/",
-                                "https://eventcaliber.com/availability/", "https://eventcaliber.com/privacy/"])
+        self.assertEqual(locs, ["https://eventcaliber.com" + p for p in build.PAGES])
+        self.assertEqual(len(locs), 16)
+        self.assertEqual(locs[:3], ["https://eventcaliber.com/", "https://eventcaliber.com/about/", "https://eventcaliber.com/coverage/"])
+        self.assertIn("https://eventcaliber.com/coverage/backstage/", locs)
+        self.assertIn("https://eventcaliber.com/contact/", locs)
         images = re.findall(r"<image:loc>([^<]+)</image:loc>", sitemap)
-        self.assertEqual(len(images), 5)                          # hero, 3 coverage, 1 venue
+        self.assertEqual(len(images), 5)                          # hero, 3 coverage, 1 venue (no coverage page photos handed in)
         for loc in images:
             self.assertTrue((out / loc.replace("https://eventcaliber.com/", "")).exists(), loc)
         home = (out / "index.html").read_text()
@@ -216,7 +226,8 @@ class Site(IsolatedCase):
         self.assertTrue(blocks)
         self.assertEqual([b["@type"] for b in blocks], ["ProfessionalService"] + ["ImageObject"] * 5)
         self.assertEqual(blocks[0]["legalName"], "CKI, LLC")
-        self.assertNotIn("address", blocks[0])
+        self.assertEqual(blocks[0]["address"], {"@type": "PostalAddress", "addressLocality": "Washington", "addressRegion": "DC", "addressCountry": "US"})
+        self.assertNotIn("streetAddress", json.dumps(blocks[0]))
         self.assertNotIn("ld+json", (out / "book/index.html").read_text())
         # the SEO agent's weekly check reads these same two files on the live site
         self.assertEqual(site_check.check_sitemap(200, sitemap)["problems"], [])

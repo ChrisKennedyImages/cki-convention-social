@@ -907,6 +907,100 @@ on the dashboard.
   run the page says Claude did not look and the draft cannot post.
 - The first phone send's ping is the show for this surface.
 
+## 2026-10-14: the website for three sizes
+
+Chris, on the site: About needs a real place in the navigation; the words over
+the hero photo are unreadable; a general Contact page is missing; the gallery
+says Scroll but moves sideways when you scroll down, and should roll on its
+own at a slow pace; the footer is nearly empty; what does a Google search show.
+His rule, verbatim: **"we must ALWAYS treat UX UI optimization for phone ipad
+and computer, no shortcuts!!!"** His decisions when asked: a bottom bar on
+phones; a phone number on the site, added on the Keys page (nothing shows
+until he does); one page per coverage item; the Contact page is email and
+phone only, no form. From the local search playbook he showed: one page per
+service with the place in its title, a complete business block, a plain first
+sentence on every page, a tappable number on phones, Bing. Not taken: law and
+medical specifics, review platforms, link buying, town-by-town pages, FAQ rich
+results.
+
+- **Three sizes, every page** (`site/theme.py`, pinned by
+  `tests/test_site_sizes.py`). Phone to 760px: the bar at the bottom, always
+  visible (Work, About, Contact, Quote), clear of the iPhone's home indicator,
+  the page padded so nothing ends under it; at the top the logo, the number
+  when set, and Quote. iPad 761 to 1100px: the menu in words and the quote
+  button at the top; the number in the footer and on Contact. Computer above
+  1100px: the words, the number and the button. Touch targets 44px or more;
+  the pointer ring only for a fine pointer. Checked as iPhone 390x844, iPad
+  820x1180 and 1180x820, computer 1440x900 (a landscape iPad gets the
+  computer's layout).
+- **The menu is words** (Work, Coverage, About, Availability, Contact), the
+  page you are on marked; Work is in the words only while the home page has
+  the strip, and goes to the coverage pages from the footer and the bar
+  otherwise (`theme.shell`, `_current`).
+- **The hero's words sit under the photo** on a solid band: the kicker, the
+  headline, a plain first sentence, the lede and the quote button. Nothing is
+  written over the picture; the photo keeps the brightness, saturation and
+  dodge of 2026-10-12, the web and the corner marks. The headline ends above
+  the fold at all four sizes.
+- **The work strip rolls on its own**, 24px a second, pauses under the
+  pointer, a finger or keyboard focus and while the tab is hidden, moves one
+  frame per arrow, stays still under reduced motion, and never moves with the
+  page's scroll (a native sideways strip, the frames doubled so it loops).
+  The old scroll-driven reel and the timecode are gone.
+- **"the horizontal images must not be cropped anywhere on any device or
+  should at least open to the full image - the landing page photo i know
+  needs to be cropped at times"** (Chris, 2026-10-14, later the same day).
+  Every frame on the site has its photo's own shape (`build.aspect`, the
+  `--ar` the build writes on each frame) and shows it whole: the work strip
+  (a wide photo is wide, a tall one tall, the strip's frames differ in width
+  and bottoms line up), the delivery stack, the venues (the parallax that
+  needed a taller picture to slide is gone), the coverage pages and the About
+  page (a column layout, each picture whole). The hero is the one picture
+  that may be cropped, and the only `object-fit:cover` on the site.
+- **One page per coverage item** (`/coverage/<key>/`, nine of them, and the
+  coverage index): the title with the place ("Backstage event photography,
+  Washington, DC | Event Caliber"), a plain first sentence, a paragraph, up to
+  six photos of that room (`build.pick_page_photos`: the room's own kind of
+  shot first, each photo on one page before any page repeats one, a thin
+  room filled from the rest of the pool), the Service, BreadcrumbList and
+  ImageObject blocks, the other eight pages under it. The words are Chris's
+  in `offer.json` (`title`, `first`, `about` on each item) and pass the copy
+  rules at build. A title over 75 or a description over 160 characters stops
+  the build, said, never cut (`build.TITLE_MAX`, `DESCRIPTION_MAX`).
+- **The rotation and the coverage pages.** Every usable event photo is on some
+  coverage page on every build (six a room, least recently used first). What
+  a build records in `photo_use` is the home page's own photos (the hero when
+  it is a library photo, the grid, the venues): a coverage page is a view of
+  the whole library, not a pick, and recording it would put every approved
+  photo on the same footing after each build, so the home page would stop
+  rotating. The Photos page's "used N times" therefore counts posts, samples
+  and the home page, not the coverage pages.
+- **Contact** (`/contact/`): email, the phone number when set, the area line,
+  the privacy link, the quote button; no form. The number is tappable on the
+  page, at the top on phones, in the footer and in the business block.
+- **The footer** on every page: the company and where it works, the nine
+  coverage links, the pages, the email, the number and the social addresses
+  when set (https only), and the legal line with the year.
+- **Search:** the sitemap, IndexNow and the outside check read one list of
+  sixteen public pages (`offer.public_pages`); every page has og:url,
+  og:site_name and a Twitter card; a coverage page's og:image is its first
+  photo; the thank-you and not-found pages carry noindex and no canonical;
+  the business block says areaServed (DC, Maryland, Virginia, United States),
+  a locality and region and never a street, the image, the logo, the telephone
+  when set and sameAs from the socials; the About page has a Person block for
+  each brother; www. answers 301 to the apex (`worker/index.js`).
+- **The Keys page, Website contact** (`BRAND_PHONE`, `SOCIAL_INSTAGRAM`,
+  `SOCIAL_FACEBOOK`, `SOCIAL_PINTEREST`): blank hides each; a save stamps
+  `site.keys_changed_at` and the site republishes itself within minutes like
+  a photo change (`deploy.SITE_KEYS`, `KEYS_CHANGED_KEY`). A change to the
+  search markup, the photo text or the offer module redeploys the site too
+  (`deploy.SITE_PATHS`).
+- Only Chris can do: the number and the social addresses on the Keys page; a
+  Google Business Profile for Event Caliber as a service-area business (the
+  nearest photographer category, service areas DC, Maryland and Virginia, the
+  same name, phone and email as the site) and Bing Places; a photo of the two
+  of them for the About page, if he wants one there.
+
 ## Standing rules from the brief
 
 - CPAC, the ACU and their affiliates are never contacted, by code

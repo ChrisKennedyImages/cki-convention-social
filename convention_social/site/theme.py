@@ -36,14 +36,16 @@ a{color:inherit;text-decoration:none}img{display:block;max-width:100%}
 .top .logo svg{height:46px;width:auto}
 .top nav{margin-left:auto;display:flex;gap:clamp(14px,2vw,26px)}.top nav a{color:var(--g5);min-height:44px;display:inline-flex;align-items:center;padding:0 2px}
 .top nav a:hover,.top nav a[aria-current]{color:var(--w)}.top nav a[aria-current]{box-shadow:inset 0 -2px 0 var(--c)}
-.top .tel{color:var(--g5);white-space:nowrap;min-height:44px;display:inline-flex;align-items:center}.top .tel:hover{color:var(--c)}
+.top .tel{color:var(--g5);white-space:nowrap;min-height:44px;display:inline-flex;align-items:center;gap:8px}.top .tel:hover{color:var(--c)}
+.top .tel svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
 .tabbar{display:none}
 .btn{display:inline-flex;align-items:center;gap:12px;border:1px solid var(--w);padding:15px 22px;font:500 12px var(--mono);letter-spacing:.16em;text-transform:uppercase;transition:background .25s,color .25s,border-color .25s;background:transparent;color:var(--w)}
 .btn:hover{background:var(--c);border-color:var(--c);color:var(--k)}.btn .arr{transition:transform .25s}.btn:hover .arr{transform:translate(3px,-3px)}
 .btn.fill{background:var(--w);color:var(--k)}.btn.fill:hover{background:var(--c)}
-/* hero (2026-10-14): the photo, then the words on a solid band under it; nothing is written over the picture */
-.hero{position:relative}
-.hero .photo{position:relative;height:62svh;min-height:420px;max-height:820px;overflow:hidden;background:var(--g1)}
+/* hero (2026-10-14): the photo, then the words on a solid band under it; nothing is written over the picture. No section
+   padding: the photo runs edge to edge under the bar, and the band carries its own */
+.hero{position:relative;padding:0}
+.hero .photo{position:relative;height:56svh;min-height:400px;max-height:820px;overflow:hidden;background:var(--g1)}
 .hero .img{position:absolute;inset:0}.hero .img img{width:100%;height:100%;object-fit:cover;animation:push 18s ease-out forwards;filter:brightness(1.24) saturate(1.35) contrast(1.04)}
 @keyframes push{from{transform:scale(1.14)}to{transform:scale(1)}}
 .hero .photo:after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(10,10,11,.28) 0%,rgba(10,10,11,0) 26%,rgba(10,10,11,0) 72%,rgba(10,10,11,.5) 100%)}
@@ -56,7 +58,7 @@ a{color:inherit;text-decoration:none}img{display:block;max-width:100%}
 .rec:before{content:"";display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--c);margin-right:10px;vertical-align:1px;animation:blink 1.2s steps(2) infinite}
 @keyframes blink{50%{opacity:0}}
 .hero .copy{position:relative;z-index:3;padding:clamp(34px,5vw,64px) var(--pad) clamp(44px,6vw,80px);background:var(--k)}
-.mega{font:400 clamp(40px,min(7vw,11vh),124px)/.92 var(--display);letter-spacing:-.02em;margin:0;text-transform:uppercase}
+.mega{font:400 clamp(40px,min(7vw,9.5vh),124px)/.92 var(--display);letter-spacing:-.02em;margin:0;text-transform:uppercase}
 .mega span{display:block;overflow:hidden}.mega span em{display:block;font-style:normal;transform:translateY(105%);animation:up 1s cubic-bezier(.2,.8,.2,1) forwards}
 .mega span:nth-child(2) em{animation-delay:.12s}.mega span:nth-child(3) em{animation-delay:.24s}
 .mega .o{color:transparent;-webkit-text-stroke:1.5px var(--w)}.mega b{color:var(--c);font-weight:400}
@@ -87,15 +89,18 @@ h2 .o{color:transparent;-webkit-text-stroke:1.2px var(--w)}
 .list a .t{font:400 clamp(20px,2.6vw,40px)/1.1 var(--display);text-transform:uppercase}
 .list a .t em{display:block;font:300 clamp(14px,1.1vw,17px)/1.45 var(--body);text-transform:none;font-style:normal;color:var(--g4);margin-top:8px;max-width:620px}
 .list a:hover:before{transform:scaleY(1)}.list a:hover>*{color:var(--k)}.list a:hover .t{transform:translateX(14px)}
-/* work (2026-10-14): a strip that rolls on its own, pauses under a finger or the pointer, moves one frame per arrow, and never moves with the page scroll */
+/* work (2026-10-14): a strip that rolls on its own, pauses under a finger or the pointer, moves one frame per arrow, and never moves with the page scroll.
+   Every frame has its photo's own shape (--ar, width over height, set by the build): a wide photo is wide, a tall one tall, nothing is cropped
+   (Chris, 2026-10-14: "the horizontal images must not be cropped anywhere on any device"); only the hero may be */
 .reel{padding:clamp(60px,8vw,120px) 0}
 .reel .bar{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:0 var(--pad);margin-bottom:22px;flex-wrap:wrap}
 .reel .bar .hint{color:var(--g4)}
 .reel .arrows{display:flex;gap:10px}.reel .arrows button{width:44px;height:44px;border:1px solid var(--g3);background:transparent;color:var(--w);font:400 18px/1 var(--mono);cursor:pointer;transition:border-color .25s,color .25s}
 .reel .arrows button:hover,.reel .arrows button:focus-visible{border-color:var(--c);color:var(--c);outline:0}
-.reel .track{display:flex;gap:18px;padding:0 var(--pad);overflow-x:auto;overscroll-behavior-x:contain;scrollbar-width:none}.reel .track::-webkit-scrollbar{display:none}
-.frame{flex:none;width:clamp(240px,34vw,520px)}.frame a{display:block}.frame .ph{aspect-ratio:4/5;overflow:hidden;background:var(--g2)}
-.frame img{width:100%;height:100%;object-fit:cover;transition:transform 1.2s cubic-bezier(.2,.8,.2,1)}.frame:hover img{transform:scale(1.06)}
+.reel .track{display:flex;gap:18px;padding:0 var(--pad);overflow-x:auto;overscroll-behavior-x:contain;scrollbar-width:none;align-items:flex-end}.reel .track::-webkit-scrollbar{display:none}
+.frame{flex:none;--h:clamp(300px,54vh,600px)}.frame a{display:block}
+.frame .ph{width:min(calc(var(--h) * var(--ar,0.8)),calc(100vw - 2 * var(--pad)));aspect-ratio:var(--ar,0.8);background:var(--g2)}
+.frame img{width:100%;height:100%;object-fit:contain;transition:filter .4s}.frame:hover img{filter:brightness(1.08)}
 .frame .cap{display:flex;justify-content:space-between;margin-top:12px;color:var(--g4)}
 .sprocket{height:16px;background:radial-gradient(circle at 10px 8px,var(--k) 4px,transparent 5px) 0 0/22px 16px repeat-x,var(--g2);margin:0 var(--pad)}
 /* delivery */
@@ -104,15 +109,15 @@ h2 .o{color:transparent;-webkit-text-stroke:1.2px var(--w)}
 .deliver .lines div:nth-child(2){color:transparent;-webkit-text-stroke:1.2px var(--w)}.deliver .lines div:nth-child(3){color:var(--c)}
 .deliver p{color:var(--g5);max-width:520px}
 .stack{position:relative;aspect-ratio:1/1.05}
-.stack figure{position:absolute;margin:0;width:62%;aspect-ratio:4/5;overflow:hidden;border:6px solid var(--w);box-shadow:0 30px 60px rgba(0,0,0,.6);transition:transform 1.1s cubic-bezier(.2,.8,.2,1)}
-.stack figure img{width:100%;height:100%;object-fit:cover}
+.stack figure{position:absolute;margin:0;width:62%;aspect-ratio:var(--ar,0.8);overflow:hidden;border:6px solid var(--w);box-shadow:0 30px 60px rgba(0,0,0,.6);transition:transform 1.1s cubic-bezier(.2,.8,.2,1)}
+.stack figure img{width:100%;height:100%;object-fit:contain}
 .stack figure:nth-child(1){left:4%;top:10%;transform:rotate(-9deg)}.stack figure:nth-child(2){left:20%;top:4%;transform:rotate(3deg)}.stack figure:nth-child(3){left:34%;top:14%;transform:rotate(11deg)}
 .js .stack.rv:not(.in) figure{transform:rotate(0) translateY(40px)}
 .stamp{position:absolute;right:2%;bottom:6%;z-index:5;background:var(--c);color:var(--k);padding:10px 14px;transform:rotate(-4deg)}
-/* venues */
-.venues .grid{display:grid;grid-template-columns:1.5fr 1fr;gap:18px;margin-top:56px}
-.venues figure{margin:0;position:relative;overflow:hidden;background:var(--g2)}.venues figure:first-child{grid-row:span 2;min-height:560px}
-.venues figure{min-height:260px}.venues figure img{position:absolute;left:0;top:-12%;width:100%;height:124%;object-fit:cover;will-change:transform}
+/* venues: each building in its own shape, whole (2026-10-14); the parallax that needed a taller picture to slide is gone */
+.venues .grid{columns:2;gap:18px;margin-top:56px}
+.venues figure{margin:0 0 18px;break-inside:avoid;position:relative;overflow:hidden;background:var(--g2);aspect-ratio:var(--ar,1.5)}
+.venues figure img{width:100%;height:100%;object-fit:contain}
 .venues figure .mono{position:absolute;left:14px;bottom:12px;background:rgba(10,10,11,.7);padding:6px 9px}
 .venues .head{display:grid;grid-template-columns:1fr minmax(260px,420px);gap:40px;align-items:end}.venues .head p{color:var(--g5);margin:0}
 /* process */
@@ -138,8 +143,8 @@ footer .legal{margin-top:40px;padding-top:20px;border-top:1px solid var(--g3);co
 footer a:hover{color:var(--c)}
 /* coverage pages and the contact page (2026-10-14) */
 .cover .first,.contact .first{font:400 clamp(19px,1.6vw,24px)/1.45 var(--body);color:var(--w);max-width:760px;margin:26px 0 0}
-.cover .prose{margin-top:24px}.cover .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin-top:50px}
-.cover figure{margin:0;aspect-ratio:4/5;overflow:hidden;background:var(--g2)}.cover figure img{width:100%;height:100%;object-fit:cover}
+.cover .prose{margin-top:24px}.cover .grid{columns:3;gap:18px;margin-top:50px}
+.cover figure{margin:0 0 18px;break-inside:avoid;aspect-ratio:var(--ar,0.8);overflow:hidden;background:var(--g2)}.cover figure img{width:100%;height:100%;object-fit:contain}
 .cover .more{margin-top:70px}
 .contact .hand{display:grid;grid-template-columns:1fr 1fr;gap:30px;margin-top:40px;max-width:900px}
 .contact .hand>div{border:1px solid var(--g3);padding:26px}
@@ -178,23 +183,24 @@ form.book textarea{min-height:120px;resize:vertical}
 .prose{max-width:760px;margin-top:50px}.prose h3{font:600 22px var(--body);margin:44px 0 10px}.prose p{color:var(--g5)}
 .preview{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);z-index:80;background:var(--c);color:var(--k);padding:9px 16px}
 /* the iPad (2026-10-14): the computer's layout with closer spacing, the menu in words, the phone number in the footer */
-@media (min-width:761px) and (max-width:1100px){.top .tel{display:none}.top nav{gap:14px}.top .btn{padding:13px 16px}
+@media (min-width:761px) and (max-width:1100px){.top{gap:16px}.top .logo svg{height:40px}.top .tel{display:none}.top nav{gap:12px}.top .btn{padding:13px 14px}
 .hero .photo{height:54svh;min-height:380px}.mega{font-size:clamp(36px,7.4vw,84px)}
-.frame{width:44vw}.cover .grid{grid-template-columns:1fr 1fr}footer .foot{grid-template-columns:1fr 1fr}}
+.frame{--h:clamp(280px,40vh,480px)}.cover .grid{columns:2}footer .foot{grid-template-columns:1fr 1fr}}
 /* the phone (2026-10-14): one column, the bar at the bottom, the hero words under the photo on the first screen */
-@media (max-width:760px){.top{gap:12px}.top nav{display:none}.top .logo svg{height:38px}.top .tel{margin-left:auto}.top .btn{padding:12px 14px}
+@media (max-width:760px){.top{gap:10px}.top nav{display:none}.top .logo svg{height:36px}.top .tel{margin-left:auto}.top .btn{padding:12px 14px}.top .btn .long{display:none}
 .tabbar{position:fixed;left:0;right:0;bottom:0;z-index:55;display:flex;justify-content:space-around;align-items:stretch;gap:4px;padding:8px 6px calc(8px + env(safe-area-inset-bottom));background:rgba(10,10,11,.94);backdrop-filter:blur(12px);border-top:1px solid var(--g3)}
 .tabbar a{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;min-height:48px;color:var(--g5);font:500 10px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;border-radius:8px}
 .tabbar a svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
 .tabbar a[aria-current]{color:var(--c)}.tabbar a.q{background:var(--w);color:var(--k)}
 body{padding-bottom:calc(74px + env(safe-area-inset-bottom))}.preview{bottom:calc(90px + env(safe-area-inset-bottom))}
 .index .head,.venues .head,.deliver,.split2{grid-template-columns:1fr}.steps{grid-template-columns:1fr}
-.steps>div{border-right:0;border-bottom:1px solid var(--g3)}.venues .grid{grid-template-columns:1fr}.venues figure:first-child{grid-row:auto}
-.frame{width:78vw}.side{position:relative;top:0}form.book{grid-template-columns:1fr}
+.steps>div{border-right:0;border-bottom:1px solid var(--g3)}.venues .grid{columns:1}
+.frame{--h:clamp(240px,44vh,380px)}.side{position:relative;top:0}form.book{grid-template-columns:1fr}
 .hero .photo{height:50svh;min-height:300px}.hero .copy{padding:28px var(--pad) 44px}.mega{font-size:min(clamp(30px,10.4vw,64px),calc((100vw - 100px) / 9.9))}
 .hero .first{font-size:17px;margin-top:18px}.hero .lede{font-size:16px}.hero .row{margin-top:16px;gap:18px}
 .vf i{width:28px;height:28px}.list a{grid-template-columns:44px 1fr auto}
-.cover .grid{grid-template-columns:1fr 1fr;gap:10px}.contact .hand{grid-template-columns:1fr}footer .foot{grid-template-columns:1fr;gap:28px}}
+.cover .grid{columns:2;gap:10px}.cover figure{margin-bottom:10px}.contact .hand{grid-template-columns:1fr}footer .foot{grid-template-columns:1fr;gap:28px}}
+@media (max-width:360px){.top .tel span{display:none}}
 @media (prefers-reduced-motion:reduce){*,*:before,*:after{animation:none!important;transition:none!important}.mega span em{transform:none}.rv{opacity:1;transform:none}.hero canvas.web{display:none}}
 """
 
@@ -232,13 +238,18 @@ setTimeout(()=>{web.style.transition='opacity 1.6s ease';web.style.opacity='0';s
 // sideways strip with the frames doubled so the loop is seamless; it pauses under the pointer, a finger or keyboard focus, the arrows
 // move it one frame, it stays still under reduced motion, and the page's own scrolling never moves it sideways
 const roll=document.querySelector('.reel .track');
-if(roll){const SPEED=24;let over=false,touch=false,focus=false,last=0,raf=0;const half=()=>roll.scrollWidth/2;
-const step=t=>{raf=0;if(last){const dt=Math.min(64,t-last);if(!over&&!touch&&!focus&&!document.hidden){roll.scrollLeft+=SPEED*dt/1000;if(roll.scrollLeft>=half())roll.scrollLeft-=half()}}last=t;raf=requestAnimationFrame(step)};
+if(roll){const SPEED=24;let over=false,touch=false,focus=false,last=0,raf=0,hold=0,pos=roll.scrollLeft;
+// one period of the loop is the distance from the first frame to its copy (the frames are doubled)
+const period=()=>{const f=roll.querySelectorAll('.frame');return f.length>1?f[f.length/2].offsetLeft-f[0].offsetLeft:0};
+// a float of our own: scrollLeft rounds to whole pixels, so a fraction of a pixel added to it every frame adds nothing;
+// a swipe or an arrow moves the strip itself, and the roll picks up from wherever it landed once the move is over (hold)
+const step=t=>{raf=0;if(last){const dt=Math.min(64,t-last);if(!over&&!touch&&!focus&&!document.hidden&&t>hold&&period()>0){
+if(Math.abs(roll.scrollLeft-pos)>1)pos=roll.scrollLeft;pos+=SPEED*dt/1000;if(pos>=period())pos-=period();roll.scrollLeft=pos}}last=t;raf=requestAnimationFrame(step)};
 roll.addEventListener('pointerenter',()=>{over=true},{passive:true});roll.addEventListener('pointerleave',()=>{over=false},{passive:true});
-roll.addEventListener('touchstart',()=>{touch=true},{passive:true});['touchend','touchcancel'].forEach(ev=>roll.addEventListener(ev,()=>{touch=false},{passive:true}));
+roll.addEventListener('touchstart',()=>{touch=true},{passive:true});['touchend','touchcancel'].forEach(ev=>roll.addEventListener(ev,()=>{touch=false;hold=performance.now()+1200},{passive:true}));
 roll.addEventListener('focusin',()=>{focus=true});roll.addEventListener('focusout',()=>{focus=false});
-const width=()=>((roll.querySelector('.frame')||roll).getBoundingClientRect().width+18);
-document.querySelectorAll('.reel .arrows button').forEach(b=>b.addEventListener('click',()=>{roll.scrollBy({left:(b.dataset.dir==='prev'?-1:1)*width(),behavior:'smooth'})}));
+const width=()=>{const x=roll.scrollLeft;for(const f of roll.querySelectorAll('.frame')){if(f.offsetLeft+f.offsetWidth>x+1)return f.offsetWidth+18}return roll.clientWidth*.8};
+document.querySelectorAll('.reel .arrows button').forEach(b=>b.addEventListener('click',()=>{hold=performance.now()+900;roll.scrollBy({left:(b.dataset.dir==='prev'?-1:1)*width(),behavior:'smooth'})}));
 if(!reduce)raf=requestAnimationFrame(step)}
 // parallax
 const par=[...document.querySelectorAll('[data-speed]')];
@@ -253,13 +264,17 @@ ICONS = {
     "about": '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-7 8-7s8 3 8 7"/></svg>',
     "contact": '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="1.5"/><path d="M3 7l9 6 9-6"/></svg>',
     "quote": '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>',
+    "phone": '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2"/></svg>',
 }
 
 
 def _current(href: str, path: str) -> str:
-    """aria-current on the link of the page you are on (a section link counts for the home page)."""
+    """aria-current on the link of the page you are on: a section link counts for the home page, and the Coverage
+    link counts on every coverage page under it (2026-10-14)."""
     page = href.split("#")[0] or "/"
-    return ' aria-current="page"' if page == path and not (href.startswith("/#") and path != "/") else ""
+    if href.startswith("/#") and path != "/":
+        return ""
+    return ' aria-current="page"' if page == path or (page != "/" and path.startswith(page)) else ""
 
 
 def shell(*, title: str, description: str, body: str, mark_svg: str, brand: str, legal: str, email: str,
@@ -273,11 +288,15 @@ def shell(*, title: str, description: str, body: str, mark_svg: str, brand: str,
     `socials`: (label, url) pairs for the footer and the business block. `coverage`: (key, label) pairs for the
     footer. `noindex`: the thank-you and not-found pages, never listed. `preload`: the hero's srcset, preloaded."""
     work = "/#work" if "work" in sections else "/coverage/"
-    links = [(work, "Work"), ("/coverage/", "Coverage"), ("/about/", "About"), ("/availability/", "Availability"), ("/contact/", "Contact")]
+    # the menu in words: Work only while the home page has the strip (a site built before any photo is cleared has none;
+    # the footer and the phone's bar send Work to the coverage pages instead, so the word is never a dead link)
+    links = ([(work, "Work")] if "work" in sections else []) + [("/coverage/", "Coverage"), ("/about/", "About"),
+                                                                 ("/availability/", "Availability"), ("/contact/", "Contact")]
     nav = "".join(f'<a href="{h}"{_current(h, path)}>{label}</a>' for h, label in links)
     tabs = [(work, "work", "Work", ""), ("/about/", "about", "About", ""), ("/contact/", "contact", "Contact", ""), ("/book/", "quote", "Quote", " q")]
     tabbar = "".join(f'<a href="{h}" class="{icon}{cls}"{_current(h, path)}>{ICONS[icon]}<span>{label}</span></a>' for h, icon, label, cls in tabs)
-    tel = f'<a class="tel mono" href="tel:{phone.replace(" ", "")}">{phone}</a>' if phone else ""
+    tel = (f'<a class="tel mono" href="tel:{phone.replace(" ", "")}" aria-label="Call {phone}">{ICONS["phone"]}<span>{phone}</span></a>'
+           if phone else "")
     stamp = '<div class="preview mono">Preview, not live</div>' if preview else ""
     robots = '<meta name="robots" content="noindex,nofollow">' if preview or noindex else ""
     canon = "" if noindex else f'<link rel="canonical" href="{canonical}"><meta property="og:url" content="{canonical}">'
@@ -299,7 +318,7 @@ def shell(*, title: str, description: str, body: str, mark_svg: str, brand: str,
 </head><body><div class="grain" aria-hidden="true"></div><div class="cursor" aria-hidden="true"></div>
 <header class="top"><a class="logo" href="/" aria-label="{brand} home">{mark_svg}</a>
 <nav class="mono" aria-label="Pages">{nav}</nav>{tel}
-<a class="btn" href="/book/">Request a quote <span class="arr">&#8599;</span></a></header>
+<a class="btn" href="/book/"><span class="long">Request a </span>quote <span class="arr">&#8599;</span></a></header>
 <main>{body}</main>
 <footer><div class="big" aria-hidden="true">{brand}</div><div class="foot">
 <div><h4>{brand}</h4><p class="about">Event and convention photography by two brothers, more than thirty years each. {area_line}</p></div>

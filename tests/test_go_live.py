@@ -110,20 +110,31 @@ class BuildWithoutPhotos(IsolatedCase):
         self.assertIn("built without photos", out)
 
     def test_the_menu_links_only_to_sections_that_exist(self):
+        """2026-10-14: the menu is words (Coverage, About, Availability, Contact; `<nav class="mono" aria-label="Pages">`),
+        and Coverage is its own page, so no link points at a /#coverage section any more. Work is in the menu only
+        while the home page has the strip; without photos the footer and the phone's bar send Work to /coverage/."""
+        nav_of = lambda text: re.search(r'<nav class="mono" aria-label="Pages">(.*?)</nav>', text).group(1)
         out = build.build(None, build.SitePhotos(), out=self.root / "dist")
         for rel in ("index.html", "book/index.html"):
-            nav = re.search(r'<nav class="mono">(.*?)</nav>', (out / rel).read_text()).group(1)
-            self.assertIn('href="/#coverage"', nav)
+            page = (out / rel).read_text()
+            nav = nav_of(page)
+            self.assertIn('href="/coverage/"', nav)
             self.assertIn('href="/availability/"', nav)
+            self.assertNotIn("#coverage", nav)
             self.assertNotIn("#work", nav)
             self.assertNotIn("#venues", nav)
+            self.assertNotIn(">Work<", nav, rel)
+            self.assertIn('<li><a href="/coverage/">Work</a></li>', page, "the footer's Work goes to the coverage pages")
+            self.assertIn('<a href="/coverage/" class="work"', page, "so does the phone's bar")
         from PIL import Image
         im = Image.new("RGB", (2400, 1600), (90, 90, 90))
         out = build.build(None, build.SitePhotos(hero=[(im, "a")], coverage=[(im, "c")], venues=[(im, "v")]),
                           out=self.root / "dist2")
-        nav = re.search(r'<nav class="mono">(.*?)</nav>', (out / "index.html").read_text()).group(1)
-        self.assertIn('href="/#work"', nav)
-        self.assertIn('href="/#venues"', nav)
+        page = (out / "index.html").read_text()
+        nav = nav_of(page)
+        self.assertIn('<a href="/#work" aria-current="page">Work</a>', nav)
+        self.assertNotIn("#venues", nav, "the venues are a section, not a page")
+        self.assertIn('<li><a href="/#work">Work</a></li>', page)
 
 
 class SavePassword(IsolatedCase):

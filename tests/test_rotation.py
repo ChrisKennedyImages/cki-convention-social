@@ -165,11 +165,17 @@ class Drafts(IsolatedCase):
 
 
 class OnTheSite(IsolatedCase):
+    """2026-10-14, the coverage pages: every usable event photo is on some coverage page on every build (six a room,
+    least recently used first), so `photos.ids` is the whole pool and says nothing about rotation. What rotates is
+    the home page (`photos.grid_ids`: the hero when it is a library photo, the grid, the venues), and that is what a
+    build records in photo_use; the coverage pages are a view of the library, not a pick. Thirty-two photos, so the
+    home page's seven turn over four times before any comes round again."""
+
     def setUp(self):
         super().setUp()
         self.conn = db.connect()
         self.addCleanup(self.conn.close)
-        self.ids = [event_photo(self.conn, f"p{i:02d}", kind="business", final="business", quality=5) for i in range(14)]
+        self.ids = [event_photo(self.conn, f"p{i:02d}", kind="business", final="business", quality=5) for i in range(32)]
 
     def fetch(self, row):
         return Image.new("RGB", (int(row["width"]), int(row["height"])), (80, 60, 120))
@@ -177,18 +183,26 @@ class OnTheSite(IsolatedCase):
     def shown(self, preview=False):
         photos = build.pick_photos(self.conn, self.fetch)
         build.build(self.conn, photos, out=self.root / "dist", preview=preview)
-        return photos.ids
+        self.assertEqual(len(photos.ids), 32, "every usable photo is on the home page or a coverage page")
+        self.assertEqual(photos.ids[:len(photos.grid_ids)], photos.grid_ids)
+        return photos.grid_ids
 
     def test_each_publish_shows_the_photos_the_last_one_did_not(self):
         first = self.shown()
         self.assertEqual(len(first), 1 + build.COVERAGE_ROWS, "the hero and the grid")
         rows = db.rows(self.conn, "SELECT photo_id, surface, ref FROM photo_use")
-        self.assertEqual(sorted(r["photo_id"] for r in rows), sorted(first))
+        self.assertEqual(sorted(r["photo_id"] for r in rows), sorted(first), "the home page's photos are the use, not the coverage pages'")
         self.assertTrue(all(r["surface"] == "site" and r["ref"].startswith("site:") for r in rows))
         second = self.shown()
-        self.assertEqual(set(first) & set(second), set(), "fourteen approved, seven shown: the other seven next")
+        self.assertEqual(set(first) & set(second), set(), "thirty-two approved, seven on the home page: seven others next")
         third = self.shown()
-        self.assertEqual(set(third), set(first), "then the ones used longest ago")
+        self.assertEqual(set(third) & (set(first) | set(second)), set())
+        fourth = self.shown()
+        self.assertEqual(len(set(first) | set(second) | set(third) | set(fourth)), 28)
+        fifth = self.shown()
+        self.assertEqual(set(fifth) - (set(first) | set(second) | set(third) | set(fourth)), set(self.ids) - (set(first) | set(second) | set(third) | set(fourth)),
+                         "the four never shown, then the ones used longest ago")
+        self.assertTrue(set(fifth) & set(first))
 
     def test_a_preview_records_nothing(self):
         self.shown(preview=True)
@@ -211,6 +225,8 @@ class OnTheSite(IsolatedCase):
         first, second = self.shown(), self.shown()
         self.assertEqual(len(first), build.COVERAGE_ROWS, "the grid only: the uploaded hero is not a library photo")
         self.assertEqual(set(first) & set(second), set())
+        self.assertEqual(db.one(self.conn, "SELECT COUNT(*) n FROM photo_use")["n"], 2 * build.COVERAGE_ROWS,
+                         "two builds, the grid each time; the coverage pages record nothing")
 
 
 class Samples(IsolatedCase):
