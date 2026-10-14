@@ -33,7 +33,7 @@ from PIL import Image
 
 from ..ai import claude, copy_rules, names, seo_plan
 from ..core import approve_token, config, db, notify, runner, settings
-from ..library import classify, eligibility
+from ..library import classify, eligibility, report
 
 from . import art_director, learner
 from .. import music
@@ -134,7 +134,18 @@ def candidates(conn: sqlite3.Connection, subject: str) -> list[dict]:
         out.append({**dict(r), "credit": credit})
     # what the learner found works, inside the founder's bounds; a stable sort, so ties keep quality order
     out.sort(key=lambda r: (r.get("quality") or 0) * learner.weight_for(conn, r.get("shot_type"), r.get("event_kind")), reverse=True)
-    return out
+    # then the rotation (2026-10-14, "the same photos for everything"): the least recently used photo first, on any
+    # surface, so every approved photo gets its turn; the quality order above only breaks ties (library/report.rotate)
+    last = report.last_uses(conn)
+    for r in out:
+        r["last_use"] = last.get(r["id"])
+    return report.rotate(conn, out, last=last)
+
+
+def use_why(hero: dict, ready: int) -> str:
+    """Why this photo led, for the run line on the Agents page: its last use, and how many were ready."""
+    when = f"last used {hero['last_use'][:10]}" if hero.get("last_use") else "never used before"
+    return f"{when}; {ready} ready, least recently used first"
 
 
 def write_captions(drafter, facts: claude.PostFacts, photo: Path, known_names, *, conn=None,
@@ -475,11 +486,12 @@ def draft_one(ctx: runner.Context, fetch: Callable[[dict], bytes], *, now: Optio
     if art.get("verdict") == "reject":
         # the photos do not hold up: they sit out like used ones, and the next run drafts again
         now_r = db.utcnow()
-        db.insert(ctx.conn, "content_queue", kind="photo", photo_ids=json.dumps(photo_ids), targets=json.dumps(list(TARGETS)),
+        qid_r = db.insert(ctx.conn, "content_queue", kind="photo", photo_ids=json.dumps(photo_ids), targets=json.dumps(list(TARGETS)),
                   caption=json.dumps(captions), render_paths=json.dumps(render_paths), status="rejected",
                   last_error=f"Art director: {art.get('notes', '')}",
                   rule_report=json.dumps({"for_day": "turned back", "art": art, "subject": hero["subject"], "design": design}),
                   created_at=now_r, updated_at=now_r)
+        report.record_use(ctx.conn, "post", photo_ids, ref=f"post:{qid_r}", now=now_r)
         note = f"art director turned back photo {hero['id']}: {art.get('notes', '')}"
         if _depth + 1 >= MAX_TRIES:
             return f"{note}; no photo passed for {day} after {MAX_TRIES} tries"
@@ -497,6 +509,9 @@ def draft_one(ctx: runner.Context, fetch: Callable[[dict], bytes], *, now: Optio
     qid = db.insert(ctx.conn, "content_queue", kind="photo", photo_ids=json.dumps(photo_ids), targets=json.dumps(list(TARGETS)),
                     caption=json.dumps(captions), render_paths=json.dumps(render_paths), rule_report=json.dumps(meta),
                     created_at=now_s, updated_at=now_s)
+    # the rotation's memory: every photo on this draft was used now (a dry-run draft too: approved in dry run, it goes
+    # out when the lane is switched live), so the site, the samples and later drafts reach for the others first
+    report.record_use(ctx.conn, "post", photo_ids, ref=f"post:{qid}", now=now_s)
     # the ping that opens the draft (Chris, 2026-10-11: "I haven't received any ntfy"); 2026-10-13: it carries the
     # card, and an Approve button when the art director passed the draft (core/approve_token: signed, single use)
     notify.push(f"{ctx.cfg.brand_name}: a post to approve", f"{design} with {len(photo_ids)} photo(s) for {day:%A}. Tap to see it.",
@@ -506,7 +521,8 @@ def draft_one(ctx: runner.Context, fetch: Callable[[dict], bytes], *, now: Optio
             else f", {asked} wanted but too few photos passed" if asked != design else "")
     return (f"{'DRY RUN ' if ctx.dry_run else ''}drafted post #{qid} for {day} ({kind_used}"
             f"{', instead of ' + want if kind_used != want else ''}): {design} with {len(photo_ids)} photo(s){fell}, "
-            f"photo {hero['id']} first, captions by {writer} for \"{plan.primary}\", art director: {art.get('verdict')}")
+            f"photo {hero['id']} first ({use_why(hero, len(pool))}), captions by {writer} for \"{plan.primary}\", "
+            f"art director: {art.get('verdict')}")
 
 
 def ping_extras(conn: sqlite3.Connection, row, art: Optional[dict]) -> dict:

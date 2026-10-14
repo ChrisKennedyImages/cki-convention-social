@@ -841,6 +841,45 @@ mouse was over the Coverage list) is removed from the home page, its style
 and its script. The cursor ring and the hero's web are the only things that
 answer the pointer; nothing else on the site moves with the mouse.
 
+## 2026-10-14: every approved photo gets its turn
+
+Chris: "You also keep using the same fucking photos for everything when I
+have approved at least 40 by now." Every picker ranked the approved pool by
+the same score and took the top of it: the daily draft (held back only by
+the repeat window), the website's grid and venues, the design samples. The
+strongest few therefore won on every surface, and a newly approved photo
+below them was never seen.
+
+- The rule: with N approved photos, every surface uses all N before any
+  comes round again. Each picker draws the least recently used photo first,
+  on any surface (a photo in yesterday's post is at the back of the line
+  for tonight's site build too), and the quality order only breaks ties.
+  Quality never decides on its own.
+- The memory is one table, `photo_use` (photo, surface, which post, build
+  or samples folder, when), written where a surface commits to a photo:
+  every draft (a dry-run draft too, since one approved in dry run goes out
+  when the lane is switched live; the art director's turned-back draft too,
+  it sat out before), every site build that is not a preview, every set of
+  samples. The drafts made before the table existed were filled in from the
+  queue once, so the day this landed the site and the samples already
+  preferred what no post had shown.
+- The repeat window (`PHOTO_REPEAT_DAYS`, Keys page) stays as the floor: a
+  photo on a draft sits out for the window whatever the rotation says. With
+  about 40 approved photos and a 180-day window the drafts run dry in a few
+  weeks; the rotation makes a shorter window safe, and the window is his to
+  set.
+- The hero he picked or sent is never rotated away. The grid and the venues
+  under it rotate on every publish.
+- The samples are made again when the approved photos change (one
+  approved, one taken away) or the words on the cards do, never because
+  the six they would draw rotated (that would remake them every hour).
+- A draft set aside because he corrected a shot word gives its photos back
+  (the same photo leads the new draft, with the right words).
+- The Photos page, Approved, says under each photo "used N times, last on
+  <date> (post, site, samples)" or "never used yet"; the content run's line
+  on the Agents page says which photo led and why ("never used before; 40
+  ready, least recently used first").
+
 ## Standing rules from the brief
 
 - CPAC, the ACU and their affiliates are never contacted, by code
