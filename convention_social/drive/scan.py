@@ -3,12 +3,19 @@
 full_inventory():  record the Changes start token FIRST (so nothing that
                    changes during the pass is missed), list every folder,
                    list every image file Drive can render (not trashed,
-                   My Drive and shared drives), and upsert drive_folders and
-                   photos. Folder paths are resolved from the parent chain.
+                   My Drive and shared drives), walk the folders shared with
+                   this account (Chris, 2026-10-14: his brothers' galleries;
+                   Drive lists only what was shared directly, so what sits
+                   inside a shared folder is reached by asking each folder
+                   for its children), and upsert drive_folders and photos.
+                   Folder paths are resolved from the parent chain; a shared
+                   gallery is a top folder of its own, "Shared with me/<name>".
 incremental():     read the changes since the stored token and apply them:
                    new or edited images are upserted, trashed or removed
                    ones are marked trashed (never deleted from the table, so
-                   a clearance decision survives a restore).
+                   a clearance decision survives a restore); then the direct
+                   shares are listed again and any gallery not yet known is
+                   walked, so a new share lands within the hour.
 
 RAW camera files are skipped: they cannot be posted as they are, and Drive
 does not render most of them. They are counted so the report can say so.
@@ -26,6 +33,9 @@ from .api import FOLDER_MIME, DriveReader
 
 CHANGES_TOKEN_KEY = "drive.changes_token"
 INVENTORY_AT_KEY = "drive.inventory_at"
+ROOT_IDS_KEY = "drive.root_ids"              # My Drive's and the shared drives' ids, so a changes run knows a loose photo
+SHARED_ROOT = "Shared with me"               # the path root of a gallery shared with this account (library/heuristics strips it too)
+MAX_WALK_DEPTH = 64
 RAW_EXTENSIONS = {".cr2", ".cr3", ".crw", ".nef", ".nrw", ".arw", ".srf", ".sr2", ".dng", ".raf", ".orf",
                   ".rw2", ".pef", ".srw", ".x3f", ".3fr", ".erf", ".kdc", ".mrw", ".raw", ".iiq", ".rwl"}
 POSTABLE_MIMES = {"image/jpeg", "image/png", "image/webp", "image/heic", "image/heif", "image/tiff"}
@@ -39,11 +49,13 @@ class ScanStats:
     skipped_unrenderable: int = 0
     trashed: int = 0
     changes: int = 0
+    shared_galleries: int = 0                # shared top folders walked in this pass
     notes: list[str] = field(default_factory=list)
 
     def line(self) -> str:
         return (f"folders={self.folders} images={self.images} skipped_raw={self.skipped_raw} "
-                f"skipped_unrenderable={self.skipped_unrenderable} trashed={self.trashed} changes={self.changes}")
+                f"skipped_unrenderable={self.skipped_unrenderable} trashed={self.trashed} changes={self.changes} "
+                f"shared_galleries={self.shared_galleries}")
 
 
 def skip_reason(f: dict) -> str | None:
@@ -59,8 +71,54 @@ def skip_reason(f: dict) -> str | None:
     return None
 
 
-def resolve_paths(folders: dict[str, dict], roots: dict[str, str]) -> dict[str, str]:
-    """folder id -> 'Top/Sub/Leaf'. roots maps My Drive's and each shared drive's id to its display name."""
+def shared_by_of(f: dict) -> str | None:
+    """Who shared this item with the account: a display name, or None for the account's own items and for
+    shared-drive items (Drive leaves ownedByMe unset there). Never an address."""
+    if "shared_by" in f:
+        return f["shared_by"]
+    if f.get("ownedByMe", True):
+        return None
+    name = (f.get("sharingUser") or {}).get("displayName")
+    if not name:
+        owners = f.get("owners") or []
+        name = owners[0].get("displayName") if owners else None
+    return str(name) if name else None
+
+
+def is_shared_top(f: dict, known, roots) -> bool:
+    """A folder shared with the account whose parent it cannot see is a top folder of its own ("Shared with
+    me/<name>"); one whose parent is a folder already known keeps its real chain (he shares A and A/B:
+    clearing A reaches B)."""
+    parents = f.get("parents") or []
+    return not parents or (parents[0] not in known and parents[0] not in roots)
+
+
+def walk_shared(reader: DriveReader, tops: list[dict]) -> tuple[dict[str, dict], list[dict]]:
+    """Every folder and image under the shared top folders, breadth first, each child carrying the name of
+    whoever shared the gallery. Reads only; called before any transaction opens."""
+    folders: dict[str, dict] = {}
+    images: list[dict] = []
+    seen: set[str] = set()
+    queue = [(t["id"], 0, shared_by_of(t)) for t in tops]
+    while queue:
+        fid, depth, by = queue.pop(0)
+        if fid in seen or depth > MAX_WALK_DEPTH:
+            continue
+        seen.add(fid)
+        for child in reader.children(fid):
+            child = {**child, "parents": child.get("parents") or [fid]}
+            child["shared_by"] = shared_by_of(child) or by
+            if child.get("mimeType") == FOLDER_MIME:
+                folders[child["id"]] = child
+                queue.append((child["id"], depth + 1, child["shared_by"]))
+            elif str(child.get("mimeType") or "").startswith("image/"):
+                images.append(child)
+    return folders, images
+
+
+def resolve_paths(folders: dict[str, dict], roots: dict[str, str], shared_tops: frozenset = frozenset()) -> dict[str, str]:
+    """folder id -> 'Top/Sub/Leaf'. roots maps My Drive's and each shared drive's id to its display name (or a
+    known folder's id to its stored path); a shared top folder's path is "Shared with me/<name>"."""
     cache: dict[str, str] = {}
 
     def path_of(fid: str, depth: int = 0) -> str:
@@ -71,6 +129,9 @@ def resolve_paths(folders: dict[str, dict], roots: dict[str, str]) -> dict[str, 
         f = folders.get(fid)
         if f is None or depth > 64:
             return "(outside the library)"
+        if fid in shared_tops:
+            cache[fid] = f"{SHARED_ROOT}/{f.get('name', '')}"
+            return cache[fid]
         parents = f.get("parents") or []
         parent = path_of(parents[0], depth + 1) if parents else "(no parent)"
         cache[fid] = f"{parent}/{f.get('name', '')}"
@@ -96,10 +157,11 @@ def _meta(f: dict) -> dict:
 def upsert_folder(conn: sqlite3.Connection, f: dict, path: str | None, now: str) -> None:
     parents = f.get("parents") or []
     conn.execute(
-        "INSERT INTO drive_folders (drive_id, name, parent_id, path, modified_time, first_seen_at, last_seen_at) "
-        "VALUES (?,?,?,?,?,?,?) ON CONFLICT(drive_id) DO UPDATE SET name=excluded.name, parent_id=excluded.parent_id, "
-        "path=COALESCE(excluded.path, drive_folders.path), modified_time=excluded.modified_time, last_seen_at=excluded.last_seen_at",
-        (f["id"], f.get("name") or "", parents[0] if parents else None, path, f.get("modifiedTime"), now, now))
+        "INSERT INTO drive_folders (drive_id, name, parent_id, path, modified_time, shared_by, first_seen_at, last_seen_at) "
+        "VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(drive_id) DO UPDATE SET name=excluded.name, parent_id=excluded.parent_id, "
+        "path=COALESCE(excluded.path, drive_folders.path), modified_time=excluded.modified_time, "
+        "shared_by=COALESCE(excluded.shared_by, drive_folders.shared_by), last_seen_at=excluded.last_seen_at",
+        (f["id"], f.get("name") or "", parents[0] if parents else None, path, f.get("modifiedTime"), shared_by_of(f), now, now))
 
 
 def upsert_photo(conn: sqlite3.Connection, f: dict, now: str) -> None:
@@ -139,11 +201,33 @@ def full_inventory(conn: sqlite3.Connection, reader: DriveReader) -> ScanStats:
     except Exception as e:  # noqa: BLE001 — a personal account may have none; never fatal
         stats.notes.append(f"shared drives not listed: {type(e).__name__}")
     folders = {f["id"]: f for f in reader.folders()}
-    paths = resolve_paths(folders, roots)
     # the whole listing is read from Drive BEFORE the transaction opens: walking a large library inside
     # it held SQLite's write lock for the whole walk, so every other agent and the dashboard got
     # "database is locked", and a network error late in the walk threw the pass away (the Mini, 2026-10-10)
     images = list(reader.images())
+    # 2026-10-14: the galleries shared with this account. Drive lists what was shared directly; the photos
+    # inside a shared folder are reached only by asking the folder for its children, so each shared top
+    # folder is walked. Everything is merged by id: the walk only adds.
+    shares = list(reader.shared_with_me())
+    for sh in shares:
+        if sh.get("mimeType") == FOLDER_MIME:
+            folders[sh["id"]] = {**folders.get(sh["id"], {}), **sh}
+    tops = [sh for sh in shares if sh.get("mimeType") == FOLDER_MIME and is_shared_top(sh, folders, roots)]
+    shared_tops = frozenset(t["id"] for t in tops)
+    walked_folders, walked_images = walk_shared(reader, tops)
+    for fid, f in walked_folders.items():
+        folders[fid] = {**folders.get(fid, {}), **f}
+    for t in tops:
+        folders[t["id"]] = {**folders[t["id"]], "parents": [], "shared_by": shared_by_of(t)}
+    by_id = {f["id"]: f for f in images}
+    for f in walked_images:
+        by_id[f["id"]] = {**by_id.get(f["id"], {}), **f}
+    for sh in shares:                          # a single photo shared directly: loose, no folder row, cleared only by hand
+        if str(sh.get("mimeType") or "").startswith("image/") and is_shared_top(sh, folders, roots):
+            by_id[sh["id"]] = {**by_id.get(sh["id"], {}), **sh, "parents": []}
+    images = list(by_id.values())
+    stats.shared_galleries = len(tops)
+    paths = resolve_paths(folders, roots, shared_tops)
     now = db.utcnow()
     conn.execute("BEGIN")
     try:
@@ -170,6 +254,7 @@ def full_inventory(conn: sqlite3.Connection, reader: DriveReader) -> ScanStats:
         stats.trashed = cur.rowcount
         refresh_counts(conn)
         settings.set(conn, CHANGES_TOKEN_KEY, token)
+        settings.set(conn, ROOT_IDS_KEY, json.dumps(sorted(roots)))
         settings.set(conn, INVENTORY_AT_KEY, now)
         settings.set(conn, "drive.inventory_stats", json.dumps(stats.__dict__))
         conn.execute("COMMIT")
@@ -185,6 +270,17 @@ def incremental(conn: sqlite3.Connection, reader: DriveReader) -> ScanStats:
     if not token:
         return full_inventory(conn, reader)
     changes, new_token = reader.changes(token)
+    roots = set(json.loads(settings.get(conn, ROOT_IDS_KEY) or "[]"))
+    # a gallery shared since the last run: listed again (one read) and walked now, so it lands within the hour
+    known = {r["drive_id"]: r["path"] for r in db.rows(conn, "SELECT drive_id, path FROM drive_folders")}
+    new_shares = [sh for sh in reader.shared_with_me() if sh.get("mimeType") == FOLDER_MIME and sh["id"] not in known]
+    tops = [sh for sh in new_shares if is_shared_top(sh, known, roots)]
+    walked_folders, walked_images = walk_shared(reader, new_shares)
+    new_folders = {**walked_folders}
+    for sh in new_shares:
+        top = sh["id"] in {t["id"] for t in tops}
+        new_folders[sh["id"]] = {**sh, "shared_by": shared_by_of(sh), **({"parents": []} if top else {})}
+    paths = resolve_paths(new_folders, {k: v for k, v in known.items() if v}, frozenset(t["id"] for t in tops))
     now = db.utcnow()
     conn.execute("BEGIN")
     try:
@@ -206,9 +302,26 @@ def incremental(conn: sqlite3.Connection, reader: DriveReader) -> ScanStats:
                     stats.skipped_raw += reason == "raw"
                     stats.skipped_unrenderable += reason != "raw"
                     continue
-                _ensure_parent_known(conn, (f.get("parents") or [None])[0], now)
+                parent = (f.get("parents") or [None])[0]
+                if parent in roots:
+                    parent = None            # loose at the top of My Drive: no folder row, never a stub for the root
+                    f = {**f, "parents": []}
+                _ensure_parent_known(conn, parent, now)
                 upsert_photo(conn, f, now)
                 stats.images += 1
+        for fid, f in new_folders.items():
+            upsert_folder(conn, f, paths.get(fid), now)
+            stats.folders += 1
+        for f in walked_images:
+            reason = skip_reason(f)
+            if reason:
+                stats.skipped_raw += reason == "raw"
+                stats.skipped_unrenderable += reason != "raw"
+                continue
+            _ensure_parent_known(conn, (f.get("parents") or [None])[0], now)
+            upsert_photo(conn, f, now)
+            stats.images += 1
+        stats.shared_galleries = len(tops)
         refresh_counts(conn)
         settings.set(conn, CHANGES_TOKEN_KEY, new_token)
         conn.execute("COMMIT")

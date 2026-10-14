@@ -296,6 +296,10 @@ class Heuristics(IsolatedCase):
         self.assertFalse(heuristics.guess("My Drive/Smith Wedding 2021").is_event)
         self.assertEqual(heuristics.guess("My Drive/Katsucon 2025/Portraits").event_kind, "fan")
         self.assertIsNone(heuristics.guess("My Drive/Misc").is_event)
+        # 2026-10-14: a gallery shared with the account reads "Shared with me/<name>"; the root is stripped like My Drive
+        self.assertEqual(scan.SHARED_ROOT, "Shared with me")
+        self.assertEqual(heuristics.guess("Shared with me/Katsucon 2025/Portraits"), heuristics.guess("My Drive/Katsucon 2025/Portraits"))
+        self.assertEqual(heuristics.guess("Shared with me/Misc").is_event, None)
 
     def test_a_private_occasion_is_never_convention_work(self):
         """A wedding has a reception, a dinner, toasts and awards, so the business vocabulary

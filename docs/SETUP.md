@@ -41,6 +41,16 @@ your Drive files. It can never change, move or delete anything.
 If the sign-in ever stops working, the dashboard shows it on every page,
 and you get a phone push and an email within the hour.
 
+**Galleries shared with the account (2026-10-14).** Folders that someone
+shares with chriskimages@gmail.com (his brother's galleries) are scanned like
+Chris's own: they appear under Folders as `Shared with me/<name>`, with "shared
+by <name>" on the card, and nothing in them is used until he approves the
+folder or a photo. A gallery shared after the last scan is picked up within
+the hour; a photo added to a known gallery arrives with the next changes
+read. Drive shortcuts are not followed (the real folder arrives through the
+share). Only names are read, never addresses, and still only with the
+read-only scope.
+
 ## 3. Credits and consent sheet
 
 1. A new Google Sheet in the same Drive, named `Event Caliber credits`.

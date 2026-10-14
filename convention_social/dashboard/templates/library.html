@@ -123,6 +123,7 @@ document.querySelectorAll('form.tap').forEach(function (form) {
   <div class="row"><a href="/library/folder/{{ f.drive_id }}"><strong>{{ f.name }}</strong></a>
     <span class="badge {{ f.clearance }}">{{ f.clearance.replace('_',' ') }}</span></div>
   <div class="muted">{{ f.path or '' }}</div>
+  {% if f.shared_by %}<div class="muted">shared by {{ f.shared_by }}</div>{% endif %}
   <div class="muted">{{ f.conv or 0 }} look like event photos, {{ f.image_count }} photos in all{% if f.minors %}, {{ f.minors }} set aside (may be under 18){% endif %}</div>
   <div class="row" style="margin-top:8px">
     {% for state, label, cls in [('cleared', 'Approve all', 'ok'), ('excluded', 'Exclude', 'danger'), ('not_cleared', 'Undecided', '')] if state != f.clearance %}

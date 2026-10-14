@@ -810,6 +810,29 @@ said why.
   Cloudflare's DNS) needs nothing on the Keys page: the card says so in plain
   words, with no badge. An empty field is not a fault.
 
+## 2026-10-14: his brothers' galleries
+
+Chris: "Can you pick up shared galleries too on drive? Several have me and
+my brothers images." They live under "Shared with me" (his brother's own
+Drive, shared to the account); every shared folder with photos is taken in.
+
+- Drive lists only what was shared directly, so the scanner now walks each
+  shared gallery for the photos inside it (`drive/scan.walk_shared`,
+  `DriveReader.children`), in the weekly full pass and, for a gallery shared
+  since the last run, within the hour (`incremental` lists the shares again).
+  Reads only, before any transaction opens; the scope stays `drive.readonly`.
+- A shared gallery is a top folder of its own, "Shared with me/<name>",
+  cleared like any folder; a folder shared on its own inside a gallery he
+  can see keeps its place under it, so clearing the gallery reaches it. A
+  single photo shared on its own has no folder and is cleared only by hand.
+- Nothing in a shared gallery is used until he clears the folder or the
+  photo; an excluded gallery keeps its photos out. The same law as his own.
+- Who shared it is kept as a name (`drive_folders.shared_by`), shown on the
+  Folders list, the folder page and the Drive page. No address is asked for
+  or stored.
+- In passing: a photo loose at the top of My Drive no longer gets a "(new
+  folder)" stub row on a changes run (the root ids are remembered).
+
 ## Standing rules from the brief
 
 - CPAC, the ACU and their affiliates are never contacted, by code

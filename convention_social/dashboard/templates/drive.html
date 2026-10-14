@@ -23,5 +23,9 @@
   <div class="muted">{{ summary.total_images }} postable photos in Drive, {{ summary.skipped_raw }} RAW files skipped, {{ summary.vision_checked }} looked at closely, last full scan {{ summary.inventory_at }}</div>
   {% if report_name %}<p><a class="btn" href="/drive/report/{{ report_name }}">Open the latest report</a></p>{% endif %}
 </div>
+<div class="card">
+  <strong>{{ shared|length }} shared galler{{ 'y' if shared|length == 1 else 'ies' }} found{% if sharers %}, from {{ sharers|join(', ') }}{% endif %}</strong>
+  <div class="muted">{% if shared %}Folders shared with this account are scanned like your own and appear under Folders as "Shared with me/…"; nothing in them is used until you approve the folder or a photo. {% for s in shared %}{{ s.name }}{{ '; ' if not loop.last }}{% endfor %}{% else %}No shared galleries found yet. A folder shared with this account appears here within an hour of the share, under Folders as "Shared with me/…".{% endif %}</div>
+</div>
 {% if unmatched %}<div class="card"><strong>Credits sheet rows that match no photo or folder</strong><div class="muted">{{ unmatched }}</div></div>{% endif %}
 {% endblock %}
