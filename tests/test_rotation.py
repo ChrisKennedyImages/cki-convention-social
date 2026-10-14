@@ -168,14 +168,17 @@ class OnTheSite(IsolatedCase):
     """2026-10-14, the coverage pages: every usable event photo is on some coverage page on every build (six a room,
     least recently used first), so `photos.ids` is the whole pool and says nothing about rotation. What rotates is
     the home page (`photos.grid_ids`: the hero when it is a library photo, the grid, the venues), and that is what a
-    build records in photo_use; the coverage pages are a view of the library, not a pick. Thirty-two photos, so the
-    home page's seven turn over four times before any comes round again."""
+    build records in photo_use; the coverage pages are a view of the library, not a pick. Three builds' worth of
+    photos and four over, so the home page turns over three times before any comes round again (the strip grew to
+    twelve frames on 2026-10-14, so the count follows COVERAGE_ROWS)."""
+
+    N = 3 * (1 + build.COVERAGE_ROWS) + 4
 
     def setUp(self):
         super().setUp()
         self.conn = db.connect()
         self.addCleanup(self.conn.close)
-        self.ids = [event_photo(self.conn, f"p{i:02d}", kind="business", final="business", quality=5) for i in range(32)]
+        self.ids = [event_photo(self.conn, f"p{i:02d}", kind="business", final="business", quality=5) for i in range(self.N)]
 
     def fetch(self, row):
         return Image.new("RGB", (int(row["width"]), int(row["height"])), (80, 60, 120))
@@ -183,7 +186,7 @@ class OnTheSite(IsolatedCase):
     def shown(self, preview=False):
         photos = build.pick_photos(self.conn, self.fetch)
         build.build(self.conn, photos, out=self.root / "dist", preview=preview)
-        self.assertEqual(len(photos.ids), 32, "every usable photo is on the home page or a coverage page")
+        self.assertEqual(len(photos.ids), self.N, "every usable photo is on the home page or a coverage page")
         self.assertEqual(photos.ids[:len(photos.grid_ids)], photos.grid_ids)
         return photos.grid_ids
 
@@ -194,15 +197,14 @@ class OnTheSite(IsolatedCase):
         self.assertEqual(sorted(r["photo_id"] for r in rows), sorted(first), "the home page's photos are the use, not the coverage pages'")
         self.assertTrue(all(r["surface"] == "site" and r["ref"].startswith("site:") for r in rows))
         second = self.shown()
-        self.assertEqual(set(first) & set(second), set(), "thirty-two approved, seven on the home page: seven others next")
+        self.assertEqual(set(first) & set(second), set(), "the home page's photos sit at the back of the line: others next")
         third = self.shown()
         self.assertEqual(set(third) & (set(first) | set(second)), set())
+        shown = set(first) | set(second) | set(third)
+        self.assertEqual(len(shown), 3 * (1 + build.COVERAGE_ROWS))
         fourth = self.shown()
-        self.assertEqual(len(set(first) | set(second) | set(third) | set(fourth)), 28)
-        fifth = self.shown()
-        self.assertEqual(set(fifth) - (set(first) | set(second) | set(third) | set(fourth)), set(self.ids) - (set(first) | set(second) | set(third) | set(fourth)),
-                         "the four never shown, then the ones used longest ago")
-        self.assertTrue(set(fifth) & set(first))
+        self.assertEqual(set(fourth) - shown, set(self.ids) - shown, "the four never shown, then the ones used longest ago")
+        self.assertEqual(set(fourth) & shown, set(first[:len(fourth) - 4]), "the oldest, in the order the first build showed them")
 
     def test_a_preview_records_nothing(self):
         self.shown(preview=True)

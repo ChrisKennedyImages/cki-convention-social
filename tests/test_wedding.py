@@ -187,7 +187,8 @@ class TheSite(IsolatedCase):
             return classify.final_check(self.conn, row["id"], jpeg_bytes(), client=client, agent="site")
         photos = build.pick_photos(self.conn, self.fetch, recheck=recheck)
         self.assertEqual(len(client.calls), 12, "the cap: the rest wait for another build or a draft")
-        self.assertEqual((len(photos.hero), len(photos.coverage)), (1, 6))
+        # twelve checked photos: the hero and eleven frames (the strip holds twelve since 2026-10-14; it held six)
+        self.assertEqual((len(photos.hero), len(photos.coverage)), (1, min(build.COVERAGE_ROWS, build.RECHECKS - 1)))
         self.assertEqual(build.RECHECKS, 12)
 
     def test_a_check_claude_refuses_keeps_the_photo_out(self):

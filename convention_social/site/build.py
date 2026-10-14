@@ -73,8 +73,8 @@ class SiteCopyRefused(ValueError):
     pass
 
 
-HERO_ROWS, COVERAGE_ROWS, VENUE_ROWS = 1, 6, 4
-EVENT_POOL = 20               # eligible event photos the build gathers: the hero is chosen among them, the grid spread across events
+HERO_ROWS, COVERAGE_ROWS, VENUE_ROWS = 1, 12, 4      # 2026-10-14: the strip grew from six to twelve (Chris: "expand the gallery to more images")
+EVENT_POOL = 20               # eligible event photos the hero is chosen among; the strip draws from the whole usable pool
 HERO_CANDIDATES = 12          # landscape frames looked at (fetched) for the hero's colour and punch
 RECHECKS = 12                 # Claude calls one site build may spend asking what kind of occasion a photo is from
 HERO_KEY = "site.hero_photo_id"   # Chris's own pick for the hero (Photos tab, Approved: Site hero); it wins while it is usable
@@ -120,6 +120,38 @@ def event_of(row: dict) -> object:
     return (row.get("convention_name") or "").strip().lower() or row.get("folder_id") or row.get("id")
 
 
+def shot_of(row: dict) -> str:
+    return row.get("shot_type") or ""
+
+
+def one_per_picture(rows: list[dict], last: dict[int, str], keep: Optional[set] = None) -> tuple[list[dict], dict[int, str]]:
+    """The same picture under two ids is one photo (Chris, 2026-10-14, on the live strip: "same picked twice"; the
+    library holds the same file in two Drive folders, or a copy in a shared gallery, 1,431 such groups that day).
+    One row stands for each md5 group, the first in the order given (an id in `keep`, Chris's own hero pick, wins),
+    and the group's last use on any surface is the latest of its rows', so a picture shown under one id sits out
+    under the others too. A row with no md5 (a photo from the phone) is its own group."""
+    groups: dict[str, list[dict]] = {}
+    for r in rows:
+        groups.setdefault(r.get("md5") or f"id:{r['id']}", []).append(r)
+    kept, shared = [], dict(last)
+    for members in groups.values():
+        latest = max((last.get(m["id"]) or "" for m in members), default="")
+        if latest:
+            for m in members:
+                shared[m["id"]] = latest
+        kept.append(next((m for m in members if keep and m["id"] in keep), members[0]))
+    return kept, shared
+
+
+def pick_grid(rows: list[dict]) -> list[dict]:
+    """The home page's strip (Chris, 2026-10-14: "the website gallery has duplicate images and lets expand the gallery
+    to more images and a variety"): COVERAGE_ROWS photos drawn across the rooms (the kinds of shot) and across events,
+    one of each room before any room repeats and, within a round, one per event before any event repeats; the pool's
+    own order (the least recently used first) decides within a room. So the strip shows backstage, the stage, dinners,
+    portraits and halls rather than several of one room, and never the same photo twice (the rows are distinct photos)."""
+    return spread(spread(rows, event_of), shot_of)[:COVERAGE_ROWS]
+
+
 def pick_photos(conn: sqlite3.Connection, fetch: Callable[[dict], Image.Image],
                 recheck: Optional[Callable[[dict, Image.Image], Optional[dict]]] = None,
                 look: Optional[Callable[[bytes], Optional[dict]]] = None) -> SitePhotos:
@@ -139,11 +171,13 @@ def pick_photos(conn: sqlite3.Connection, fetch: Callable[[dict], Image.Image],
         ORDER BY COALESCE(c.quality,0) DESC, p.width DESC LIMIT 600""")
     rows = sorted((dict(r) for r in rows), key=lambda r: (0 if r["event_kind"] in ("fan", "business") else 1,
                                                           -report.strength(r), -(r["width"] or 0)))
-    # the rotation (2026-10-14): the least recently used first, on any surface, so each publish shows photos the posts
-    # and the last build did not; the strength order above only breaks ties (library/report.rotate)
-    rows = report.rotate(conn, rows)
     chosen = settings.get(conn, HERO_KEY)
     chosen_id = int(chosen) if chosen and str(chosen).isdigit() else None
+    # the same picture under two ids is one photo, and its use under any id counts (2026-10-14: "same picked twice")
+    rows, last = one_per_picture(rows, report.last_uses(conn), keep={chosen_id} if chosen_id is not None else None)
+    # the rotation (2026-10-14): the least recently used first, on any surface, so each publish shows photos the posts
+    # and the last build did not; the strength order above only breaks ties (library/report.rotate)
+    rows = report.rotate(conn, rows, last=last)
     out, images, rechecks = SitePhotos(), {}, 0
     events: list[dict] = []
     venues: list[dict] = []
@@ -184,7 +218,7 @@ def pick_photos(conn: sqlite3.Connection, fetch: Callable[[dict], Image.Image],
         rec = upload.record(conn) or {}
         out.hero = [(upload.image(), SHOT_WORDS.get(rec.get("shot_type") or "", "Event photography"))]
         out.hero_note = f"{yours} ({why})"
-        grid, rooms = spread(events, event_of)[:COVERAGE_ROWS], venues[:VENUE_ROWS]
+        grid, rooms = pick_grid(pool), venues[:VENUE_ROWS]
         return _finish(out, grid, rooms, None, pool, image_of)
 
     def note(text):
@@ -210,8 +244,7 @@ def pick_photos(conn: sqlite3.Connection, fetch: Callable[[dict], Image.Image],
             note("no usable landscape event photo for the hero")
     if hero is not None:
         out.hero = [(image_of(hero), site_alt(hero))]
-        events = [r for r in events if r["id"] != hero["id"]]
-    grid, rooms = spread(events, event_of)[:COVERAGE_ROWS], venues[:VENUE_ROWS]
+    grid, rooms = pick_grid([r for r in pool if hero is None or r["id"] != hero["id"]]), venues[:VENUE_ROWS]
     return _finish(out, grid, rooms, hero, pool, image_of)
 
 

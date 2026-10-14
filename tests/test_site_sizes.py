@@ -215,7 +215,7 @@ class Strip(SizesCase):
         self.assertIn("['touchend','touchcancel'].forEach(ev=>roll.addEventListener(ev,()=>{touch=false;hold=performance.now()+1200}", roll,
                       "a finger lifted: the swipe's own glide finishes before the roll goes on")
         self.assertIn("if(!over&&!touch&&!focus&&!document.hidden&&t>hold&&period()>0){", roll)
-        self.assertIn("if(!reduce)raf=requestAnimationFrame(step)", roll)
+        self.assertIn("if(!reduce&&!fits)raf=requestAnimationFrame(step)", roll)
         self.assertIn("hold=performance.now()+900;roll.scrollBy({left:(b.dataset.dir==='prev'?-1:1)*width(),behavior:'smooth'})", roll,
                       "an arrow's smooth move is not cancelled by the roll setting scrollLeft")
         self.assertNotIn("track.style.transform", js, "the old scroll-driven reel is gone")
@@ -236,6 +236,109 @@ class Strip(SizesCase):
         self.assertEqual(re.findall(r'<div class="frame"><a href="([^"]+)">', strip),
                          ["/coverage/backstage/", "/coverage/green_room/", "/coverage/breakouts/", "/coverage/stage/"], "each frame opens its coverage page")
         self.assertNotIn('data-speed', strip, "no parallax on the frames")
+
+
+class Gallery(SizesCase):
+    """Chris, 2026-10-14, on the live site: "the website gallery has duplicate images and lets expand the gallery to more
+    images and a variety". The six live frames were six different pictures (no two alike by bytes or by perceptual
+    hash); what read as duplicates were the loop's copies coming round after only six frames, and four of the six were
+    portraits. Now twelve frames, drawn across the rooms and the events, and the copies only when the photos do not
+    fit the screen."""
+
+    def test_twelve_frames_across_the_rooms_and_the_events_never_the_same_photo_twice(self):
+        self.assertEqual(build.COVERAGE_ROWS, 12)
+        pool = []                                            # the pool's order is the rotation's: least recently used first
+        for pid, shot, event in ((1, "portrait", "E1"), (2, "portrait", "E1"), (3, "portrait", "E2"), (4, "stage", "E1"),
+                                 (5, "backstage", "E2"), (6, "dinner_reception", "E3"), (7, "vendor_hall", "E1"), (8, "portrait", "E3"),
+                                 (9, "stage", "E2"), (10, "candid", "E1")):
+            pool.append({"id": pid, "shot_type": shot, "convention_name": event})
+        grid = [r["id"] for r in build.pick_grid(pool)]
+        self.assertEqual(grid, [1, 6, 5, 4, 7, 10, 3, 9, 2, 8],
+                         "one of each room first (and across events within the round), then the rooms again, the least recently used first within a room")
+        self.assertEqual(len(set(grid)), len(grid), "never the same photo twice")
+        self.assertEqual(len({r["shot_type"] for r in build.pick_grid(pool)[:6]}), 6, "the first six frames are six rooms")
+        many = [{"id": i, "shot_type": "portrait", "convention_name": "E1"} for i in range(1, 30)]
+        self.assertEqual([r["id"] for r in build.pick_grid(many)], list(range(1, 13)), "one room only: the twelve least recently used of it")
+        self.assertEqual(build.pick_grid([]), [])
+
+    def test_the_same_picture_under_two_ids_is_shown_once_and_sits_out_under_both(self):
+        """Chris, 2026-10-14, on the live strip: "same picked twice". The library holds the same file under several ids
+        (the same photo in two Drive folders, a copy in a shared gallery: 1,431 md5 groups that day), each with its own
+        classification, so an id check passed and the picture came twice. One row now stands for each md5 group, the
+        home page and the coverage pages show it once, its use under any id counts for the whole group, and Chris's
+        own hero pick on a twin is still his pick."""
+        from tests.test_wedding import event_photo
+        from convention_social.library import report
+        conn = db.connect()
+        self.addCleanup(conn.close)
+        ids = [event_photo(conn, f"p{i:02d}", kind="business", final="business", quality=5) for i in range(30)]
+        twins = {ids[2]: ids[9], ids[4]: ids[11], ids[5]: ids[13]}                    # three pictures, each under two ids: 27 pictures
+        for i, pid in enumerate(ids):
+            conn.execute("UPDATE photos SET md5=? WHERE id=?", (f"md5-{i:02d}", pid))
+        for a, b in twins.items():
+            conn.execute("UPDATE photos SET md5=(SELECT md5 FROM photos WHERE id=?) WHERE id=?", (a, b))
+        conn.execute("UPDATE photos SET md5=NULL WHERE id IN (?, ?)", (ids[28], ids[29]))   # two phone photos, no md5: their own
+        fetch = lambda r: Image.new("RGB", (int(r["width"]), int(r["height"])), (80, 60, 120))
+        got = build.pick_photos(conn, fetch)
+        md5s = {r["id"]: r["md5"] for r in db.rows(conn, "SELECT id, md5 FROM photos")}
+        pictures = [md5s[i] or f"id:{i}" for i in got.grid_ids]
+        self.assertEqual(len(got.grid_ids), 13, "the hero and twelve frames, from thirteen distinct pictures")
+        self.assertEqual(len(set(pictures)), len(pictures), "no picture twice on the home page")
+        self.assertEqual(len(set(got.grid_ids)), len(got.grid_ids))
+        self.assertEqual(sorted(got.ids), sorted(set(got.ids)))
+        shown_twice = [i for i in got.ids if i in twins.values()]
+        self.assertEqual(shown_twice, [], "a twin never stands beside its picture: the first id of the group stands for both")
+        self.assertIn(ids[28], got.ids); self.assertIn(ids[29], got.ids)
+        build.build(conn, got, out=self.root / "dist")
+        second = build.pick_photos(conn, fetch)
+        self.assertEqual(set(second.grid_ids) & set(got.grid_ids), set(), "the next build shows other pictures")
+        self.assertEqual([i for i in second.grid_ids if i in twins.values()], [], "and not a shown picture under its other id")
+        # the rotation counts a use under any id of the group
+        kept, shared = build.one_per_picture([{"id": 1, "md5": "x"}, {"id": 2, "md5": "x"}, {"id": 3, "md5": None}], {2: "2026-10-10T00:00:00"})
+        self.assertEqual([r["id"] for r in kept], [1, 3])
+        self.assertEqual(shared, {1: "2026-10-10T00:00:00", 2: "2026-10-10T00:00:00"})
+        kept, _ = build.one_per_picture([{"id": 1, "md5": "x"}, {"id": 2, "md5": "x"}], {}, keep={2})
+        self.assertEqual([r["id"] for r in kept], [2], "Chris's hero pick on a twin stands for the group")
+        settings.set(conn, build.HERO_KEY, str(ids[9]))                                   # his pick is the twin of ids[2]
+        third = build.pick_photos(conn, fetch)
+        self.assertEqual(third.grid_ids[0], ids[9], "his pick is the hero")
+        self.assertNotIn(ids[2], third.ids, "and its twin is nowhere else on the site")
+
+    def test_the_strip_from_the_library_spans_the_rooms_and_the_copies_go_when_the_photos_fit(self):
+        from tests.test_wedding import event_photo
+        conn = db.connect()
+        self.addCleanup(conn.close)
+        shots = ["portrait", "portrait", "portrait", "portrait", "stage_panel", "backstage", "dinner_reception", "vendor_hall", "candid", "portrait",
+                 "portrait", "stage_panel", "portrait", "portrait"]
+        ids = []
+        for i, shot in enumerate(shots):
+            pid = event_photo(conn, f"p{i:02d}", kind="business", final="business", quality=5, width=3000 if i % 2 else 2000, height=2000 if i % 2 else 2500)
+            conn.execute("UPDATE classifications SET shot_type=? WHERE photo_id=?", (shot, pid))
+            conn.execute("UPDATE final_checks SET shot_type=? WHERE photo_id=?", (shot, pid))
+            ids.append(pid)
+        got = build.pick_photos(conn, lambda r: Image.new("RGB", (int(r["width"]), int(r["height"])), (80, 60, 120)))
+        frames = got.grid_ids[1:]                              # after the hero (a landscape library photo)
+        self.assertEqual(len(frames), build.COVERAGE_ROWS)
+        self.assertEqual(len(set(frames)), len(frames), "no photo twice in the strip")
+        self.assertNotIn(got.grid_ids[0], frames, "nor the hero")
+        rooms = {r["shot_type"] for r in db.rows(conn, "SELECT photo_id, shot_type FROM classifications") if r["photo_id"] in frames[:6]}
+        self.assertGreater(len(rooms), 1, "the first frames span more than one room when the pool has them")
+        self.assertEqual(len(set(got.links[:5])), 5, "the first five frames open five different coverage pages")
+        out = self.built(got)
+        home = self.page(out, "index.html")
+        strip = home[home.index('<section id="work" class="reel">'):]
+        strip = strip[:strip.index("</section>")]
+        own = re.findall(r'<div class="frame"><a href="[^"]+"><div class="ph" style="--ar:[0-9.]+"><img class="" src="(/assets/work-\d+-1600.jpg)"', strip)
+        self.assertEqual(len(own), build.COVERAGE_ROWS)
+        self.assertEqual(len(set(own)), len(own), "the first half of the strip never repeats a photo")
+        copies = re.findall(r'<div class="frame" aria-hidden="true"><a tabindex="-1" href="[^"]+"><div class="ph" style="--ar:[0-9.]+"><img class="" src="(/assets/work-\d+-1600.jpg)"', strip)
+        self.assertEqual(copies, own, "the second half is the loop's copy of the first, hidden from readers")
+        js = theme.JS
+        roll = js[js.index("const roll=document.querySelector('.reel .track')"):js.index("// parallax")]
+        self.assertIn("const own=[...roll.querySelectorAll('.frame:not([aria-hidden])')]", roll)
+        self.assertIn("const fits=!lastOwn||lastOwn.offsetLeft+lastOwn.offsetWidth<=roll.clientWidth;", roll)
+        self.assertIn("if(fits)roll.querySelectorAll('.frame[aria-hidden]').forEach(c=>c.remove());", roll, "photos that fit the screen: no copies, no repeats")
+        self.assertIn("if(!reduce&&!fits)raf=requestAnimationFrame(step)", roll, "and nothing rolls")
 
 
 class NothingCropped(SizesCase):
@@ -387,11 +490,11 @@ class CoveragePages(SizesCase):
         self.addCleanup(conn.close)
         ids = [event_photo(conn, f"p{i}", kind="business", final="business", quality=5) for i in range(10)]
         got = build.pick_photos(conn, lambda r: Image.new("RGB", (int(r["width"]), int(r["height"])), (80, 60, 120)))
-        self.assertEqual(len(got.grid_ids), 1 + build.COVERAGE_ROWS)
+        self.assertEqual(len(got.grid_ids), min(1 + build.COVERAGE_ROWS, len(ids)), "ten photos: the hero and nine frames")
         self.assertEqual(got.ids[:len(got.grid_ids)], got.grid_ids)
         self.assertEqual(sorted(got.ids), sorted(ids), "every usable photo is somewhere on the site")
         self.assertEqual(list(got.pages), offer.coverage_keys())
-        self.assertEqual(got.links, ["/coverage/breakouts/"] * build.COVERAGE_ROWS, "the grid's frames open the page of their kind of shot")
+        self.assertEqual(got.links, ["/coverage/breakouts/"] * (len(ids) - 1), "the grid's frames open the page of their kind of shot")
         self.assertTrue(all(len(v) >= build.PAGE_MIN for v in got.pages.values()), {k: len(v) for k, v in got.pages.items()})
         self.assertEqual(len(got.pages["breakouts"]), build.PAGE_ROWS, "the panels' own page is full")
 
