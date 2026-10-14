@@ -54,18 +54,22 @@ class Rotate(IsolatedCase):
         self.assertEqual(db.one(self.conn, "SELECT COUNT(*) n FROM photo_use")["n"], 0)
 
     def test_the_drafts_made_before_the_table_existed_count_once(self):
-        settings.set(self.conn, report.HISTORY_KEY, "")                           # as on the Mini the day this lands
+        settings.set(self.conn, report.HISTORY_KEY, "done")                       # while the table did not exist
         q1 = add_post(self.conn, [self.ids[0], self.ids[1]], status="published")
         q2 = add_post(self.conn, [self.ids[1], 999], status="draft")              # 999: a photo since removed
         self.conn.execute("UPDATE content_queue SET created_at='2026-09-01T09:00:00+00:00' WHERE id=?", (q1,))
-        self.assertEqual(report.ensure_use_history(self.conn), 3)
+        q3 = add_post(self.conn, [self.ids[2]], status="draft")
+        report.record_use(self.conn, "post", [self.ids[2]], ref=f"post:{q3}")       # a draft that recorded its own use first
+        settings.set(self.conn, report.HISTORY_KEY, "")                           # as on the Mini the day this lands
+        self.assertEqual(report.ensure_use_history(self.conn), 3, "the two old drafts; the one already recorded is not counted twice")
         self.assertEqual(report.ensure_use_history(self.conn), 0, "once")
         last = report.last_uses(self.conn)
         self.assertEqual(last[self.ids[0]], "2026-09-01T09:00:00+00:00")
-        self.assertEqual(sorted(last), sorted([self.ids[0], self.ids[1]]))
+        self.assertEqual(sorted(last), sorted([self.ids[0], self.ids[1], self.ids[2]]))
         use = report.use_of(self.conn, self.ids)
         self.assertEqual((use[self.ids[1]]["n"], use[self.ids[1]]["surfaces"]), (2, ["post"]))
-        self.assertNotIn(self.ids[2], use)
+        self.assertEqual(use[self.ids[2]]["n"], 1)
+        self.assertNotIn(self.ids[3], use)
         self.assertEqual(db.one(self.conn, "SELECT ref FROM photo_use WHERE photo_id=? ORDER BY id DESC", (self.ids[1],))["ref"], f"post:{q2}")
 
     def test_the_line_under_an_approved_photo(self):

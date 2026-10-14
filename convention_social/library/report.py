@@ -111,7 +111,9 @@ def ensure_use_history(conn: sqlite3.Connection) -> int:
         return 0
     known = {r["id"] for r in db.rows(conn, "SELECT id FROM photos")}
     rows = []
-    for q in db.rows(conn, "SELECT id, photo_ids, created_at FROM content_queue WHERE photo_ids IS NOT NULL ORDER BY id"):
+    # a draft that already recorded its use (the first write after this lands can be a draft's own) is not counted twice
+    for q in db.rows(conn, "SELECT id, photo_ids, created_at FROM content_queue WHERE photo_ids IS NOT NULL "
+                           "AND NOT EXISTS (SELECT 1 FROM photo_use u WHERE u.ref = 'post:' || content_queue.id) ORDER BY id"):
         try:
             ids = [int(p) for p in json.loads(q["photo_ids"] or "[]")]
         except (ValueError, TypeError):
@@ -141,10 +143,10 @@ def record_use(conn: sqlite3.Connection, surface: str, photo_ids, *, ref: str = 
     run goes out when the lane is switched live), a site built for publishing, samples made."""
     if surface not in USE_SURFACES:
         raise ValueError(f"unknown surface {surface!r}; one of {', '.join(USE_SURFACES)}")
-    ensure_use_history(conn)
     now = now or db.utcnow()
     ids = list(dict.fromkeys(int(p) for p in photo_ids))
     conn.executemany("INSERT INTO photo_use (photo_id, surface, ref, used_at) VALUES (?,?,?,?)", [(p, surface, ref, now) for p in ids])
+    ensure_use_history(conn)          # after this write, so a draft recording its own use is not filled in a second time
     return len(ids)
 
 

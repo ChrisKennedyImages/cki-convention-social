@@ -220,7 +220,8 @@ def make(conn, fetch: Callable[[str], bytes], *, out_root: Optional[Path] = None
                                                 "music": track.name if track else None,
                                                 "at": datetime.now().isoformat(timespec="seconds")}, indent=1))
     (out / "index.html").write_text(page(out.name, made, failed))
-    report.record_use(conn, "sample", [r["id"] for r in rows], ref=f"sample:{out.name}")   # the rotation's memory
+    # the rotation's memory (a stand-in row without an id, as a test hands in, records nothing)
+    report.record_use(conn, "sample", [r["id"] for r in rows if "id" in r.keys()], ref=f"sample:{out.name}")
     log(f"design samples: {out}")
     return out
 
