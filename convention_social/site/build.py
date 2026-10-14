@@ -383,6 +383,12 @@ def copy_text() -> dict:
         "contact_first": "Email or call, and one of us writes back within 24 hours.",
         "contact_p": "We are based in Washington, DC and travel wherever the event is. For dates and a quote, the form is quickest.",
         "who": "One of us is at every event. The event is staffed with our photographers, and we shoot when we're needed.",
+        # Chris, 2026-10-14, on the Privacy page's Who we are, one line long: "should be more than two fucking words!"
+        "who_we_are": ("Event Caliber is the brand of Chris and Nic Kennedy, brothers and event photographers based in Washington, DC. "
+                       "The company behind it is CKI, LLC. Questions about this page, a photo or the form go to {email}."),
+        "thanks": "Your request is in. One of us reads it and writes back to you by email within 24 hours.",
+        "thanks_p": "Until then, the coverage pages show what each room of an event looks like in our photographs.",
+        "not_found": "There is no page at this address. The pages are in the menu, and the coverage pages are a tap away.",
         "about": ("We're Chris and Nic Kennedy, brothers, and we have photographed events for more than thirty years each.\n\n"
                   "We learned on film. Both of us studied photography at the Corcoran in Washington, DC, where our father taught "
                   "and had graduated before us. Nic finished in 1999, Chris in 2002. Many of the events in our early years were "
@@ -691,7 +697,7 @@ What moves the quote: the days and hours, the rooms covered at the same time, ho
 <div class="f"><label class="mono" for="phone">Phone, optional</label><input id="phone" name="phone" maxlength="40" autocomplete="tel"></div>
 <div class="f"><label class="mono" for="organization">Organization</label><input id="organization" name="organization" maxlength="160" autocomplete="organization"></div>
 <div class="f full"><label class="mono" for="event_name">Event name</label><input id="event_name" name="event_name" maxlength="200"></div>
-<div class="f"><label class="mono" for="event_kind">Kind of event</label><select id="event_kind" name="event_kind"><option value="business">Conference, convention or corporate event</option>
+<div class="f full"><label class="mono" for="event_kind">Kind of event</label><select id="event_kind" name="event_kind"><option value="business">Conference, convention or corporate event</option>
 <option value="other">Gala, reception or something else</option></select></div>
 <div class="f"><label class="mono" for="attendance">Expected attendance</label><input id="attendance" name="attendance" maxlength="40"></div>
 <div class="f"><label class="mono" for="start_date">First day</label><input id="start_date" name="start_date" type="date"></div>
@@ -715,10 +721,11 @@ if(q)document.getElementById("err").innerHTML='<div class="err mono">'+(m[q]||m.
 <h3>Who will be at your event</h3><p>{e(t['who'])}</p><p>References available on request.</p></div>
 {f'<div class="grid" style="margin-top:50px">{about_photos}</div>' if about_photos else ''}
 <p style="margin-top:50px"><a class="btn fill" href="/book/">Request a quote <span class="arr">&#8599;</span></a></p></section>""")
-    pages["thanks/index.html"] = ("Thank you", "Your request is in.", """<section class="page" style="min-height:70vh">
+    pages["thanks/index.html"] = ("Thank you", "Your request is in.", f"""<section class="page">
 <div class="kick mono c">Request received</div><h1>Thank<br><span class="o">you</span><b>.</b></h1>
-<p class="g" style="max-width:560px;margin-top:30px">Your request is in. A reply comes back to you by email.</p>
-<p style="margin-top:30px"><a class="btn" href="/">Back to the site <span class="arr">&#8599;</span></a></p></section>""")
+<p class="first">{e(t['thanks'])}</p>
+<p class="g" style="max-width:560px;margin-top:18px">{e(t['thanks_p'])}</p>
+<p style="margin-top:30px"><a class="btn" href="/coverage/">The coverage <span class="arr">&#8599;</span></a> <a class="btn" href="/">Back to the site <span class="arr">&#8599;</span></a></p></section>""")
     pages["availability/index.html"] = ("Availability", f"Booked dates are marked. Every other date is open to request, in {AREA} or wherever the event is.", """
 <section class="page"><div class="kick mono c">Availability</div><h1>Open<br><span class="o">dates</span><b>.</b></h1>
 <div class="legend mono"><span><i class="b"></i>Booked</span><span><i></i>Open to request</span></div>
@@ -740,9 +747,10 @@ fetch("/api/availability").then(r=>r.json()).then(j=>draw(j.booked||[])).catch((
 It is never sold or shared. The website holds it only until the booking inbox collects it, which it does every ten minutes.</p>
 <h3>Photos of you</h3><p>If you appear in a photo shared by {e(brand)} and want it taken down, email
 <a class="c" href="mailto:{e(contact_email())}">{e(contact_email())}</a> with a link to it. It comes down, and it stays out of anything shared after that.</p>
-<h3>Who we are</h3><p>{e(brand)} is a brand of {e(cfg.legal_name)}.</p></div></section>""")
-    pages["404.html"] = ("Not found", "Not found.", """<section class="page" style="min-height:70vh"><div class="kick mono c">Out of frame</div>
-<h1>Not<br><span class="o">found</span><b>.</b></h1><p style="margin-top:30px"><a class="btn" href="/">Back to the site <span class="arr">&#8599;</span></a></p></section>""")
+<h3>Who we are</h3><p>{e(t['who_we_are'].format(email=contact_email()))}</p></div></section>""")
+    pages["404.html"] = ("Not found", "Not found.", f"""<section class="page"><div class="kick mono c">Out of frame</div>
+<h1>Not<br><span class="o">found</span><b>.</b></h1><p class="first">{e(t['not_found'])}</p>
+<p style="margin-top:30px"><a class="btn" href="/">Back to the site <span class="arr">&#8599;</span></a> <a class="btn" href="/coverage/">The coverage <span class="arr">&#8599;</span></a> <a class="btn" href="/contact/">Contact <span class="arr">&#8599;</span></a></p></section>""")
     og = f"{base}/assets/hero-1600.jpg" if hero else ""
     preload = ", ".join(f"/assets/hero-{w}.jpg {w}w" for w in WIDTHS) if hero else ""
     sections = tuple(name for name, there in (("work", frames), ("venues", venues)) if there)
