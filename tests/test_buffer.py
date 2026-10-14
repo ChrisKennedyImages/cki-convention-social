@@ -104,7 +104,7 @@ class Payloads(AgentCase):
     def test_instagram_and_facebook_shapes(self):
         i = payloads.build("instagram", "ch-ig", "hi", URLS)
         self.assertTrue(i)
-        self.assertEqual(i["metadata"], {"instagram": {"type": "carousel", "shouldShareToFeed": True}})
+        self.assertEqual(i["metadata"], {"instagram": {"type": "post", "shouldShareToFeed": True}})
         self.assertEqual(i["mode"], "shareNow")
         self.assertNotIn("dueAt", i)
         self.assertEqual(i["assets"], [{"image": {"url": u}} for u in URLS])
@@ -115,6 +115,16 @@ class Payloads(AgentCase):
         self.assertEqual(f["metadata"], {"facebook": {"type": "post"}})
         for p in (i, f):
             self.assertEqual((p["schedulingType"], p["needsApproval"], p["tagIds"]), ("automatic", False, []))
+
+    def test_several_photos_on_instagram_are_a_post_with_several_assets_not_a_carousel(self):
+        """2026-10-14, the first live night: Buffer refused post 4, a six-photo carousel, with "Instagram does
+        not support the 'carousel' post type. Valid types are post, story, or reel." A carousel is a post."""
+        six = [f"https://media.example/{n}.jpg" for n in range(6)]
+        for urls in (six[:1], six[:2], six):
+            inp = payloads.build("instagram", "ch-ig", "hi", urls)
+            self.assertEqual(inp["metadata"]["instagram"]["type"], "post", f"{len(urls)} photo(s)")
+            self.assertEqual([a["image"]["url"] for a in inp["assets"]], urls, "every photo still goes")
+            self.assertNotIn("carousel", json.dumps(inp))
 
     def test_pinterest_shape_board_title_and_link(self):
         text = "Portraits in the vendor hall, early on day one. More to come. #portraits #eventphotography"

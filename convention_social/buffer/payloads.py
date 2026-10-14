@@ -8,8 +8,11 @@ on 2026-10-09 (schema only; no post was created):
   (addToQueue | customScheduled | shareNext | shareNow), schedulingType:
   SchedulingType! (automatic | notification), dueAt: DateTime, tagIds: [TagId!],
   needsApproval: Boolean! (default false), metadata: PostInputMetaData.
-  Instagram: metadata.instagram {type: PostType! (post | carousel | reel | story ...),
-  shouldShareToFeed: Boolean!}.
+  Instagram: metadata.instagram {type: PostType!, shouldShareToFeed: Boolean!}. PostType is one
+  enum for every network (2026-10-14: carousel, event, ghost_post, offer, post, reel, short, story,
+  thread, whats_new); Instagram takes only post, story or reel, and a carousel is a "post" with
+  several image assets. Buffer refused "carousel" on the first live night, 2026-10-14: "Instagram
+  does not support the 'carousel' post type. Valid types are post, story, or reel."
   Facebook: metadata.facebook {type: PostTypeFacebook! (post | reel | story)}.
   Pinterest: metadata.pinterest {boardServiceId: String, title: String, url: String}
   (PinterestPostMetadataInput). A board's serviceId is listed on the Pinterest
@@ -39,6 +42,7 @@ from ..core import config
 
 NETWORKS = ("instagram", "facebook", "pinterest")
 PIN_TITLE_MAX = 100          # Pinterest's own title limit
+INSTAGRAM_IMAGE_TYPE = "post"   # one photo or a carousel of several; Instagram takes post, story or reel
 
 
 class PayloadError(ValueError):
@@ -115,8 +119,9 @@ def build(network: str, channel_id: str, text: str, image_urls: list[str], *,
     if due:
         inp["dueAt"] = due
     if network == "instagram":
-        # InstagramPostMetadataInput.type is required; several images are a carousel
-        inp["metadata"] = {"instagram": {"type": "carousel" if len(urls) > 1 else "post", "shouldShareToFeed": True}}
+        # InstagramPostMetadataInput.type is required and is "post" however many images there are: a
+        # carousel is a post with several assets (Buffer refused "carousel" for Instagram, 2026-10-14)
+        inp["metadata"] = {"instagram": {"type": INSTAGRAM_IMAGE_TYPE, "shouldShareToFeed": True}}
     elif network == "facebook":
         # FacebookPostMetadataInput.type is required (post | reel | story)
         inp["metadata"] = {"facebook": {"type": "post"}}
