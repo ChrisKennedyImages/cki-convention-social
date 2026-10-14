@@ -687,6 +687,7 @@ def create_app() -> FastAPI:
         if row["status"] == "draft":
             conn.execute("UPDATE content_queue SET status='rejected', last_error=?, updated_at=? WHERE id=?",
                          (f"Set aside: photo {pid} shows {words}, not what the caption said. Drafted again.", db.utcnow(), qid))
+            report.forget_use(conn, f"post:{qid}")      # the draft is undone: its photos are first in line again, not last
             start_agent("content")
             return RedirectResponse(f"/?msg=redraft", status_code=303)
         return RedirectResponse(f"/queue/{qid}?msg=saved", status_code=303)
@@ -794,11 +795,13 @@ def create_app() -> FastAPI:
         pages = max(1, (total + PAGE - 1) // PAGE)
         page = max(1, min(page, pages))
         shown = photo_page(conn, view, page, subject=subject)
+        uses = report.use_of(conn, [p["id"] for p in shown]) if view == "approved" else {}
         for i, p in enumerate(shown):
             # after a tap the page comes back to the next photo, since the one tapped may leave this list
             nxt = shown[i + 1]["id"] if i + 1 < len(shown) else p["id"]
             p["back"] = f"/library?view={view}&subject={subject}&page={page}#p{nxt}"
             p["why"] = eligibility.is_candidate(conn, p["id"]) if view == "approved" else None
+            p["use_line"] = report.use_line(uses.get(p["id"])) if view == "approved" else ""   # the spread, photo by photo
         common["view"] = view
         hero = settings.get(conn, "site.hero_photo_id")
         from ..site import deploy

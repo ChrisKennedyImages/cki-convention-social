@@ -50,6 +50,7 @@ class SitePhotos:
     coverage: list = field(default_factory=list)
     venues: list = field(default_factory=list)
     hero_note: str = ""                            # which photo is the hero and why, for the go-live output
+    ids: list = field(default_factory=list)        # the library photos shown (hero when from the library, grid, venues): a build records their use
 
 
 class SiteCopyRefused(ValueError):
@@ -122,6 +123,9 @@ def pick_photos(conn: sqlite3.Connection, fetch: Callable[[dict], Image.Image],
         ORDER BY COALESCE(c.quality,0) DESC, p.width DESC LIMIT 600""")
     rows = sorted((dict(r) for r in rows), key=lambda r: (0 if r["event_kind"] in ("fan", "business") else 1,
                                                           -report.strength(r), -(r["width"] or 0)))
+    # the rotation (2026-10-14): the least recently used first, on any surface, so each publish shows photos the posts
+    # and the last build did not; the strength order above only breaks ties (library/report.rotate)
+    rows = report.rotate(conn, rows)
     chosen = settings.get(conn, HERO_KEY)
     chosen_id = int(chosen) if chosen and str(chosen).isdigit() else None
     out, images, rechecks = SitePhotos(), {}, 0
@@ -162,8 +166,10 @@ def pick_photos(conn: sqlite3.Connection, fetch: Callable[[dict], Image.Image],
         rec = upload.record(conn) or {}
         out.hero = [(upload.image(), SHOT_WORDS.get(rec.get("shot_type") or "", "Event photography"))]
         out.hero_note = f"{yours} ({why})"
-        out.coverage = [(image_of(r), site_alt(r)) for r in spread(events, event_of)[:COVERAGE_ROWS]]
-        out.venues = [(image_of(r), site_alt(r)) for r in venues[:VENUE_ROWS]]
+        grid, rooms = spread(events, event_of)[:COVERAGE_ROWS], venues[:VENUE_ROWS]
+        out.coverage = [(image_of(r), site_alt(r)) for r in grid]
+        out.venues = [(image_of(r), site_alt(r)) for r in rooms]
+        out.ids = [r["id"] for r in grid + rooms]
         return out
 
     def note(text):
@@ -190,8 +196,10 @@ def pick_photos(conn: sqlite3.Connection, fetch: Callable[[dict], Image.Image],
     if hero is not None:
         out.hero = [(image_of(hero), site_alt(hero))]
         events = [r for r in events if r["id"] != hero["id"]]
-    out.coverage = [(image_of(r), site_alt(r)) for r in spread(events, event_of)[:COVERAGE_ROWS]]
-    out.venues = [(image_of(r), site_alt(r)) for r in venues[:VENUE_ROWS]]
+    grid, rooms = spread(events, event_of)[:COVERAGE_ROWS], venues[:VENUE_ROWS]
+    out.coverage = [(image_of(r), site_alt(r)) for r in grid]
+    out.venues = [(image_of(r), site_alt(r)) for r in rooms]
+    out.ids = [r["id"] for r in ([hero] if hero is not None else []) + grid + rooms]
     return out
 
 
@@ -571,6 +579,11 @@ It is never sold or shared. The website holds it only until the booking inbox co
         lastmod=page_dates(out, rels, preview=preview)))
     if not preview and indexnow.key():
         indexnow.write_key_file(out, indexnow.key())        # /<key>.txt: the proof the IndexNow pings are ours
+    if conn is not None and not preview and photos.ids:
+        # the rotation's memory (2026-10-14): the photos this build shows were used now, so the next build and the
+        # other surfaces reach for the rest first; a preview is a look, not a use
+        from ..library import report
+        report.record_use(conn, "site", photos.ids, ref=f"site:{db.utcnow()}")
     (out / "build.json").write_text(json.dumps({"preview": preview, "hero": len(photos.hero), "coverage": len(photos.coverage),
                                                 "venues": len(photos.venues), "mark": mark_key}))
     return out

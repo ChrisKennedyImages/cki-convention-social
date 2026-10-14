@@ -10,7 +10,7 @@
 </div>
 <div class="card muted">
   {% if view == 'review' %}Only what you approve is ever used. These are the sorted photos you have not decided on yet, strongest first. Use approves one; Don't use keeps it out for good. Photos where someone may be under 18, or with a readable plate, house number or street sign, never show here and are never used. A name badge or a name in the photo is fine.
-  {% elif view == 'approved' %}Everything you approved, one photo at a time or by its folder. Only these are ever used: in posts, on the website and in the design samples. Undo puts a photo back to review; Don't use keeps it out for good.
+  {% elif view == 'approved' %}Everything you approved, one photo at a time or by its folder. Only these are ever used: in posts, on the website and in the design samples, and every one of them gets its turn, the least recently used first. Undo puts a photo back to review; Don't use keeps it out for good.
   {% else %}Photos you marked Don't use. Unblock puts one back where it was (to review, or approved by its folder). Never use adds it to the do-not-use list for good.{% endif %}
 </div>
 {% if view == 'approved' and subject == 'event' %}
@@ -60,7 +60,8 @@
     <img src="/media/thumb/{{ p.id }}" loading="lazy" alt="">
     <div class="muted" style="margin-top:6px">{{ (p.shot_type or 'not sorted yet').replace('_',' ') }}</div>
     <a class="muted" href="/library/folder/{{ p.folder_id }}">{{ p.folder_name or '' }}</a>
-    {% if view == 'approved' %}<div><span class="badge {{ 'ok' if p.why[0] else 'blocked' }}">{{ 'ready to use' if p.why[0] else p.why[1] }}</span>{% if hero_id == p.id %} <span class="badge ok">site hero</span>{% endif %}</div>{% endif %}
+    {% if view == 'approved' %}<div><span class="badge {{ 'ok' if p.why[0] else 'blocked' }}">{{ 'ready to use' if p.why[0] else p.why[1] }}</span>{% if hero_id == p.id %} <span class="badge ok">site hero</span>{% endif %}</div>
+    <div class="muted use-line">{{ p.use_line }}</div>{% endif %}
     <div class="row" style="margin-top:6px">
     {% if view != 'blocked' %}<label class="inline" style="margin:0"><input type="checkbox" form="bulk" name="ids" value="{{ p.id }}" style="width:auto;transform:scale(1.4)"></label>{% endif %}
     {% for state, label, cls in ([('cleared', 'Use', 'ok'), ('blocked', "Don't use", 'danger')] if view == 'review'

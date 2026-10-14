@@ -123,7 +123,7 @@ def auto(conn) -> str:
         return "design samples: " + too_few(readiness(conn))
     if read_status().get("state") == "running":
         return "design samples: being made"
-    key = COPY_VERSION + ":" + ",".join(sorted(r["drive_id"] for r in rows))
+    key = pool_key(conn)
     if settings.get(conn, LAST_SET_KEY) == key:
         return "design samples: up to date"
     # the set is recorded as made only when the run finishes (made()); a run that fails is tried again next hour
@@ -131,6 +131,13 @@ def auto(conn) -> str:
     write_status("running", "being made on your newest approved photos")
     start_in_background()
     return "design samples: started on the newest approved photos"
+
+
+def pool_key(conn) -> str:
+    """What the samples are made from: the approved photos they may use, as a set. Not the six drawn (2026-10-14):
+    those rotate with every use, and a remake on every rotation would churn hourly; a remake comes when the approved
+    photos change (one approved, one taken away) or the words on the cards do."""
+    return COPY_VERSION + ":" + ",".join(sorted(r["drive_id"] for r in pick(conn, 400)))
 
 
 def made(conn) -> None:
@@ -158,6 +165,9 @@ def pick(conn, n: int = 6) -> list:
     Chris, 2026-10-11: "if it's not approved then don't use it yet or at all"."""
     # every approved photo counts here, not four per event: most of the work Chris approved can be from one
     rows = [r for r in report.best(conn, 400, cap=None) if eligibility.clearance_of(conn, r) == "cleared" and usable(conn, r)]
+    # the rotation (2026-10-14): the least recently used first, on any surface, so each set of samples shows photos the
+    # posts, the site and the last samples did not; the strength order only breaks ties (library/report.rotate)
+    rows = report.rotate(conn, rows)
     # one room and one event before any repeats (Chris, 2026-10-11: "not have CPAC and ACU the first thing on everything")
     picked, rooms, events = [], set(), set()
     for want_room, want_event in ((True, True), (True, False), (False, True), (False, False)):
@@ -210,6 +220,8 @@ def make(conn, fetch: Callable[[str], bytes], *, out_root: Optional[Path] = None
                                                 "music": track.name if track else None,
                                                 "at": datetime.now().isoformat(timespec="seconds")}, indent=1))
     (out / "index.html").write_text(page(out.name, made, failed))
+    # the rotation's memory (a stand-in row without an id, as a test hands in, records nothing)
+    report.record_use(conn, "sample", [r["id"] for r in rows if "id" in r.keys()], ref=f"sample:{out.name}")
     log(f"design samples: {out}")
     return out
 

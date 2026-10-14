@@ -94,6 +94,90 @@ def strength(r) -> float:
     return max(0.0, score * 10 / 15)
 
 
+# ------------------------------------------------------------------ the rotation (2026-10-14)
+# Chris: "you keep using the same fucking photos for everything when I have approved at least 40 by now."
+# Every picker ranked the approved pool by the same score and took the top of it, so the strongest few won on
+# every surface. Now every surface draws the least recently used photo first, on any surface, and the quality
+# order only breaks ties: with N approved photos, all N are used before any comes round again.
+
+USE_SURFACES = ("post", "site", "sample")
+HISTORY_KEY = "photo_use.backfilled"
+
+
+def ensure_use_history(conn: sqlite3.Connection) -> int:
+    """Once: the drafts made before photo_use existed count as uses, so the day this lands the site and the
+    samples already prefer what no post has shown. Returns how many rows were filled in."""
+    if settings.get(conn, HISTORY_KEY):
+        return 0
+    known = {r["id"] for r in db.rows(conn, "SELECT id FROM photos")}
+    rows = []
+    # a draft that already recorded its use (the first write after this lands can be a draft's own) is not counted twice
+    for q in db.rows(conn, "SELECT id, photo_ids, created_at FROM content_queue WHERE photo_ids IS NOT NULL "
+                           "AND NOT EXISTS (SELECT 1 FROM photo_use u WHERE u.ref = 'post:' || content_queue.id) ORDER BY id"):
+        try:
+            ids = [int(p) for p in json.loads(q["photo_ids"] or "[]")]
+        except (ValueError, TypeError):
+            continue
+        rows += [(pid, "post", f"post:{q['id']}", q["created_at"]) for pid in dict.fromkeys(ids) if pid in known]
+    conn.executemany("INSERT INTO photo_use (photo_id, surface, ref, used_at) VALUES (?,?,?,?)", rows)
+    settings.set(conn, HISTORY_KEY, db.utcnow())
+    return len(rows)
+
+
+def last_uses(conn: sqlite3.Connection) -> dict[int, str]:
+    """{photo id: when it was last used, on any surface}; a photo never used is absent."""
+    ensure_use_history(conn)
+    return {r["photo_id"]: r["last"] for r in db.rows(conn, "SELECT photo_id, MAX(used_at) AS last FROM photo_use GROUP BY photo_id")}
+
+
+def rotate(conn: sqlite3.Connection, rows: list, *, last: Optional[dict[int, str]] = None) -> list:
+    """The same rows, the least recently used first: never used before the oldest use, the oldest use before a
+    newer one. The sort is stable, so the order the rows came in (the caller's quality order) breaks ties and
+    never decides on its own."""
+    last = last_uses(conn) if last is None else last
+    return sorted(rows, key=lambda r: last.get(r["id"]) or "")
+
+
+def record_use(conn: sqlite3.Connection, surface: str, photo_ids, *, ref: str = "", now: Optional[str] = None) -> int:
+    """These photos were used on `surface` now: a draft made (dry run included, since a draft approved in dry
+    run goes out when the lane is switched live), a site built for publishing, samples made."""
+    if surface not in USE_SURFACES:
+        raise ValueError(f"unknown surface {surface!r}; one of {', '.join(USE_SURFACES)}")
+    now = now or db.utcnow()
+    ids = list(dict.fromkeys(int(p) for p in photo_ids))
+    conn.executemany("INSERT INTO photo_use (photo_id, surface, ref, used_at) VALUES (?,?,?,?)", [(p, surface, ref, now) for p in ids])
+    ensure_use_history(conn)          # after this write, so a draft recording its own use is not filled in a second time
+    return len(ids)
+
+
+def forget_use(conn: sqlite3.Connection, ref: str) -> int:
+    """A use undone (a draft set aside because a shot word was wrong: the photo comes back with the right words)."""
+    return conn.execute("DELETE FROM photo_use WHERE ref=?", (ref,)).rowcount
+
+
+def use_of(conn: sqlite3.Connection, photo_ids) -> dict[int, dict]:
+    """{photo id: {n, last (a date), surfaces}} for the Photos page; a photo never used is absent."""
+    ids = [int(p) for p in photo_ids]
+    if not ids:
+        return {}
+    ensure_use_history(conn)
+    marks = ",".join("?" for _ in ids)
+    out = {}
+    for r in db.rows(conn, f"SELECT photo_id, COUNT(*) AS n, MAX(used_at) AS last, GROUP_CONCAT(DISTINCT surface) AS s "
+                           f"FROM photo_use WHERE photo_id IN ({marks}) GROUP BY photo_id", ids):
+        out[r["photo_id"]] = {"n": r["n"], "last": (r["last"] or "")[:10], "surfaces": sorted((r["s"] or "").split(","))}
+    return out
+
+
+def use_line(use: Optional[dict]) -> str:
+    """One line under an approved photo: "used 3 times, last on 2026-10-14 (post, site)" or "never used yet"."""
+    if not use:
+        return "never used yet"
+    where = {"post": "post", "site": "site", "sample": "samples"}
+    return (f"used {use['n']} time{'s' if use['n'] != 1 else ''}, last on {use['last']} "
+            f"({', '.join(where.get(s, s) for s in use['surfaces'])})")
+
+
 def best(conn: sqlite3.Connection, n: int = 30, *, subject: str = "event", cap: int | None = PER_EVENT_CAP) -> list[sqlite3.Row]:
     """The strongest frames, at most PER_EVENT_CAP per event, never a possible minor.
 
