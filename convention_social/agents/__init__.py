@@ -33,6 +33,8 @@ AGENTS: dict[str, dict] = {
                   "job": "SQLite online backup to DATA_ROOT/backups (14 kept), a copy off the machine"},
     "updater":   {"schedule": "every 10 min",          "module": "convention_social.agents.updater",
                   "job": "keep the Mini on the latest main: test a new commit first, then switch and restart the dashboard"},
+    "phone":     {"schedule": "when a photo is sent (Send a photo page)", "module": "convention_social.agents.phone",
+                  "job": "a photo sent from Chris's phone while he shoots: sorted, checked, drafted as today's post, pinged for his Approve"},
     "dashboard": {"schedule": "always on (KeepAlive)", "module": "convention_social.dashboard.app",
                   "job": "review UI on 127.0.0.1:DASHBOARD_PORT"},
 }

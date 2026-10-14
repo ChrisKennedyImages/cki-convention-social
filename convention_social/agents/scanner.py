@@ -32,6 +32,10 @@ def needs_full(conn) -> bool:
 
 
 def run(ctx: runner.Context, reader: DriveReader | None = None) -> str:
+    from . import phone
+    if phone.pending(ctx.conn):
+        # a photo sent from the phone and left behind (the Mini restarted mid-draft): drafted within the hour, Drive or no Drive
+        runner.start_agent("phone", wait=True)
     if reader is None:
         try:
             oauth.access_token(ctx.conn)   # fail the run now if the sign-in is dead, not photo by photo

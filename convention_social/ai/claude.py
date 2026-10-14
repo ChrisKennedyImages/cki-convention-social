@@ -87,6 +87,7 @@ class PostFacts:
     quote_link: str = ""
     subject: str = "event"               # event | architecture
     plan: Optional["seo_plan.Plan"] = None   # the search words this post is built around (ai/seo_plan.py)
+    note: str = ""                       # what the photographer said about the moment (a photo sent from the phone), no name in it
 
 
 @dataclass
@@ -140,6 +141,8 @@ def user_text(facts: PostFacts) -> str:
         *(["A portrait here is made backstage, for a speaker or a guest of honor, lit on site with professional lights and "
            "color gels and finished in the camera. Say that plainly when it fits the photo; never say that every attendee gets one."]
           if facts.shot_type in ("portrait", "headshot") else []),
+        *([f"The photographer, who took it minutes ago, says of this moment: {facts.note}. Use that, in your own words; "
+           "it names no event and no person, and neither do you."] if facts.note else []),
         *(facts.plan.prompt_lines() if facts.plan else []),
         "Write one caption per network: instagram (a first line under 125 characters that carries the search phrase, then "
         "two or three short sentences), facebook (one or two short paragraphs), pinterest (a first sentence under 100 "

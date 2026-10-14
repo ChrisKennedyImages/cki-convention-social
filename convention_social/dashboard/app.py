@@ -98,7 +98,7 @@ def conn_dep():
 # Chris, 2026-10-11: "The navigation is not intuitive or smart!" Thirteen tabs became four, each
 # with its own short row of pages, so every page is one tap from its section and two from anywhere.
 SECTIONS = (
-    ("Today", "/", ("/queue", "/posts"), (("Queue", "/"), ("Posts", "/posts"))),
+    ("Today", "/", ("/queue", "/posts", "/send"), (("Queue", "/"), ("Posts", "/posts"), ("Send a photo", "/send"))),
     ("Photos", "/library", ("/library", "/donotuse", "/drive"),
      (("To review", "/library"), ("Approved", "/library?view=approved"), ("Blocked", "/library?view=blocked"),
       ("Folders", "/library?view=folders"), ("Design", "/library?view=design"), ("Do not use", "/donotuse"), ("Drive", "/drive"))),
@@ -522,6 +522,27 @@ def create_app() -> FastAPI:
                       auth_state=auth_state, msg=request.query_params.get("msg", ""), brief=brief,
                       needs=chief.needs(conn), open_n=db.one(conn, "SELECT COUNT(*) n FROM errors WHERE alerted=0")["n"])
 
+    @app.get("/send", response_class=HTMLResponse)
+    def send_page(request: Request, user: str = Depends(require_user), conn=Depends(conn_dep)):
+        """Chris, 2026-10-14: a photo from his phone while he is shooting becomes a draft post (agents/phone.py)."""
+        from ..agents import phone
+        return render(request, "send.html", sends=phone.recent(conn), msg=request.query_params.get("msg", ""),
+                      waiting=phone.waiting(conn), lane_dry=settings.dry_run(conn, "content"))
+
+    @app.post("/send")
+    async def send_photo(file: UploadFile = File(...), note: str = Form(""), user: str = Depends(require_user), conn=Depends(conn_dep)):
+        """The picture is kept on the Mini (never Drive) as a cleared photo of its own, and the phone agent drafts it now:
+        sorted, Claude's final check, captions with his line, the design, the art director, the ping with Approve."""
+        from ..agents import phone
+        data = await file.read(phone.MAX_BYTES + 1)
+        try:
+            phone.keep(conn, data, note)
+        except phone.Refused as e:
+            return RedirectResponse("/send?msg=" + quote_plus(f"Not kept: {e}"), status_code=303)
+        start_agent("phone", wait=True)
+        return RedirectResponse("/send?msg=" + quote_plus("Sent. It is being sorted, checked and drafted now; your phone gets a ping "
+                                                          "with the post in a few minutes."), status_code=303)
+
     @app.get("/posts", response_class=HTMLResponse)
     def posts(request: Request, user: str = Depends(require_user), conn=Depends(conn_dep)):
         """7.2 (2026-10-13): what went out, where it lives, and the numbers Buffer gives (buffer/metrics, written for
@@ -741,7 +762,7 @@ def create_app() -> FastAPI:
     @app.get("/media/thumb/{photo_id}")
     def media_thumb(photo_id: int, user: str = Depends(require_user), conn=Depends(conn_dep)):
         """A cached small preview from Drive (read only). Fetched once, then served from DATA_ROOT/thumbs."""
-        row = db.one(conn, "SELECT drive_id, thumbnail_link FROM photos WHERE id=?", (photo_id,))
+        row = db.one(conn, "SELECT drive_id, thumbnail_link, local_path, source FROM photos WHERE id=?", (photo_id,))
         if not row:
             raise HTTPException(404)
 
@@ -750,6 +771,9 @@ def create_app() -> FastAPI:
             from ..drive.api import DriveReader
             return DriveReader(oauth.access_token(conn), conn=conn, agent="dashboard").thumbnail_for(drive_id, 400)
         path = cached_thumb(row["drive_id"], fetch if row["thumbnail_link"] else None)
+        if path is None and row["source"] == "phone":
+            from ..agents import phone
+            path = phone.ensure_thumb(row)              # from its own file, after the nightly sweep took the preview
         if path is None:
             raise HTTPException(404)
         return FileResponse(path, media_type="image/jpeg")

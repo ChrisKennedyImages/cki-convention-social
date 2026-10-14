@@ -880,6 +880,33 @@ below them was never seen.
   on the Agents page says which photo led and why ("never used before; 40
   ready, least recently used first").
 
+## 2026-10-14: a photo from the phone becomes a draft post
+
+Chris: "if I'm in the middle of shooting conventions and want to share a
+photo I took from my phone can we set up a way to send the photos to the
+suite for social upload?" His answers: a draft post right away, from a page
+on the dashboard.
+
+- The Send a photo page (Today) takes one picture from the camera roll or
+  the camera and one optional line about it (what the room was; a line that
+  names a known event or person is refused). JPEG, PNG and HEIC.
+- The picture is kept on the Mini as the photo's own file (DATA_ROOT/phone,
+  re-encoded from its pixels: no camera data, no GPS), never written to
+  Drive. It is a cleared photo of its own ("From the phone" on the Folders
+  page): his own photo, sent by him, for his own post. The weekly Drive pass
+  never marks it trashed; the nightly sweep never deletes its file.
+- The phone agent drafts it at once, the way the daily draft is made: the
+  sorter, Claude's final check (someone who may be under 18, a readable
+  plate, a wedding stop it, and the page and the Agents page say why), the
+  captions with his line as a fact, the single design, the art director,
+  the ping with the card and Approve. Nothing posts without his Approve.
+- Approved, it goes out as soon as Buffer takes it (about 35 minutes after
+  his Approve), never at the day's usual slot (`rule_report.asap`).
+- A send while one is being drafted waits its turn (`ccs run --wait`),
+  never lost. The lane follows the content lane's dry-run switch: in dry
+  run the page says Claude did not look and the draft cannot post.
+- The first phone send's ping is the show for this surface.
+
 ## Standing rules from the brief
 
 - CPAC, the ACU and their affiliates are never contacted, by code

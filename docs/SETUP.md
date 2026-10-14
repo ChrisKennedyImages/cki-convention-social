@@ -227,3 +227,15 @@ The dashboard listens on 127.0.0.1:4610. From your phone, reach it over
 Tailscale on port 8443, never 443 (another dashboard on this Mini uses 443):
 `tailscale serve --bg --https=8443 http://127.0.0.1:4610` on the Mini, then open the address it
 prints. Every agent starts in dry run.
+
+## 10. A photo from your phone while you shoot
+
+Open the dashboard on your phone, Today, **Send a photo** (or the button on
+the Queue page). Pick the photo from the camera roll (the original, not a
+preview) or take one, add one line about it if you like (what the room was;
+never a name or which event), and Send. Within a few minutes your phone gets
+the ping with the post and Approve; the Send page shows each send and where
+it stands, and says why when one could not be drafted (someone who may be
+under 18, a readable plate, a wedding, the monthly AI cap). Approved, the
+post goes out as soon as Buffer takes it. The photo stays on the Mini and is
+never written to Drive.

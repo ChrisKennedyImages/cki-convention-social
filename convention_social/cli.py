@@ -28,6 +28,7 @@ import json
 import getpass
 import importlib
 import sys
+import time
 
 from .agents import AGENTS, is_built
 from .core import auth, config, db, notify, secrets, settings
@@ -110,6 +111,9 @@ def cmd_settings(args) -> int:
     return 0
 
 
+WAIT_TRIES, WAIT_SECONDS = 200, 3        # `ccs run --wait`: up to ten minutes for the lock
+
+
 def cmd_run(args) -> int:
     if args.agent not in AGENTS:
         print(f"unknown agent {args.agent}")
@@ -120,7 +124,14 @@ def cmd_run(args) -> int:
     module = importlib.import_module(AGENTS[args.agent]["module"])
     force = True if args.dry_run else (False if args.live else None)
     from .core import runner
-    return runner.run(args.agent, module.run, force_dry_run=force)
+    code = runner.run(args.agent, module.run, force_dry_run=force)
+    tries = 0
+    while code == runner.EXIT_LOCKED and getattr(args, "wait", False) and tries < WAIT_TRIES:
+        # --wait: another copy holds the lock; this one waits its turn (a photo sent while one is being drafted)
+        tries += 1
+        time.sleep(WAIT_SECONDS)
+        code = runner.run(args.agent, module.run, force_dry_run=force)
+    return code
 
 
 def cmd_hash_password(args) -> int:
@@ -348,10 +359,11 @@ def cmd_site(args) -> int:
     cache.mkdir(parents=True, exist_ok=True)
 
     def fetch(row):
-        path = cache / f"{row['drive_id']}.img"
-        if not path.exists():
-            path.write_bytes(reader.download(row["drive_id"]))
-        return Image.open(io.BytesIO(path.read_bytes()))
+        from .agents import content
+        own = content.photo_file(config.get_config(), row)       # a phone photo's own file, else the cache
+        if not own.exists():
+            own.write_bytes(reader.download(row["drive_id"]))
+        return Image.open(io.BytesIO(own.read_bytes()))
 
     def recheck(row, image):
         # Claude's final check, for a photo it has not yet judged for the kind of occasion (a wedding is never used)
@@ -457,7 +469,8 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("env-check").set_defaults(fn=cmd_env_check)
     d = sub.add_parser("dry-run"); d.add_argument("agent"); d.add_argument("state", choices=["on", "off"]); d.set_defaults(fn=cmd_dry_run)
     s = sub.add_parser("settings"); s.add_argument("--set", nargs=2, metavar=("KEY", "VALUE")); s.set_defaults(fn=cmd_settings)
-    r = sub.add_parser("run"); r.add_argument("agent"); r.add_argument("--dry-run", action="store_true"); r.add_argument("--live", action="store_true"); r.set_defaults(fn=cmd_run)
+    r = sub.add_parser("run"); r.add_argument("agent"); r.add_argument("--dry-run", action="store_true"); r.add_argument("--live", action="store_true")
+    r.add_argument("--wait", action="store_true", help="wait for the agent's lock instead of giving up"); r.set_defaults(fn=cmd_run)
     hp = sub.add_parser("hash-password"); hp.add_argument("--save", action="store_true", help="write the hash into .env")
     hp.set_defaults(fn=cmd_hash_password)
     sub.add_parser("dashboard").set_defaults(fn=cmd_dashboard)
