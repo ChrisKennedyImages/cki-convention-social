@@ -560,6 +560,16 @@ class TheWorker(SizesCase):
         self.assertIn("return Response.redirect(url.toString(), 301);", body)
         test = (REPO / "tests/worker_test.mjs").read_text()
         self.assertIn('"https://www.eventcaliber.com/about/?x=1"', test)
+        # seen live on 2026-10-14 after #64: www.eventcaliber.com/about/ answered 200 straight from the static assets, the
+        # Worker never ran (Cloudflare serves a matching asset before the script unless told otherwise), while
+        # www.eventcaliber.com/api/availability, no asset, answered 301. So the Worker runs first, for every request,
+        # and hands the pages to the assets binding itself.
+        config = (REPO / "wrangler.jsonc").read_text()
+        assets = config[config.index('"assets": {'):config.index("},", config.index('"assets": {'))]
+        self.assertIn('"run_worker_first": true', assets)
+        self.assertIn('"binding": "ASSETS"', assets)
+        self.assertIn("return env.ASSETS ? env.ASSETS.fetch(request) : new Response(\"not found\", { status: 404 });", body,
+                      "the Worker still serves the site from the assets binding")
         node = shutil.which("node")
         self.assertTrue(node, "node is needed to run the Worker's own test (the Mini and CI have it)")
         run = subprocess.run([node, str(REPO / "tests/worker_test.mjs")], capture_output=True, text=True, timeout=120, cwd=str(REPO))

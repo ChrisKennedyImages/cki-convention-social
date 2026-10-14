@@ -988,7 +988,10 @@ results.
   the business block says areaServed (DC, Maryland, Virginia, United States),
   a locality and region and never a street, the image, the logo, the telephone
   when set and sameAs from the socials; the About page has a Person block for
-  each brother; www. answers 301 to the apex (`worker/index.js`).
+  each brother; www. answers 301 to the apex (`worker/index.js`; the
+  Worker runs before the static assets, `run_worker_first` in
+  `wrangler.jsonc`, or a www page is served from the assets and the
+  redirect never runs, as the live site showed after the merge).
 - **The Keys page, Website contact** (`BRAND_PHONE`, `SOCIAL_INSTAGRAM`,
   `SOCIAL_FACEBOOK`, `SOCIAL_PINTEREST`): blank hides each; a save stamps
   `site.keys_changed_at` and the site republishes itself within minutes like
