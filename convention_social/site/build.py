@@ -38,7 +38,20 @@ from ..render.meta import ImageMeta, save_jpeg
 from . import marks, theme
 
 DIST = config.REPO_ROOT / "site" / "dist"
-PAGES = ("/", "/about/", "/book/", "/availability/", "/privacy/")     # the public pages, in sitemap order
+PAGES = offer.public_pages()        # the public pages, in sitemap order (2026-10-14: the coverage pages and Contact too)
+AREA = "Washington, DC"                                                   # where the two of them are based, in every title
+AREA_SERVED = ("Washington, DC", "Maryland", "Virginia", "United States")
+AREA_LINE = "Based in Washington, DC. Serving DC, Maryland and Virginia, and travelling nationwide."
+TITLE_MAX, DESCRIPTION_MAX = 75, 160       # what a search result shows whole; a longer one stops the build (said, never silently cut)
+# which kinds of shot a coverage page shows (2026-10-14): the library's own shot words, by the room the page is about
+COVERAGE_SHOTS = {
+    "backstage": ("backstage",), "green_room": ("backstage",),
+    "breakouts": ("stage_panel", "stage"), "stage": ("stage", "stage_panel"),
+    "evening_events": ("dinner_reception", "dinner", "candid"), "dinners": ("dinner_reception", "dinner"),
+    "portraits": ("portrait", "headshot"), "exhibition_hall": ("vendor_hall", "booth"),
+    "on_site_delivery": ("candid", "crowd", "group"),
+}
+PAGE_ROWS, PAGE_MIN = 6, 3                 # photos on a coverage page: six of its room; under three, the rest of the pool fills in
 LASTMOD_FILE = "lastmod.json"      # DATA_ROOT/site: each page's content hash and the date it last changed
 VERIFICATION_KEY = "GOOGLE_SITE_VERIFICATION"   # the Search Console HTML tag's content value (Keys page)
 WIDTHS = (800, 1600)
@@ -50,7 +63,10 @@ class SitePhotos:
     coverage: list = field(default_factory=list)
     venues: list = field(default_factory=list)
     hero_note: str = ""                            # which photo is the hero and why, for the go-live output
-    ids: list = field(default_factory=list)        # the library photos shown (hero when from the library, grid, venues): a build records their use
+    ids: list = field(default_factory=list)        # every library photo shown (hero when from the library, grid, venues, coverage pages): a build records their use
+    grid_ids: list = field(default_factory=list)   # the home page's own: hero when from the library, grid, venues
+    links: list = field(default_factory=list)      # the coverage page each grid frame opens, one per coverage entry (2026-10-14)
+    pages: dict = field(default_factory=dict)      # coverage key -> [(image, alt)], the photos of that kind of room (2026-10-14)
 
 
 class SiteCopyRefused(ValueError):
@@ -143,13 +159,15 @@ def pick_photos(conn: sqlite3.Connection, fetch: Callable[[dict], Image.Image],
                 return False                                # Claude could not look: not used
         return eligibility.is_eligible(conn, r["id"])[0]
 
+    pool: list[dict] = []                               # every usable event photo, least recently used first (the coverage pages draw here)
     for r in rows:
-        if len(events) >= EVENT_POOL and len(venues) >= VENUE_ROWS:
-            break
-        if (r["subject"] == "event" and len(events) >= EVENT_POOL) or (r["subject"] == "architecture" and len(venues) >= VENUE_ROWS):
+        if r["subject"] == "architecture":
+            if len(venues) < VENUE_ROWS and usable(r):
+                venues.append(r)
             continue
         if usable(r):
-            (events if r["subject"] == "event" else venues).append(r)
+            pool.append(r)
+    events = pool[:EVENT_POOL]
 
     def image_of(r):
         if r["id"] not in images:
@@ -167,10 +185,7 @@ def pick_photos(conn: sqlite3.Connection, fetch: Callable[[dict], Image.Image],
         out.hero = [(upload.image(), SHOT_WORDS.get(rec.get("shot_type") or "", "Event photography"))]
         out.hero_note = f"{yours} ({why})"
         grid, rooms = spread(events, event_of)[:COVERAGE_ROWS], venues[:VENUE_ROWS]
-        out.coverage = [(image_of(r), site_alt(r)) for r in grid]
-        out.venues = [(image_of(r), site_alt(r)) for r in rooms]
-        out.ids = [r["id"] for r in grid + rooms]
-        return out
+        return _finish(out, grid, rooms, None, pool, image_of)
 
     def note(text):
         out.hero_note = (out.hero_note + "; " if out.hero_note else "") + text
@@ -197,9 +212,47 @@ def pick_photos(conn: sqlite3.Connection, fetch: Callable[[dict], Image.Image],
         out.hero = [(image_of(hero), site_alt(hero))]
         events = [r for r in events if r["id"] != hero["id"]]
     grid, rooms = spread(events, event_of)[:COVERAGE_ROWS], venues[:VENUE_ROWS]
+    return _finish(out, grid, rooms, hero, pool, image_of)
+
+
+def coverage_key_for(row: dict) -> str:
+    """The coverage page a photo belongs on, by its kind of shot; the index when no page claims it."""
+    shot = row.get("shot_type") or ""
+    for key, shots in COVERAGE_SHOTS.items():
+        if shot in shots:
+            return key
+    return ""
+
+
+def pick_page_photos(pool: list[dict]) -> dict[str, list[dict]]:
+    """The photos of each coverage page (2026-10-14): up to PAGE_ROWS of its own kind of room, in the pool's order
+    (least recently used first), each photo on one page before any page repeats one; a room with fewer than
+    PAGE_MIN photos is filled from the rest of the pool, so a page is never empty while the library has photos."""
+    pages: dict[str, list[dict]] = {}
+    taken: set[int] = set()
+    for key in offer.coverage_keys():
+        shots = COVERAGE_SHOTS.get(key, ())
+        fit = [r for r in pool if (r.get("shot_type") or "") in shots]
+        pick = [r for r in fit if r["id"] not in taken][:PAGE_ROWS]
+        if len(pick) < PAGE_ROWS:
+            pick += [r for r in fit if r not in pick][:PAGE_ROWS - len(pick)]           # the same room again before another room
+        if len(pick) < PAGE_MIN:
+            pick += [r for r in pool if r not in pick and r["id"] not in taken][:PAGE_ROWS - len(pick)]
+        if len(pick) < PAGE_MIN:
+            pick += [r for r in pool if r not in pick][:PAGE_ROWS - len(pick)]
+        taken.update(r["id"] for r in pick)
+        pages[key] = pick
+    return pages
+
+
+def _finish(out: SitePhotos, grid: list[dict], rooms: list[dict], hero: Optional[dict], pool: list[dict], image_of) -> SitePhotos:
     out.coverage = [(image_of(r), site_alt(r)) for r in grid]
+    out.links = [f"/coverage/{coverage_key_for(r)}/" if coverage_key_for(r) else "/coverage/" for r in grid]
     out.venues = [(image_of(r), site_alt(r)) for r in rooms]
-    out.ids = [r["id"] for r in ([hero] if hero is not None else []) + grid + rooms]
+    out.grid_ids = [r["id"] for r in ([hero] if hero is not None else []) + grid + rooms]
+    pages = pick_page_photos(pool)
+    out.pages = {key: [(image_of(r), site_alt(r)) for r in picked] for key, picked in pages.items()}
+    out.ids = list(dict.fromkeys(out.grid_ids + [r["id"] for picked in pages.values() for r in picked]))
     return out
 
 
@@ -245,14 +298,40 @@ def contact_email() -> str:
     return cfg.brand_from_email or f"hello@{cfg.brand_domain}"
 
 
+def contact_phone() -> str:
+    """The number on the website (Keys page, BRAND_PHONE; 2026-10-14). Empty hides it everywhere."""
+    return (config.getenv("BRAND_PHONE") or "").strip()
+
+
+def social_links() -> tuple[tuple[str, str], ...]:
+    """(label, address) for each social address set on the Keys page (2026-10-14); only https addresses."""
+    out = []
+    for key, label in (("SOCIAL_INSTAGRAM", "Instagram"), ("SOCIAL_FACEBOOK", "Facebook"), ("SOCIAL_PINTEREST", "Pinterest")):
+        url = (config.getenv(key) or "").strip()
+        if url.startswith("https://"):
+            out.append((label, url))
+    return tuple(out)
+
+
 def copy_text() -> dict:
     o = offer.load()
     return {
-        "title": f"{o['company']}: {o['tagline']}",
+        # 2026-10-14: the place in the title, a plain first sentence a search engine or an AI can quote, a description that fits
+        "title": f"{o['tagline']} in {AREA} | {o['company']}",
+        "description": (f"{o['company']} photographs conventions, conferences, galas and award dinners in {AREA} and nationwide. "
+                        "Two brothers, thirty years each. Request a quote."),
+        "kicker": f"Event and convention photography, {AREA} and nationwide",
+        "first": f"{o['company']} photographs conventions, conferences, galas and award dinners in {AREA} and across the country.",
         # Chris, 2026-10-12: the site is the two of them, in their own voice; no "fan conventions" on the main page;
         # instant delivery is never front and center; one of them writes back within 24 hours
         "lede": ("We've photographed conventions, conferences, galas and award dinners for more than thirty years each, "
                  "room by room, across the country. Tell us about your event and one of us will write back within 24 hours."),
+        "coverage_first": ("Backstage, green rooms, breakouts, the main stage, evening events, dinners, portraits and exhibition halls: "
+                           "every room of a conference or convention, photographed by the two of us."),
+        "coverage_description": ("Backstage, green rooms, breakouts, the main stage, evening events, dinners, portraits and exhibition "
+                                 f"halls, photographed by two brothers in {AREA}."),
+        "contact_first": "Email or call, and one of us writes back within 24 hours.",
+        "contact_p": "We are based in Washington, DC and travel wherever the event is. For dates and a quote, the form is quickest.",
         "who": "One of us is at every event. The event is staffed with our photographers, and we shoot when we're needed.",
         "about": ("We're Chris and Nic Kennedy, brothers, and we have photographed events for more than thirty years each.\n\n"
                   "We learned on film. Both of us studied photography at the Corcoran in Washington, DC, where our father taught "
@@ -297,15 +376,23 @@ def _ticker(labels: list[str], rev: bool = False) -> str:
     return f'<div class="ticker{" rev" if rev else ""}" aria-hidden="true"><div class="track">{run}{run}</div></div>'
 
 
-def home_body(t: dict, hero: str, frames: list[tuple[str, str]], stack: list[str], venues: list[tuple[str, str]]) -> str:
+def coverage_rows(coverage: list[dict], skip: str = "") -> str:
+    """The coverage list, each row opening its own page (2026-10-14; it led to the quote form)."""
+    e = html.escape
+    return "".join(
+        f'<a href="/coverage/{e(c["key"])}/"><span class="mono g">{i + 1:02d}</span>'
+        f'<span class="t">{e(c["label"])}{f"<em>{e(c["note"])}</em>" if c.get("note") else ""}</span><span class="mono">&#8599;</span></a>'
+        for i, c in enumerate(coverage) if c["key"] != skip)
+
+
+def home_body(t: dict, hero: str, frames: list[tuple[str, str, str]], stack: list[str], venues: list[tuple[str, str]]) -> str:
     e = html.escape
     coverage = offer.load()["coverage"]
-    rows = "".join(
-        f'<a href="/book/"><span class="mono g">{i + 1:02d}</span>'
-        f'<span class="t">{e(c["label"])}{f"<em>{e(c["note"])}</em>" if c.get("note") else ""}</span><span class="mono">&#8599;</span></a>'
-        for i, c in enumerate(coverage))
-    reel = "".join(f'<div class="frame"><div class="ph">{img}</div><div class="cap mono"><span>FR {i + 1:02d} / {len(frames):02d}</span>'
-                   f'<span>{e(cap)}</span></div></div>' for i, (img, cap) in enumerate(frames))
+    rows = coverage_rows(coverage)
+    reel = "".join(f'<div class="frame"><a href="{href}"><div class="ph">{img}</div><div class="cap mono"><span>FR {i + 1:02d} / {len(frames):02d}</span>'
+                   f'<span>{e(cap)}</span></div></a></div>' for i, (img, cap, href) in enumerate(frames))
+    # the strip doubled, so it rolls round without a jump; the copy is hidden from readers and the keyboard
+    again = reel.replace('<div class="frame">', '<div class="frame" aria-hidden="true">').replace("<a href=", '<a tabindex="-1" href=')
     stack_html = "".join(f"<figure>{img}</figure>" for img in stack[:3])
     venue_html = "".join(f'<figure>{img}<span class="mono">{e(label)}</span></figure>' for img, label in venues[:3])
     steps = "".join(f'<div class="rv"><div class="n">{i:02d}</div><h3>{e(h)}</h3><p>{e(p)}</p></div>'
@@ -313,23 +400,24 @@ def home_body(t: dict, hero: str, frames: list[tuple[str, str]], stack: list[str
     short = ["Backstage", "Green rooms", "Breakouts", "Main stage", "Evening events", "Dinners", "Portraits",
              "Exhibition halls", "Instant delivery"]
     return f"""
-<section class="hero"><div class="img">{hero}</div><canvas class="web" aria-hidden="true"></canvas>
-<div class="vf" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
-<div class="copy"><div class="kick mono c">Event and convention photography</div>
+<section class="hero"><div class="photo"><div class="img">{hero}</div><canvas class="web" aria-hidden="true"></canvas>
+<div class="vf" aria-hidden="true"><i></i><i></i><i></i><i></i></div></div>
+<div class="copy"><div class="kick mono c">{e(t['kicker'])}</div>
 <h1 class="mega"><span><em>Two</em></span><span class="o"><em>brothers,</em></span><span><em>every room<b>.</b></em></span></h1>
+<p class="first">{e(t['first'])}</p>
 <div class="row"><p class="lede">{e(t['lede'])}</p><a class="btn fill" href="/book/">Request a quote <span class="arr">&#8599;</span></a></div></div></section>
 {_ticker(short)}
-<section id="coverage" class="index"><div class="head rv"><div><div class="kick mono c">01 / Coverage</div>
+<section id="coverage" class="index"><div class="head rv"><div><div class="kick mono c">Coverage</div>
 <h2>From the green room<br><span class="o">to the last</span> reception.</h2></div><p>{e(t['coverage_p'])}</p></div>
 <div class="list rv">{rows}</div></section>
-{f'<section id="work" class="reel"><div class="pin"><div class="bar"><div class="kick mono c" style="margin:0">02 / Work</div><span class="mono g">Scroll</span></div><div class="track">{reel}</div><div class="sprocket" style="margin-top:22px"></div></div></section>' if reel else ''}
+{f'<section id="work" class="reel"><div class="bar"><div class="kick mono c" style="margin:0">Work</div><span class="hint mono">Rolls on its own. Swipe, or use the arrows.</span><div class="arrows"><button type="button" data-dir="prev" aria-label="Previous photos">&#8592;</button><button type="button" data-dir="next" aria-label="Next photos">&#8594;</button></div></div><div class="track" aria-label="Photographs from our events">{reel}{again}</div><div class="sprocket" style="margin-top:22px"></div></section>' if reel else ''}
 <section><div class="rv"><div class="kick mono c">Who will be at your event</div><h2>One of us, <span class="o">every</span> time.</h2>
 <p class="g" style="max-width:640px;margin-top:22px">{e(t['who'])}</p>
 <p class="mono g" style="margin-top:14px">References available on request. <a class="c" href="/about/">About the two of us &#8599;</a></p></div></section>
 <section class="deliver"><div class="rv"><div class="kick mono c">Photos during the event</div>
 <h2>Photos find <span class="o">their</span> people.</h2><p>{e(t['deliver_p'])}</p></div>
 {f'<div class="stack rv">{stack_html}<span class="stamp mono">Sent</span></div>' if stack_html else ''}</section>
-{f'<section id="venues" class="venues"><div class="head rv"><div><div class="kick mono c">03 / Venues</div><h2>The building is <span class="o">part of</span> the story.</h2></div><p>{e(t["venues_p"])}</p></div><div class="grid">{venue_html}</div></section>' if venue_html else ''}
+{f'<section id="venues" class="venues"><div class="head rv"><div><div class="kick mono c">Venues</div><h2>The building is <span class="o">part of</span> the story.</h2></div><p>{e(t["venues_p"])}</p></div><div class="grid">{venue_html}</div></section>' if venue_html else ''}
 <section><div class="kick mono c rv">How it works</div><h2 class="rv">Three steps.</h2><div class="steps">{steps}</div></section>
 {_ticker(list(reversed(short)), rev=True)}
 <section class="cta"><div class="kick mono c" style="justify-content:center">Planning an event</div>
@@ -442,7 +530,7 @@ def build(conn: Optional[sqlite3.Connection], photos: SitePhotos, *, out: Path =
                                  f"The Google Search Console value on the Keys page is {verification_bad}. The site is built without it.")
     t = copy_text()
     check_copy([v if isinstance(v, str) else " ".join(x for pair in v for x in pair) for v in t.values()] + offer.coverage_labels()
-               + [c["note"] for c in o["coverage"] if c.get("note")])
+               + [c[k] for c in o["coverage"] for k in ("note", "title", "first", "about") if c.get(k)] + [AREA_LINE])
     if out.exists():
         shutil.rmtree(out)
     assets = out / "assets"
@@ -469,10 +557,20 @@ def build(conn: Optional[sqlite3.Connection], photos: SitePhotos, *, out: Path =
         im, alt, m = _photo(entry)
         files = save_web(im, assets, f"work-{i}", m)
         shown.append((f"/assets/{files[max(files)]}", alt, m))
-        tag = img_tag(files, alt, "(max-width:900px) 78vw, 34vw")
-        frames.append((tag, (m.title or alt)[:34]))
+        tag = img_tag(files, alt, "(max-width:760px) 78vw, (max-width:1100px) 44vw, 34vw")
+        frames.append((tag, (m.title or alt)[:34], photos.links[i] if i < len(photos.links) else "/coverage/"))
         if i < 3:
             stack.append(tag)
+    # the coverage pages' photos (2026-10-14), each saved once however many pages show it
+    page_files: dict[str, list[tuple[dict, str, ImageMeta]]] = {}
+    saved: dict[int, dict] = {}
+    for key, entries in photos.pages.items():
+        page_files[key] = []
+        for j, entry in enumerate(entries):
+            im, alt, m = _photo(entry)
+            if id(im) not in saved:
+                saved[id(im)] = save_web(im, assets, f"cover-{key}-{j}", m)
+            page_files[key].append((saved[id(im)], alt, m))
     for i, entry in enumerate(photos.venues):
         im, alt, m = _photo(entry)
         files = save_web(im, assets, f"venue-{i}", m)
@@ -480,14 +578,57 @@ def build(conn: Optional[sqlite3.Connection], photos: SitePhotos, *, out: Path =
         venues.append((img_tag(files, alt, "(max-width:900px) 100vw, 60vw", extra=' data-speed="0.08"'),
                        "Exterior" if i % 2 == 0 else "Interior"))
     base = f"https://{cfg.brand_domain}"
-    pages = {"index.html": (t["title"], t["lede"], home_body(t, hero, frames, stack, venues))}
+    pages = {"index.html": (t["title"], t["description"], home_body(t, hero, frames, stack, venues))}
+    page_shown: dict[str, list[tuple[str, str, ImageMeta]]] = {"/": list(shown)}     # per page, for the sitemap and the image blocks
+    page_og: dict[str, str] = {}
+    page_jsonld: dict[str, str] = {}
+    page_noindex: set[str] = set()
+    coverage_list = tuple((c["key"], c["label"]) for c in o["coverage"])
+    # the coverage index and one page per coverage item (2026-10-14: every row led to the quote form)
+    pages["coverage/index.html"] = (f"Event photography coverage in {AREA}", t["coverage_description"], f"""
+<section class="page cover"><div class="kick mono c">Coverage</div><h1>Every<br><span class="o">room</span><b>.</b></h1>
+<p class="first">{e(t['coverage_first'])}</p>
+<p class="g" style="max-width:640px;margin:18px 0 0">{e(t['coverage_p'])}</p>
+<div class="list" style="margin-top:50px">{coverage_rows(o['coverage'])}</div>
+<p style="margin-top:50px"><a class="btn fill" href="/book/">Request a quote <span class="arr">&#8599;</span></a></p></section>""")
+    page_jsonld["coverage/index.html"] = markup.jsonld_script(markup.jsonld_breadcrumbs([(brand, base + "/"), ("Coverage", base + "/coverage/")]))
+    for c in o["coverage"]:
+        rel = f"coverage/{c['key']}/index.html"
+        figures = "".join(f"<figure>{img_tag(files, alt, '(max-width:760px) 50vw, (max-width:1100px) 50vw, 33vw')}</figure>"
+                          for files, alt, m in page_files.get(c["key"], []))
+        pages[rel] = (f"{c['title']}, {AREA}", c["first"], f"""
+<section class="page cover"><div class="kick mono c"><a href="/coverage/">Coverage</a></div><h1>{e(c['label'])}<b>.</b></h1>
+<p class="first">{e(c['first'])}</p><div class="prose"><p>{e(c['about'])}</p></div>
+{f'<div class="grid">{figures}</div>' if figures else ''}
+<p style="margin-top:50px"><a class="btn fill" href="/book/">Request a quote <span class="arr">&#8599;</span></a></p>
+<div class="more"><div class="kick mono c">The rest of the coverage</div><div class="list">{coverage_rows(o['coverage'], skip=c['key'])}</div></div></section>""")
+        page_shown["/" + rel.replace("index.html", "")] = [(f"/assets/{files[max(files)]}", alt, m) for files, alt, m in page_files.get(c["key"], [])]
+        first_photo = page_shown["/" + rel.replace("index.html", "")]
+        page_og[rel] = (base + first_photo[0][0]) if first_photo else ""
+        page_url = f"{base}/coverage/{c['key']}/"
+        blocks = [markup.jsonld_service(c["title"], c["first"], page_url, brand, base + "/", area_served=list(AREA_SERVED),
+                                        image=page_og[rel]),
+                  markup.jsonld_breadcrumbs([(brand, base + "/"), ("Coverage", base + "/coverage/"), (c["label"], page_url)])]
+        blocks += [markup.jsonld_image(markup.absolute(base, loc), brand, cfg.legal_name, m.credit or brand) for loc, _, m in first_photo]
+        page_jsonld[rel] = "".join(markup.jsonld_script(b) for b in blocks)
+    # the contact page (2026-10-14): email and phone, no form (his decision); the quote form for dates
+    phone = contact_phone()
+    pages["contact/index.html"] = ("Contact us", f"Email or call {brand}, event and convention photographers based in {AREA}. One of us writes back within 24 hours.", f"""
+<section class="page contact"><div class="kick mono c">Contact</div><h1>Get in<br><span class="o">touch</span><b>.</b></h1>
+<p class="first">{e(t['contact_first'])}</p>
+<div class="hand"><div><div class="mono c">Email</div><a class="l" href="mailto:{e(contact_email())}">{e(contact_email())}</a></div>
+{f'<div><div class="mono c">Phone</div><a class="l" href="tel:{e(phone.replace(" ", ""))}">{e(phone)}</a></div>' if phone else ''}</div>
+<p class="g" style="max-width:640px;margin-top:30px">{e(t['contact_p'])}</p>
+<p style="margin-top:30px"><a class="btn fill" href="/book/">Request a quote <span class="arr">&#8599;</span></a></p>
+<p class="mono g" style="margin-top:30px">{e(AREA_LINE)} <a href="/privacy/" class="c">Privacy and photo removal</a>.</p></section>""")
     chips = "".join(f'<label><input type="checkbox" name="coverage" value="{e(c["key"])}"><span>{e(c["label"])}</span></label>'
                     for c in o["coverage"])
     site_key = config.getenv("TURNSTILE_SITE_KEY") or ""
     turnstile = (f'<div class="full"><div class="cf-turnstile" data-sitekey="{e(site_key)}" data-theme="dark"></div></div>'
                  '<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>') if site_key else ""
     questions = "".join(f"<li>{e(q)}</li>" for q in (o.get("quote_questions") or [])[:4])
-    pages["book/index.html"] = ("Request a quote", "Tell us about your event and get a quote for your dates.", f"""
+    pages["book/index.html"] = ("Request a quote for event photography",
+                                f"Send the dates, the venue and the rooms that matter. One of us writes back within 24 hours with a quote, in {AREA} or wherever your event is.", f"""
 <section class="page"><div class="kick mono c">Request a quote</div><h1>Tell us about<br><span class="o">your</span> event<b>.</b></h1>
 <p class="g" style="max-width:640px;margin:18px 0 30px">Send the dates, the venue and the rooms that matter, and one of us writes back within 24 hours.
 What moves the quote: the days and hours, the rooms covered at the same time, how many photographers, how fast you need selects, and where the images will be used.</p>
@@ -514,10 +655,11 @@ What moves the quote: the days and hours, the rooms covered at the same time, ho
 </form></div></div></section>
 <script>const q=new URLSearchParams(location.search).get("error");const m={{missing:"Please add your name and a working email.",busy:"A few requests just came from here. Please try again in an hour, or email us.",check:"The spam check did not pass. Please try again.",unreadable:"Something went wrong. Please try again."}};
 if(q)document.getElementById("err").innerHTML='<div class="err mono">'+(m[q]||m.unreadable)+'</div>';</script>""")
-    about_photos = "".join(f"<figure>{img}</figure>" for img, _ in frames[:2])
+    about_photos = "".join(f"<figure>{img}</figure>" for img, _, _ in frames[:2])
     about_paras = "".join(f"<p>{e(p)}</p>" for p in t["about"].split("\n\n"))
-    pages["about/index.html"] = ("About us", "Chris and Nic Kennedy, brothers, more than thirty years each behind the camera.", f"""
-<section class="page"><div class="kick mono c">05 / About</div><h1>Two<br><span class="o">brothers</span><b>.</b></h1>
+    pages["about/index.html"] = ("About us: two brothers, event photographers",
+                                 f"Chris and Nic Kennedy, brothers, more than thirty years each behind the camera, based in {AREA} and travelling nationwide.", f"""
+<section class="page"><div class="kick mono c">About</div><h1>Two<br><span class="o">brothers</span><b>.</b></h1>
 <div class="prose" style="max-width:640px;margin-top:30px">{about_paras}
 <h3>Who will be at your event</h3><p>{e(t['who'])}</p><p>References available on request.</p></div>
 {f'<div class="grid" style="margin-top:50px">{about_photos}</div>' if about_photos else ''}
@@ -526,8 +668,8 @@ if(q)document.getElementById("err").innerHTML='<div class="err mono">'+(m[q]||m.
 <div class="kick mono c">Request received</div><h1>Thank<br><span class="o">you</span><b>.</b></h1>
 <p class="g" style="max-width:560px;margin-top:30px">Your request is in. A reply comes back to you by email.</p>
 <p style="margin-top:30px"><a class="btn" href="/">Back to the site <span class="arr">&#8599;</span></a></p></section>""")
-    pages["availability/index.html"] = ("Availability", "Booked dates are marked. Every other date is open to request.", """
-<section class="page"><div class="kick mono c">04 / Availability</div><h1>Open<br><span class="o">dates</span><b>.</b></h1>
+    pages["availability/index.html"] = ("Availability", f"Booked dates are marked. Every other date is open to request, in {AREA} or wherever the event is.", """
+<section class="page"><div class="kick mono c">Availability</div><h1>Open<br><span class="o">dates</span><b>.</b></h1>
 <div class="legend mono"><span><i class="b"></i>Booked</span><span><i></i>Open to request</span></div>
 <div class="cal" id="cal"></div><p style="margin-top:50px"><a class="btn fill" href="/book/">Request a quote <span class="arr">&#8599;</span></a></p></section>
 <script>
@@ -551,21 +693,36 @@ It is never sold or shared. The website holds it only until the booking inbox co
     pages["404.html"] = ("Not found", "Not found.", """<section class="page" style="min-height:70vh"><div class="kick mono c">Out of frame</div>
 <h1>Not<br><span class="o">found</span><b>.</b></h1><p style="margin-top:30px"><a class="btn" href="/">Back to the site <span class="arr">&#8599;</span></a></p></section>""")
     og = f"{base}/assets/hero-1600.jpg" if hero else ""
+    preload = ", ".join(f"/assets/hero-{w}.jpg {w}w" for w in WIDTHS) if hero else ""
     sections = tuple(name for name, there in (("work", frames), ("venues", venues)) if there)
+    socials = social_links()
     if not head_extra:
-        blocks = [markup.jsonld_business(brand, cfg.legal_name, base + "/", contact_email(), t["lede"])]
+        blocks = [markup.jsonld_business(brand, cfg.legal_name, base + "/", contact_email(), t["description"],
+                                         telephone=phone or None, same_as=[url for _, url in socials], area_served=list(AREA_SERVED),
+                                         locality="Washington", region="DC", country="US", image=og, logo=f"{base}/assets/mark.svg")]
         blocks += [markup.jsonld_image(markup.absolute(base, loc), brand, cfg.legal_name, m.credit or brand)
                    for loc, _, m in shown]
         head_extra = "".join(markup.jsonld_script(b) for b in blocks)
+    page_jsonld["index.html"] = head_extra
+    page_jsonld["about/index.html"] = "".join(markup.jsonld_script(markup.jsonld_person(
+        name, "Photographer", brand, base + "/", base + "/about/", alumni_of="The Corcoran, Washington, DC")) for name in ("Chris Kennedy", "Nic Kennedy"))
+    page_noindex.update({"thanks/index.html", "404.html"})
     for rel, (title, desc, body) in pages.items():
         check_copy([desc])
+        full_title = title if rel == "index.html" else f"{title} | {brand}"
+        if len(full_title) > TITLE_MAX or len(desc) > DESCRIPTION_MAX:
+            raise SiteCopyRefused(f"{rel}: the title ({len(full_title)} characters, {TITLE_MAX} at most) or the description "
+                                  f"({len(desc)}, {DESCRIPTION_MAX} at most) is too long for a search result")
         dest = out / rel
         dest.parent.mkdir(parents=True, exist_ok=True)
         path = "/" + rel.replace("index.html", "")
-        dest.write_text(theme.shell(title=e(title if rel == "index.html" else f"{title} | {brand}"), description=e(desc), body=body,
+        dest.write_text(theme.shell(title=e(full_title), description=e(desc), body=body,
                                     mark_svg=mark_svg, brand=e(brand), legal=e(cfg.legal_name), email=e(contact_email()),
-                                    preview=preview, canonical=base + path, jsonld=head_extra if rel == "index.html" else "",
-                                    og_image=og, sections=sections, verification=verification), encoding="utf-8")
+                                    preview=preview, canonical=base + path, jsonld=page_jsonld.get(rel, ""),
+                                    og_image=page_og.get(rel) or og, sections=sections, verification=verification, path=path,
+                                    phone=e(phone), socials=tuple((e(a), e(b)) for a, b in socials), coverage=tuple((e(a), e(b)) for a, b in coverage_list),
+                                    area_line=e(AREA_LINE), noindex=rel in page_noindex,
+                                    preload=preload if rel == "index.html" else ""), encoding="utf-8")
     # a preview is never crawled; the live site lists its public pages and every photo on them, each with the
     # date its content last changed (Chris, 2026-10-12: "no site map or Google search indexing")
     (out / "robots.txt").write_text("User-agent: *\nDisallow: /\n" if preview else markup.robots_txt(base))
@@ -575,7 +732,8 @@ It is never sold or shared. The website holds it only until the booking inbox co
     rels = {p: ("index.html" if p == "/" else p.strip("/") + "/index.html") for p in PAGES}
     (out / "sitemap.xml").write_text(markup.sitemap_xml(
         base, list(PAGES),
-        {"/": [{"loc": loc, "title": m.title or alt, "caption": m.description or alt} for loc, alt, m in shown]},
+        {page: [{"loc": loc, "title": m.title or alt, "caption": m.description or alt} for loc, alt, m in entries]
+         for page, entries in page_shown.items() if entries},
         lastmod=page_dates(out, rels, preview=preview)))
     if not preview and indexnow.key():
         indexnow.write_key_file(out, indexnow.key())        # /<key>.txt: the proof the IndexNow pings are ours

@@ -1429,6 +1429,11 @@ def create_app() -> FastAPI:
                         f("BRAND_FROM_EMAIL", "Mail sent from"), f("BRAND_POSTAL_ADDRESS", "Postal address on emails"),
                         f("ALERT_EMAIL", "Alerts and the daily summary go to"),
                         f("SERVICE_AREA", "Where you work, for search (for example: Washington DC)")]},
+            {"title": "Website contact", "note": "Shown on eventcaliber.com (2026-10-14): the phone number at the top on phones, on the "
+                                                 "Contact page, in the footer and in the business details search engines read; the social "
+                                                 "addresses in the footer. Blank hides each one. A change republishes the site within minutes.",
+             "fields": [f("BRAND_PHONE", "Phone number on the website"), f("SOCIAL_INSTAGRAM", "Instagram address"),
+                        f("SOCIAL_FACEBOOK", "Facebook address"), f("SOCIAL_PINTEREST", "Pinterest address")]},
             {"title": "Google Drive", "note": "From this company's own Google Cloud project. Read only.",
              "fields": [f("GOOGLE_OAUTH_CLIENT_ID", "OAuth client id"), f("GOOGLE_OAUTH_CLIENT_SECRET", "OAuth client secret", secret=True),
                         f("CREDITS_SHEET_ID", "Credits sheet (link or id)")]},
@@ -1514,9 +1519,13 @@ def create_app() -> FastAPI:
             config.write_env(updates)
             if site_build.VERIFICATION_KEY in updates:
                 settings.set(conn, deploy.TAG_CHANGED_KEY, db.utcnow())
+            if any(k in updates for k in deploy.SITE_KEYS):
+                settings.set(conn, deploy.KEYS_CHANGED_KEY, db.utcnow())     # the site shows these: it republishes itself
         note = f"saved {len(updates) - cleared}" + (f", cleared {cleared}" if cleared else "")
         if site_build.VERIFICATION_KEY in updates:
             note += "; the site republishes itself in a few minutes with the Search Console change, then press Verify there"
+        elif any(k in updates for k in deploy.SITE_KEYS):
+            note += "; the site republishes itself in a few minutes with the new contact details"
         if refused:
             note += "; " + refused
         return RedirectResponse("/keys?msg=" + quote_plus(note), status_code=303)

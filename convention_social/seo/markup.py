@@ -23,7 +23,7 @@ from ..ai import copy_rules
 SITEMAP_NS = "http://www.sitemaps.org/schemas/sitemap/0.9"
 IMAGE_NS = "http://www.google.com/schemas/sitemap-image/1.1"
 SCHEMA_CONTEXT = "https://schema.org"
-DEFAULT_PAGES = ("/", "/book/", "/availability/", "/privacy/")
+DEFAULT_PAGES = ("/", "/about/", "/coverage/", "/book/", "/availability/", "/contact/", "/privacy/")
 ROBOTS_DISALLOW = ("/api/", "/thanks/")
 _ABSOLUTE = re.compile(r"^https?://", re.IGNORECASE)
 
@@ -101,9 +101,12 @@ def robots_txt(base_url: str) -> str:
 
 
 def jsonld_business(brand: str, legal_name: str, url: str, email: str, description: str, *,
-                    telephone: Optional[str] = None, same_as: Optional[list[str]] = None) -> dict:
-    """schema.org ProfessionalService for the company. No address ever; a telephone only when given;
-    sameAs may be empty. The description must pass the copy rules."""
+                    telephone: Optional[str] = None, same_as: Optional[list[str]] = None,
+                    area_served: Optional[list[str]] = None, locality: str = "", region: str = "", country: str = "",
+                    image: str = "", logo: str = "") -> dict:
+    """schema.org ProfessionalService for the company. No street address ever (a locality and region only, when
+    given: a service-area business, 2026-10-14); a telephone only when given; sameAs may be empty; areaServed,
+    image and logo when given. The description must pass the copy rules."""
     data = {
         "@context": SCHEMA_CONTEXT,
         "@type": "ProfessionalService",
@@ -116,7 +119,43 @@ def jsonld_business(brand: str, legal_name: str, url: str, email: str, descripti
     }
     if telephone and telephone.strip():
         data["telephone"] = telephone.strip()
+    if area_served:
+        data["areaServed"] = [{"@type": "Place", "name": a} for a in area_served]
+    if locality or region:
+        data["address"] = {"@type": "PostalAddress", **({"addressLocality": locality} if locality else {}),
+                           **({"addressRegion": region} if region else {}), **({"addressCountry": country} if country else {})}
+    if image:
+        data["image"] = image
+    if logo:
+        data["logo"] = logo
     return data
+
+
+def jsonld_person(name: str, job_title: str, org_name: str, org_url: str, url: str, *, alumni_of: str = "") -> dict:
+    """schema.org Person for one of the two brothers (2026-10-14): name, what he does, the company, the About page."""
+    data = {"@context": SCHEMA_CONTEXT, "@type": "Person", "name": name, "jobTitle": job_title, "url": url,
+            "worksFor": {"@type": "Organization", "name": org_name, "url": org_url}}
+    if alumni_of:
+        data["alumniOf"] = {"@type": "CollegeOrUniversity", "name": alumni_of}
+    return data
+
+
+def jsonld_service(name: str, description: str, url: str, provider_name: str, provider_url: str, *,
+                   area_served: Optional[list[str]] = None, image: str = "") -> dict:
+    """schema.org Service for one coverage page (2026-10-14). The description passes the copy rules."""
+    data = {"@context": SCHEMA_CONTEXT, "@type": "Service", "name": name, "description": public(description, "service description"),
+            "url": url, "serviceType": name, "provider": {"@type": "ProfessionalService", "name": provider_name, "url": provider_url}}
+    if area_served:
+        data["areaServed"] = [{"@type": "Place", "name": a} for a in area_served]
+    if image:
+        data["image"] = image
+    return data
+
+
+def jsonld_breadcrumbs(items: list[tuple[str, str]]) -> dict:
+    """schema.org BreadcrumbList from (name, url) pairs, home first (2026-10-14)."""
+    return {"@context": SCHEMA_CONTEXT, "@type": "BreadcrumbList",
+            "itemListElement": [{"@type": "ListItem", "position": i, "name": name, "item": url} for i, (name, url) in enumerate(items, start=1)]}
 
 
 def jsonld_image(url: str, creator: str, copyright_holder: str, credit: str) -> dict:

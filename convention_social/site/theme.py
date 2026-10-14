@@ -30,20 +30,23 @@ a{color:inherit;text-decoration:none}img{display:block;max-width:100%}
 .cursor:before{left:50%;top:50%;width:4px;height:4px;margin:-2px 0 0 -2px;border-radius:50%}
 .cursor.big{width:76px;height:76px;margin:-38px 0 0 -38px;border-color:var(--c)}
 @media (pointer:fine){.cursor{display:block}body{cursor:none}a,button,label,input,select,textarea{cursor:none}}
-/* header */
-.top{position:fixed;inset:0 0 auto;z-index:50;display:flex;align-items:center;gap:28px;padding:18px var(--pad);transition:background .3s,padding .3s}
+/* header (2026-10-14): words on an iPad and a computer; on a phone the logo, the phone number and the quote, and the bar at the bottom */
+.top{position:fixed;inset:0 0 auto;z-index:50;display:flex;align-items:center;gap:22px;padding:18px var(--pad);transition:background .3s,padding .3s}
 .top.solid{background:rgba(10,10,11,.86);backdrop-filter:blur(10px);padding-top:12px;padding-bottom:12px;border-bottom:1px solid var(--g3)}
 .top .logo svg{height:46px;width:auto}
-.top nav{margin-left:auto;display:flex;gap:26px}.top nav a{color:var(--g5)}.top nav a:hover{color:var(--w)}
-.top nav a b{color:var(--c);font-weight:500}
+.top nav{margin-left:auto;display:flex;gap:clamp(14px,2vw,26px)}.top nav a{color:var(--g5);min-height:44px;display:inline-flex;align-items:center;padding:0 2px}
+.top nav a:hover,.top nav a[aria-current]{color:var(--w)}.top nav a[aria-current]{box-shadow:inset 0 -2px 0 var(--c)}
+.top .tel{color:var(--g5);white-space:nowrap;min-height:44px;display:inline-flex;align-items:center}.top .tel:hover{color:var(--c)}
+.tabbar{display:none}
 .btn{display:inline-flex;align-items:center;gap:12px;border:1px solid var(--w);padding:15px 22px;font:500 12px var(--mono);letter-spacing:.16em;text-transform:uppercase;transition:background .25s,color .25s,border-color .25s;background:transparent;color:var(--w)}
 .btn:hover{background:var(--c);border-color:var(--c);color:var(--k)}.btn .arr{transition:transform .25s}.btn:hover .arr{transform:translate(3px,-3px)}
 .btn.fill{background:var(--w);color:var(--k)}.btn.fill:hover{background:var(--c)}
-/* hero */
-.hero{position:relative;height:100svh;min-height:640px;overflow:hidden;display:flex;align-items:flex-end}
+/* hero (2026-10-14): the photo, then the words on a solid band under it; nothing is written over the picture */
+.hero{position:relative}
+.hero .photo{position:relative;height:62svh;min-height:420px;max-height:820px;overflow:hidden;background:var(--g1)}
 .hero .img{position:absolute;inset:0}.hero .img img{width:100%;height:100%;object-fit:cover;animation:push 18s ease-out forwards;filter:brightness(1.24) saturate(1.35) contrast(1.04)}
 @keyframes push{from{transform:scale(1.14)}to{transform:scale(1)}}
-.hero:after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(10,10,11,.3) 0%,rgba(10,10,11,0) 24%,rgba(10,10,11,.08) 55%,rgba(10,10,11,.92) 100%)}
+.hero .photo:after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(10,10,11,.28) 0%,rgba(10,10,11,0) 26%,rgba(10,10,11,0) 72%,rgba(10,10,11,.5) 100%)}
 .hero canvas.web{position:absolute;inset:0;width:100%;height:100%;z-index:2;pointer-events:none;mix-blend-mode:screen;opacity:.7}
 .vf{position:absolute;inset:clamp(70px,9vh,110px) var(--pad) clamp(24px,4vh,40px);z-index:2;pointer-events:none}
 .vf i{position:absolute;width:44px;height:44px;border:0 solid var(--w)}
@@ -52,14 +55,15 @@ a{color:inherit;text-decoration:none}img{display:block;max-width:100%}
 @keyframes af{0%{transform:scale(2.2);opacity:0}55%{transform:scale(.9);opacity:1}70%{transform:scale(1.04)}100%{transform:scale(1)}}
 .rec:before{content:"";display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--c);margin-right:10px;vertical-align:1px;animation:blink 1.2s steps(2) infinite}
 @keyframes blink{50%{opacity:0}}
-.hero .copy{position:relative;z-index:3;padding:0 calc(var(--pad) + 60px) clamp(64px,10vh,110px);width:100%}
-.mega{font:400 clamp(40px,min(8.6vw,12.5vh),150px)/.92 var(--display);letter-spacing:-.02em;margin:0;text-transform:uppercase}
+.hero .copy{position:relative;z-index:3;padding:clamp(34px,5vw,64px) var(--pad) clamp(44px,6vw,80px);background:var(--k)}
+.mega{font:400 clamp(40px,min(7vw,11vh),124px)/.92 var(--display);letter-spacing:-.02em;margin:0;text-transform:uppercase}
 .mega span{display:block;overflow:hidden}.mega span em{display:block;font-style:normal;transform:translateY(105%);animation:up 1s cubic-bezier(.2,.8,.2,1) forwards}
 .mega span:nth-child(2) em{animation-delay:.12s}.mega span:nth-child(3) em{animation-delay:.24s}
 .mega .o{color:transparent;-webkit-text-stroke:1.5px var(--w)}.mega b{color:var(--c);font-weight:400}
 @keyframes up{to{transform:none}}
-.hero .row{display:flex;gap:32px;align-items:flex-end;justify-content:space-between;flex-wrap:wrap;margin-top:28px}
-.hero .lede{max-width:520px;margin:0;color:var(--g5);font-size:19px}
+.hero .first{font:400 clamp(19px,1.6vw,24px)/1.45 var(--body);color:var(--w);max-width:780px;margin:26px 0 0}
+.hero .row{display:flex;gap:32px;align-items:flex-end;justify-content:space-between;flex-wrap:wrap;margin-top:22px}
+.hero .lede{max-width:560px;margin:0;color:var(--g5);font-size:18px}
 /* ticker */
 .ticker{border-block:1px solid var(--g3);overflow:hidden;padding:22px 0;background:var(--k)}
 .ticker .track{display:flex;width:max-content;animation:tick 38s linear infinite}
@@ -83,11 +87,14 @@ h2 .o{color:transparent;-webkit-text-stroke:1.2px var(--w)}
 .list a .t{font:400 clamp(20px,2.6vw,40px)/1.1 var(--display);text-transform:uppercase}
 .list a .t em{display:block;font:300 clamp(14px,1.1vw,17px)/1.45 var(--body);text-transform:none;font-style:normal;color:var(--g4);margin-top:8px;max-width:620px}
 .list a:hover:before{transform:scaleY(1)}.list a:hover>*{color:var(--k)}.list a:hover .t{transform:translateX(14px)}
-/* reel */
-.reel{padding:0}.reel .pin{position:sticky;top:0;height:100vh;overflow:hidden;display:flex;flex-direction:column;justify-content:center;padding-top:70px}
-.reel .bar{display:flex;justify-content:space-between;padding:0 var(--pad);margin-bottom:26px}
-.reel .track{display:flex;gap:18px;padding:0 var(--pad);will-change:transform}
-.frame{flex:none;width:clamp(240px,min(34vw,46vh),520px)}.frame .ph{aspect-ratio:4/5;overflow:hidden;background:var(--g2)}
+/* work (2026-10-14): a strip that rolls on its own, pauses under a finger or the pointer, moves one frame per arrow, and never moves with the page scroll */
+.reel{padding:clamp(60px,8vw,120px) 0}
+.reel .bar{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:0 var(--pad);margin-bottom:22px;flex-wrap:wrap}
+.reel .bar .hint{color:var(--g4)}
+.reel .arrows{display:flex;gap:10px}.reel .arrows button{width:44px;height:44px;border:1px solid var(--g3);background:transparent;color:var(--w);font:400 18px/1 var(--mono);cursor:pointer;transition:border-color .25s,color .25s}
+.reel .arrows button:hover,.reel .arrows button:focus-visible{border-color:var(--c);color:var(--c);outline:0}
+.reel .track{display:flex;gap:18px;padding:0 var(--pad);overflow-x:auto;overscroll-behavior-x:contain;scrollbar-width:none}.reel .track::-webkit-scrollbar{display:none}
+.frame{flex:none;width:clamp(240px,34vw,520px)}.frame a{display:block}.frame .ph{aspect-ratio:4/5;overflow:hidden;background:var(--g2)}
 .frame img{width:100%;height:100%;object-fit:cover;transition:transform 1.2s cubic-bezier(.2,.8,.2,1)}.frame:hover img{transform:scale(1.06)}
 .frame .cap{display:flex;justify-content:space-between;margin-top:12px;color:var(--g4)}
 .sprocket{height:16px;background:radial-gradient(circle at 10px 8px,var(--k) 4px,transparent 5px) 0 0/22px 16px repeat-x,var(--g2);margin:0 var(--pad)}
@@ -120,11 +127,23 @@ h2 .o{color:transparent;-webkit-text-stroke:1.2px var(--w)}
 .cta a.huge:after{content:"";position:absolute;left:0;right:0;bottom:-10px;height:6px;background:var(--c);transform:scaleX(.18);transform-origin:left;transition:transform .6s cubic-bezier(.2,.8,.2,1)}
 .cta a.huge:hover:after{transform:scaleX(1)}
 .cta p{color:var(--g5);max-width:560px;margin:34px auto 0}
-/* footer */
+/* footer (2026-10-14): every page, the coverage, the contact and the legal line; it was one line */
 footer{padding:60px var(--pad) 36px;border-top:1px solid var(--g3);overflow:hidden}
 footer .big{font:400 clamp(30px,7vw,136px)/.9 var(--display);text-transform:uppercase;color:transparent;-webkit-text-stroke:1px var(--g3);white-space:nowrap;letter-spacing:-.03em}
-footer .row{display:flex;flex-wrap:wrap;gap:22px 36px;justify-content:space-between;margin-top:30px;color:var(--g4)}
+footer .foot{display:grid;grid-template-columns:1.4fr 1fr 1fr 1fr;gap:36px;margin-top:36px}
+footer h4{font:500 12px/1.4 var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--c);margin:0 0 14px}
+footer ul{list-style:none;margin:0;padding:0}footer li{margin:0 0 8px}footer li a{color:var(--g5);display:inline-block;padding:4px 0}
+footer .about{color:var(--g5);max-width:420px;margin:0}
+footer .legal{margin-top:40px;padding-top:20px;border-top:1px solid var(--g3);color:var(--g4);display:flex;flex-wrap:wrap;gap:12px 30px;justify-content:space-between}
 footer a:hover{color:var(--c)}
+/* coverage pages and the contact page (2026-10-14) */
+.cover .first,.contact .first{font:400 clamp(19px,1.6vw,24px)/1.45 var(--body);color:var(--w);max-width:760px;margin:26px 0 0}
+.cover .prose{margin-top:24px}.cover .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin-top:50px}
+.cover figure{margin:0;aspect-ratio:4/5;overflow:hidden;background:var(--g2)}.cover figure img{width:100%;height:100%;object-fit:cover}
+.cover .more{margin-top:70px}
+.contact .hand{display:grid;grid-template-columns:1fr 1fr;gap:30px;margin-top:40px;max-width:900px}
+.contact .hand>div{border:1px solid var(--g3);padding:26px}
+.contact .hand a.l{display:block;font:400 clamp(18px,2.2vw,30px)/1.25 var(--display);margin-top:12px;overflow-wrap:anywhere}.contact .hand a.l:hover{color:var(--c)}
 /* inner pages */
 .page{padding-top:clamp(130px,16vh,170px)}
 .page h1{font:400 clamp(40px,7vw,120px)/.94 var(--display);text-transform:uppercase;letter-spacing:-.02em;margin:0}
@@ -158,12 +177,24 @@ form.book textarea{min-height:120px;resize:vertical}
 .legend i.b{background:var(--c);border-color:var(--c)}
 .prose{max-width:760px;margin-top:50px}.prose h3{font:600 22px var(--body);margin:44px 0 10px}.prose p{color:var(--g5)}
 .preview{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);z-index:80;background:var(--c);color:var(--k);padding:9px 16px}
-@media (max-width:900px){.top nav{display:none}.index .head,.venues .head,.deliver,.split2{grid-template-columns:1fr}.steps{grid-template-columns:1fr}
+/* the iPad (2026-10-14): the computer's layout with closer spacing, the menu in words, the phone number in the footer */
+@media (min-width:761px) and (max-width:1100px){.top .tel{display:none}.top nav{gap:14px}.top .btn{padding:13px 16px}
+.hero .photo{height:54svh;min-height:380px}.mega{font-size:clamp(36px,7.4vw,84px)}
+.frame{width:44vw}.cover .grid{grid-template-columns:1fr 1fr}footer .foot{grid-template-columns:1fr 1fr}}
+/* the phone (2026-10-14): one column, the bar at the bottom, the hero words under the photo on the first screen */
+@media (max-width:760px){.top{gap:12px}.top nav{display:none}.top .logo svg{height:38px}.top .tel{margin-left:auto}.top .btn{padding:12px 14px}
+.tabbar{position:fixed;left:0;right:0;bottom:0;z-index:55;display:flex;justify-content:space-around;align-items:stretch;gap:4px;padding:8px 6px calc(8px + env(safe-area-inset-bottom));background:rgba(10,10,11,.94);backdrop-filter:blur(12px);border-top:1px solid var(--g3)}
+.tabbar a{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;min-height:48px;color:var(--g5);font:500 10px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;border-radius:8px}
+.tabbar a svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+.tabbar a[aria-current]{color:var(--c)}.tabbar a.q{background:var(--w);color:var(--k)}
+body{padding-bottom:calc(74px + env(safe-area-inset-bottom))}.preview{bottom:calc(90px + env(safe-area-inset-bottom))}
+.index .head,.venues .head,.deliver,.split2{grid-template-columns:1fr}.steps{grid-template-columns:1fr}
 .steps>div{border-right:0;border-bottom:1px solid var(--g3)}.venues .grid{grid-template-columns:1fr}.venues figure:first-child{grid-row:auto}
-.reel .pin{position:relative;height:auto;padding:90px 0}.reel .track{overflow-x:auto;scroll-snap-type:x mandatory;transform:none!important}
-.frame{width:78vw;scroll-snap-align:start}.side{position:relative;top:0}form.book{grid-template-columns:1fr}.hud.tr{display:none}
-.hero .copy{padding:0 calc(var(--pad) + 14px) 76px}.mega{font-size:min(clamp(30px,10.4vw,64px),calc((100vw - 100px) / 9.9))}.hero .lede{font-size:16px}.hero .row{margin-top:18px;gap:20px}
-.vf i{width:28px;height:28px}.list a{grid-template-columns:44px 1fr auto}.top .btn{padding:12px 14px}}
+.frame{width:78vw}.side{position:relative;top:0}form.book{grid-template-columns:1fr}
+.hero .photo{height:50svh;min-height:300px}.hero .copy{padding:28px var(--pad) 44px}.mega{font-size:min(clamp(30px,10.4vw,64px),calc((100vw - 100px) / 9.9))}
+.hero .first{font-size:17px;margin-top:18px}.hero .lede{font-size:16px}.hero .row{margin-top:16px;gap:18px}
+.vf i{width:28px;height:28px}.list a{grid-template-columns:44px 1fr auto}
+.cover .grid{grid-template-columns:1fr 1fr;gap:10px}.contact .hand{grid-template-columns:1fr}footer .foot{grid-template-columns:1fr;gap:28px}}
 @media (prefers-reduced-motion:reduce){*,*:before,*:after{animation:none!important;transition:none!important}.mega span em{transform:none}.rv{opacity:1;transform:none}.hero canvas.web{display:none}}
 """
 
@@ -173,11 +204,6 @@ const top=document.querySelector('.top');const onScroll=()=>top&&top.classList.t
 // reveal
 const io=new IntersectionObserver(es=>es.forEach(e=>{if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target)}}),{threshold:.14});
 document.querySelectorAll('.rv').forEach(el=>io.observe(el));
-// timecode + frame counter
-const tc=document.getElementById('tc'),fr=document.getElementById('fr');
-if(tc&&!reduce){const t0=performance.now();const tick=n=>{const s=(n-t0)/1000;const f=Math.floor((s%1)*24);const p=v=>String(v).padStart(2,'0');
-tc.textContent=p(Math.floor(s/3600))+':'+p(Math.floor(s/60)%60)+':'+p(Math.floor(s)%60)+':'+p(f);requestAnimationFrame(tick)};requestAnimationFrame(tick)}
-if(fr)addEventListener('scroll',()=>{fr.textContent=String(1+Math.floor(scrollY/90)).padStart(4,'0')},{passive:true});
 // cursor
 const cur=document.querySelector('.cursor');
 if(cur&&fine){addEventListener('mousemove',e=>{cur.classList.add('live');cur.style.transform='translate('+e.clientX+'px,'+e.clientY+'px)'});
@@ -202,11 +228,18 @@ new IntersectionObserver(es=>{live=!done&&es[0].isIntersecting&&!document.hidden
 // a reveal, then stillness (2026-10-12): the web plays for six seconds and fades, so the photograph and the words stand alone
 setTimeout(()=>{web.style.transition='opacity 1.6s ease';web.style.opacity='0';setTimeout(()=>{done=true;live=false},1700)},6000)}
 // no picture follows the pointer (Chris, 2026-10-14: "It just follows my mouse (that picture)"); the cursor ring is the one thing that does
-// horizontal reel
-const reel=document.querySelector('.reel'),track=reel&&reel.querySelector('.track');
-const size=()=>{if(!reel||innerWidth<=900){if(reel)reel.style.height='';return}reel.style.height=(track.scrollWidth-innerWidth+innerHeight+120)+'px'};
-if(reel&&!reduce){size();addEventListener('resize',size);addEventListener('scroll',()=>{if(innerWidth<=900)return;const r=reel.getBoundingClientRect();
-const max=track.scrollWidth-innerWidth;const p=Math.min(1,Math.max(0,-r.top/(reel.offsetHeight-innerHeight)));track.style.transform='translateX('+(-p*max)+'px)'},{passive:true})}
+// the work strip rolls on its own (Chris, 2026-10-14: "auto scrolling the gallery the entire time at a semi slow pace"): a native
+// sideways strip with the frames doubled so the loop is seamless; it pauses under the pointer, a finger or keyboard focus, the arrows
+// move it one frame, it stays still under reduced motion, and the page's own scrolling never moves it sideways
+const roll=document.querySelector('.reel .track');
+if(roll){const SPEED=24;let over=false,touch=false,focus=false,last=0,raf=0;const half=()=>roll.scrollWidth/2;
+const step=t=>{raf=0;if(last){const dt=Math.min(64,t-last);if(!over&&!touch&&!focus&&!document.hidden){roll.scrollLeft+=SPEED*dt/1000;if(roll.scrollLeft>=half())roll.scrollLeft-=half()}}last=t;raf=requestAnimationFrame(step)};
+roll.addEventListener('pointerenter',()=>{over=true},{passive:true});roll.addEventListener('pointerleave',()=>{over=false},{passive:true});
+roll.addEventListener('touchstart',()=>{touch=true},{passive:true});['touchend','touchcancel'].forEach(ev=>roll.addEventListener(ev,()=>{touch=false},{passive:true}));
+roll.addEventListener('focusin',()=>{focus=true});roll.addEventListener('focusout',()=>{focus=false});
+const width=()=>((roll.querySelector('.frame')||roll).getBoundingClientRect().width+18);
+document.querySelectorAll('.reel .arrows button').forEach(b=>b.addEventListener('click',()=>{roll.scrollBy({left:(b.dataset.dir==='prev'?-1:1)*width(),behavior:'smooth'})}));
+if(!reduce)raf=requestAnimationFrame(step)}
 // parallax
 const par=[...document.querySelectorAll('[data-speed]')];
 const move=()=>par.forEach(el=>{const r=el.parentElement.getBoundingClientRect();const d=(r.top+r.height/2-innerHeight/2)*parseFloat(el.dataset.speed);el.style.transform='translateY('+Math.max(-24,Math.min(24,d))+'px)'});
@@ -215,31 +248,64 @@ if(par.length&&!reduce){addEventListener('scroll',move,{passive:true});move()}
 """
 
 
+ICONS = {
+    "work": '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="1.5"/><path d="M3 16l5-5 4 4 3-3 6 6"/><circle cx="16" cy="9" r="1.5"/></svg>',
+    "about": '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-7 8-7s8 3 8 7"/></svg>',
+    "contact": '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="1.5"/><path d="M3 7l9 6 9-6"/></svg>',
+    "quote": '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>',
+}
+
+
+def _current(href: str, path: str) -> str:
+    """aria-current on the link of the page you are on (a section link counts for the home page)."""
+    page = href.split("#")[0] or "/"
+    return ' aria-current="page"' if page == path and not (href.startswith("/#") and path != "/") else ""
+
+
 def shell(*, title: str, description: str, body: str, mark_svg: str, brand: str, legal: str, email: str,
           preview: bool, canonical: str, jsonld: str = "", og_image: str = "",
-          sections: tuple = ("work", "venues"), verification: str = "") -> str:
-    """`sections`: the photo sections the home page has; the menu links only to those (a site built
-    before any photo is cleared has neither). `verification`: the Google Search Console tag's content
-    value, on every page so the property stays verified whichever page Google reads."""
-    links = [("/#coverage", "01", "Coverage"), ("/#work", "02", "Work"), ("/#venues", "03", "Venues"),
-             ("/availability/", "04", "Availability"), ("/about/", "05", "About")]
-    nav = "".join(f'<a href="{h}"><b>{n}</b> {label}</a>' for h, n, label in links
-                  if not h.startswith("/#") or h[2:] == "coverage" or h[2:] in sections)
+          sections: tuple = ("work", "venues"), verification: str = "", path: str = "/", phone: str = "",
+          socials: tuple = (), coverage: tuple = (), area_line: str = "", noindex: bool = False,
+          preload: str = "") -> str:
+    """One shell for every page (2026-10-14: the three sizes). `sections`: the photo sections the home page has
+    (a site built before any photo is cleared has none, so Work is left out). `verification`: the Google Search
+    Console tag's content value. `path`: this page's path, for aria-current. `phone`: shown tappable when set.
+    `socials`: (label, url) pairs for the footer and the business block. `coverage`: (key, label) pairs for the
+    footer. `noindex`: the thank-you and not-found pages, never listed. `preload`: the hero's srcset, preloaded."""
+    work = "/#work" if "work" in sections else "/coverage/"
+    links = [(work, "Work"), ("/coverage/", "Coverage"), ("/about/", "About"), ("/availability/", "Availability"), ("/contact/", "Contact")]
+    nav = "".join(f'<a href="{h}"{_current(h, path)}>{label}</a>' for h, label in links)
+    tabs = [(work, "work", "Work", ""), ("/about/", "about", "About", ""), ("/contact/", "contact", "Contact", ""), ("/book/", "quote", "Quote", " q")]
+    tabbar = "".join(f'<a href="{h}" class="{icon}{cls}"{_current(h, path)}>{ICONS[icon]}<span>{label}</span></a>' for h, icon, label, cls in tabs)
+    tel = f'<a class="tel mono" href="tel:{phone.replace(" ", "")}">{phone}</a>' if phone else ""
     stamp = '<div class="preview mono">Preview, not live</div>' if preview else ""
-    robots = '<meta name="robots" content="noindex,nofollow">' if preview else ""
-    og = f'<meta property="og:image" content="{og_image}">' if og_image else ""
+    robots = '<meta name="robots" content="noindex,nofollow">' if preview or noindex else ""
+    canon = "" if noindex else f'<link rel="canonical" href="{canonical}"><meta property="og:url" content="{canonical}">'
+    og = (f'<meta property="og:image" content="{og_image}"><meta name="twitter:card" content="summary_large_image">'
+          f'<meta name="twitter:image" content="{og_image}">') if og_image else '<meta name="twitter:card" content="summary">'
     verify = f'<meta name="google-site-verification" content="{verification}">' if verification and not preview else ""
+    pre = f'<link rel="preload" as="image" imagesrcset="{preload}" imagesizes="100vw">' if preload else ""
+    cover_links = "".join(f'<li><a href="/coverage/{k}/">{label}</a></li>' for k, label in coverage)
+    social_links = "".join(f'<li><a href="{url}" rel="me noopener">{label}</a></li>' for label, url in socials)
+    phone_li = f'<li><a href="tel:{phone.replace(" ", "")}">{phone}</a></li>' if phone else ""
+    from datetime import date
     return f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1"><title>{title}</title>
-<meta name="description" content="{description}"><link rel="canonical" href="{canonical}">{robots}{verify}
-<meta property="og:title" content="{title}"><meta property="og:description" content="{description}"><meta property="og:type" content="website">{og}
-<meta name="theme-color" content="#0A0A0B"><link rel="icon" href="/assets/mark.svg" type="image/svg+xml">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>{title}</title>
+<meta name="description" content="{description}">{canon}{robots}{verify}
+<meta property="og:title" content="{title}"><meta property="og:description" content="{description}"><meta property="og:type" content="website"><meta property="og:site_name" content="{brand}">{og}
+<meta name="twitter:title" content="{title}"><meta name="twitter:description" content="{description}">
+<meta name="theme-color" content="#0A0A0B"><link rel="icon" href="/assets/mark.svg" type="image/svg+xml">{pre}
 <link rel="stylesheet" href="/assets/site.css"><script>document.documentElement.classList.add("js")</script>{jsonld}
 </head><body><div class="grain" aria-hidden="true"></div><div class="cursor" aria-hidden="true"></div>
 <header class="top"><a class="logo" href="/" aria-label="{brand} home">{mark_svg}</a>
-<nav class="mono">{nav}</nav>
+<nav class="mono" aria-label="Pages">{nav}</nav>{tel}
 <a class="btn" href="/book/">Request a quote <span class="arr">&#8599;</span></a></header>
 <main>{body}</main>
-<footer><div class="big" aria-hidden="true">{brand}</div><div class="row mono"><span>{brand}, a brand of {legal}</span>
-<a href="/book/">Request a quote</a><a href="/availability/">Availability</a><a href="/privacy/">Privacy and photo removal</a><a href="mailto:{email}">{email}</a></div></footer>
+<footer><div class="big" aria-hidden="true">{brand}</div><div class="foot">
+<div><h4>{brand}</h4><p class="about">Event and convention photography by two brothers, more than thirty years each. {area_line}</p></div>
+<div><h4>Coverage</h4><ul>{cover_links}</ul></div>
+<div><h4>Pages</h4><ul><li><a href="{work}">Work</a></li><li><a href="/about/">About</a></li><li><a href="/availability/">Availability</a></li><li><a href="/contact/">Contact</a></li><li><a href="/book/">Request a quote</a></li><li><a href="/privacy/">Privacy and photo removal</a></li></ul></div>
+<div><h4>Contact</h4><ul><li><a href="mailto:{email}">{email}</a></li>{phone_li}{social_links}</ul></div></div>
+<div class="legal mono"><span>&#169; {date.today().year} {legal}. {brand} is a brand of {legal}.</span><span>Washington, DC</span></div></footer>
+<nav class="tabbar" aria-label="Pages">{tabbar}</nav>
 {stamp}<script src="/assets/site.js" defer></script></body></html>"""
