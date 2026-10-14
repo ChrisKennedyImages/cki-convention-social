@@ -239,6 +239,11 @@ setTimeout(()=>{web.style.transition='opacity 1.6s ease';web.style.opacity='0';s
 // move it one frame, it stays still under reduced motion, and the page's own scrolling never moves it sideways
 const roll=document.querySelector('.reel .track');
 if(roll){const SPEED=24;let over=false,touch=false,focus=false,last=0,raf=0,hold=0,pos=roll.scrollLeft;
+// the copies exist only for the loop (Chris, 2026-10-14: "the website gallery has duplicate images"): when the photos
+// themselves fit the screen the copies would only read as repeats, so they go and the strip stands still
+const own=[...roll.querySelectorAll('.frame:not([aria-hidden])')],lastOwn=own[own.length-1];
+const fits=!lastOwn||lastOwn.offsetLeft+lastOwn.offsetWidth<=roll.clientWidth;
+if(fits)roll.querySelectorAll('.frame[aria-hidden]').forEach(c=>c.remove());
 // one period of the loop is the distance from the first frame to its copy (the frames are doubled)
 const period=()=>{const f=roll.querySelectorAll('.frame');return f.length>1?f[f.length/2].offsetLeft-f[0].offsetLeft:0};
 // a float of our own: scrollLeft rounds to whole pixels, so a fraction of a pixel added to it every frame adds nothing;
@@ -250,7 +255,7 @@ roll.addEventListener('touchstart',()=>{touch=true},{passive:true});['touchend',
 roll.addEventListener('focusin',()=>{focus=true});roll.addEventListener('focusout',()=>{focus=false});
 const width=()=>{const x=roll.scrollLeft;for(const f of roll.querySelectorAll('.frame')){if(f.offsetLeft+f.offsetWidth>x+1)return f.offsetWidth+18}return roll.clientWidth*.8};
 document.querySelectorAll('.reel .arrows button').forEach(b=>b.addEventListener('click',()=>{hold=performance.now()+900;roll.scrollBy({left:(b.dataset.dir==='prev'?-1:1)*width(),behavior:'smooth'})}));
-if(!reduce)raf=requestAnimationFrame(step)}
+if(!reduce&&!fits)raf=requestAnimationFrame(step)}
 // parallax
 const par=[...document.querySelectorAll('[data-speed]')];
 const move=()=>par.forEach(el=>{const r=el.parentElement.getBoundingClientRect();const d=(r.top+r.height/2-innerHeight/2)*parseFloat(el.dataset.speed);el.style.transform='translateY('+Math.max(-24,Math.min(24,d))+'px)'});

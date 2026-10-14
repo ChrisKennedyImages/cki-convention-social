@@ -957,6 +957,27 @@ results.
   needed a taller picture to slide is gone), the coverage pages and the About
   page (a column layout, each picture whole). The hero is the one picture
   that may be cropped, and the only `object-fit:cover` on the site.
+- **"the website gallery has duplicate images and lets expand the gallery to
+  more images and a variety"** (Chris, 2026-10-14, on the live site). The six
+  live frames were six different pictures (no two alike by bytes or by
+  perceptual hash); what read as duplicates were the loop's copies coming
+  round after only six frames, and four of the six were portraits. Now the
+  strip is twelve frames (`build.COVERAGE_ROWS`), drawn across the rooms and
+  the events (`build.pick_grid`: one of each kind of shot before any repeats,
+  one event per round before any event repeats, the least recently used first
+  within a room), never the same photo twice and never the hero; the loop's
+  copies are dropped by the page's script when the photos themselves fit the
+  screen, and then nothing rolls. The rooms rule is a variety rule like the
+  events rule of 2026-10-11: a room with few photos comes round before every
+  photo of a big room has had its turn. His follow-up, "same picked twice":
+  the library holds the same picture under several ids (the same file in two
+  Drive folders; 1,431 md5 groups, 27 of them among cleared photos, that
+  day), each with its own sorting, so an id check passes and the picture can
+  come twice. One row now stands for each md5 group on the site
+  (`build.one_per_picture`), its use under any id counts for the whole group,
+  and his own hero pick on a twin is still his pick. Both builds that reached
+  the live site that day had shown seven distinct pictures; the repeats he saw
+  were the loop's copies and two portraits on one backdrop.
 - **One page per coverage item** (`/coverage/<key>/`, nine of them, and the
   coverage index): the title with the place ("Backstage event photography,
   Washington, DC | Event Caliber"), a plain first sentence, a paragraph, up to
