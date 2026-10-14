@@ -289,12 +289,11 @@ def _ticker(labels: list[str], rev: bool = False) -> str:
     return f'<div class="ticker{" rev" if rev else ""}" aria-hidden="true"><div class="track">{run}{run}</div></div>'
 
 
-def home_body(t: dict, hero: str, frames: list[tuple[str, str]], stack: list[str], venues: list[tuple[str, str]],
-              peeks: list[str]) -> str:
+def home_body(t: dict, hero: str, frames: list[tuple[str, str]], stack: list[str], venues: list[tuple[str, str]]) -> str:
     e = html.escape
     coverage = offer.load()["coverage"]
     rows = "".join(
-        f'<a href="/book/" data-img="{e(peeks[i % len(peeks)]) if peeks else ""}"><span class="mono g">{i + 1:02d}</span>'
+        f'<a href="/book/"><span class="mono g">{i + 1:02d}</span>'
         f'<span class="t">{e(c["label"])}{f"<em>{e(c["note"])}</em>" if c.get("note") else ""}</span><span class="mono">&#8599;</span></a>'
         for i, c in enumerate(coverage))
     reel = "".join(f'<div class="frame"><div class="ph">{img}</div><div class="cap mono"><span>FR {i + 1:02d} / {len(frames):02d}</span>'
@@ -314,7 +313,7 @@ def home_body(t: dict, hero: str, frames: list[tuple[str, str]], stack: list[str
 {_ticker(short)}
 <section id="coverage" class="index"><div class="head rv"><div><div class="kick mono c">01 / Coverage</div>
 <h2>From the green room<br><span class="o">to the last</span> reception.</h2></div><p>{e(t['coverage_p'])}</p></div>
-<div class="list rv">{rows}</div><div class="peek" aria-hidden="true"><img alt=""></div></section>
+<div class="list rv">{rows}</div></section>
 {f'<section id="work" class="reel"><div class="pin"><div class="bar"><div class="kick mono c" style="margin:0">02 / Work</div><span class="mono g">Scroll</span></div><div class="track">{reel}</div><div class="sprocket" style="margin-top:22px"></div></div></section>' if reel else ''}
 <section><div class="rv"><div class="kick mono c">Who will be at your event</div><h2>One of us, <span class="o">every</span> time.</h2>
 <p class="g" style="max-width:640px;margin-top:22px">{e(t['who'])}</p>
@@ -451,7 +450,7 @@ def build(conn: Optional[sqlite3.Connection], photos: SitePhotos, *, out: Path =
     (assets / "mark.svg").write_text(marks.mark(mark_key, brand, light="#0A0A0B", size=64, word=False))
     mark_svg = marks.mark(mark_key, brand, size=40)
     e = html.escape
-    hero, frames, stack, venues, peeks = "", [], [], [], []
+    hero, frames, stack, venues = "", [], [], []
     shown: list[tuple[str, str, ImageMeta]] = []          # (published path, alt, meta) for the sitemap and JSON-LD
     if photos.hero:
         im, alt, m = _photo(photos.hero[0])
@@ -464,7 +463,6 @@ def build(conn: Optional[sqlite3.Connection], photos: SitePhotos, *, out: Path =
         shown.append((f"/assets/{files[max(files)]}", alt, m))
         tag = img_tag(files, alt, "(max-width:900px) 78vw, 34vw")
         frames.append((tag, (m.title or alt)[:34]))
-        peeks.append(f"/assets/{files[min(files)]}")
         if i < 3:
             stack.append(tag)
     for i, entry in enumerate(photos.venues):
@@ -474,7 +472,7 @@ def build(conn: Optional[sqlite3.Connection], photos: SitePhotos, *, out: Path =
         venues.append((img_tag(files, alt, "(max-width:900px) 100vw, 60vw", extra=' data-speed="0.08"'),
                        "Exterior" if i % 2 == 0 else "Interior"))
     base = f"https://{cfg.brand_domain}"
-    pages = {"index.html": (t["title"], t["lede"], home_body(t, hero, frames, stack, venues, peeks))}
+    pages = {"index.html": (t["title"], t["lede"], home_body(t, hero, frames, stack, venues))}
     chips = "".join(f'<label><input type="checkbox" name="coverage" value="{e(c["key"])}"><span>{e(c["label"])}</span></label>'
                     for c in o["coverage"])
     site_key = config.getenv("TURNSTILE_SITE_KEY") or ""

@@ -83,8 +83,6 @@ h2 .o{color:transparent;-webkit-text-stroke:1.2px var(--w)}
 .list a .t{font:400 clamp(20px,2.6vw,40px)/1.1 var(--display);text-transform:uppercase}
 .list a .t em{display:block;font:300 clamp(14px,1.1vw,17px)/1.45 var(--body);text-transform:none;font-style:normal;color:var(--g4);margin-top:8px;max-width:620px}
 .list a:hover:before{transform:scaleY(1)}.list a:hover>*{color:var(--k)}.list a:hover .t{transform:translateX(14px)}
-.peek{position:fixed;left:0;top:0;width:300px;height:380px;pointer-events:none;z-index:40;opacity:0;transform:translate(-50%,-50%) scale(.85);transition:opacity .25s,transform .25s;overflow:hidden;border:1px solid var(--w)}
-.peek.on{opacity:1;transform:translate(-50%,-50%) scale(1)}.peek img{width:100%;height:100%;object-fit:cover}
 /* reel */
 .reel{padding:0}.reel .pin{position:sticky;top:0;height:100vh;overflow:hidden;display:flex;flex-direction:column;justify-content:center;padding-top:70px}
 .reel .bar{display:flex;justify-content:space-between;padding:0 var(--pad);margin-bottom:26px}
@@ -203,11 +201,7 @@ hero.addEventListener('touchmove',e=>at(e.touches[0].clientX,e.touches[0].client
 new IntersectionObserver(es=>{live=!done&&es[0].isIntersecting&&!document.hidden;go()}).observe(hero);document.addEventListener('visibilitychange',()=>{live=!done&&!document.hidden;go()});go();
 // a reveal, then stillness (2026-10-12): the web plays for six seconds and fades, so the photograph and the words stand alone
 setTimeout(()=>{web.style.transition='opacity 1.6s ease';web.style.opacity='0';setTimeout(()=>{done=true;live=false},1700)},6000)}
-// coverage peek
-const peek=document.querySelector('.peek');
-if(peek&&fine){const img=peek.querySelector('img');document.querySelectorAll('.list a').forEach(a=>{
-a.addEventListener('mouseenter',()=>{if(a.dataset.img){img.src=a.dataset.img;peek.classList.add('on')}});a.addEventListener('mouseleave',()=>peek.classList.remove('on'))});
-addEventListener('mousemove',e=>{peek.style.left=e.clientX+40+'px';peek.style.top=e.clientY+'px'})}
+// no picture follows the pointer (Chris, 2026-10-14: "It just follows my mouse (that picture)"); the cursor ring is the one thing that does
 // horizontal reel
 const reel=document.querySelector('.reel'),track=reel&&reel.querySelector('.track');
 const size=()=>{if(!reel||innerWidth<=900){if(reel)reel.style.height='';return}reel.style.height=(track.scrollWidth-innerWidth+innerHeight+120)+'px'};
