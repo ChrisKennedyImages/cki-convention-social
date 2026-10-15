@@ -35,7 +35,7 @@ from __future__ import annotations
 
 import itertools
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Callable, Optional, Sequence
 
@@ -72,15 +72,18 @@ class Design:
 
 
 DESIGNS = {
-    "field": Design("field", "complementary", 0.78, True, (UNBOUNDED, INTER, INTER_SEMI), 1, 1,
-                    "one photo whole, a flat field of its complementary colour, the room's name huge on it"),
-    "poster": Design("poster", "analogous", 0.50, False, (UNBOUNDED, MONO), 1, 1,
-                     "type first on paper: the room's name stacked to the full width, the photo whole under it"),
+    "poster": Design("poster", "black and white", 0.0, False, (UNBOUNDED, MONO), 1, 1,
+                     "type first on paper, in black: the room's name stacked to the full width, the photo whole under it"),
     "cascade": Design("cascade", "split", 0.76, True, (MICHROMA, MONO), 3, 3,
                       "three photos whole on a staircase, the hero last and largest, a band of colour behind"),
     "select": Design("select", "triadic", 0.80, True, (MICHROMA, INTER, INTER_SEMI), 4, 6,
                      "the pick: the hero whole and large over a contact strip of the set, the pick boxed"),
+    "scan": Design("scan", "the photo's own", 0.0, True, (UNBOUNDED, INTER, INTER_SEMI), 1, 1,
+                   "slit scan: the photo whole, its most colourful line of pixels drawn out into streaks above "
+                   "and below it, the words on black tape over them"),
 }
+# the rules that add no accent of their own: the palette is the brand's black and white
+NO_ACCENT = ("black and white", "the photo's own")
 
 
 @dataclass
@@ -214,70 +217,6 @@ def ask_block(st: Setter, x: float, y: float, text: str, name: str, size: float,
     st.d.rectangle(box, fill=p.accent)
     st.text((x + px, y + py + cap(f)), label, f, p.on_accent, p.accent, tracking=tracking)
     return box
-
-
-# ------------------------------------------------------------------------------------------------ field
-def _field(shots, ims, copy: MotionCopy, w, h, p: Palette) -> Made:
-    """The photo whole and edge to edge; the rest a flat field of the accent, the room's name on it as large as
-    it goes; a black bar along the foot with the ask and the mark."""
-    shot, im = shots[0], ims[0]
-    s = w / 1080
-    img = Image.new("RGB", (w, h), p.accent)
-    st = Setter(img, s)
-    m = 64 * s
-    bar = round(150 * s)
-    ar = im.width / im.height
-    ink, fieldc = p.on_accent, p.accent
-    kf = face(INTER_SEMI, 26 * s)
-    if ar >= 1.0:
-        # a wide photo across the whole width at the top; a squarer one no taller than 58% of the frame
-        pw, ph = fit_box(ar, w, h * 0.58)
-        spot = place(img, im, 0, 0, pw, ph)
-        top, bottom = ph + m * 0.95, h - bar - m * 0.85
-        st.text((m, top + cap(kf)), copy.kicker, kf, ink, fieldc, tracking=0.2)
-        lf, lines = reading(st, shot.line, INTER, w - 2 * m, 36 * s, 26 * s)
-        lh = lf.size * 1.3
-        y = bottom
-        for t in reversed(lines):
-            st.text((m, y), t, lf, ink, fieldc)
-            y -= lh
-        head_top = top + cap(kf) + 44 * s
-        head_bot = y + lh - cap(lf) - 34 * s                          # the name sits on its line, the gap over it
-        tf, tl = title(st, shot.room, UNBOUNDED, w - 2 * m, head_bot - head_top, 240 * s, 64 * s, most=2, lead=1.02)
-        y = head_bot - (len(tl) - 1) * tf.size * 1.02
-        for t in tl:
-            st.text((m - tf.size * 0.04, y), t, tf, ink, fieldc)
-            y += tf.size * 1.02
-    else:
-        # a tall photo at the left, the field an L: the room's name turned to read upward in the column beside
-        # it, the kicker and the line in the band under it
-        pw, ph = fit_box(ar, w * 0.64, (h - bar) * 0.8)
-        spot = place(img, im, 0, 0, pw, ph)
-        col = w - pw
-        tf, tl = title(st, shot.room, UNBOUNDED, ph - 2 * m, col - 1.6 * m, 220 * s, 56 * s, most=2, lead=1.02)
-        x = pw + m * 0.8 + cap(tf)
-        for t in tl:
-            st.turned((x, ph - m), t, tf, ink, fieldc)
-            x += tf.size * 1.02
-        top = ph + m * 0.8
-        st.text((m, top + cap(kf)), copy.kicker, kf, ink, fieldc, tracking=0.2)
-        lf, lines = reading(st, shot.line, INTER, w - 2 * m, 36 * s, 26 * s)
-        y = top + cap(kf) + 30 * s + lf.size
-        for t in lines:
-            st.text((m, y), t, lf, ink, fieldc)
-            y += lf.size * 1.3
-        if y - lf.size * 1.3 > h - bar - m * 0.5:
-            raise Clipped("the line runs into the bar")
-    # the bar: the ask in the accent on the brand black, the address in grey, the mark at the right
-    st.d.rectangle([0, h - bar, w, h], fill=pal.K)
-    af = face(INTER_SEMI, 30 * s)
-    base = h - bar / 2 + cap(af) / 2
-    end = st.text((m, base), copy.ask.upper() + "  ↗", af, p.accent if not p.fallback else pal.W, pal.K, tracking=0.12)[2]
-    sf = face(INTER, 24 * s)
-    mk = mark(img, w - m, h - bar / 2 - 26 * s, 30 * s, True, right=True)
-    if end + 30 * s + st.width(copy.site, sf) < mk[0] - 30 * s:
-        st.text((end + 30 * s, base), copy.site, sf, pal.G5, pal.K)
-    return Made(img, p, st.words, [spot])
 
 
 # ------------------------------------------------------------------------------------------------ poster
@@ -497,7 +436,116 @@ def _select(shots, ims, copy: MotionCopy, w, h, p: Palette, index: int = 0) -> M
     return Made(img, p, st.words, spots)
 
 
-DRAW: dict[str, Callable] = {"field": _field, "poster": _poster, "cascade": _cascade, "select": _select}
+# ------------------------------------------------------------------------------------------------ scan
+FADE = 0.12                           # the streaks' brightness at the frame's edge, against 1 at the photo
+
+
+def slit(im: Image.Image, across: bool) -> int:
+    """The photo's most colourful line by mean OKLab chroma: a row (across) or a column, from 20% to 80% of the way
+    in, so it runs through the subject. Its index in the photo's own pixels."""
+    small = im.copy()
+    small.thumbnail((200, 200), Image.BILINEAR)
+    px, (sw, sh) = small.load(), small.size
+    n = sh if across else sw
+    best, pick = -1.0, n // 2
+    for i in range(int(n * 0.2), int(n * 0.8) + 1):
+        line = [px[x, i] for x in range(sw)] if across else [px[i, y] for y in range(sh)]
+        c = sum(math.hypot(*pal.oklab(v)[1:]) for v in line) / len(line)
+        if c > best:
+            best, pick = c, i
+    return min((im.height if across else im.width) - 1, int((pick + 0.5) / n * (im.height if across else im.width)))
+
+
+def streaks(line: Image.Image, w: int, h: int, away: str) -> Image.Image:
+    """One line of the photo drawn out to w x h, at full strength next to the photo and fading toward black away
+    from it (`away`: up, down, left or right)."""
+    out = line.resize((w, h), Image.BILINEAR)
+    ramp = Image.linear_gradient("L").point(lambda v: int(255 * (FADE + (1 - FADE) * (v / 255) ** 1.7)))
+    ramp = {"up": ramp, "down": ramp.transpose(Image.FLIP_TOP_BOTTOM), "left": ramp.transpose(Image.ROTATE_270),
+            "right": ramp.transpose(Image.ROTATE_90)}[away].resize((w, h))
+    return Image.composite(out, Image.new("RGB", (w, h), pal.K), ramp)
+
+
+def tape(st: Setter, box, keep_off: Sequence[tuple]) -> tuple:
+    """A strip of black tape for words to sit on over the streaks; never over the photo."""
+    for b in keep_off:
+        if box[0] < b[2] and b[0] < box[2] and box[1] < b[3] and b[1] < box[3]:
+            raise Clipped("a strip of tape runs over the photo")
+    st.d.rectangle(box, fill=pal.K)
+    return box
+
+
+def _scan(shots, ims, copy: MotionCopy, w, h, p: Palette) -> Made:
+    """Slit scan: the photo whole; its most colourful line of pixels drawn out into streaks from the photo to the
+    frame's edges, fading to black, like light caught by a moving slit. A wide photo streaks up and down from a row,
+    a tall one left and right from a column. The words on strips of black tape over the streaks."""
+    shot, im = shots[0], ims[0]
+    s = w / 1080
+    img = Image.new("RGB", (w, h), pal.K)
+    st = Setter(img, s)
+    m = 60 * s
+    gap = round(10 * s)
+    ar = im.width / im.height
+    if ar >= 1.0:
+        pw, ph = fit_box(ar, w, h * 0.56)
+        px, py = round((w - pw) / 2), round((h - ph) * 0.6)
+        r = slit(im, across=True)
+        line = im.crop((0, r, im.width, r + 1)).resize((pw, 1), Image.LANCZOS)
+        img.paste(streaks(line, pw, py - gap, "up"), (px, 0))
+        img.paste(streaks(line, pw, h - py - ph - gap, "down"), (px, py + ph + gap))
+        top_end, low_start = py - gap, py + ph + gap
+    else:
+        pw, ph = fit_box(ar, w * 0.62, h * 0.62)
+        px, py = round((w - pw) / 2), round((h - ph) * 0.55)
+        c = slit(im, across=False)
+        line = im.crop((c, 0, c + 1, im.height)).resize((1, ph), Image.LANCZOS)
+        img.paste(streaks(line, px - gap, ph, "left"), (0, py))
+        img.paste(streaks(line, w - px - pw - gap, ph, "right"), (px + pw + gap, py))
+        top_end, low_start = py - gap, py + ph + gap
+    spot = place(img, im, px, py, pw, ph)
+    pad = 14 * s
+    # the top: the kicker and the room's name, each line on its own tape
+    kf = face(INTER_SEMI, 24 * s)
+    y = m + cap(kf)
+    kw = st.width(copy.kicker, kf, 0.2)
+    tape(st, (m - pad, y - cap(kf) - pad, m + kw + pad, y + pad), [spot])
+    st.text((m, y), copy.kicker, kf, pal.W, pal.K, tracking=0.2)
+    y += pad + 26 * s
+    tf, tl = title(st, shot.room, UNBOUNDED, w - 2 * m - 2 * pad, top_end - 18 * s - y - 2 * pad, 170 * s, 48 * s,
+                   most=2, lead=1.12)
+    y += pad + cap(tf)
+    for t in tl:
+        tw = st.width(t, tf)
+        tape(st, (m - pad, y - cap(tf) - pad, m + tw + pad, y + pad), [spot])
+        st.text((m, y), t, tf, pal.W, pal.K)
+        y += tf.size * 1.12
+    # the foot: the line, then the ask in white with the address and the mark
+    af = face(INTER_SEMI, 26 * s)
+    ask_h = cap(af) + 40 * s
+    ay = h - m - ask_h
+    probe = ask_block(st, m, ay, copy.ask, INTER_SEMI, 26 * s, p, tracking=0.1)
+    sf = face(INTER, 22 * s)
+    mk_x = w - m
+    layer_w = mark(Image.new("RGB", (10, 10)), 0, 0, 28 * s, True)[2]
+    tape(st, (mk_x - layer_w - pad, ay, mk_x + pad, ay + ask_h), [spot])
+    mark(img, mk_x, ay + ask_h / 2 - 26 * s, 28 * s, True, right=True)
+    sw_ = st.width(copy.site, sf)
+    if probe[2] + 20 * s + sw_ + 2 * pad < mk_x - layer_w - 30 * s:
+        tape(st, (probe[2] + 12 * s, ay, probe[2] + 12 * s + sw_ + 2 * pad, ay + ask_h), [spot])
+        st.text((probe[2] + 12 * s + pad, ay + ask_h / 2 + cap(sf) / 2), copy.site, sf, pal.G5, pal.K)
+    lf, lines = reading(st, shot.line, INTER, w - 2 * m - 2 * pad, 32 * s, 24 * s)
+    y = ay - 22 * s - pad
+    for t in reversed(lines):
+        tw = st.width(t, lf)
+        tape(st, (m - pad, y - cap(lf) - pad, m + tw + pad, y + pad + lf.size * 0.22), [spot])
+        st.text((m, y), t, lf, pal.W, pal.K)
+        y -= lf.size * 1.5
+    if y + lf.size * 1.5 - cap(lf) - pad < low_start + 12 * s and ar >= 1.0:
+        raise Clipped("the line runs into the photo")
+    return Made(img, p, st.words, [spot])
+
+
+DRAW: dict[str, Callable] = {"poster": _poster, "cascade": _cascade, "select": _select, "scan": _scan}
 
 
 # ------------------------------------------------------------------------------------------------ making one
@@ -517,7 +565,12 @@ def make(name: str, shots: Sequence[Shot], copy: MotionCopy, *, aspect: str = "4
     check_copy(*words_of(name, shots, copy), official=official, social=True)
     w, h = SIZES[aspect]
     ims = [picture(sh) for sh in shots]
-    p = palette or pal.choose(ims, d.rule, lightness=d.lightness, dark=d.dark)
+    if palette is not None:
+        p = palette
+    elif d.rule in NO_ACCENT:
+        p = replace(pal.fallback(d.dark, tuple(pal.swatches(ims))), rule=d.rule)
+    else:
+        p = pal.choose(ims, d.rule, lightness=d.lightness, dark=d.dark)
     kw = {"index": index} if name == "select" else {}
     try:
         made = DRAW[name](shots, ims, copy, w, h, p, **kw)
