@@ -185,5 +185,7 @@ class DriveReader:
         return self.get(f"/files/{file_id}/export", {"mimeType": "text/csv"}).content.decode("utf-8-sig")
 
     def download(self, file_id: str) -> bytes:
-        """The full-size original, read only. Used only once a photo is chosen."""
-        return self.get(f"/files/{file_id}", {"alt": "media", "supportsAllDrives": "true"}).content
+        """The photo, read only, no larger than storage.MAX_EDGE on its long side (2026-10-15): the original stays in
+        Drive; the Mini never keeps or opens it whole. Used only once a photo is chosen."""
+        from .. import storage
+        return storage.small_copy(self.get(f"/files/{file_id}", {"alt": "media", "supportsAllDrives": "true"}).content)
