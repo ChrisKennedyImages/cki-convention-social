@@ -35,6 +35,8 @@ AGENTS: dict[str, dict] = {
                   "job": "keep the Mini on the latest main: test a new commit first, then switch and restart the dashboard"},
     "phone":     {"schedule": "when a photo is sent (Send a photo page)", "module": "convention_social.agents.phone",
                   "job": "a photo sent from Chris's phone while he shoots: sorted, checked, drafted as today's post, pinged for his Approve"},
+    "sample":    {"schedule": "when Post this is pressed on a design sample", "module": "convention_social.agents.sample",
+                  "job": "a design sample Chris chose: its photos checked again, drafted on the daily post's road as today's post, pinged for his Approve"},
     "dashboard": {"schedule": "always on (KeepAlive)", "module": "convention_social.dashboard.app",
                   "job": "review UI on 127.0.0.1:DASHBOARD_PORT"},
 }

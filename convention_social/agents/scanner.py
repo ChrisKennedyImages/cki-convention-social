@@ -36,6 +36,10 @@ def run(ctx: runner.Context, reader: DriveReader | None = None) -> str:
     if phone.pending(ctx.conn):
         # a photo sent from the phone and left behind (the Mini restarted mid-draft): drafted within the hour, Drive or no Drive
         runner.start_agent("phone", wait=True)
+    from . import sample
+    if sample.pending(ctx.conn):
+        # a Post this left behind the same way (2026-10-15): drafted within the hour
+        runner.start_agent("sample", wait=True)
     if reader is None:
         try:
             oauth.access_token(ctx.conn)   # fail the run now if the sign-in is dead, not photo by photo
