@@ -1100,6 +1100,55 @@ Instagram channel in Use.
   alerts. Facebook and Pinterest come back by adding them to that field once
   their channel is connected and in Use.
 
+## 2026-10-15: the doctor fixes what it knows, and files what it does not
+
+Chris: "a doctor agent too to auto fix anything that fails realtime." On
+2026-10-14 the watchdog said "The newest database backup is 4d 0h old": the
+backup and the nightly sweep had not run for four days, the alert went out,
+and nothing fixed it. The watchdog finds; the doctor fixes. The scope, set
+with him the same day:
+
+- **It fixes the known failures by itself**, every five minutes, on its own
+  service (`agents/doctor.py`). An agent whose run failed or is overdue is run
+  again. The backup overdue, or its file stale, runs now, and the sweep runs
+  inside it. Disk under the watchdog's threshold runs the sweep. The dashboard
+  not answering on localhost is restarted: only the process proven to be this
+  suite's dashboard is stopped, and launchd's KeepAlive on its own label starts
+  it again. A post that failed for a passing reason (a Buffer timeout, a 5xx, a
+  rate limit) goes back to the publisher for its next slot, his Approve
+  standing; never one that reached Buffer on any network. A reel that failed to
+  render is remade on its draft, never without a track. The content agent is
+  left to the watchdog's draft window (2026-10-13). A Drive sign-in that
+  expired cannot be fixed by code: his phone gets the link to sign in, once a
+  day. At most two agents are started a pass: after a reboot every agent
+  looks overdue at once, and the Mini's memory is shared by three suites.
+- **It checks each fix.** After a remedy it reads the same signal again and
+  records fixed or not fixed (`doctor_remedies`, migration 0076). Never a
+  loop: at most three tries per problem per day, the second after 30 minutes,
+  the third after two hours. A remedy that did not work is said to Chris once,
+  with what it tried; one that cannot run at all is said once, at once. A fix
+  is a quiet ping. The digest and the morning brief carry one line per problem
+  per day (Chris, on the examples: "one digest line per problem per day"): the
+  last try's outcome, with how many tries and when.
+- **For a bug in the code it never edits live code**, because a bad self-fix
+  at 3am breaks production. An exception in our code becomes one GitHub issue
+  per distinct error (the agent, the kind and the traceback's frames make it
+  one) in ChrisKennedyImages/cki-convention-social, with the traceback, the
+  agent, the time and the last log lines, every secret taken out. His phone
+  gets the link; the fix comes as a pull request. A repeat is
+  counted on the same issue; one that comes back after he closed the issue is
+  filed again. The token is `GITHUB_TOKEN` on the Keys page (fine-grained, this
+  repository, Issues only); without it the doctor pings instead.
+- **What it never does:** edit code, run git on the Mini's checkout, stop or
+  restart anything that is not ours (no other suite's label, process or port),
+  or touch a file outside the data root (the sweep deletes, inside it only).
+  Pinned by `tests/test_doctor.py`.
+- It starts in dry run, saying what it would do at the cadence it would do it;
+  Chris switches it live on the Agents page. The watchdog watches it: a doctor
+  silent for 30 minutes is a missed run.
+- Its service file is new: `scripts/go-live.sh` runs once on the Mini to
+  install it (the updater flags it on the Agents page).
+
 ## 2026-10-15: the dashboard away from home, never public without Access
 
 Chris: "can i reach this dashboard without running tailscale when im out of town?" Asked, he chose a private web

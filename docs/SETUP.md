@@ -11,6 +11,15 @@ typed into chat.
 2. Name `cki-convention-social`, **Private**, and leave every "add a file" option off.
 3. If the Claude GitHub app is set to "only selected repositories", add this
    repo: github.com/settings/installations, the Claude app, Configure.
+4. **A token for the doctor (2026-10-15).** The doctor files an error in the
+   code as an issue in this repo and sends your phone the link.
+   github.com/settings/personal-access-tokens/new: a fine-grained token,
+   resource owner ChrisKennedyImages, repository access Only select
+   repositories, this one; under Repository permissions, **Issues: Read and
+   write** (Metadata, read only, comes with it) and nothing else. An expiry a
+   year out is fine: when it lapses the doctor pings you instead of filing,
+   and says the token may have expired. Paste it in Keys, GitHub
+   (`GITHUB_TOKEN`). Without it the doctor still pings you with the error.
 
 ## 2. Google Drive: read-only access to the photos (chriskimages@gmail.com)
 
@@ -233,6 +242,14 @@ and only then updates the Mini and restarts the dashboard. Every agent also
 has a **Run now** button there. The only exception: when an update brings new
 service files, the Agents page says so, and `scripts/go-live.sh` has to run
 once more for your Mac password.
+
+**The doctor (2026-10-15)** is one of those: its service file is new, so run
+`scripts/go-live.sh` once more on the Mini to install it. Every five minutes
+it fixes what it knows (an agent run again, the backup and the sweep, the
+dashboard restarted, a post retried, a reel remade), checks each fix, and
+tells you once when one did not work. An error in the code becomes a GitHub
+issue (the token in section 1). It starts in dry run like every agent: switch
+it live on the Agents page.
 
 The dashboard listens on 127.0.0.1:4610. From your phone, reach it over
 Tailscale on port 8443, never 443 (another dashboard on this Mini uses 443):

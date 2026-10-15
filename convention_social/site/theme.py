@@ -69,9 +69,12 @@ a{color:inherit;text-decoration:none}img{display:block;max-width:100%}
 /* ticker */
 /* the ticker fades out over the page's gutter at both ends (Chris, 2026-10-14: "the top website scroller cuts off on the left
    side when viewing on a computer"): the word leaving at the left was sliced flat at the screen's edge while everything else
-   on the page sits behind the gutter */
+   on the page sits behind the gutter. 2026-10-15, "the website ticker on the landing page is still geting clipped ... its the
+   top ticker": the fade covered the first word as the page opened (BACKSTAGE began 26px in, under a 56px fade). The strip
+   now starts on the page's text column: `translate` shifts it right by the gutter less the word's own 26px, on top of the
+   animated transform, so the loop still moves exactly one copy and never jumps */
 .ticker{border-block:1px solid var(--g3);overflow:hidden;padding:22px 0;background:var(--k);-webkit-mask-image:linear-gradient(90deg,transparent,#000 var(--pad),#000 calc(100% - var(--pad)),transparent);mask-image:linear-gradient(90deg,transparent,#000 var(--pad),#000 calc(100% - var(--pad)),transparent)}
-.ticker .track{display:flex;width:max-content;animation:tick 38s linear infinite}
+.ticker .track{display:flex;width:max-content;translate:max(0px,calc(var(--pad) - 26px)) 0;animation:tick 38s linear infinite}
 .ticker.rev .track{animation-direction:reverse;animation-duration:46s}
 .ticker span{font:400 clamp(26px,3.6vw,54px)/1 var(--display);text-transform:uppercase;padding:0 26px;white-space:nowrap}
 .ticker span.o{color:transparent;-webkit-text-stroke:1px var(--g4)}.ticker span.dot{color:var(--c);padding:0 6px}
