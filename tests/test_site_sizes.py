@@ -348,8 +348,9 @@ class SmallStuff(SizesCase):
 
     def test_the_ticker_fades_over_the_gutter_and_starts_on_screen(self):
         """Seen live at 1440 and 1920: the word leaving at the left was sliced flat at x=0 while every other line on the
-        page sits behind the 56px gutter. The ticker now fades out over var(--pad) at both ends, and the track starts
-        at its natural position (no from-offset), so the first word stands 26px in, inside the fade."""
+        page sits behind the 56px gutter. The ticker fades out over var(--pad) at both ends. Deliberate change,
+        2026-10-15 ("still geting clipped ... its the top ticker"): the first word stood 26px in, inside that fade, so
+        the page opened on a faded B. The strip now starts on the text column: translate by var(--pad) less 26px."""
         css = theme.CSS
         ticker = css[css.index(".ticker{"):css.index("}", css.index(".ticker{"))]
         for prop in ("-webkit-mask-image:linear-gradient(90deg,transparent,#000 var(--pad),#000 calc(100% - var(--pad)),transparent)",
@@ -357,7 +358,8 @@ class SmallStuff(SizesCase):
             self.assertIn(prop, ticker, prop)
         self.assertIn("@keyframes tick{to{transform:translateX(-50%)}}", css, "from the natural position, no offset")
         self.assertIn(".ticker span{font:400 clamp(26px,3.6vw,54px)/1 var(--display);text-transform:uppercase;padding:0 26px;white-space:nowrap}", css)
-        self.assertIn(".ticker .track{display:flex;width:max-content;animation:tick 38s linear infinite}", css)
+        self.assertIn(".ticker .track{display:flex;width:max-content;translate:max(0px,calc(var(--pad) - 26px)) 0;"
+                      "animation:tick 38s linear infinite}", css)
         home = self.page(self.built(), "index.html")
         self.assertEqual(home.count('<div class="ticker'), 2)
         self.assertIn('<div class="ticker" aria-hidden="true"><div class="track"><span class="">Backstage</span>', home)

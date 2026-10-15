@@ -25,7 +25,9 @@ SECRET_NAMES = (
     "MEDIA_UPLOAD_TOKEN",
     "GOOGLE_OAUTH_CLIENT_SECRET",
     "DASHBOARD_PASSWORD_HASH",
-    "SEND_TOKEN",
+    "GITHUB_TOKEN",
+    "CLOUDFLARE_TUNNEL_TOKEN",       # the dashboard away from home (core/tunnel.py)
+    "SEND_TOKEN",                    # the share sheet's (Post to Event Caliber; worker/index.js /api/send)
 )
 
 

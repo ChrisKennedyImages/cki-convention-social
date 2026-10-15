@@ -1147,6 +1147,151 @@ Instagram channel in Use.
   alerts. Facebook and Pinterest come back by adding them to that field once
   their channel is connected and in Use.
 
+## 2026-10-15: four new designs, colour from the photo, and the week
+
+Chris: "could you also come up with some new designs (like 4 so they arent
+all exactly the same design everytime) and make sure you follow strict color
+theory and proper design and make them super super super dynamic and punchy".
+On the first renders: "i like the design of 7,8,9 and 10 and create one more
+thats radically different with a new technique use". On round 2, through the
+coordinating session: "perfect! and we still keep the original one we started
+with on the very first post to insta".
+
+- **The four** (`render/bold.py`), each the same design at 4:5 and as its own
+  2:3 card: the **poster** (the room's name stacked to the full width on
+  paper, the photo under it, black and white as he picked), the **slit scan**
+  (the new technique: the photo whole, its most colourful line of pixels drawn
+  out into light streaks above and below it, the words on black tape), the
+  **cascade** (three photos stepping down the frame, the hero last and
+  largest, a band of colour behind) and the **select** (the hero large over a
+  contact strip of the set, the pick boxed). The colour field design of the
+  first round was dropped.
+- **Kept:** the **spotlight**, the design of the very first post that went to
+  Instagram (queue post 2, Buffer 6ad00a04117064a577d1469f, drafted for Monday
+  2026-10-12).
+- **Every photo whole**, its own shape, never cropped or covered, and no word
+  is set over a photo (the 2026-10-14 ruling on horizontals, kept on these
+  posts).
+- **Colour** (`render/palette.py`): the brand's black, greys, white and cyan,
+  plus one accent taken from the photos: their colours found by k-means in
+  OKLab, the photo's hue the colour with the most weight times chroma, turned
+  by the design's rule (cascade split complementary, select triadic, each the
+  side farthest from the photos' other colours and the brand cyan), at the
+  design's lightness and the most chroma sRGB shows. A photo with no hue takes
+  the cyan; an accent that would be muddy is not used. The poster and the
+  slit scan add no colour of their own (the slit scan's streaks are the
+  photo's own pixels).
+- **Contrast is checked before anything is drawn**: every word against the flat
+  colour under it, 4.5 to 1 for small type and 3 to 1 for large (64 px and up
+  on a 1080 px post). A palette that fails is drawn in the brand's black and
+  white. A word that would leave the frame, or a letter a brand face lacks
+  (Michroma has no arrows), is refused.
+- **The week** (`agents/content.py` `DESIGNS`): Monday spotlight, Tuesday
+  poster, Wednesday slit scan (the building day too), Thursday cascade, Friday
+  select, Saturday the reel when a music track is on, Sunday poster; no design
+  two days running. A day with too few photos that pass the final check, a
+  building photo on a day of several, and a Saturday with no track take the
+  one-photo design neither neighbour uses (`fallback_for`). The single, the
+  carousel and the fan leave the week; a phone send, a Post this on a sample
+  and a reel that cannot be made still use them.
+- **A room is named only when Claude's final check of the full photo confirms
+  it.** The first renders put "After Dark" on a sunny garden and "Main Stage"
+  on a reception room, from the sorter's shot type. The final check now also
+  answers which room the photo plainly shows (main stage, backstage,
+  portraits, expo floor, after dark, the crowd, the venue) or none
+  (`library/classify.py` `ROOMS`, `final_checks.room`, migration 0077); a post
+  prints that room's words (`render/design_samples.ROOM_WORDS`) or EVENT
+  PHOTOGRAPHY, with EVENT CALIBER as the small line so it never repeats. This
+  holds for every design that prints a room, the spotlight and the reel
+  included; a dry-run draft and a photo checked before 2026-10-15 name no room.
+- Pinned by `tests/test_bold_designs.py`.
+
+## 2026-10-15: the doctor fixes what it knows, and files what it does not
+
+Chris: "a doctor agent too to auto fix anything that fails realtime." On
+2026-10-14 the watchdog said "The newest database backup is 4d 0h old": the
+backup and the nightly sweep had not run for four days, the alert went out,
+and nothing fixed it. The watchdog finds; the doctor fixes. The scope, set
+with him the same day:
+
+- **It fixes the known failures by itself**, every five minutes, on its own
+  service (`agents/doctor.py`). An agent whose run failed or is overdue is run
+  again. The backup overdue, or its file stale, runs now, and the sweep runs
+  inside it. Disk under the watchdog's threshold runs the sweep. The dashboard
+  not answering on localhost is restarted: only the process proven to be this
+  suite's dashboard is stopped, and launchd's KeepAlive on its own label starts
+  it again. A post that failed for a passing reason (a Buffer timeout, a 5xx, a
+  rate limit) goes back to the publisher for its next slot, his Approve
+  standing; never one that reached Buffer on any network. A reel that failed to
+  render is remade on its draft, never without a track. The content agent is
+  left to the watchdog's draft window (2026-10-13). A Drive sign-in that
+  expired cannot be fixed by code: his phone gets the link to sign in, once a
+  day. At most two agents are started a pass: after a reboot every agent
+  looks overdue at once, and the Mini's memory is shared by three suites.
+- **It checks each fix.** After a remedy it reads the same signal again and
+  records fixed or not fixed (`doctor_remedies`, migration 0076). Never a
+  loop: at most three tries per problem per day, the second after 30 minutes,
+  the third after two hours. A remedy that did not work is said to Chris once,
+  with what it tried; one that cannot run at all is said once, at once. A fix
+  is a quiet ping. The digest and the morning brief carry one line per problem
+  per day (Chris, on the examples: "one digest line per problem per day"): the
+  last try's outcome, with how many tries and when.
+- **For a bug in the code it never edits live code**, because a bad self-fix
+  at 3am breaks production. An exception in our code becomes one GitHub issue
+  per distinct error (the agent, the kind and the traceback's frames make it
+  one) in ChrisKennedyImages/cki-convention-social, with the traceback, the
+  agent, the time and the last log lines, every secret taken out. His phone
+  gets the link; the fix comes as a pull request. A repeat is
+  counted on the same issue; one that comes back after he closed the issue is
+  filed again. The token is `GITHUB_TOKEN` on the Keys page (fine-grained, this
+  repository, Issues only); without it the doctor pings instead.
+- **What it never does:** edit code, run git on the Mini's checkout, stop or
+  restart anything that is not ours (no other suite's label, process or port),
+  or touch a file outside the data root (the sweep deletes, inside it only).
+  Pinned by `tests/test_doctor.py`.
+- It starts in dry run, saying what it would do at the cadence it would do it;
+  Chris switches it live on the Agents page. The watchdog watches it: a doctor
+  silent for 30 minutes is a missed run.
+- Its service file is new: `scripts/go-live.sh` runs once on the Mini to
+  install it (the updater flags it on the Agents page).
+
+## 2026-10-15: the dashboard away from home, never public without Access
+
+Chris: "can i reach this dashboard without running tailscale when im out of town?" Asked, he chose a private web
+address: a Cloudflare Tunnel from the Mini to `dash.eventcaliber.com`, Cloudflare Access in front (a one-time code
+sent to chriskimages@gmail.com, only that email, a session of one week), the dashboard's own password behind it.
+Free; nothing opened on the Mini's network; one setup run on the Mini (docs/SETUP.md, 9a).
+
+- The rule: **never public without Access.** Every gate fails closed:
+  - The tunnel starts only with its token, the address, the Access team, the application's AUD tag and the one
+    email in place, and only when every path of the address answers Cloudflare's sign-in from outside, never the
+    dashboard (`core/tunnel.py`, `core/access.py` `check_outside`). cloudflared is stopped the moment Cloudflare
+    routes it to anything but `http://127.0.0.1:4610` (another port, another machine, another name), or when it
+    has not said its routes within two minutes. Our tunnel reaches our dashboard and nothing else on the shared
+    Mini.
+  - The dashboard refuses whatever came through Cloudflare (its `Cf-Ray` or `Cf-Connecting-Ip` header, or the
+    tunnel's address) without a valid Access token for his email: RS256, signed by the team's keys, for this
+    application, from the team, unexpired. Missing settings or keys that cannot be read: refused, before any page,
+    the login included (`core/access.py` `refusal`, the dashboard's middleware). The password is still asked
+    behind it; the session cookie is Secure over https.
+  - `scripts/install-daemons.sh` installs the service (`launchd/com.chriskennedyimages.conventionsocial.tunnel`)
+    only when `ccs tunnel check` passes, and otherwise removes our own. No other cloudflared service and no
+    Tailscale setting is touched; the Tailscale address keeps working as it is.
+- The token lives in `.env` (or the Keychain) only: never in the repo, a file under /Library, a command line or
+  on screen. cloudflared reads it from its environment.
+- The links move to the new address only once the tunnel runs (`ccs tunnel status --use`, from go-live). Behind
+  Access only a browser gets in, so Approve on a ping opens the approve page (one more tap) and the ping carries no
+  picture: the ntfy app's own request would meet Cloudflare's sign-in, and its Approve would look done when nothing
+  was. Letting the ping's token paths bypass Access would make them public on the token alone: not done unless he
+  says so. Chris, 2026-10-15: "Keep the extra tap", and the address `dash.eventcaliber.com`.
+- Chris: "does this have a place for the sample posts reels that get created". Every page and file the dashboard
+  serves goes through the tunnel, the design samples and their reels included (a reel plays with its sound and seeks
+  with byte ranges). Every answer through Cloudflare says `Cache-Control: private, no-store`: Cloudflare keeps .jpg
+  and .mp4 for two hours unless told otherwise, and his photos never stay in its cache. Cloudflare's free plan takes
+  uploads up to 100 MB (a photo from the phone) and its terms may limit a free site that serves a lot of video.
+
+Pinned by `tests/test_tunnel.py`.
+
 ## Standing rules from the brief
 
 - CPAC, the ACU and their affiliates are never contacted, by code
@@ -1166,3 +1311,5 @@ Instagram channel in Use.
   `affiliation`).
 - Captions and copy: plain, short sentences, no dashes, never promise what
   the system does not do today.
+- The dashboard is never public without Cloudflare Access in front: no
+  Access, no page (2026-10-15, above).

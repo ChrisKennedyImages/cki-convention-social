@@ -10,6 +10,10 @@
 #   - a dashboard password of your choosing
 #   - a sign-in and an Allow click in the browser (Cloudflare, the account that holds eventcaliber.com)
 # It never prints a secret. Every agent stays in dry run: nothing posts or sends because of this.
+#
+# The dashboard away from home (docs/SETUP.md, 9a): after the Cloudflare steps there, run it once as
+#   scripts/go-live.sh --tunnel
+# It asks for the details Cloudflare showed, then installs the tunnel only if Access answers for its address.
 set -euo pipefail
 HERE="${0:A:h}"; REPO="${HERE:h}"; cd "$REPO"
 export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
@@ -52,6 +56,18 @@ if ! have DASHBOARD_PASSWORD_HASH; then
 fi
 have DASHBOARD_PASSWORD_HASH || stop "no dashboard password was saved; run this again"
 
+# the dashboard away from home (Chris, 2026-10-15): a Cloudflare Tunnel, never public without Access in front.
+# install-daemons.sh installs it only when `ccs tunnel check` passes; other cloudflared services and Tailscale are
+# read and left exactly as they are
+if [[ "${1:-}" == "--tunnel" ]]; then
+  bin/ccs tunnel setup || stop "the tunnel's details were not saved (the line above says why); run this again"
+fi
+TUNNEL=0
+if have CLOUDFLARE_TUNNEL_TOKEN; then
+  say "the dashboard away from home: what is on this Mini, and Access from outside"
+  if bin/ccs tunnel check; then TUNNEL=1; else warn "the tunnel is not installed: the FAIL lines say why (the Tailscale address keeps working)"; fi
+fi
+
 if sudo -n true 2>/dev/null; then
   say "installing the agents as system services (sudo still remembers your Mac password; it will not ask)"
 else
@@ -59,6 +75,12 @@ else
 fi
 sudo "$REPO/scripts/install-daemons.sh" || stop "not every service loaded (the lines just above say which); run this again"
 bin/ccs launchd installed | sed 's/^/    /'
+TUNNEL_UP=0
+if (( TUNNEL )); then
+  # the links (pings, Approve, the site's own pings on the next deploy) move to the address only once it runs
+  if bin/ccs tunnel status --wait 90 --use | sed 's/^/    /'; then TUNNEL_UP=1
+  else warn "the tunnel did not report running; its log is tunnel.launchd.log in the data folder's logs"; fi
+fi
 
 # ---------------------------------------------------------------- 2. Cloudflare
 say "2/4  Cloudflare"
@@ -168,6 +190,10 @@ if (( SITE_OK && DASH_OK )); then
   # port 8443 only: https 443 on this Mini's Tailscale name belongs to another suite's dashboard
   print "    Your phone: run  tailscale serve --bg --https=8443 http://127.0.0.1:$PORT  on this Mini"
   print "    (never --https=443, which another dashboard on this Mini uses) and open the :8443 address it prints."
+  if (( TUNNEL_UP )); then
+    TUNNEL_HOST="$(py 'from convention_social.core import access; print(access.settings().hostname)')"
+    print "    Away from home: https://$TUNNEL_HOST (the code Cloudflare emails you, then your dashboard password)."
+  fi
 else
   stop "not everything passed; the FAIL and !! lines above say what. Fix that, then run this again."
 fi
