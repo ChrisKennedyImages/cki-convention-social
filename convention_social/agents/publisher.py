@@ -128,6 +128,15 @@ def asap_slot(ctx: runner.Context, row, now: Optional[datetime] = None) -> Optio
     return pacing.slot_value(local)
 
 
+def posts_now(row) -> bool:
+    """Chris, 2026-10-15, asked whether a photo from the share sheet should keep the 35 minutes to pull it back or post at
+    once: "Right away". A post approved by his send (agents/phone.py approve_sent: source and approved_by "share") goes
+    to Buffer to post now (shareNow), with no slot and no pre-post window, unless he set a time on it himself. Every
+    other post keeps its slot: the daily draft, Post this and the Send page (asap_slot)."""
+    meta = _json(row["rule_report"], {})
+    return isinstance(meta, dict) and meta.get("source") == "share" and meta.get("approved_by") == "share" and not row["scheduled_for"]
+
+
 def for_day_of(row) -> Optional[date]:
     """The day the content agent drafted the post for (rule_report for_day), or None."""
     meta = _json(row["rule_report"], {}) if "rule_report" in row.keys() else {}
@@ -506,9 +515,12 @@ def publish_ready(ctx: runner.Context, client: Optional[BufferClient] = None, up
             continue
         if skipped:
             record_once(ctx.conn, ctx.agent, "no_channel", f"post {row['id']}: {skip_note}")
-        when = pacing.plan(ctx.conn, list(channels), row["scheduled_for"] or asap_slot(ctx, row, now), now, ctx.cfg,
-                           include_dry=not live, not_before=for_day_of(row))
-        no_day = [n for n, v in when.items() if v is None]
+        if posts_now(row):
+            when = {net: None for net in channels}            # no time: the payload's mode is shareNow
+        else:
+            when = pacing.plan(ctx.conn, list(channels), row["scheduled_for"] or asap_slot(ctx, row, now), now, ctx.cfg,
+                               include_dry=not live, not_before=for_day_of(row))
+        no_day = [] if posts_now(row) else [n for n, v in when.items() if v is None]
         if no_day:
             why = NO_DAY.format(days=pacing.HORIZON_DAYS, nets=", ".join(no_day))
             _set_last_error(ctx.conn, row, why)

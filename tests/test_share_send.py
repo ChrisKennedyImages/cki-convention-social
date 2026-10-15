@@ -15,6 +15,7 @@ import os
 import plistlib
 import sys
 import types
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest import mock
 from urllib.parse import urlsplit
@@ -186,7 +187,7 @@ class Pull(ShareCase):
 
 
 class Approved(ShareCase):
-    def test_his_send_is_his_approval_and_it_goes_out_on_the_asap_rule(self):
+    def test_his_send_is_his_approval_and_it_goes_out_now(self):
         ctx = self.live()
         site = self.site(ID1)
         line = phone.run(ctx, api=self.api(site), check_client=LookClient(), art_client=ArtClientAny([say("pass")]))
@@ -199,21 +200,45 @@ class Approved(ShareCase):
         self.assertEqual((s["status"], s["queue_id"], s["via"]), ("drafted", row["id"], "share"))
         self.assertEqual(len(self.pings), 1, "one ping: it is going, with no Approve to press")
         (title, message), kw = self.pings[0]
-        self.assertIn("goes out", title + message)
-        self.assertIn("Instagram", message)
+        self.assertIn("going out now", title)
+        self.assertIn("going to Instagram now", message)
+        self.assertNotIn("take back", message, "Right away (2026-10-15): there is no window to stop it in")
         self.assertNotIn("Approve", kw.get("actions") or "")
         self.assertTrue(kw["click"].endswith(f"/queue/{row['id']}"))
         self.assertIn(f"/media/card/{row['id']}/", kw["attach"], "the card he is sending out")
         self.assertIn((("publisher",), {"wait": True}), self.started, "the publisher hands it to Buffer now, not in ten minutes")
         self.assertEqual(site.sends, {})
 
-    def test_the_publisher_takes_it_at_the_asap_slot(self):
+    def buffer_input(self, now=None):
+        """The publisher's dry run of what is approved: the Instagram CreatePostInput it would send."""
+        publisher.publish_ready(make_ctx(self.conn, dry_run=True), client=BufferClient("test-key", conn=self.conn, transport=FakeBuffer()),
+                                now=now)
+        return json.loads(self.post()[0]["payload"])["instagram"]
+
+    def test_buffer_is_told_to_post_it_now_with_no_window(self):
+        """Chris, 2026-10-15, asked whether to keep the 35 minutes to pull it back or post at once: "Right away"."""
+        add_channels(self.conn, "instagram")
+        phone.run(self.live(), api=self.api(self.site()), check_client=LookClient(), art_client=ArtClientAny([say("pass")]))
+        ig = self.buffer_input(now=datetime(2026, 10, 15, 19, 0, tzinfo=timezone.utc))
+        self.assertEqual(ig["mode"], "shareNow")
+        self.assertNotIn("dueAt", ig)
+
+    def test_a_photo_from_the_send_page_keeps_its_window(self):
+        add_channels(self.conn, "instagram")
         ctx = self.live()
-        phone.run(ctx, api=self.api(self.site()), check_client=LookClient(), art_client=ArtClientAny([say("pass")]))
-        row, _ = self.post()
-        from datetime import datetime, timezone
-        now = datetime(2026, 10, 15, 19, 0, tzinfo=timezone.utc)                # 15:00 in New York
-        self.assertEqual(publisher.asap_slot(ctx, row, now), "2026-10-15T15:35")
+        phone.keep(self.conn, jpeg_bytes(size=(2000, 1500)), "the main hall")
+        with mock.patch.object(content.notify, "push"):
+            phone.run(ctx, check_client=LookClient(), art_client=ArtClientAny([say("pass")]))
+        self.conn.execute("UPDATE content_queue SET status='approved', approved_at=? WHERE id=?", (db.utcnow(), self.post()[0]["id"]))
+        ig = self.buffer_input(now=datetime(2026, 10, 15, 19, 0, tzinfo=timezone.utc))      # 15:00 in New York
+        self.assertEqual((ig["mode"], ig["dueAt"]), ("customScheduled", "2026-10-15T19:35:00Z"), "the asap slot, 35 minutes on")
+
+    def test_a_time_he_sets_on_a_share_post_still_wins(self):
+        add_channels(self.conn, "instagram")
+        phone.run(self.live(), api=self.api(self.site()), check_client=LookClient(), art_client=ArtClientAny([say("pass")]))
+        self.conn.execute("UPDATE content_queue SET scheduled_for='2026-10-16T09:00' WHERE id=?", (self.post()[0]["id"],))
+        ig = self.buffer_input(now=datetime(2026, 10, 15, 19, 0, tzinfo=timezone.utc))
+        self.assertEqual((ig["mode"], ig["dueAt"]), ("customScheduled", "2026-10-16T13:00:00Z"))
 
     def test_a_readable_plate_or_a_wedding_stops_it_and_he_hears_why(self):
         ctx = self.live()
@@ -310,7 +335,7 @@ class DryRun(ShareCase):
         self.assertEqual(row["status"], "approved", "approved by his send; the publisher's dry run takes it no further")
         (title, message), _ = self.pings[0]
         self.assertIn("Dry run", title + message)
-        self.assertIn("would have gone out on Instagram", message)
+        self.assertIn("would have gone out on Instagram right away", message)
 
 
 class PostedPing(ShareCase):

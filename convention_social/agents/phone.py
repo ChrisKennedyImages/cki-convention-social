@@ -25,7 +25,8 @@ dashboard to auto post immediately"): a share sheet button on his iPhone sends t
 one-minute job (`--when-waiting`: a quiet minute leaves no run behind) pulls each one with the Mini's own token, keeps
 it exactly like a send from the page (`via` 'share'), deletes it at the site and drafts it on the same road. His send
 is his approval: a draft whose art director passed it and whose captions pass the publisher's door (one rewrite, as
-at the door) is approved at once, on the asap rule, and the publisher is started. A readable plate, a wedding, a
+at the door) is approved at once and posts right away (Buffer's shareNow, no pre-post window: Chris, 2026-10-15,
+"Right away"), and the publisher is started. A readable plate, a wedding, a
 caption that still breaks a rule, the art director's no or no look stop it, and the phone hears why. In the content
 lane's dry run Claude does not look, so nothing is approved; the phone hears what it would have posted.
 """
@@ -348,7 +349,8 @@ def approve_sent(ctx: runner.Context, send, qid: int, art: dict, line: str) -> s
     """Chris, 2026-10-15: a photo he sends from the share sheet is approved by the act of sending. What still stops it:
     Claude's final check (above), the art director's no or no look, and the publisher's own door (the captions, one
     rewrite, then they still break a rule; the photo; a repeat). In the content lane's dry run Claude did not look, so
-    nothing is approved. Approved, it is the asap rule: the next time Buffer takes, and the publisher is started now."""
+    nothing is approved. Approved, it posts right away (Chris, 2026-10-15: Buffer's shareNow, publisher.posts_now, no
+    pre-post window), and the publisher is started now."""
     from . import publisher
     conn = ctx.conn
     row = db.one(conn, "SELECT * FROM content_queue WHERE id=?", (qid,))
@@ -381,21 +383,20 @@ def approve_sent(ctx: runner.Context, send, qid: int, art: dict, line: str) -> s
                  (now, json.dumps(meta), now, qid))
     _status(conn, send["id"], "drafted", queue_id=qid)
     row = db.one(conn, "SELECT * FROM content_queue WHERE id=?", (qid,))
-    when = (publisher.asap_slot(ctx, row) or "")[11:16]
     where = where_words(row)
     card = {"click": notify.link(f"/queue/{qid}"), "actions": notify.open_action(qid),
             "attach": notify.card_link(qid, approve_token.issue(conn, row)), "filename": f"post-{qid}.jpg"}
     if settings.dry_run(conn, "publisher"):
         tell(ctx, f"{brand}: dry run, your photo was not posted",
              f"Dry run: the photo you sent at {at} passed the checks and is approved by your send as post {qid}, but the "
-             f"publisher is in dry run, so nothing was posted. Live, it would have gone out on {where} at about {when}. "
+             f"publisher is in dry run, so nothing was posted. Live, it would have gone out on {where} right away. "
              "Tap to see it.", **card)
     else:
-        tell(ctx, f"{brand}: your photo goes out at {when}",
-             f"The photo you sent at {at} passed the checks and goes out on {where} at about {when}. To stop it, open it "
-             "and take back the approval (or pull it back from Buffer). Tap to see it.", **card)
-    runner.start_agent("publisher", wait=True)        # handed to Buffer now, not on the publisher's next ten minutes
-    return f"{line}; approved by your send, out at about {when}"
+        tell(ctx, f"{brand}: your photo is going out now",
+             f"The photo you sent at {at} passed the checks and is going to {where} now. You get a ping when it is up, "
+             "with the link; to take it down, delete it there. Tap to see it.", **card)
+    runner.start_agent("publisher", wait=True)        # handed to Buffer now (shareNow), not on the publisher's next ten minutes
+    return f"{line}; approved by your send, going out now"
 
 
 def content_ping(conn, row, art) -> dict:
