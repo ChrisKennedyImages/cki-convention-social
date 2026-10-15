@@ -167,6 +167,7 @@ def queue_view(conn, row) -> dict:
             "blocked_networks": [n for n in targets if not reports[n].ok],
             "photo_checks": photo_checks, "ineligible": [c for c in photo_checks if not c[1]],
             "video": any(str(x).lower().endswith(".mp4") for x in renders.get("9:16") or []), "cover": bool(renders.get("cover")),
+            "music": music.credit(conn, meta.get("music")),          # the track the reel was made with, named under its player
             "renders": {a: list(range(1, len(ps) + 1)) for a, ps in renders.items() if a not in NOT_THUMBS}}
 
 
@@ -263,7 +264,7 @@ def latest_renders() -> dict:
 
 
 DESIGN_DIR = re.compile(r"design-\d{8}-\d{4}")
-DESIGN_FILE = re.compile(r"(index\.html|about\.json|[a-z]+-post\.jpg|slide-\d{2}\.jpg|[a-z]+-reel\.mp4)")
+DESIGN_FILE = re.compile(r"(index\.html|about\.json|[a-z]+-post\.jpg|slide-\d{2}\.jpg|[a-z]+-reel\.mp4|[a-z]+-reel-cover\.jpg)")
 DESIGN_TYPES = {".html": "text/html", ".json": "application/json", ".jpg": "image/jpeg", ".mp4": "video/mp4"}
 
 

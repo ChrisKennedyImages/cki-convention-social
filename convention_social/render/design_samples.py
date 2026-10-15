@@ -14,6 +14,7 @@ from __future__ import annotations
 import html
 import io
 import json
+import shutil
 from datetime import datetime
 from pathlib import Path
 from typing import Callable, Optional
@@ -216,22 +217,49 @@ def make(conn, fetch: Callable[[str], bytes], *, out_root: Optional[Path] = None
             except Exception as e:  # noqa: BLE001 — the stills stand on their own; the page says why
                 failed.append(f"{name}: {e}")
                 log(f"{name} not made: {e}")
+                continue
+            try:
+                made.append(cover_for(name, shots, copy, out))
+            except Exception as e:  # noqa: BLE001 — the reel plays without its poster; the player shows its own first frame
+                log(f"{name} cover not made: {e}")
     (out / "about.json").write_text(json.dumps({"photos": [r["drive_id"] for r in rows], "made": made, "failed": failed,
                                                 "music": track.name if track else None,
                                                 "at": datetime.now().isoformat(timespec="seconds")}, indent=1))
-    (out / "index.html").write_text(page(out.name, made, failed))
+    (out / "index.html").write_text(page(out.name, made, failed, music=music.credit(conn, track.name) if track else ""))
     # the rotation's memory (a stand-in row without an id, as a test hands in, records nothing)
     report.record_use(conn, "sample", [r["id"] for r in rows if "id" in r.keys()], ref=f"sample:{out.name}")
     log(f"design samples: {out}")
     return out
 
 
-def page(folder: str, made: list[str], failed: list[str]) -> str:
-    """One dark page for the phone: the reels first, then the posts, then the carousel in order."""
+def cover_for(name: str, shots: list, copy, out: Path) -> str:
+    """The reel's own cover frame, saved as `<reel>-cover.jpg` beside it: the poster its player shows until it is
+    tapped. A reel's first frame is the empty backdrop before the cards deal in, so without a poster the player
+    on the page is a black box (seen on the first unmuted page, 2026-10-14)."""
+    stills = motion.reel_stills(name.split("-")[0], shots, copy, out_dir=out / "stills")
+    cover = out / f"{name[:-4]}-cover.jpg"
+    stills[0].replace(cover)
+    shutil.rmtree(out / "stills", ignore_errors=True)
+    return cover.name
+
+
+def page(folder: str, made: list[str], failed: list[str], music: str = "") -> str:
+    """One dark page for the phone: the reels first, then the posts, then the carousel in order. A reel plays on a
+    tap, with its sound, and the line under it names the track (`music`: "title, artist"; "" for a silent reel).
+    Until 2026-10-14 the reels started by themselves, which a browser allows only muted, and Chris asked where the
+    music was: it was in every reel."""
     def src(name: str) -> str:
         return html.escape(f"/library/design/{folder}/{name}")
-    vids = "".join(f'<h2>{html.escape(n.replace("-", " ").replace(".mp4", ""))}</h2><video src="{src(n)}" controls playsinline loop muted autoplay></video>'
+    credit = f"Music: {html.escape(music)}" if music else "No music"
+
+    def poster(name: str) -> str:
+        cover = f"{name[:-4]}-cover.jpg"
+        return f' poster="{src(cover)}"' if cover in made else ""
+    vids = "".join(f'<h2>{html.escape(n.replace("-", " ").replace(".mp4", ""))}</h2>'
+                   f'<video src="{src(n)}"{poster(n)} controls playsinline loop preload="metadata"></video><p class="music">{credit}</p>'
                    for n in made if n.endswith(".mp4"))
+    if vids:
+        vids = "<p>Tap a reel to play it with sound.</p>" + vids
     posts = "".join(f'<h2>{html.escape(n.replace("-", " ").replace(".jpg", ""))}</h2><img src="{src(n)}" alt="">'
                     for n in made if n.endswith("-post.jpg"))
     slides = "".join(f'<img src="{src(n)}" alt="">' for n in sorted(n for n in made if n.startswith("slide-")))
@@ -240,7 +268,7 @@ def page(folder: str, made: list[str], failed: list[str]) -> str:
 <title>Design samples</title><style>
 body{{margin:0;background:#0a0a0b;color:#f3f3f1;font:16px/1.5 -apple-system,Helvetica,Arial,sans-serif;padding:16px}}
 h1{{font-size:22px;margin:4px 0}}h2{{font-size:15px;color:#00e1ff;text-transform:uppercase;letter-spacing:.12em;margin:28px 0 8px}}
-p{{color:#8c8c93}}.bad{{color:#ff6b6b}}img,video{{width:100%;max-width:540px;display:block;border-radius:10px;margin:0 0 10px}}
+p{{color:#8c8c93}}.bad{{color:#ff6b6b}}.music{{margin:-2px 0 0;font-size:14px}}img,video{{width:100%;max-width:540px;display:block;border-radius:10px;margin:0 0 10px}}
 .strip{{display:flex;gap:10px;overflow-x:auto;scroll-snap-type:x mandatory}}.strip img{{flex:none;width:86%;max-width:460px;scroll-snap-align:start}}
 </style></head><body><h1>Design samples on your photos</h1>
 <p>Made on the Mini from the strongest frames in your library. For review only: nothing here is posted.</p>{errs}
