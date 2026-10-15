@@ -277,17 +277,35 @@ def kicker_for(row: dict) -> str:
 # track is on (music.py); with none it stays a single photo, never a silent reel.
 # The face match post (Sundays) and the face match reel (every other Saturday) are retired, 2026-10-11:
 # they explained the delivery service, and a post keeps to what the photo shows.
-DESIGNS = {"monday": "spotlight", "tuesday": "single", "wednesday": "single", "thursday": "carousel",
-           "friday": "fan", "saturday": "reel", "sunday": "single"}
-NEEDS = {"single": 1, "spotlight": 3, "carousel": 4, "fan": 5, "reel": 4}      # fewest photos
-TAKES = {"single": 1, "spotlight": 5, "carousel": 6, "fan": 7, "reel": 6}      # most
+# Chris, 2026-10-15, after "come up with some new designs (like 4 so they arent all exactly the same design everytime)":
+# the four bold designs (render/bold.py: poster, slit scan, cascade, select) and, on his first round's renders,
+# "perfect! and we still keep the original one we started with on the very first post to insta" (the spotlight, Buffer
+# post 6ad00a04117064a577d1469f). No design two days running. The single, the carousel and the fan leave the week; they
+# stay for a phone send, a Post this on a sample and a reel that cannot be made.
+DESIGNS = {"monday": "spotlight", "tuesday": "poster", "wednesday": "scan", "thursday": "cascade",
+           "friday": "select", "saturday": "reel", "sunday": "poster"}
+NEEDS = {"single": 1, "spotlight": 3, "carousel": 4, "fan": 5, "reel": 4,       # fewest photos
+         "poster": 1, "scan": 1, "cascade": 3, "select": 4}
+TAKES = {"single": 1, "spotlight": 5, "carousel": 6, "fan": 7, "reel": 6,       # most
+         "poster": 1, "scan": 1, "cascade": 3, "select": 6}
+ONE_PHOTO = ("poster", "scan")                 # a day with too few photos, a building day, a Saturday with no music
+
+
+def fallback_for(day: date) -> str:
+    """The one-photo design a day falls back to: the first of ONE_PHOTO that is neither yesterday's nor tomorrow's design,
+    so a fallback never puts the same design on two days running."""
+    i = day.weekday()
+    near = {DESIGNS[WEEKDAYS[(i - 1) % 7]], DESIGNS[WEEKDAYS[(i + 1) % 7]]}
+    return next((d for d in ONE_PHOTO if d not in near), next(d for d in ONE_PHOTO if d != DESIGNS[WEEKDAYS[(i - 1) % 7]]))
 
 
 def design_for(day: date, subject: str, has_music: bool = False) -> str:
-    if subject == "architecture":
-        return "single"
+    """A building day is always a one-photo design (2026-10-09: one building photo a week), and a reel never goes out
+    silent (2026-10-11)."""
     design = DESIGNS[WEEKDAYS[day.weekday()]]
-    return "single" if design == "reel" and not has_music else design
+    if (design == "reel" and not has_music) or (subject == "architecture" and NEEDS[design] > 1):
+        return fallback_for(day)
+    return design
 
 
 def reel_kind(day: date) -> str:
@@ -307,11 +325,25 @@ def rooms_first(pool: list) -> list:
     return first + rest
 
 
-def shot_for(row: dict, image: Image.Image, focus=(0.5, 0.45)):
+def confirmed_rooms(conn: sqlite3.Connection, photo_ids: list) -> dict:
+    """{photo id: (room, line)}: the room Claude's final check of the full photo says it plainly shows, else
+    EVENT PHOTOGRAPHY (2026-10-15: the sorter's shot type had put "After Dark" on a sunny garden). A photo with no
+    final check (a dry run) or one checked before the question was asked names no room."""
+    from ..render import design_samples
+    got = {}
+    ids = [int(i) for i in photo_ids]
+    if ids:
+        marks = ",".join("?" * len(ids))
+        got = {r["photo_id"]: r["room"] for r in db.rows(conn, f"SELECT photo_id, room FROM final_checks WHERE photo_id IN ({marks})", ids)}
+    return {i: design_samples.ROOM_WORDS.get(got.get(i) or "", design_samples.UNCONFIRMED) for i in ids}
+
+
+def shot_for(row: dict, image: Image.Image, focus=(0.5, 0.45), words: Optional[tuple] = None):
+    """The photo with the room and line printed on it: `words` from confirmed_rooms; without them nothing is named."""
     from ..render import design_samples, motion
-    room, line = design_samples.ROOMS.get(row.get("shot_type") or "", design_samples.OTHER)
-    if row.get("subject") == "architecture":
-        room, line = design_samples.ROOMS["venue"]
+    room, line = words or design_samples.UNCONFIRMED
+    if room == "THE VENUE" and row.get("shot_type") == "building_exterior":
+        line = design_samples.ROOMS["building_exterior"][1]
     return motion.Shot(image, room, line, focus)
 
 
@@ -327,21 +359,28 @@ def make_renderer(conn: sqlite3.Connection, agent: str, *, design: str, rows: li
     """The day's design on its photos, as `render(focus) -> {aspect: [paths]}` for the art director, and the
     list a failed reel is written to (the same photos then go out as a carousel). Shared by the fresh draft
     and the mend, so a redrawn card is the same card the day would have made."""
-    from ..render import motion
+    from ..render import bold, motion
+    words = confirmed_rooms(conn, [r["id"] for r in rows])
     kicker = kicker_for(hero).upper()
+    if kicker == words[hero["id"]][0]:
+        kicker = "EVENT CALIBER"                       # the small line never repeats the title under it
     copy = motion.MotionCopy(kicker=kicker)
     tag = f"{hero['id']}-{design}"
     reel_failed: list[str] = []
 
     def single(focus, aspects=("4:5", "2:3")):
-        shot = shot_for(hero, images[hero["id"]], focus)
+        shot = shot_for(hero, images[hero["id"]], focus, words[hero["id"]])
         return {a: [str(motion.single_post(shot, copy, out=out_dir / f"{tag}-{a.replace(':', '')}.jpg", aspect=a,
                                            kicker=kicker, meta=seo))] for a in aspects}
 
     def render(focus):
         if design == "single":
             return single(focus)
-        shots = [shot_for(r, images[r["id"]]) for r in rows]
+        shots = [shot_for(r, images[r["id"]], words=words[r["id"]]) for r in rows]
+        if design in bold.DESIGNS:
+            # the four bold designs (2026-10-15), each with its own 2:3 card for Pinterest; the hero first, the photos whole
+            return {a: [str(bold.post(design, shots, copy, out=out_dir / f"{tag}-{a.replace(':', '')}.jpg", aspect=a, meta=seo))]
+                    for a in ("4:5", "2:3")}
         if design == "reel" and not reel_failed:
             # Instagram and Facebook get the reel (render_paths "9:16"), with its cover; Pinterest the
             # hero as a 2:3 card; the art director looks at the cover and the stills, never the mp4
@@ -456,7 +495,7 @@ def draft_one(ctx: runner.Context, fetch: Callable[[dict], bytes], *, now: Optio
         return f"no photo passed the final check for {day} (tried {min(len(pool), MAX_TRIES)})"
     asked = design
     if len(chosen) < NEEDS[design]:
-        design, chosen = "single", chosen[:1]
+        design, chosen = fallback_for(day), chosen[:1]
     qid, art, line = make_draft(ctx, day, chosen, design, want=want, kind_used=kind_used, asked=asked, track=track,
                                 drafter=drafter, art_client=art_client, why=use_why(chosen[0][0], len(pool)))
     if art.get("verdict") == "reject":

@@ -217,6 +217,15 @@ def say(verdict, x=0.5, y=0.42, notes="Fine."):
 
 
 class ArtDirector(Content):
+    def setUp(self):
+        super().setUp()
+        # the art director's redo reworks a crop, which only the single photo card has (a phone send uses it); since
+        # 2026-10-15 no day of the week is the single, so these drafts keep Tuesday on it to pin the redo itself
+        from unittest import mock
+        keep = mock.patch.dict(content.DESIGNS, {"tuesday": "single"})
+        keep.start()
+        self.addCleanup(keep.stop)
+
     def live(self):
         os.environ["AI_MONTHLY_CAP_USD"] = "5"
         os.environ["AI_MODEL"] = "template"
@@ -405,9 +414,9 @@ class TheCapIsHeldInFlight(ArtDirector):
 
 
 SUNDAY = datetime(2026, 10, 18, 10, 0, tzinfo=timezone.utc)         # tomorrow is Monday: spotlight
-WEDNESDAY = datetime(2026, 10, 14, 10, 0, tzinfo=timezone.utc)      # tomorrow is Thursday: carousel
-THURSDAY = datetime(2026, 10, 15, 10, 0, tzinfo=timezone.utc)       # tomorrow is Friday: fan
-SATURDAY = datetime(2026, 10, 17, 10, 0, tzinfo=timezone.utc)       # tomorrow is Sunday: face match
+WEDNESDAY = datetime(2026, 10, 14, 10, 0, tzinfo=timezone.utc)      # tomorrow is Thursday: cascade (2026-10-15)
+THURSDAY = datetime(2026, 10, 15, 10, 0, tzinfo=timezone.utc)       # tomorrow is Friday: select (2026-10-15)
+SATURDAY = datetime(2026, 10, 17, 10, 0, tzinfo=timezone.utc)       # tomorrow is Sunday: poster (2026-10-15)
 
 
 class NewDesigns(Content):
@@ -438,19 +447,20 @@ class NewDesigns(Content):
             self.assertEqual(im.size, (1080, 1350))
         self.assertEqual(meta.is_clean(Path(renders["4:5"][0])), [])
 
-    def test_thursday_is_a_carousel_once_four_photos_are_ready(self):
+    def test_thursday_is_the_cascade_of_three_photos(self):
+        """2026-10-15: Thursday was the carousel; the week is the four bold designs and the spotlight now."""
         self.add_event_photo("e4", "Awesome Con")
         content.draft_one(self.ctx(), self.fetch, now=WEDNESDAY)
         _, meta_, renders, ids = self.last()
-        self.assertEqual(meta_["design"], "carousel")
-        self.assertEqual(len(ids), 4)
-        self.assertEqual(len(renders["4:5"]), 4 + 2)                       # cover, a slide per photo, the ask
+        self.assertEqual(meta_["design"], "cascade")
+        self.assertEqual(len(ids), 3)
+        self.assertEqual(len(renders["4:5"]), 1)
 
-    def test_too_few_photos_for_the_fan_is_a_single_photo_day(self):
+    def test_too_few_photos_for_the_select_is_a_one_photo_day_never_the_same_as_its_neighbours(self):
         line = content.draft_one(self.ctx(), self.fetch, now=THURSDAY)
-        self.assertIn("fan wanted but too few photos passed", line)
+        self.assertIn("select wanted but too few photos passed", line)
         _, meta_, renders, ids = self.last()
-        self.assertEqual((meta_["design"], meta_["design_wanted"]), ("single", "fan"))
+        self.assertEqual((meta_["design"], meta_["design_wanted"]), ("poster", "select"))   # Thursday cascade, Saturday reel
         self.assertEqual(ids, [self.ids["e1"]])
         self.assertEqual(sorted(renders), ["2:3", "4:5"])
 
@@ -459,7 +469,7 @@ class NewDesigns(Content):
         a .img file the publisher refuses, and the whole post failed on every network once a board was set."""
         for did in ("e4", "e5"):
             self.add_event_photo(did, f"{did} Con")
-        for now, design in ((SUNDAY, "spotlight"), (WEDNESDAY, "carousel"), (THURSDAY, "fan")):
+        for now, design in ((SUNDAY, "spotlight"), (WEDNESDAY, "cascade"), (THURSDAY, "select")):
             self.conn.execute("DELETE FROM content_queue")                 # each design on the whole pool
             content.draft_one(self.ctx(), self.fetch, now=now)
             _, meta_, renders, _ = self.last()
@@ -469,11 +479,12 @@ class NewDesigns(Content):
                 self.assertEqual(im.size, (1000, 1500), design)
             self.assertEqual(meta.is_clean(Path(renders["2:3"][0])), [])
 
-    def test_sunday_is_a_single_photo(self):
-        """The face match post is retired (Chris, 2026-10-11: a post never talks about a service)."""
+    def test_sunday_is_the_poster(self):
+        """The face match post is retired (Chris, 2026-10-11: a post never talks about a service); Sunday was a single
+        photo until 2026-10-15 and is the poster now."""
         content.draft_one(self.ctx(), self.fetch, now=SATURDAY)
         _, meta_, renders, ids = self.last()
-        self.assertEqual((meta_["design"], ids), ("single", [self.ids["e1"]]))
+        self.assertEqual((meta_["design"], ids), ("poster", [self.ids["e1"]]))
         self.assertNotIn("facematch", content.DESIGNS.values())
 
     def test_live_every_photo_on_the_post_passes_the_final_check(self):
