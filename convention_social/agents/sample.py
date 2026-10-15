@@ -140,8 +140,8 @@ def draft_sample(ctx: runner.Context, rec, fetch: Callable[[dict], bytes], *, ch
         drafter=drafter, art_client=art_client, why="from the design samples",
         extra_meta={"source": "sample", "asap": True, "sample_folder": rec["folder"], "sample_id": rec["id"]},
         ping=(f"{ctx.cfg.brand_name}: the sample you chose, a post to approve",
-              f"The {design} idea, made into a post for today. Post now and it goes out as soon as Buffer takes it, or follow "
-              "the pace, or skip. Tap to see it."))
+              f"The {design} idea, made into a post for today. Post now and it goes out at once, or follow the pace, or "
+              "skip. Tap to see it."))
     if art.get("verdict") == "reject":
         return _failed(ctx, rec, f"the art director turned it back: {art.get('notes', '')}", queue_id=qid)
     _status(conn, rec["id"], "drafted", queue_id=qid)

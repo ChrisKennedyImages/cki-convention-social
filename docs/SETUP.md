@@ -367,15 +367,15 @@ never a name or which event), and Send. Within a few minutes your phone gets
 the ping with the post and its three choices (Post now, Follow the pace,
 Skip); the Send page shows each send and where
 it stands, and says why when one could not be drafted (a readable plate, a
-wedding, the monthly AI cap). Approved, the
-post goes out as soon as Buffer takes it. The photo stays on the Mini and is
+wedding, the monthly AI cap). Post now sends it out at once; Follow the pace
+takes the next open slot. The photo stays on the Mini and is
 never written to Drive.
 
 ## 11. The dashboard: four tabs (2026-10-15)
 
 - **Today** is the whole daily flow on one page. **Needs you**: every draft
   waiting for you, newest first (the daily post, the designed drafts, a photo
-  from your phone), each with **Post now** (out in about 35 minutes),
+  from your phone), each with **Post now** (posted at once),
   **Follow the pace** (the next open Instagram slot, one post a slot) and
   **Skip** (set aside; its photos go back into the rotation, never Don't use).
   A reel plays right there with its sound. Under the drafts, what else needs

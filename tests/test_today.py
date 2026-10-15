@@ -57,6 +57,9 @@ class Case(IsolatedCase):
         self.client = TestClient(create_app())
         self.client.cookies.set(COOKIE, make_token("chris"))
         self.tz = ZoneInfo(config.get_config().timezone)
+        starts = mock.patch("convention_social.dashboard.app.start_agent")     # Post now starts the publisher: never a real one here
+        starts.start()
+        self.addCleanup(starts.stop)
 
     # ---- photos and drafts
     def photo(self, n: int, room: str = "stage_panel", event: str = "Event A", quality: int = 5) -> int:
@@ -231,19 +234,43 @@ class DesignedDrafts(Case):
 
 # ============================================================ 1. the three choices
 class Choices(Case):
-    def test_post_now_goes_out_as_soon_as_buffer_takes_it(self):
-        pid = self.photo(1)
+    def test_post_now_posts_immediately_and_follow_the_pace_keeps_its_slot(self):
+        """Chris: "an option to post immediately or to follow the pace". Post now is Buffer's shareNow with no time, and the
+        publisher is started at once rather than at its next ten-minute run; Follow the pace keeps its slot. No page or
+        ping says "35 minutes" for it any more."""
+        from convention_social.buffer.client import BufferClient
+        from tests._fakes import FakeBuffer, add_channels
+        add_channels(self.conn, "instagram")
+        pid, other = self.photo(1), self.photo(2, room="crowd")
         self.checked(pid)
-        qid = self.row([pid], scheduled_for="2026-12-01T11:30")
-        r = self.client.post(f"/queue/{qid}/approve", data={"how": "now", "back": "/"}, follow_redirects=False)
-        self.assertEqual(r.status_code, 303)
-        self.assertEqual(self.status(qid), "approved")
-        self.assertTrue(self.meta(qid)["asap"])
-        row = db.one(self.conn, "SELECT * FROM content_queue WHERE id=?", (qid,))
-        self.assertIsNone(row["scheduled_for"], "now, not the time once set")
-        ctx = runner.Context("publisher", self.conn, logging.getLogger("t"), config.get_config(), True, 0)
-        self.assertIsNotNone(publisher.asap_slot(ctx, row))
-        self.assertIn("as soon as Buffer takes it", html.unescape(self.client.get(r.headers["location"]).text))
+        self.checked(other)
+        now_q = self.row([pid], scheduled_for="2026-12-01T11:30")
+        pace_q = self.row([other], design="single")
+        for qid in (now_q, pace_q):
+            for text in (self.client.get("/").text, self.client.get(f"/queue/{qid}").text):
+                self.assertNotIn("35 minutes", text)
+                self.assertIn("Post now: it goes out now.", html.unescape(text))
+        with mock.patch("convention_social.dashboard.app.start_agent") as start:
+            r = self.client.post(f"/queue/{now_q}/approve", data={"how": "now", "back": "/"}, follow_redirects=False)
+            self.client.post(f"/queue/{pace_q}/approve", data={"how": "pace", "back": "/"})
+        self.assertEqual([c for c in start.call_args_list if c.args == ("publisher",)], [mock.call("publisher")],
+                         "Post now starts the publisher at once; Follow the pace waits for it")
+        self.assertIsNone(db.one(self.conn, "SELECT scheduled_for FROM content_queue WHERE id=?", (now_q,))["scheduled_for"],
+                          "now, not the time once set")
+        said = html.unescape(self.client.get(r.headers["location"]).text)
+        self.assertIn(f"Approved post {now_q}. It goes out now.", said)
+        self.assertNotIn("35 minutes", said)
+        fake = FakeBuffer()
+        ctx = runner.Context("publisher", self.conn, logging.getLogger("t"), config.get_config(), False, 0)
+        with mock.patch.object(publisher.notify, "push"):
+            publisher.publish_ready(ctx, client=BufferClient("test-key", conn=self.conn, transport=fake),
+                                    uploader=lambda path, key: f"https://media.example/{key}")
+        sent = {row["id"]: json.loads(row["payload"])["instagram"]
+                for row in db.rows(self.conn, "SELECT id, payload FROM content_queue WHERE id IN (?, ?)", (now_q, pace_q))}
+        self.assertEqual(sent[now_q]["mode"], "shareNow", "Post now: Buffer posts it immediately")
+        self.assertNotIn("dueAt", sent[now_q])
+        self.assertEqual(sent[pace_q]["mode"], "customScheduled", "Follow the pace: the next open slot")
+        self.assertIn("dueAt", sent[pace_q])
 
     def test_follow_the_pace_takes_the_next_open_slot_even_for_a_photo_from_the_phone(self):
         pid = self.photo(1)

@@ -84,6 +84,8 @@ def goes_out_at(conn: sqlite3.Connection, row, *, now: Optional[datetime] = None
         return min(times) if times else None
     if row["status"] != "approved":
         return None
+    if meta_of(row).get("approved_how") == "now" and not row["scheduled_for"]:
+        return local_now(now)                     # Post now: out at once
     if meta_of(row).get("asap") and not row["scheduled_for"]:
         return local_now(now) + publisher.ASAP_AFTER
     slot = pace_slot(conn, row, now=now, publisher_dry=publisher_dry)

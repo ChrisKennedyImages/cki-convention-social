@@ -700,6 +700,8 @@ def create_app() -> FastAPI:
         conn.execute("UPDATE content_queue SET status='approved', approved_at=?, last_error=NULL, rule_report=?, "
                      "scheduled_for=CASE WHEN ? THEN NULL ELSE scheduled_for END, updated_at=? WHERE id=?",
                      (now, json.dumps(meta), how == "now", now, row["id"]))
+        if how == "now":
+            start_agent("publisher")         # "post immediately": not at the publisher's next ten-minute run
         return "approved"
 
     def skip_post(conn, row) -> str:
@@ -779,9 +781,10 @@ def create_app() -> FastAPI:
         from ..agents import publisher
         dry = settings.dry_run(conn, "publisher")
         later = " Posting is off (practice run), so it waits as a practice run until the publisher is switched on." if dry else ""
+        if today_view.meta_of(row).get("approved_how") == "now" and not row["scheduled_for"]:
+            return f"It goes out now.{later}"
         if today_view.meta_of(row).get("asap") and not row["scheduled_for"]:
-            mins = int(publisher.ASAP_AFTER.total_seconds() // 60)
-            return f"It goes out as soon as Buffer takes it, in about {mins} minutes.{later}"
+            return f"It goes out as soon as Buffer takes it.{later}"
         when = today_view.goes_out_at(conn, row, publisher_dry=dry)
         if when is not None:
             return f"It goes out {when:%A} {when:%H:%M}, the next open slot.{later}"

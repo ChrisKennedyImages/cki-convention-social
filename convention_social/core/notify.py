@@ -50,7 +50,7 @@ def _choice(qid: int, token: str, how: str, label: str) -> str:
 
 def choice_actions(qid: int, token: str) -> str:
     """The ntfy `Actions` header for a draft the art director passed (Chris, 2026-10-15): his three choices, the most
-    ntfy shows. Post now (out as soon as Buffer takes it), Follow the pace (the next open Instagram slot, one post a
+    ntfy shows. Post now (posted at once: Buffer's shareNow), Follow the pace (the next open Instagram slot, one post a
     slot) and Skip (set aside, its photos back in the rotation). A tap on the notification itself opens the draft
     (`Click`), where a reel plays with its sound. One token: the first choice made spends it."""
     return "; ".join(_choice(qid, token, how, label) for how, label in CHOICES)

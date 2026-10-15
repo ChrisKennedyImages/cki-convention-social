@@ -1229,8 +1229,8 @@ immediately or to follow the pace"; Skip puts the photos back in rotation. Then:
   a design added there joins by itself), the reel only with a music track. The lane follows the content lane's
   dry-run switch: in practice run nothing is made. The samples are no longer made every hour; their page and the
   Design card answer with Today. A designed draft is never chased by the eight-hour nudge.
-- **His three choices, everywhere a draft waits.** Post now (out as soon as Buffer takes it, about 35 minutes:
-  `rule_report.asap`), Follow the pace (the next open Instagram slot, one post a slot; a photo from the phone too)
+- **His three choices, everywhere a draft waits.** Post now (posted at once, "post immediately": Buffer's shareNow with
+  no time, the share sheet's path, and the publisher started there and then; `rule_report.approved_how`), Follow the pace (the next open Instagram slot, one post a slot; a photo from the phone too)
   and Skip. They are on Today, on the draft page (the edit form's own buttons, so an edit is never lost) and on
   every draft's ping: the card (a reel's own cover), a tap that opens the draft where the reel plays with its sound,
   and the three as ntfy actions with one signed single-use token (`core/notify.choice_actions`,

@@ -29,7 +29,7 @@
     <button form="edit" class="ok" type="submit" name="do" value="pace">Follow the pace</button>
     <form method="post" action="/queue/{{ item.id }}/skip" onsubmit="return confirm('Skip this post? Its photos go back into the rotation.')"><button class="skip" type="submit">Skip</button></form>
   </div>
-  <div class="muted" style="margin-top:6px">Post now: out in about 35 minutes. Follow the pace: {{ pace_words or 'the next open slot' }}, one post a slot. Any edit below is saved with either.</div>
+  <div class="muted" style="margin-top:6px">Post now: it goes out now. Follow the pace: {{ pace_words or 'the next open slot' }}, one post a slot. Any edit below is saved with either.</div>
   {% else %}
   <div class="muted">Post now and Follow the pace come back once {{ 'the captions pass the rules (the suite rewrites them by itself)' if item.blocked_networks else ('every photo in it can be used' if item.ineligible else 'a network is ticked below') }}.</div>
   <div class="choices"><span style="grid-column:span 2"></span>

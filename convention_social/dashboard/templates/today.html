@@ -86,7 +86,7 @@ section{margin-bottom:28px}
         <form method="post" action="/queue/{{ it.id }}/approve"><input type="hidden" name="how" value="pace"><input type="hidden" name="back" value="/"><button class="ok" type="submit">Follow the pace</button></form>
         <form method="post" action="/queue/{{ it.id }}/skip" onsubmit="return confirm('Skip this post? Its photos go back into the rotation.')"><input type="hidden" name="back" value="/"><button class="skip" type="submit">Skip</button></form>
       </div>
-      <div class="muted when">Post now: out in about 35 minutes.{% if it.pace_words %} Follow the pace: {{ it.pace_words }}.{% endif %}</div>
+      <div class="muted when">Post now: it goes out now.{% if it.pace_words %} Follow the pace: {{ it.pace_words }}.{% endif %}</div>
       {% else %}
       <div class="choices">
         <a class="btn primary" href="/queue/{{ it.id }}" style="grid-column:span 2">Open it to look first</a>
@@ -131,7 +131,7 @@ section{margin-bottom:28px}
   <div class="today-h"><h2>How posting works</h2></div>
   <div class="card sched">
     <p><strong>Every morning at 8:00</strong> the daily post is drafted for the next day, and your phone gets it.{% if schedule.designed %} Designed drafts come from {{ schedule.hours[0] }}:00 to {{ schedule.hours[1] }}:00, up to {{ schedule.designed }} a day, one an hour.{% endif %}</p>
-    {% for line in schedule.times %}<p>{{ line }}, one post a slot when you choose Follow the pace. Post now sends a post in about 35 minutes.</p>{% endfor %}
+    {% for line in schedule.times %}<p>{{ line }}, one post a slot when you choose Follow the pace. Post now sends a post out at once.</p>{% endfor %}
     <p><strong>The daily designs:</strong> {{ schedule.days|join(', ') }}.</p>
     <p><strong>Next out:</strong> {{ schedule.next_out or 'nothing is set to go out yet' }}. <strong>Next daily draft:</strong> {{ schedule.next_draft }}.</p>
     <p class="muted">Times are set on the Keys page, under Posting.</p>
