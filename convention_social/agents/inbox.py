@@ -128,6 +128,7 @@ def run(ctx: runner.Context, api: SiteAPI | None = None, client=None) -> str:
             new = acked = 0
             cal = f"the site could not be reached ({type(e).__name__}); nothing pulled, the calendar not synced"
             site_ok = False
+    shared = sends_waiting(api) if site_ok else ""
     drafted = draft_new(ctx, client=client)
     sent = send_approved(ctx)
     if site_ok:
@@ -138,7 +139,21 @@ def run(ctx: runner.Context, api: SiteAPI | None = None, client=None) -> str:
                                      f"The booked dates could not be sent to the site: {type(e).__name__}: {e}")
             cal = f"the calendar could not be sent to the site ({type(e).__name__})"
     return (f"{'DRY RUN ' if ctx.dry_run else ''}requests new={new} acked={acked}; drafted={drafted}; "
-            f"replies sent={sent['sent']} would_send={sent['would_send']} failed={sent['failed']} held={sent['held']}; {cal}")
+            f"replies sent={sent['sent']} would_send={sent['would_send']} failed={sent['failed']} held={sent['held']}; {cal}{shared}")
+
+
+def sends_waiting(api: SiteAPI) -> str:
+    """Post to Event Caliber (2026-10-15): photos the share sheet sent wait at the site for the phone agent's one-minute
+    job. This ten-minute run starts the phone agent too when any wait, so they are picked up before go-live installs
+    that job, or if it ever stops. A site that cannot be asked is the phone agent's to say."""
+    try:
+        n = len(api.sends())
+    except Exception:  # noqa: BLE001
+        return ""
+    if not n:
+        return ""
+    runner.start_agent("phone", wait=True)
+    return f"; {n} photo(s) from the share sheet waiting: the phone agent started"
 
 
 if __name__ == "__main__":

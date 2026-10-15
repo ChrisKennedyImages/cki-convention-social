@@ -1497,6 +1497,10 @@ def create_app() -> FastAPI:
                         f("OUTREACH_DAILY_SENDS", "Approved sends a day (default 10)")]},
             {"title": "Image hosting", "note": "Where Buffer fetches post images from.",
              "fields": [f("MEDIA_BASE_URL", "Image address"), f("MEDIA_UPLOAD_TOKEN", "Upload token", secret=True)]},
+            {"title": "Post from your iPhone", "note": "The token the Post to Event Caliber Shortcut sends with each photo "
+                                                      "(docs/SETUP.md, section 10). Make one with the button below the keys; the "
+                                                      "site takes it on its own within about twenty minutes.",
+             "fields": [f("SEND_TOKEN", "Send token", secret=True)]},
             {"title": "Phone alerts", "note": "This company's own ntfy topic. Pings: a post ready to approve, a post that went out, "
                                               "the watchdog's alerts and the morning brief. Save the topic, then send a test below.",
              "fields": [f("NTFY_TOPIC", "ntfy topic")]},
@@ -1553,6 +1557,8 @@ def create_app() -> FastAPI:
             updates[name] = value
         if updates:
             config.write_env(updates)
+            if "SEND_TOKEN" in updates:
+                settings.set(conn, deploy.SEND_TOKEN_CHANGED_KEY, db.utcnow())     # the Worker takes it on the next publish
             if site_build.VERIFICATION_KEY in updates:
                 settings.set(conn, deploy.TAG_CHANGED_KEY, db.utcnow())
             if any(k in updates for k in deploy.SITE_KEYS):
@@ -1565,6 +1571,19 @@ def create_app() -> FastAPI:
         if refused:
             note += "; " + refused
         return RedirectResponse("/keys?msg=" + quote_plus(note), status_code=303)
+
+    @app.post("/keys/send-token", response_class=HTMLResponse)
+    def keys_send_token(request: Request, user: str = Depends(require_user), conn=Depends(conn_dep)):
+        """Post to Event Caliber (2026-10-15): a new long random token for the Shortcut, saved in .env, shown once on
+        this answer (never in an address a log keeps) so it can be copied into the Shortcut; the site takes it on its
+        next publish, which the stamp starts within minutes. The old token stops working then."""
+        import secrets as pysecrets
+        from ..site import deploy
+        token = pysecrets.token_urlsafe(32)
+        config.write_env({"SEND_TOKEN": token})
+        settings.set(conn, deploy.SEND_TOKEN_CHANGED_KEY, db.utcnow())
+        return render(request, "keys.html", groups=key_groups(), new_send_token=token,
+                      msg="A new send token is saved. Copy it into the Shortcut now: it is not shown again.")
 
     @app.post("/keys/test-alert")
     def keys_test_alert(user: str = Depends(require_user)):

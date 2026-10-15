@@ -599,8 +599,20 @@ def verify_scheduled(ctx: runner.Context, client: Optional[BufferClient] = None)
             stats["published"] += 1
             live = next((infos[n]["external_link"] for n in ("instagram", "facebook", "pinterest") if infos.get(n, {}).get("external_link")),
                         next((i["external_link"] for i in infos.values() if i.get("external_link")), None))
-            notify.push(f"{ctx.cfg.brand_name}: posted", f"Post {row['id']} went out on {', '.join(infos)}. Tap to see it.",
-                        dry_run=ctx.dry_run, priority="default", click=live or notify.link(f"/queue/{row['id']}"), conn=ctx.conn, agent=ctx.agent)
+            meta = _json(row["rule_report"], {})
+            if isinstance(meta, dict) and meta.get("source") == "share":
+                # Post to Event Caliber (2026-10-15): his send was his approval, so the ping is where it lives and how it comes down
+                page = notify.link(f"/queue/{row['id']}")
+                where = " and ".join(n.capitalize() for n in infos)
+                notify.push(f"{ctx.cfg.brand_name}: your photo is on {where}",
+                            f"Post {row['id']}, the photo you sent, is on {where}. Tap to open it. To take it down, open it there, "
+                            "tap the three dots, then Delete. The dashboard has the post too.",
+                            dry_run=ctx.dry_run, priority="default", click=live or page, conn=ctx.conn, agent=ctx.agent,
+                            actions=(f"view, Instagram, {live}; " if live else "") + f"view, Dashboard, {page}")
+            else:
+                notify.push(f"{ctx.cfg.brand_name}: posted", f"Post {row['id']} went out on {', '.join(infos)}. Tap to see it.",
+                            dry_run=ctx.dry_run, priority="default", click=live or notify.link(f"/queue/{row['id']}"), conn=ctx.conn,
+                            agent=ctx.agent)
     return stats
 
 

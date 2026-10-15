@@ -38,8 +38,8 @@ COMMITTED_CONFIG = "wrangler.jsonc"
 PLACEHOLDER = "SET_AFTER_d1_create"                  # wrangler.jsonc's stand-in for the booking database id
 DB_ID = re.compile(r'"database_id":\s*"([0-9a-f-]{36})"')
 # Worker secrets that follow .env after every deploy (go-live put UPLOAD_TOKEN once; it never changes):
-# the Worker's name, the .env key it is read from
-WORKER_SECRETS = (("NTFY_TOPIC", "NTFY_TOPIC"), ("DASHBOARD_URL", "DASHBOARD_PUBLIC_URL"))
+# the Worker's name, the .env key it is read from. SEND_TOKEN (2026-10-15) is the share sheet's, made on the Keys page.
+WORKER_SECRETS = (("NTFY_TOPIC", "NTFY_TOPIC"), ("DASHBOARD_URL", "DASHBOARD_PUBLIC_URL"), ("SEND_TOKEN", "SEND_TOKEN"))
 STATUS_FILE = "site-deploy.json"                     # DATA_ROOT/site: what the last deploy did, for the Photos page
 STALE_RUNNING = 40 * 60                              # a "running" status older than this was a run that died
 DEPLOYED_KEY = "site.deployed_commit"                # the code commit the site on Cloudflare was built from
@@ -48,6 +48,7 @@ DEPLOYED_AT_KEY = "site.deployed_at"                 # when the last successful 
 PHOTOS_CHANGED_KEY = "site.photos_changed_at"        # stamped by every Use / Don't use / folder decision / hero pick (2026-10-13)
 TAG_CHANGED_KEY = "site.tag_changed_at"              # the Search Console value on the Keys page changed (2026-10-13)
 KEYS_CHANGED_KEY = "site.keys_changed_at"            # the phone number or a social address on the Keys page changed (2026-10-14)
+SEND_TOKEN_CHANGED_KEY = "site.send_token_changed_at"  # the share sheet's token changed on the Keys page: the Worker takes it (2026-10-15)
 SITE_KEYS = ("BRAND_PHONE", "SOCIAL_INSTAGRAM", "SOCIAL_FACEBOOK", "SOCIAL_PINTEREST")   # Keys page values the site shows
 PHOTOS_SETTLE = 10 * 60                              # seconds of quiet after the last photo change before the site publishes itself
 MAX_TRIES = 3                                        # per commit, by itself; Publish on the Photos page always tries
@@ -193,7 +194,8 @@ def photos_pending(conn, now: Optional[datetime] = None) -> tuple[bool, str]:
     by itself; Publish stays for the impatient). (False, "") when the site already holds the photos."""
     stamps = [(_stamp(settings.get(conn, PHOTOS_CHANGED_KEY)), "the approved photos changed at"),
               (_stamp(settings.get(conn, TAG_CHANGED_KEY)), "the Search Console tag changed at"),
-              (_stamp(settings.get(conn, KEYS_CHANGED_KEY)), "the website's contact details on the Keys page changed at")]
+              (_stamp(settings.get(conn, KEYS_CHANGED_KEY)), "the website's contact details on the Keys page changed at"),
+              (_stamp(settings.get(conn, SEND_TOKEN_CHANGED_KEY)), "the send token on the Keys page changed at")]
     changed, what = max(((t, w) for t, w in stamps if t is not None), default=(None, ""), key=lambda tw: tw[0])
     built = _stamp(settings.get(conn, DEPLOYED_AT_KEY))
     if changed is None or (built is not None and changed <= built):
