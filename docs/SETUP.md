@@ -373,11 +373,11 @@ In Photos, pick one photo, tap Share, then **Post to Event Caliber**, add a
 line if you like, and that is it: no dashboard, no Tailscale. Your send is
 your approval (2026-10-15): the suite still runs its checks, and a readable
 plate, a wedding, a caption that will not come right or the art director's no
-stops it and your phone says why. Otherwise it goes out on Instagram as soon
-as Buffer takes it, about 35 minutes later, and your phone gets two pings:
-when it is approved (with the time, and the draft page to stop it), and when
-it is up (it opens the post on Instagram, where you can delete it; the
-dashboard is the other button).
+stops it and your phone says why. Otherwise it goes to Instagram right away
+(your choice, 2026-10-15: no window to pull it back), and your phone gets two
+pings: when it passed the checks and is going out, and when it is up (it
+opens the post on Instagram, where you can delete it; the dashboard is the
+other button).
 
 Once, on the Mini or from the dashboard on your phone:
 

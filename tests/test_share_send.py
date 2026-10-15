@@ -438,6 +438,12 @@ class TheToken(IsolatedCase):
         self.assertIn('type="password" name="SEND_TOKEN"', page)
         self.assertIn('action="/keys/send-token"', page)
 
+    def test_the_send_page_says_share_sheet_photos_post_on_their_own(self):
+        """Chris, 2026-10-15: "Add the line": the page's own photos wait for his Approve; the share sheet's do not."""
+        page = self.client.get("/send").text
+        self.assertIn("Photos from the Post to Event Caliber share sheet on your iPhone are approved by the send and post on "
+                      "their own after the checks.", page)
+
     def test_make_one_saves_a_long_random_token_shows_it_once_and_the_site_follows(self):
         r = self.client.post("/keys/send-token", follow_redirects=False)
         self.assertEqual(r.status_code, 200, "the page itself: never a redirect with the token in its address")

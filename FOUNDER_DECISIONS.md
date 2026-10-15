@@ -967,12 +967,14 @@ right away.
   lane's dry run Claude does not look, so nothing is approved and the ping
   says what it would have posted; in the publisher's dry run it is approved
   but nothing goes out, and the ping says when it would have.
-- Approved, it is the asap rule (`rule_report.asap`): the next time Buffer
-  takes, about 35 minutes on, never the day's slot, and the publisher is
-  started at once. The ping says when; the draft page's Take back the
-  approval, or Pull back from Buffer, stops it until then. When it went out,
-  the ping opens it on Instagram, where he can delete it, with the dashboard
-  beside it.
+- Approved, it posts right away. Asked whether to keep the 35 minutes the
+  asap rule leaves to pull it back, Chris chose "Right away": it goes to
+  Buffer to post now (`shareNow`, `publisher.posts_now`), with no pre-post
+  window, and the publisher is started at once; a time he sets on the draft
+  still wins. The ping says it is going out now; when Buffer reports it sent,
+  the next ping opens it on Instagram, where he can delete it, with the
+  dashboard beside it. The daily draft, Post this and the Send page keep
+  their windows.
 - Only Chris can do: press Make a send token on the Keys page and copy it into
   the Shortcut; build the Shortcut (docs/SETUP.md, section 10a); run
   `scripts/go-live.sh` once on the Mini for the one-minute pickup (until then
