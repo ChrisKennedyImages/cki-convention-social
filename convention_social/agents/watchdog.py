@@ -40,7 +40,8 @@ MAX_GAP = {"scanner": timedelta(hours=3), "content": timedelta(hours=30), "publi
            "inbox": timedelta(hours=1), "chief": timedelta(hours=2),
            "watchdog": timedelta(hours=2), "backup": timedelta(hours=36),
            "learner": timedelta(hours=30), "seo": timedelta(days=8),
-           "scout": timedelta(days=8), "outreach": timedelta(hours=30), "updater": timedelta(hours=1)}
+           "scout": timedelta(days=8), "outreach": timedelta(hours=30), "updater": timedelta(hours=1),
+           "doctor": timedelta(minutes=30)}
 STUCK_AFTER = timedelta(hours=6)       # a scheduled post this long past its time without being sent
 CONTENT_WINDOW = (8, 20)              # local hours: the 08:00 draft gets its turn first; past 20:00 a missing post is said loudly
 CONTENT_TRIES_A_DAY = 4               # the 08:00 run and up to three more by the watchdog
@@ -345,7 +346,8 @@ def digest_data(ctx: runner.Context, now: datetime) -> dict:
                        "dry_run": settings.dry_run(conn, name) if name in settings.AGENTS_WITH_DRY_RUN else None,
                        "last": dict(last) if last else None})
     channels = [dict(r) for r in db.rows(conn, "SELECT service, display_name, connected, last_checked_at FROM channels ORDER BY service")]
-    return {"published": published, "waiting": waiting, "approved": approved, "scheduled": scheduled, "would_publish": would,
+    from . import doctor                    # what the doctor did, a line per remedy (2026-10-15)
+    return {"doctor": doctor.digest_lines(conn, now - timedelta(hours=24)), "published": published, "waiting": waiting, "approved": approved, "scheduled": scheduled, "would_publish": would,
             "failed": failed, "errors": errors, "agents": agents, "channels": channels,
             "drive": (settings.get(conn, DRIVE_STATE_KEY) or "unknown"),
             "ai_mtd": spend.month_to_date(conn), "ai_cap": ctx.cfg.ai_monthly_cap_usd, "buffer": budget.snapshot(conn)}
@@ -386,6 +388,8 @@ def digest_html(ctx: runner.Context, d: dict, notes: list[str], now: datetime) -
                    f"<td>{'' if not a['last'] else ('ok' if a['last']['ok'] == 1 else 'failed')}</td></tr>" for a in d["agents"])
     parts.append(sect("Agents", f"<table cellpadding=4><tr><th align=left>agent</th><th align=left>mode</th>"
                                 f"<th align=left>last run (UTC)</th><th></th></tr>{rows}</table>"))
+    if d.get("doctor"):
+        parts.append(sect("The doctor", ul([e(x) for x in d["doctor"]])))
     if notes:
         parts.append(sect("Notes", ul([e(n) for n in notes])))
     parts.append(f"<p style='color:#666'>Dashboard: {e(dashboard_url(ctx.cfg))}/</p>")
