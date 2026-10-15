@@ -341,6 +341,63 @@ class Gallery(SizesCase):
         self.assertIn("if(!reduce&&!fits)raf=requestAnimationFrame(step)", roll, "and nothing rolls")
 
 
+class SmallStuff(SizesCase):
+    """Chris, 2026-10-14, from his computer: "the top website scroller cuts off on the left side when viewing on a computer.
+    who we are - should be more than two fucking words! dont just skip the small stuuf becuse thats just as important as
+    the main page". The inner pages get the home page's care."""
+
+    def test_the_ticker_fades_over_the_gutter_and_starts_on_screen(self):
+        """Seen live at 1440 and 1920: the word leaving at the left was sliced flat at x=0 while every other line on the
+        page sits behind the 56px gutter. The ticker now fades out over var(--pad) at both ends, and the track starts
+        at its natural position (no from-offset), so the first word stands 26px in, inside the fade."""
+        css = theme.CSS
+        ticker = css[css.index(".ticker{"):css.index("}", css.index(".ticker{"))]
+        for prop in ("-webkit-mask-image:linear-gradient(90deg,transparent,#000 var(--pad),#000 calc(100% - var(--pad)),transparent)",
+                     "mask-image:linear-gradient(90deg,transparent,#000 var(--pad),#000 calc(100% - var(--pad)),transparent)", "overflow:hidden"):
+            self.assertIn(prop, ticker, prop)
+        self.assertIn("@keyframes tick{to{transform:translateX(-50%)}}", css, "from the natural position, no offset")
+        self.assertIn(".ticker span{font:400 clamp(26px,3.6vw,54px)/1 var(--display);text-transform:uppercase;padding:0 26px;white-space:nowrap}", css)
+        self.assertIn(".ticker .track{display:flex;width:max-content;animation:tick 38s linear infinite}", css)
+        home = self.page(self.built(), "index.html")
+        self.assertEqual(home.count('<div class="ticker'), 2)
+        self.assertIn('<div class="ticker" aria-hidden="true"><div class="track"><span class="">Backstage</span>', home)
+
+    def test_who_we_are_is_a_paragraph_and_the_contact_links_fit_their_boxes(self):
+        out = self.built()
+        privacy = self.page(out, "privacy/index.html")
+        who = privacy[privacy.index("<h3>Who we are</h3>"):privacy.index("</div></section>", privacy.index("<h3>Who we are</h3>"))]
+        self.assertIn("<p>Event Caliber is the brand of Chris and Nic Kennedy, brothers and event photographers based in Washington, DC. "
+                      "The company behind it is CKI, LLC. Questions about this page, a photo or the form go to hello@eventcaliber.com.</p>", who)
+        self.assertNotIn("<p>Event Caliber is a brand of CKI, LLC.</p>", privacy, "the one-liner is gone")
+        self.assertGreater(len(re.sub(r"<[^>]+>", " ", who).split()), 30)
+        css = theme.CSS
+        self.assertIn(".contact .hand{display:grid;grid-template-columns:1fr 1fr;gap:30px;margin-top:40px;max-width:1000px}", css)
+        self.assertIn(".contact .hand a.l{display:block;font:400 clamp(16px,1.6vw,24px)/1.3 var(--display);margin-top:12px;overflow-wrap:anywhere}", css,
+                      "at 30px the address broke mid-word in its box on an iPad and a computer")
+
+    def test_thanks_and_not_found_say_what_happens_and_the_pages_end_near_the_footer(self):
+        out = self.built()
+        thanks = self.page(out, "thanks/index.html")
+        self.assertIn('<p class="first">Your request is in. One of us reads it and writes back to you by email within 24 hours.</p>', thanks)
+        self.assertIn("Until then, the coverage pages show what each room of an event looks like in our photographs.", thanks)
+        self.assertIn('<a class="btn" href="/coverage/">The coverage', thanks)
+        self.assertNotIn("min-height:70vh", thanks)
+        lost = self.page(out, "404.html")
+        self.assertIn('<p class="first">There is no page at this address. The pages are in the menu, and the coverage pages are a tap away.</p>', lost)
+        for href in ("/", "/coverage/", "/contact/"):
+            self.assertIn(f'<a class="btn" href="{href}">', lost, href)
+        self.assertNotIn("min-height:70vh", lost)
+        self.assertIn(".page{padding-top:clamp(130px,16vh,170px);padding-bottom:clamp(60px,8vw,110px)}", theme.CSS)
+        self.assertIn(".page .first{font:400 clamp(19px,1.6vw,24px)/1.45 var(--body);color:var(--w);max-width:760px;margin:26px 0 0}", theme.CSS,
+                      "the lead line is the same on every inner page: Contact, the coverage pages, Thanks and Not found")
+        self.assertNotIn(".cover .first,.contact .first{", theme.CSS)
+        book = self.page(out, "book/index.html")
+        self.assertIn('<div class="f full"><label class="mono" for="event_kind">Kind of event</label>', book, "the menu's first choice was cut short in a half-width field")
+        for rel in ("thanks/index.html", "404.html", "privacy/index.html"):
+            text = re.sub(r"<script.*?</script>|<[^>]+>", " ", self.page(out, rel), flags=re.S)
+            self.assertNotRegex(text, r"[—–]|\s-\s", rel)
+
+
 class NothingCropped(SizesCase):
     def test_a_wide_photo_is_wide_and_a_tall_one_tall_on_every_surface_but_the_hero(self):
         """Chris, 2026-10-14: "the horizontal images must not be cropped anywhere on any device or should at least open
