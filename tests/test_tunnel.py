@@ -373,7 +373,9 @@ class Setup(AccessCase):
 
 
 # ---------------------------------------------------------------------------------------------- the dashboard
-class DashboardBehindAccess(AccessCase):
+class BehindAccess(AccessCase):
+    """The real dashboard with a stand-in for the team's signing keys."""
+
     def setUp(self):
         super().setUp()
         os.environ["DASHBOARD_PASSWORD_HASH"] = auth.hash_password("correct horse")
@@ -396,6 +398,8 @@ class DashboardBehindAccess(AccessCase):
         headers.update(extra)
         return headers
 
+
+class DashboardBehindAccess(BehindAccess):
     def test_through_the_tunnel_without_access_nothing_answers_but_the_refusal(self):
         for path in ("/login", "/", "/healthz", "/queue/1/approve-by-token", "/media/card/1/x.jpg"):
             r = self.client.get(path, headers=self.outside(), follow_redirects=False)
@@ -565,3 +569,49 @@ class Scripts(AccessCase):
             for line in text.splitlines():
                 if "tailscale" in line and not line.lstrip().startswith(("print", "#", "echo")):
                     self.fail(f"{path.name} runs tailscale: {line.strip()}")
+
+
+class MediaThroughTheTunnel(BehindAccess):
+    """Chris, 2026-10-15: "does this have a place for the sample posts reels that get created". Every page and file the
+    dashboard serves goes through the tunnel, the design samples and their reels included; a phone plays and seeks a
+    reel with byte ranges; and nothing private stays in Cloudflare's cache, which by default keeps .jpg and .mp4 for
+    two hours when the origin says nothing (developers.cloudflare.com/cache/concepts/default-cache-behavior/)."""
+
+    def setUp(self):
+        super().setUp()
+        from convention_social.dashboard.app import make_token
+        folder = config.get_config().data_root / "renders" / "design-20261015-1200"
+        folder.mkdir(parents=True)
+        self.reel = bytes(range(256)) * 40                     # 10240 bytes standing in for rooms-reel.mp4
+        (folder / "rooms-reel.mp4").write_bytes(self.reel)
+        (folder / "fan-post.jpg").write_bytes(b"\xff\xd8" + b"x" * 500)
+        self.client.cookies.set(COOKIE, make_token("chris"))
+
+    def test_a_reel_plays_and_seeks_through_the_tunnel_and_stays_out_of_cloudflares_cache(self):
+        token = jwt(claims())
+        r = self.client.get("/library/design/design-20261015-1200/rooms-reel.mp4", headers={**self.outside(token), "Range": "bytes=1000-1999"})
+        self.assertEqual(r.status_code, 206, "a phone seeks a video with byte ranges")
+        self.assertEqual(r.headers["content-range"], f"bytes 1000-1999/{len(self.reel)}")
+        self.assertEqual(r.content, self.reel[1000:2000])
+        self.assertEqual(r.headers["content-type"], "video/mp4")
+        self.assertEqual(r.headers["cache-control"], "private, no-store")
+        r = self.client.get("/library/design/design-20261015-1200/rooms-reel.mp4", headers=self.outside(token))
+        self.assertEqual((r.status_code, r.content), (200, self.reel))
+        self.assertEqual(r.headers["cache-control"], "private, no-store")
+        self.assertEqual(r.headers.get("accept-ranges"), "bytes")
+
+    def test_every_answer_through_the_tunnel_is_private(self):
+        token = jwt(claims())
+        for path in ("/library/design/design-20261015-1200/fan-post.jpg", "/login", "/", "/healthz"):
+            r = self.client.get(path, headers=self.outside(token), follow_redirects=False)
+            self.assertEqual(r.headers.get("cache-control"), "private, no-store", path)
+
+    def test_without_access_the_samples_are_refused_too(self):
+        r = self.client.get("/library/design/design-20261015-1200/rooms-reel.mp4", headers=self.outside())
+        self.assertEqual(r.status_code, 403)
+        self.assertNotEqual(r.content[:4], self.reel[:4])
+
+    def test_the_tailscale_address_keeps_its_own_headers(self):
+        r = self.client.get("/library/design/design-20261015-1200/rooms-reel.mp4", headers={"Range": "bytes=0-99"})
+        self.assertEqual((r.status_code, r.content), (206, self.reel[:100]))
+        self.assertNotIn("private", r.headers.get("cache-control", ""))

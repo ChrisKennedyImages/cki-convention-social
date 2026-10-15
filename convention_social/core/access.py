@@ -34,6 +34,7 @@ from . import config
 
 HOST_KEY, TEAM_KEY, AUD_KEY, EMAIL_KEY = "TUNNEL_HOSTNAME", "ACCESS_TEAM_DOMAIN", "ACCESS_AUD", "ACCESS_EMAIL"
 JWT_HEADER = "cf-access-jwt-assertion"
+PRIVATE = "private, no-store"     # every answer through Cloudflare: never kept in its cache (nor the browser's)
 JWT_COOKIE = "CF_Authorization"
 CLOUDFLARE_MARKS = ("cf-ray", "cf-connecting-ip", JWT_HEADER)      # set by Cloudflare's edge on every proxied request
 TEAM_SUFFIX = ".cloudflareaccess.com"

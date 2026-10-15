@@ -1177,7 +1177,12 @@ Free; nothing opened on the Mini's network; one setup run on the Mini (docs/SETU
   Access only a browser gets in, so Approve on a ping opens the approve page (one more tap) and the ping carries no
   picture: the ntfy app's own request would meet Cloudflare's sign-in, and its Approve would look done when nothing
   was. Letting the ping's token paths bypass Access would make them public on the token alone: not done unless he
-  says so.
+  says so. Chris, 2026-10-15: "Keep the extra tap", and the address `dash.eventcaliber.com`.
+- Chris: "does this have a place for the sample posts reels that get created". Every page and file the dashboard
+  serves goes through the tunnel, the design samples and their reels included (a reel plays with its sound and seeks
+  with byte ranges). Every answer through Cloudflare says `Cache-Control: private, no-store`: Cloudflare keeps .jpg
+  and .mp4 for two hours unless told otherwise, and his photos never stay in its cache. Cloudflare's free plan takes
+  uploads up to 100 MB (a photo from the phone) and its terms may limit a free site that serves a lot of video.
 
 Pinned by `tests/test_tunnel.py`.
 

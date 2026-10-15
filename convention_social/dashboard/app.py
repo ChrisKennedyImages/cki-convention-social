@@ -483,8 +483,12 @@ def create_app() -> FastAPI:
             return await call_next(request)
         why = await run_in_threadpool(access.refusal, request.headers, request.cookies)     # may read Cloudflare's keys
         if why:
-            return HTMLResponse(access.refused_page(why), status_code=403, headers={"Cache-Control": "no-store"})
-        return await call_next(request)
+            return HTMLResponse(access.refused_page(why), status_code=403, headers={"Cache-Control": access.PRIVATE})
+        response = await call_next(request)
+        # Cloudflare keeps .jpg and .mp4 for two hours unless told otherwise (developers.cloudflare.com/cache/concepts/
+        # default-cache-behavior/): his photos, renders, samples and reels never stay in its cache
+        response.headers["Cache-Control"] = access.PRIVATE
+        return response
 
     # ------------------------------------------------------------------ login
     @app.get("/login", response_class=HTMLResponse)

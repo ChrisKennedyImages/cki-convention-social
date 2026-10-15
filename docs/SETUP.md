@@ -337,6 +337,15 @@ the ping no longer carries the post's picture (the ntfy app would fetch it
 without your sign-in). The one-tap Approve and the picture came with the
 Tailscale address; setting Keys, This dashboard back to it brings them back.
 
+Everything the dashboard shows works at the new address: the photos, the
+posts, the design samples and their reels (they play with their sound and
+seek, as on Tailscale). Nothing of it is kept in Cloudflare's cache: every
+answer through the tunnel says `private, no-store`. Two limits of Cloudflare's
+free plan: a photo sent from the phone must be under 100 MB, and Cloudflare's
+terms say a free site that serves a lot of video may be slowed or redirected.
+Previewing your own reels is far from that; if it ever happened, Cloudflare
+emails you and the Tailscale address still plays them.
+
 What the suite does: the tunnel starts only when Access answers for every
 path from outside, and stops if Cloudflare routes it to anything but
 `http://127.0.0.1:4610`. The dashboard refuses whatever came through
