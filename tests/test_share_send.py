@@ -132,6 +132,13 @@ class Pull(ShareCase):
         self.assertEqual({(r["folder_id"], r["clearance"], r["source"]) for r in rows}, {("phone", "cleared", "phone")})
         self.assertTrue(all(s["line"].startswith("from the share sheet, waiting its turn") for s in phone.recent(self.conn)))
 
+    def test_a_large_photo_from_the_share_sheet_is_kept_at_3000_pixels(self):
+        from convention_social import storage
+        site = FakeSite({ID1: (jpeg_bytes(size=(4000, 3000)), "")})
+        phone.pull(self.ctx(), self.api(site))
+        p = db.one(self.conn, "SELECT width, height FROM photos ORDER BY id DESC LIMIT 1")
+        self.assertEqual((p["width"], p["height"]), (storage.MAX_EDGE, 2250), "kept small, like every photo on the Mini (#74)")
+
     def test_a_send_kept_before_the_delete_went_is_not_kept_twice(self):
         site = self.site(ID1)
         with mock.patch.object(SiteAPI, "ack_sends", side_effect=ConnectionError("the network dropped")):
