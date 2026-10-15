@@ -94,7 +94,8 @@ def backdrop(w: int, h: int, glow: float = 1.0, floor: Optional[float] = None) -
 # --------------------------------------------------------------------------- scenes
 def fan(faces: Sequence[Image.Image], *, focus: float, lift: float, deal: Optional[Sequence[float]] = None,
         y0: float = 120, spread: float = 9.5, radius: float = 1050, scale: float = 0.78, reflect: float = 0.28,
-        lift_y: float = 230, center: Optional[float] = None) -> list:
+        lift_y: float = 230, center: Optional[float] = None, lift_scale: float = 0.14, lift_z: float = 260) -> list:
+    """The lifted card rises `lift_y`, comes `lift_z` toward the camera and grows by `lift_scale`."""
     n = len(faces)
     middle = (n - 1) / 2 if center is None else center
     cards = []
@@ -107,8 +108,8 @@ def fan(faces: Sequence[Image.Image], *, focus: float, lift: float, deal: Option
         r = math.radians(th)
         x = radius * math.sin(r)
         y = y0 + radius * (1 - math.cos(r))
-        c = stage.Card(f, x=x, y=y - lift_y * wgt, z=28 * abs(d) - 260 * wgt + 40, roll=th * (1 - wgt), pitch=16 * (1 - wgt),
-                       yaw=-th * 0.5 * (1 - wgt), scale=scale * (1 + 0.14 * wgt), light=0.55 + 0.45 * max(wgt, 1 - lift),
+        c = stage.Card(f, x=x, y=y - lift_y * wgt, z=28 * abs(d) - lift_z * wgt + 40, roll=th * (1 - wgt), pitch=16 * (1 - wgt),
+                       yaw=-th * 0.5 * (1 - wgt), scale=scale * (1 + lift_scale * wgt), light=0.55 + 0.45 * max(wgt, 1 - lift),
                        blur=1.1 * (1 - wgt) * lift, reflect=reflect, shadow=0.7)
         if deal is not None:
             t = ease_out(deal[i])
@@ -333,6 +334,22 @@ def carousel(shots: Sequence[Shot], copy: MotionCopy, *, out_dir: Path, official
 
 # --------------------------------------------------------------------------- reels
 RW, RH = 1080, 1920
+ROOMS_CY = RH * 0.6                                   # the stage's eye line on the frame
+ROOMS_CARD = (400, 540)                               # a card face in the reel
+# The hand in the reel. The lifted card comes well forward and grows until the photo takes most of the frame's
+# width (Chris, 2026-10-14: "photos need to be more prominent in the reel frame"); the room's title and line sit
+# above it in ROOMS_TYPE, the rest of the hand shows at its sides. fan_post keeps fan()'s smaller lift.
+ROOMS_HAND = dict(y0=60, scale=1.0, spread=10.5, radius=1250, lift_y=80, lift_scale=0.49, lift_z=460)
+ROOMS_TYPE = dict(counter=230, title=392, line=462)   # baselines of N° / the room / its line, above the lifted card
+
+
+def room_card_box(n: int, k: int) -> tuple[float, float, float, float]:
+    """Where room k's lifted card lands on the frame, (x0, y0, x1, y1) in pixels, from the same hand the reel
+    draws (tests/test_motion.py pins it against the frame and the type)."""
+    faces = [card_face(Shot(None, ""), *ROOMS_CARD, i, label=False) for i in range(n)]
+    card = fan(faces, focus=k, lift=1.0, center=k, **ROOMS_HAND)[k]
+    pts = [stage.project(p, RW / 2, ROOMS_CY) for p in stage.corners(card)]
+    return min(x for x, _ in pts), min(y for _, y in pts), max(x for x, _ in pts), max(y for _, y in pts)
 
 
 def _end_card(f: int, copy: MotionCopy, base: Image.Image) -> Image.Image:
@@ -356,21 +373,20 @@ def rooms_reel(shots: Sequence[Shot], copy: MotionCopy, *, out: Path, official: 
     the logo and the ask."""
     _check(shots, copy, official)
     n = len(shots)
-    faces = [card_face(sh, 400, 540, i) for i, sh in enumerate(shots)]
-    big = [card_face(sh, 400, 540, i, label=False) for i, sh in enumerate(shots)]
+    faces = [card_face(sh, *ROOMS_CARD, i) for i, sh in enumerate(shots)]
+    big = [card_face(sh, *ROOMS_CARD, i, label=False) for i, sh in enumerate(shots)]
     grain = Grain()
     DEAL, ROOM, MORPH, SPIN, END = ROOMS_TIMING
     total = total_frames("rooms", n)
     floor_y = 520
-    HAND = dict(y0=60, scale=1.0, spread=10.5, radius=1250, lift_y=200)
 
     def frame(i: int) -> Image.Image:
         img = backdrop(RW, RH, floor=RH * 0.8)
-        cy = RH * 0.6
+        cy = ROOMS_CY
         if i < DEAL:
             deal = [clamp((i - 3 * k) / 14) for k in range(n)]
             turn = lerp((n - 1) / 2, 0, ease_io((i - 24) / 16))       # the hand turns to the first room as it lands
-            stage.draw(img, fan(faces, focus=0, lift=0.0, deal=deal, center=turn, **HAND), cy=cy, floor=floor_y, fast=True)
+            stage.draw(img, fan(faces, focus=0, lift=0.0, deal=deal, center=turn, **ROOMS_HAND), cy=cy, floor=floor_y, fast=True)
             for j, t in enumerate(copy.hook):
                 tf = fit(ImageDraw.Draw(img), list(copy.hook), DISPLAY, 920, 110, 60)
                 _slam(img, t, tf, 76, 360 + j * int(tf.size * 1.05), (i - 16 - 5 * j) / 6)
@@ -379,20 +395,20 @@ def rooms_reel(shots: Sequence[Shot], copy: MotionCopy, *, out: Path, official: 
             prev = max(0, k - 1)
             fpos = lerp(prev, k, ease_io(f / 10))
             lift = ease_out(f / 8) if k == 0 else 1.0
-            stage.draw(img, fan(faces, focus=fpos, lift=lift, center=fpos, **HAND), cy=cy, floor=floor_y, fast=True)
+            stage.draw(img, fan(faces, focus=fpos, lift=lift, center=fpos, **ROOMS_HAND), cy=cy, floor=floor_y, fast=True)
             sh = shots[k]
             d = ImageDraw.Draw(img)
-            mono(d, (76, 300), f"N°{k + 1:02d} / {n:02d}", 22, C, 0.18)
+            mono(d, (76, ROOMS_TYPE["counter"]), f"N°{k + 1:02d} / {n:02d}", 22, C, 0.18)
             tf = fit(d, [sh.room], DISPLAY, 920, 130, 60)
-            _slam(img, sh.room, tf, 76, 460, (f - 2) / 5)
+            _slam(img, sh.room, tf, 76, ROOMS_TYPE["title"], (f - 2) / 5)
             if sh.line and f > 8:
                 lf = face(BODY, 38)
                 for j, t in enumerate(wrap(d, sh.line, lf, 900)[:2]):
-                    _fade(img, (80, 530 + j * 50), t, lf, G5, (f - 8) / 6)
+                    _fade(img, (80, ROOMS_TYPE["line"] + j * 50), t, lf, G5, (f - 8) / 6)
         elif i < DEAL + ROOM * n + MORPH + SPIN:
             f = i - DEAL - ROOM * n
             m = ease_io(f / MORPH)
-            a = fan(big, focus=n - 1, lift=1 - m, center=n - 1, **HAND)
+            a = fan(big, focus=n - 1, lift=1 - m, center=n - 1, **ROOMS_HAND)
             spin = 20 + 220 * ease_io(max(0, f - MORPH) / SPIN)
             b = ring(big, angle=spin, radius=560, zc=420, scale=0.92, tilt=13, y0=-60)
             cards = [replace(cb, x=lerp(ca.x, cb.x, m), y=lerp(ca.y, cb.y, m), z=lerp(ca.z, cb.z, m), yaw=lerp(ca.yaw, cb.yaw, m),
