@@ -5,9 +5,11 @@ from __future__ import annotations
 import io
 import math
 import os
+import re
 import struct
 import subprocess
 import wave
+from pathlib import Path
 from unittest import mock
 
 from fastapi.testclient import TestClient
@@ -21,6 +23,15 @@ from tests._base import IsolatedCase
 
 RECORD = dict(title="Night Shift", artist="Sample Artist", source="https://example.com/track/123",
               terms="free for business posts on Instagram and Facebook")
+
+
+def fake_stills(kind, shots, copy, *, out_dir, **kw) -> list[Path]:
+    """Stands in for motion.reel_stills: three small frames, the cover first, without drawing the reel."""
+    out_dir.mkdir(parents=True, exist_ok=True)
+    paths = [out_dir / f"{kind}-{i:03d}.jpg" for i in (60, 120, 300)]
+    for p in paths:
+        Image.new("RGB", (90, 160), (20, 20, 24)).save(p, "JPEG")
+    return paths
 
 
 def tone(seconds=2.0, rate=22050) -> bytes:
@@ -60,6 +71,20 @@ class Tracks(IsolatedCase):
         (music.folder() / music.current(self.conn).name).unlink()
         self.assertIsNone(music.current(self.conn))
 
+    def test_the_credit_names_the_artist_when_known_else_the_source(self):
+        """Chris, 2026-10-14: "i dont ho the artist is. its a meat musics free track": the line under a reel never
+        leans on an artist he had to make up."""
+        file = db.one(self.conn, "SELECT file FROM music_tracks WHERE id=?", (music.add(self.conn, "one.wav", tone(), **RECORD),))["file"]
+        self.assertEqual(music.credit(self.conn, file), "Night Shift, Sample Artist")
+        for placeholder in ("-", "--", "?", " . ", "unknown", "Unknown", "NONE", "n/a", "NA"):
+            self.conn.execute("UPDATE music_tracks SET artist=? WHERE file=?", (placeholder, file))
+            self.assertEqual(music.credit(self.conn, file), "Night Shift (https://example.com/track/123)", placeholder)
+            self.assertFalse(music.artist_known(placeholder), placeholder)
+        self.assertTrue(music.artist_known("DJ 7"))
+        self.assertEqual(music.credit(self.conn, "gone-20261014.mp3"), "gone-20261014", "a record that is gone: the file's own name")
+        self.assertEqual(music.credit(self.conn, None), "")
+        self.assertEqual(music.credit(self.conn, ""), "")
+
 
 class Encode(IsolatedCase):
     def test_the_track_rides_the_video_faded_in_and_out(self):
@@ -90,11 +115,62 @@ class Encode(IsolatedCase):
                 return out
             return job
         with mock.patch.object(design_samples, "pick", return_value=[{"drive_id": f"d{i}", "shot_type": "stage_panel"} for i in range(3)]), \
-             mock.patch.object(motion, "rooms_reel", fake("rooms")):
+             mock.patch.object(motion, "rooms_reel", fake("rooms")), mock.patch.object(motion, "reel_stills", fake_stills):
             buf = io.BytesIO(); shots[0].photo.save(buf, "JPEG")
             design_samples.make(conn, lambda fid: buf.getvalue(), out_root=self.root / "renders", log=lambda m: None)
         self.assertEqual(seen, {"rooms": music.current(conn)}, "the face match reel is retired; only the rooms reel is made")
         conn.close()
+
+
+class SamplePage(IsolatedCase):
+    """The design samples page (Chris, 2026-10-14, of a reel on it: "where is the music on the insta posts!!!!"): the
+    reels played by themselves, which a browser allows only muted. Now a reel plays on a tap, with its sound, and the
+    line under it names the track it was made with."""
+    def setUp(self):
+        super().setUp()
+        self.conn = db.connect()
+
+    def tearDown(self):
+        self.conn.close()
+        super().tearDown()
+
+    def make(self) -> tuple[Path, str]:
+        def fake_reel(shots, copy, *, out, audio=None):
+            out.write_bytes(b"mp4")
+            return out
+        buf = io.BytesIO()
+        Image.new("RGB", (800, 600), (40, 60, 90)).save(buf, "JPEG")
+        with mock.patch.object(design_samples, "pick", return_value=[{"drive_id": f"d{i}", "shot_type": "stage_panel"} for i in range(3)]), \
+             mock.patch.object(motion, "rooms_reel", fake_reel), mock.patch.object(motion, "reel_stills", fake_stills):
+            out = design_samples.make(self.conn, lambda fid: buf.getvalue(), out_root=self.root / "renders", log=lambda m: None)
+        return out, (out / "index.html").read_text()
+
+    def test_a_sample_reel_plays_on_a_tap_with_its_sound_and_names_the_track(self):
+        tid = music.add(self.conn, "one.wav", tone(), **RECORD)
+        out, page = self.make()
+        tags = re.findall(r"<video[^>]*>", page)
+        self.assertEqual(len(tags), 1, page)
+        for word in ("muted", "autoplay"):
+            self.assertNotIn(word, tags[0])
+        for word in ("controls", "playsinline", "loop", f'poster="/library/design/{out.name}/rooms-reel-cover.jpg"'):
+            self.assertIn(word, tags[0])
+        self.assertTrue((out / "rooms-reel-cover.jpg").is_file(), "the reel's own cover frame is its poster")
+        self.assertFalse((out / "stills").exists())
+        self.assertIn("Tap a reel to play it with sound", page)
+        self.assertLess(page.index("Tap a reel"), page.index("<video"))
+        self.assertIn("Music: Night Shift, Sample Artist", page)
+        self.assertNotIn("No music", page)
+        music.add(self.conn, "free.wav", tone(), **dict(RECORD, title="Free Track", artist="-", source="Meta Sound Collection"))
+        _, page = self.make()
+        self.assertIn("Music: Free Track (Meta Sound Collection)", page, "an artist Chris does not know: the source instead")
+        self.assertNotIn("Free Track, -", page)
+        music.set_active(self.conn, tid, False)
+        music.set_active(self.conn, tid + 1, False)
+        _, page = self.make()
+        self.assertNotIn("muted", re.findall(r"<video[^>]*>", page)[0])
+        self.assertIn("No music", page)
+        self.assertNotIn("Night Shift", page)
+        self.assertNotIn("Free Track", page)
 
 
 class Page(IsolatedCase):
