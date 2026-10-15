@@ -16,14 +16,22 @@
 //   POST /api/unsubscribes/ack  the Mini confirms it has them; they are then deleted here
 //   POST /api/heartbeat         the Mini checks in (Bearer UPLOAD_TOKEN); private/heartbeat.json in R2 (7.4, 2026-10-13)
 //   POST /api/heartbeat/test    sends the outside watch's alert at once, marked as a test (Bearer UPLOAD_TOKEN)
+//   POST /api/send              Post to Event Caliber (2026-10-15): the iPhone's share sheet sends one photo (form field
+//                               "photo": JPEG, PNG or HEIC by its bytes, at most 40 MB) and an optional line ("note"),
+//                               Bearer SEND_TOKEN. Kept under private/sends/ (never served) for the Mini; a short answer
+//                               the Shortcut shows. Twenty an hour; never more than thirty waiting.
+//   GET  /api/sends             the Mini lists the sends waiting (Bearer UPLOAD_TOKEN; the phone's token cannot read)
+//   GET  /api/sends/<id>        the Mini fetches one (Bearer UPLOAD_TOKEN)
+//   POST /api/sends/ack         the Mini kept them; they are deleted here (Bearer UPLOAD_TOKEN)
 //   scheduled (cron, every 30 min): the outside watch. A heartbeat older than QUIET_MS and no alert yet: one urgent
 //                               push "the Mini has not checked in since"; a fresh heartbeat after an alert: "back";
 //                               no heartbeat ever: nothing. The only watch that does not live on the Mini.
 //   Opt-outs carry only the random token from the email, never the address; the Mini maps it back.
 //
 // Secrets (wrangler secret put): UPLOAD_TOKEN, and optionally NTFY_TOPIC, DASHBOARD_URL (the dashboard's Tailscale
-// address, so a push opens the requests page) and TURNSTILE_SECRET. The suite puts NTFY_TOPIC and DASHBOARD_URL
-// from .env after every deploy (site/deploy.py).
+// address, so a push opens the requests page), SEND_TOKEN (the share sheet's; without it /api/send refuses every
+// send) and TURNSTILE_SECRET. The suite puts NTFY_TOPIC, DASHBOARD_URL and SEND_TOKEN from .env after every deploy
+// (site/deploy.py).
 const ALLOWED = /^(image\/(jpeg|png|gif)|video\/mp4)$/;
 const PUBLIC_PREFIX = "convention-social/";
 const PRIVATE_PREFIX = "private/";
@@ -37,6 +45,13 @@ const OPT_OUTS_PER_HOUR = 20;     // per address; mail providers send one-click 
 const HEARTBEAT_KEY = `${PRIVATE_PREFIX}heartbeat.json`;
 const ALERTED_KEY = `${PRIVATE_PREFIX}heartbeat-alerted.json`;
 const QUIET_MS = 2 * 3600e3;      // the Mini checks in hourly; two hours of silence is the alarm
+const SENDS_PREFIX = `${PRIVATE_PREFIX}sends/`;
+const SEND_LOG_KEY = `${PRIVATE_PREFIX}send-log.json`;
+const SEND_MAX_BYTES = 40 * 1024 * 1024;     // the Mini's own limit (agents/phone.py MAX_BYTES)
+const SEND_NOTE_MAX = 140;                   // agents/phone.py NOTE_MAX
+const SENDS_PER_HOUR = 20;
+const SENDS_WAITING_MAX = 30;                // the Mini is off or not pulling: the bucket never fills
+const SEND_ID = /^\d{13}-[0-9a-f]{16}$/;
 
 const authed = (request, env) =>
   Boolean(env.UPLOAD_TOKEN) && (request.headers.get("authorization") || "") === `Bearer ${env.UPLOAD_TOKEN}`;
@@ -240,6 +255,88 @@ async function watch(env) {
   return { state: "fine" };
 }
 
+// ------------------------------------------------------------------ Post to Event Caliber (2026-10-15)
+
+async function sameSecret(given, expected) {
+  // compared as SHA-256 digests, byte by byte to the end: no early exit tells a guesser how much was right
+  const enc = new TextEncoder();
+  const [a, b] = await Promise.all([crypto.subtle.digest("SHA-256", enc.encode(given)), crypto.subtle.digest("SHA-256", enc.encode(expected))]);
+  const x = new Uint8Array(a), y = new Uint8Array(b);
+  let diff = 0;
+  for (let i = 0; i < x.length; i++) diff |= x[i] ^ y[i];
+  return diff === 0;
+}
+
+function photoType(head) {
+  // by the file's own bytes, never the name or the type the phone gave it
+  if (head[0] === 0xff && head[1] === 0xd8 && head[2] === 0xff) return "image/jpeg";
+  if ([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a].every((b, i) => head[i] === b)) return "image/png";
+  const box = String.fromCharCode(...head.slice(4, 12));
+  if (/^ftyp(heic|heix|heim|heis|hevc|hevx|mif1|msf1)$/.test(box)) return "image/heic";
+  return "";
+}
+
+const said = (status, text) => new Response(text, { status, headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" } });
+
+async function sendPhoto(request, env) {
+  if (request.method !== "POST") return said(405, "Not received: send the photo from the share sheet.");
+  if (!env.SEND_TOKEN) return said(503, "Not received: sending from the phone is not set up on the site yet. Make a send token on the Keys page; the site takes it within about twenty minutes.");
+  const auth = request.headers.get("authorization") || "";
+  if (!auth.startsWith("Bearer ") || !(await sameSecret(auth.slice(7), env.SEND_TOKEN))) {
+    return said(403, "Not received: the site does not know this token. A new one takes about twenty minutes to reach the site; if yours is older, make a new one on the Keys page and put it in the Shortcut.");
+  }
+  if (Number(request.headers.get("content-length") || 0) > SEND_MAX_BYTES + 1024 * 1024) {
+    return said(413, "Not received: the photo is over 40 MB.");
+  }
+  let form;
+  try { form = await request.formData(); } catch { return said(400, "Not received: no photo came with it. In the Shortcut, the request body is a Form."); }
+  const file = form.get("photo");
+  if (!file || typeof file === "string") return said(400, "Not received: no photo came with it. In the Shortcut, the photo goes in a File field called photo.");
+  if (file.size > SEND_MAX_BYTES) return said(413, "Not received: the photo is over 40 MB.");
+  const type = photoType(new Uint8Array(await file.slice(0, 16).arrayBuffer()));
+  if (!type) return said(415, "Not received: not a JPEG, PNG or HEIC photo.");
+  const listed = await env.MEDIA.list({ prefix: SENDS_PREFIX, limit: SENDS_WAITING_MAX + 1 });
+  if (listed.objects.length >= SENDS_WAITING_MAX) {
+    return said(503, `Not received: ${SENDS_WAITING_MAX} photos are already waiting and the Mini has not picked them up. Check the Mini.`);
+  }
+  const now = Date.now();
+  const log = ((await readJson(env, SEND_LOG_KEY)) || []).filter((t) => typeof t === "number" && now - t < 3600e3);
+  if (log.length >= SENDS_PER_HOUR) return said(429, `Not received: ${SENDS_PER_HOUR} photos an hour is the limit. Try again in a while.`);
+  const line = String(form.get("note") || "").split(/\s+/).filter(Boolean).join(" ").slice(0, SEND_NOTE_MAX);
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes.subarray(0, 8));
+  const id = `${now}-${[...bytes.subarray(0, 8)].map((b) => b.toString(16).padStart(2, "0")).join("")}`;
+  await env.MEDIA.put(`${SENDS_PREFIX}${id}`, file, { httpMetadata: { contentType: type },
+    customMetadata: { note: line, type, received_at: new Date(now).toISOString() } });
+  await env.MEDIA.put(SEND_LOG_KEY, JSON.stringify([...log, now]), { httpMetadata: { contentType: "application/json" } });
+  return said(200, "Received. In a few minutes your phone gets a ping saying whether it passed and when it goes out.");
+}
+
+async function sends(request, env, url) {
+  if (!authed(request, env)) return new Response("forbidden", { status: 403 });
+  if (request.method === "GET" && url.pathname === "/api/sends") {
+    const listed = await env.MEDIA.list({ prefix: SENDS_PREFIX, limit: 100, include: ["customMetadata"] });
+    return Response.json({ sends: listed.objects.map((o) => ({ id: o.key.slice(SENDS_PREFIX.length), size: o.size,
+      note: o.customMetadata?.note || "", type: o.customMetadata?.type || "", received_at: o.customMetadata?.received_at || "" })) });
+  }
+  if (request.method === "POST" && url.pathname === "/api/sends/ack") {
+    const ids = ((await request.json()).ids || []).filter((x) => typeof x === "string" && SEND_ID.test(x)).slice(0, 100);
+    for (const id of ids) await env.MEDIA.delete(`${SENDS_PREFIX}${id}`);
+    return Response.json({ ok: true, deleted: ids.length });
+  }
+  if (request.method === "GET") {
+    let id;
+    try { id = decodeURIComponent(url.pathname.slice("/api/sends/".length)); } catch { id = ""; }
+    if (!SEND_ID.test(id)) return new Response("bad id", { status: 400 });
+    const obj = await env.MEDIA.get(`${SENDS_PREFIX}${id}`);
+    if (!obj) return new Response("not found", { status: 404 });
+    const headers = new Headers({ "cache-control": "no-store" });
+    obj.writeHttpMetadata(headers);
+    return new Response(obj.body, { headers });
+  }
+  return new Response("method not allowed", { status: 405 });
+}
+
 async function media(request, env, url) {
   let key;
   try { key = decodeURIComponent(url.pathname.slice(3)); } catch { return new Response("bad key", { status: 400 }); }
@@ -289,6 +386,8 @@ export default {
     }
     if (url.pathname === "/api/unsubscribes" || url.pathname === "/api/unsubscribes/ack") return unsubscribes(request, env, url);
     if (url.pathname === "/api/heartbeat" || url.pathname === "/api/heartbeat/test") return heartbeat(request, env, url);
+    if (url.pathname === "/api/send") return sendPhoto(request, env);
+    if (url.pathname === "/api/sends" || url.pathname.startsWith("/api/sends/")) return sends(request, env, url);
     if (url.pathname.startsWith("/api/")) return new Response("not found", { status: 404 });
     return env.ASSETS ? env.ASSETS.fetch(request) : new Response("not found", { status: 404 });
   },

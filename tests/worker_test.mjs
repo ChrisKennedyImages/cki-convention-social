@@ -38,14 +38,33 @@ class FakeD1 {
 const pushes = [];
 globalThis.fetch = async (url, init) => { pushes.push({ url: String(url), body: init?.body, headers: init?.headers || {} }); return new Response("ok"); };
 class FakeR2 {
-  constructor() { this.store = new Map(); }
+  // strings stay strings (the JSON the Worker keeps); anything else is kept as its bytes, with its metadata
+  constructor() { this.store = new Map(); this.meta = new Map(); }
   async get(key) {
     if (!this.store.has(key)) return null;
-    const text = this.store.get(key);
-    return { text: async () => text, json: async () => JSON.parse(text), body: text, httpEtag: "x", writeHttpMetadata() {} };
+    const value = this.store.get(key);
+    const { httpMetadata = {}, customMetadata = {} } = this.meta.get(key) || {};
+    const text = typeof value === "string" ? value : new TextDecoder().decode(value);
+    return { text: async () => text, json: async () => JSON.parse(text), body: value, httpEtag: "x", httpMetadata, customMetadata,
+             size: typeof value === "string" ? value.length : value.byteLength,
+             writeHttpMetadata(h) { if (httpMetadata.contentType) h.set("content-type", httpMetadata.contentType); } };
   }
-  async put(key, body) { this.store.set(key, typeof body === "string" ? body : await new Response(body).text()); }
-  async delete(key) { this.store.delete(key); }
+  async put(key, body, options = {}) {
+    this.store.set(key, typeof body === "string" ? body : new Uint8Array(await new Response(body).arrayBuffer()));
+    this.meta.set(key, { httpMetadata: options.httpMetadata || {}, customMetadata: options.customMetadata || {} });
+  }
+  async delete(key) { this.store.delete(key); this.meta.delete(key); }
+  async list({ prefix = "", limit = 1000, include = [] } = {}) {
+    const keys = [...this.store.keys()].filter((k) => k.startsWith(prefix)).sort();
+    const objects = keys.slice(0, limit).map((key) => {
+      const v = this.store.get(key);
+      const m = this.meta.get(key) || {};
+      return { key, size: typeof v === "string" ? v.length : v.byteLength, uploaded: new Date(),
+               ...(include.includes("customMetadata") ? { customMetadata: m.customMetadata || {} } : {}),
+               ...(include.includes("httpMetadata") ? { httpMetadata: m.httpMetadata || {} } : {}) };
+    });
+    return { objects, truncated: keys.length > limit };
+  }
 }
 const env = { DB: new FakeD1(), UPLOAD_TOKEN: "tok", NTFY_TOPIC: "topic-x", DASHBOARD_URL: "https://mac-mini.example:8443",
               MEDIA: new FakeR2(), ASSETS: { fetch: async () => new Response("site") } };
@@ -198,4 +217,105 @@ r = await worker.fetch(new Request("https://www.eventcaliber.com/api/availabilit
 ok(r.status === 301 && r.headers.get("location") === "https://eventcaliber.com/api/availability", "the API too, before any route");
 r = await worker.fetch(new Request(`${base}/about/`), env);
 ok(r.status === 200 && (await r.text()) === "site", "the apex serves the site");
+
+// Post to Event Caliber (2026-10-15): the iPhone's share sheet sends one photo and a line with SEND_TOKEN in a header;
+// the photo waits under private/sends/ (never served) until the Mini pulls it with its own token and deletes it
+const JPEG = Uint8Array.from([0xff, 0xd8, 0xff, 0xe0, 0, 16, 74, 70, 73, 70, 0, 1, 1, 1, 2, 3, 4, 5, 6, 7]);
+const PNG = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 73, 72, 68, 82]);
+const HEIC = Uint8Array.from([0, 0, 0, 24, 0x66, 0x74, 0x79, 0x70, 0x68, 0x65, 0x69, 0x63, 0, 0, 0, 0, 0x6d, 0x69, 0x66, 0x31]);
+const sendToken = "s".repeat(43);
+env.SEND_TOKEN = sendToken;
+const sendForm = (bytes, { note, type = "image/jpeg", field = "photo", name = "IMG_0001.jpg" } = {}) => {
+  const f = new FormData();
+  if (bytes) f.append(field, new File([bytes], name, { type }));
+  if (note !== undefined) f.append("note", note);
+  return f;
+};
+const send = (body, headers = { authorization: `Bearer ${sendToken}` }, method = "POST") =>
+  worker.fetch(new Request(`${base}/api/send`, { method, body, headers: { "cf-connecting-ip": "7.7.7.7", ...headers } }), env);
+const waiting = () => [...env.MEDIA.store.keys()].filter((k) => k.startsWith("private/sends/"));
+r = await send(sendForm(JPEG), {});
+ok(r.status === 403 && (await r.text()).startsWith("Not received") && waiting().length === 0, "no token: refused, nothing stored");
+r = await send(sendForm(JPEG), { authorization: "Bearer wrong" });
+ok(r.status === 403 && waiting().length === 0, "a wrong token: refused");
+r = await send(sendForm(JPEG), { authorization: "Bearer tok" });
+ok(r.status === 403 && waiting().length === 0, "the Mini's upload token is not the phone's: refused");
+r = await send(sendForm(JPEG), { "x-send-token": sendToken });
+ok(r.status === 403, "the token goes in Authorization, nowhere else");
+r = await worker.fetch(new Request(`${base}/api/send?token=${sendToken}`, { method: "POST", body: sendForm(JPEG) }), env);
+ok(r.status === 403 && waiting().length === 0, "never in the address, where a log keeps it");
+delete env.SEND_TOKEN;
+r = await send(sendForm(JPEG));
+ok(r.status === 503 && (await r.text()).includes("not set up") && waiting().length === 0, "no SEND_TOKEN on the Worker: refused (fail closed)");
+env.SEND_TOKEN = sendToken;
+r = await send(null, { authorization: `Bearer ${sendToken}` }, "GET");
+ok(r.status === 405, "a GET sends nothing");
+r = await send(sendForm(Uint8Array.from([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x34, 0, 0, 0, 0]), { type: "image/jpeg" }));
+ok(r.status === 415 && (await r.text()).includes("JPEG, PNG or HEIC") && waiting().length === 0, "a PDF called a JPEG: refused by its bytes");
+r = await send(sendForm(new TextEncoder().encode("GIF89a and more bytes"), { type: "image/gif", name: "a.gif" }));
+ok(r.status === 415 && waiting().length === 0, "a GIF: refused (wrong type)");
+r = await send(sendForm(null, { note: "no photo" }));
+ok(r.status === 400 && (await r.text()).includes("no photo") && waiting().length === 0, "no photo in it: refused");
+const big = new Uint8Array(40 * 1024 * 1024 + 1);
+big.set(JPEG);
+r = await send(sendForm(big));
+ok(r.status === 413 && (await r.text()).includes("40 MB") && waiting().length === 0, "over 40 MB: refused");
+let bodyRead = false;                                  // a request stand-in: Node's Request may drop a content-length set by hand
+r = await worker.fetch({ url: `${base}/api/send`, method: "POST", formData: async () => { bodyRead = true; return new FormData(); },
+  headers: new Headers({ authorization: `Bearer ${sendToken}`, "content-length": String(60 * 1024 * 1024) }) }, env);
+ok(r.status === 413 && !bodyRead && waiting().length === 0, "a body that says it is over the limit is refused before it is read");
+r = await send(sendForm(JPEG, { note: "  the main hall,\n  before the doors  " }));
+let said = await r.text();
+ok(r.status === 200 && said.startsWith("Received.") && said.length < 120, "a JPEG is received, in a short line the Shortcut shows");
+ok(waiting().length === 1 && /^private\/sends\/\d{13}-[0-9a-f]{16}$/.test(waiting()[0]), "stored under the private prefix, a random name");
+const stored = env.MEDIA.store.get(waiting()[0]);
+ok(stored instanceof Uint8Array && stored.length === JPEG.length && stored.every((b, i) => b === JPEG[i]), "the bytes as sent");
+const meta = env.MEDIA.meta.get(waiting()[0]);
+ok(meta.customMetadata.note === "the main hall, before the doors" && meta.customMetadata.type === "image/jpeg", "his line, on one line, and the type by its bytes");
+r = await worker.fetch(new Request(`${base}/m/${waiting()[0]}`), env);
+ok(r.status === 404, "/m/ never serves a send");
+r = await worker.fetch(new Request(`${base}/m/${encodeURIComponent(waiting()[0])}`), env);
+ok(r.status === 404, "nor its encoded name");
+r = await send(sendForm(PNG, { type: "image/png", name: "a.png" }));
+ok(r.status === 200 && waiting().length === 2, "a PNG is received");
+r = await send(sendForm(HEIC, { type: "application/octet-stream", name: "IMG_0002.HEIC", note: "x".repeat(400) }));
+ok(r.status === 200 && waiting().length === 3, "a HEIC is received, whatever type the phone called it");
+ok(env.MEDIA.meta.get(waiting()[2]).customMetadata.type === "image/heic", "known as HEIC by its bytes");
+ok(env.MEDIA.meta.get(waiting()[2]).customMetadata.note.length === 140, "a long line is cut to 140");
+// the Mini pulls with its own token: the list, each photo, then the delete
+r = await worker.fetch(new Request(`${base}/api/sends`), env);
+ok(r.status === 403, "listing the sends needs the Mini's token");
+r = await worker.fetch(new Request(`${base}/api/sends`, { headers: { authorization: `Bearer ${sendToken}` } }), env);
+ok(r.status === 403, "the phone's token can send, never read");
+r = await worker.fetch(new Request(`${base}/api/sends`, { headers: { authorization: "Bearer tok" } }), env);
+const sends = (await r.json()).sends;
+ok(sends.length === 3 && sends[0].note === "the main hall, before the doors" && sends[0].type === "image/jpeg" && sends[0].size === JPEG.length,
+   "the Mini lists each send with its line, type and size");
+ok(sends.every((s) => /^\d{13}-[0-9a-f]{16}$/.test(s.id) && s.received_at), "each by its name, with when it came");
+r = await worker.fetch(new Request(`${base}/api/sends/${sends[1].id}`), env);
+ok(r.status === 403, "a photo needs the Mini's token too");
+r = await worker.fetch(new Request(`${base}/api/sends/${sends[1].id}`, { headers: { authorization: "Bearer tok" } }), env);
+const got = new Uint8Array(await r.arrayBuffer());
+ok(r.status === 200 && r.headers.get("content-type") === "image/png" && got.length === PNG.length && got[1] === 0x50, "the Mini fetches the photo itself");
+r = await worker.fetch(new Request(`${base}/api/sends/..%2Fheartbeat.json`, { headers: { authorization: "Bearer tok" } }), env);
+ok(r.status === 400, "only a send's own name");
+r = await worker.fetch(new Request(`${base}/api/sends/ack`, { method: "POST", headers: { authorization: `Bearer ${sendToken}` },
+  body: JSON.stringify({ ids: [sends[0].id] }) }), env);
+ok(r.status === 403 && waiting().length === 3, "the phone's token cannot delete");
+r = await worker.fetch(new Request(`${base}/api/sends/ack`, { method: "POST", headers: { authorization: "Bearer tok" },
+  body: JSON.stringify({ ids: [sends[0].id, sends[1].id, "../heartbeat.json"] }) }), env);
+ok((await r.json()).deleted === 2 && waiting().length === 1 && env.MEDIA.store.has("private/heartbeat.json"), "kept on the Mini: deleted here, nothing else");
+// rate limited, and a Mini that is not pulling cannot fill the bucket
+for (let i = 0; i < 30; i++) await send(sendForm(JPEG));
+r = await send(sendForm(JPEG));
+ok(r.status === 429 && (await r.text()).includes("an hour"), "twenty sends an hour, then refused with the reason");
+ok(waiting().length === 18, "nothing over the limit was stored (one left from before, three sent earlier this hour)");
+Date.now = () => realNow() + 2 * 3600e3;
+r = await send(sendForm(JPEG));
+ok(r.status === 200, "an hour later it takes photos again");
+for (let i = 0; i < 40; i++) await send(sendForm(JPEG));
+ok(waiting().length === 30, "never more than thirty waiting for the Mini");
+r = await send(sendForm(JPEG));
+ok(r.status === 503 && (await r.text()).includes("waiting"), "thirty waiting: refused, and it says the Mini has not picked them up");
+Date.now = realNow;
 console.log(`worker: ${checks} checks passed`);

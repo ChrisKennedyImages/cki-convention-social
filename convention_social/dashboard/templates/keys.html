@@ -2,6 +2,11 @@
 {% block body %}
 <h1>Keys</h1>
 {% if msg %}<div class="msg">{{ msg }}</div>{% endif %}
+{% if new_send_token %}<div class="card"><strong>Your new send token</strong>
+  <div class="muted">In the Shortcut, the Authorization header is the word Bearer, a space, then this. The site takes it within about twenty minutes; until then the old one still works.</div>
+  <input id="send-token" type="text" readonly value="{{ new_send_token }}" onclick="this.select()" autocomplete="off" style="font-family:ui-monospace,monospace">
+  <button type="button" style="margin-top:10px" onclick="navigator.clipboard.writeText(document.getElementById('send-token').value).then(() => { this.textContent = 'Copied'; })">Copy</button>
+</div>{% endif %}
 <div class="card muted">Paste a key and save. Blank fields keep what is there; tick "clear it" under a setting to go back to its default. Saved secrets are never shown again, only whether they are set. Everything lands in the <code>.env</code> file on this machine.</div>
 <form method="post" action="/keys">
 {% for group in groups %}
@@ -18,7 +23,12 @@
 {% endfor %}
 <button class="ok" type="submit">Save keys</button>
 </form>
-<form method="post" action="/keys/test-alert" class="card" style="margin-top:14px">
+<form method="post" action="/keys/send-token" class="card" style="margin-top:14px">
+  <strong>Post from your iPhone</strong>
+  <div class="muted">Makes a new send token for the Post to Event Caliber Shortcut and shows it once to copy. A new one replaces the old.</div>
+  <button type="submit" style="margin-top:10px">Make a send token</button>
+</form>
+<form method="post" action="/keys/test-alert" class="card">
   <strong>Phone alerts</strong>
   <div class="muted">Sends one ping to the ntfy topic saved above, so you know the pings reach your phone.</div>
   <button type="submit" style="margin-top:10px">Send a test ping</button>

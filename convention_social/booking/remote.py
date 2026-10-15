@@ -56,3 +56,16 @@ class SiteAPI:
     def test_watch(self) -> dict:
         """Sends the outside watch's alert at once, marked as a test. {ok, sent}."""
         return self._call("POST", "/api/heartbeat/test", {})
+
+    # Post to Event Caliber (2026-10-15): the photos the iPhone's share sheet sent, waiting at the site (agents/phone.py)
+    def sends(self) -> list[dict]:
+        """[{id, note, type, size, received_at}], oldest first."""
+        return list(self._call("GET", "/api/sends").get("sends") or [])
+
+    def send_bytes(self, send_id: str) -> bytes:
+        r = self.transport("GET", f"{self.base}/api/sends/{send_id}", {"Authorization": f"Bearer {self.token}"}, None)
+        return r.content
+
+    def ack_sends(self, ids: list[str]) -> int:
+        """Kept on the Mini: deleted at the site."""
+        return int(self._call("POST", "/api/sends/ack", {"ids": ids}).get("deleted") or 0) if ids else 0

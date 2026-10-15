@@ -27,6 +27,7 @@ SECRET_NAMES = (
     "DASHBOARD_PASSWORD_HASH",
     "GITHUB_TOKEN",
     "CLOUDFLARE_TUNNEL_TOKEN",       # the dashboard away from home (core/tunnel.py)
+    "SEND_TOKEN",                    # the share sheet's (Post to Event Caliber; worker/index.js /api/send)
 )
 
 
