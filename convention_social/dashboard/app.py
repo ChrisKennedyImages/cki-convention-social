@@ -1500,6 +1500,11 @@ def create_app() -> FastAPI:
             {"title": "Phone alerts", "note": "This company's own ntfy topic. Pings: a post ready to approve, a post that went out, "
                                               "the watchdog's alerts and the morning brief. Save the topic, then send a test below.",
              "fields": [f("NTFY_TOPIC", "ntfy topic")]},
+            {"title": "GitHub", "note": "For the doctor (2026-10-15): an error in the code becomes an issue in "
+                                        "ChrisKennedyImages/cki-convention-social with the traceback, and your phone gets the link. "
+                                        "A fine-grained token for that one repository with one permission, Issues: Read and write. "
+                                        "Without it the doctor pings you instead.",
+             "fields": [f("GITHUB_TOKEN", "Fine-grained token (Issues only)", secret=True)]},
             {"title": "Local sorting", "note": "Ollama on this Mini sorts the photo library for free. Leave blank to use the first vision model it has.",
              "fields": [f("OLLAMA_MODEL", "Ollama model"), f("CLASSIFY_BACKEND", "Sorter", choices=["auto", "ollama", "claude"])]},
             {"title": "This dashboard", "note": "The address you open this dashboard at from your phone.",
