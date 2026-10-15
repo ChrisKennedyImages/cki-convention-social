@@ -1067,6 +1067,39 @@ results.
   same name, phone and email as the site) and Bing Places; a photo of the two
   of them for the About page, if he wants one there.
 
+## 2026-10-15: no age gate; his Approve is the check
+
+Chris: "Stop with this 18 and under bullshit! It stops damn near half the
+images from posting and its wildly incorrect. Get rid of the gate all
+together! If I approve something, it means I checked it and you are not
+required!"
+
+- No model is asked whether anyone could be under 18 (the sorter and Claude's
+  final check), and an answer written before the ruling stops nothing: not
+  eligibility, not the Photos page's review list, not the best frames, not
+  Post this, not a photo from the phone, not the design samples or the site.
+  The Photos page and the library report no longer count anyone "set aside".
+- What still stops a photo, exactly as before: not cleared, Don't use, an
+  excluded folder, the do-not-use list, no consent in the credits sheet, not
+  sorted by a model yet, a readable plate, house number, street sign, screen
+  or document, a wedding or a private occasion, a costume photo, a building
+  rule, no final check yet, and his Approve on every post.
+- The `possible_minor` columns stay in the database (no migration); nothing
+  reads them.
+
+## 2026-10-15: Instagram only, for now
+
+Chris: "we are ONLY using Insta now so get rid of the other socails or tunr
+off thier errors for now". The Buffer account has only the eventcaliber
+Instagram channel in Use.
+
+- Posts go to the networks named on the Keys page (Posting: "Networks posts go
+  to", `POST_NETWORKS`, comma separated). Blank is Instagram only.
+- A network that is off is never sent to and never reported as missing a
+  channel: no more "Not sent to facebook (no connected Buffer channel)"
+  alerts. Facebook and Pinterest come back by adding them to that field once
+  their channel is connected and in Use.
+
 ## Standing rules from the brief
 
 - CPAC, the ACU and their affiliates are never contacted, by code
@@ -1078,8 +1111,8 @@ results.
 - Nothing in Drive is ever modified, moved, renamed or deleted
   (`drive/`, pinned by `tests/test_drive_readonly.py`).
 - No photo is eligible until Chris clears its folder or the photo itself.
-  Never post anyone who may be a minor. A do-not-use list is honoured
-  everywhere.
+  A do-not-use list is honoured everywhere. (Until 2026-10-15 this also said
+  "Never post anyone who may be a minor"; see "no age gate" above.)
 - Never claim to be a convention's official photographer or any affiliation
   unless Chris confirms it for that event (`ai/copy_rules.py`, rule
   `affiliation`).

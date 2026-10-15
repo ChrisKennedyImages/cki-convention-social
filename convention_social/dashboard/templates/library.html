@@ -9,7 +9,7 @@
   {% for key, label in subject_words %}<a class="btn{{ ' primary' if subject == key else '' }}" href="/library?view={{ view }}&subject={{ key }}">{{ label }} ({{ subject_counts[key] }})</a>{% endfor %}
 </div>
 <div class="card muted">
-  {% if view == 'review' %}Only what you approve is ever used. These are the sorted photos you have not decided on yet, strongest first. Use approves one; Don't use keeps it out for good. Photos where someone may be under 18, or with a readable plate, house number or street sign, never show here and are never used. A name badge or a name in the photo is fine.
+  {% if view == 'review' %}Only what you approve is ever used. These are the sorted photos you have not decided on yet, strongest first. Use approves one; Don't use keeps it out for good. Photos with a readable plate, house number or street sign never show here and are never used. A name badge or a name in the photo is fine.
   {% elif view == 'approved' %}Everything you approved, one photo at a time or by its folder. Only these are ever used: in posts, on the website and in the design samples, and every one of them gets its turn, the least recently used first. Undo puts a photo back to review; Don't use keeps it out for good.
   {% else %}Photos you marked Don't use. Unblock puts one back where it was (to review, or approved by its folder). Never use adds it to the do-not-use list for good.{% endif %}
 </div>
@@ -125,7 +125,7 @@ document.querySelectorAll('form.tap').forEach(function (form) {
     <span class="badge {{ f.clearance }}">{{ f.clearance.replace('_',' ') }}</span></div>
   <div class="muted">{{ f.path or '' }}</div>
   {% if f.shared_by %}<div class="muted">shared by {{ f.shared_by }}</div>{% endif %}
-  <div class="muted">{{ f.conv or 0 }} look like event photos, {{ f.image_count }} photos in all{% if f.minors %}, {{ f.minors }} set aside (may be under 18){% endif %}</div>
+  <div class="muted">{{ f.conv or 0 }} look like event photos, {{ f.image_count }} photos in all</div>
   <div class="row" style="margin-top:8px">
     {% for state, label, cls in [('cleared', 'Approve all', 'ok'), ('excluded', 'Exclude', 'danger'), ('not_cleared', 'Undecided', '')] if state != f.clearance %}
     <form method="post" action="/library/folder/{{ f.drive_id }}/clearance" class="inline"><input type="hidden" name="state" value="{{ state }}"><input type="hidden" name="back" value="/library?view=folders&show={{ show }}#f-{{ f.drive_id }}"><button class="small {{ cls }}" type="submit">{{ label }}</button></form>

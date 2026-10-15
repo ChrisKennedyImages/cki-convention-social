@@ -20,9 +20,12 @@ MONDAY_6AM = datetime(2026, 10, 12, 10, 0, tzinfo=timezone.utc)      # tomorrow 
 
 
 class FinalClient:
-    """Claude's final check: answers per photo from a dict {drive_id: possible_minor}."""
-    def __init__(self, verdicts):
+    """Claude's final check: answers per photo from a dict {drive_id: True} for a photo that fails (a readable plate).
+    Until 2026-10-15 the failing answer was "someone may be under 18"; Chris ruled the age gate out, so `minors` now
+    answers possible_minor true on photos that must still pass (an old-style answer stops nothing)."""
+    def __init__(self, verdicts, minors=()):
         self.verdicts = verdicts
+        self.minors = set(minors)
         self.calls = 0
         self.beta = self
         self.messages = self
@@ -30,8 +33,9 @@ class FinalClient:
 
     def create(self, **kw):
         self.calls += 1
-        minor = self.verdicts.get(self.current, False)
-        t = types.SimpleNamespace(type="text", text=json.dumps({"possible_minor": minor, "personal_details": [], "summary": "ok"}))
+        plate = self.verdicts.get(self.current, False)
+        t = types.SimpleNamespace(type="text", text=json.dumps({"possible_minor": self.current in self.minors,
+                                                                "personal_details": ["vehicle_plate"] if plate else [], "summary": "ok"}))
         return types.SimpleNamespace(content=[t], stop_reason="end_turn", model=kw["model"],
                                      usage=types.SimpleNamespace(input_tokens=1500, output_tokens=100))
 
@@ -107,7 +111,9 @@ class Content(IsolatedCase):
         meta = json.loads(self.queue()[3]["rule_report"])
         self.assertEqual((meta["wanted"], meta["subject"], meta["event"]), ("architecture", "event", "Awesome Con"))
 
-    def test_live_final_check_skips_a_possible_minor(self):
+    def test_live_final_check_skips_a_photo_with_a_plate(self):
+        """Deliberate change, 2026-10-15 (no age gate): this pinned the skip of a possible minor; the final check's
+        skip is now pinned with a readable plate, which still stops a photo."""
         os.environ["AI_MONTHLY_CAP_USD"] = "5"
         os.environ["AI_MODEL"] = "template"
         config.reset()
@@ -124,6 +130,23 @@ class Content(IsolatedCase):
         from convention_social.library import eligibility
         self.assertTrue(eligibility.is_eligible(self.conn, self.ids["e2"])[0])
         self.assertFalse(eligibility.is_eligible(self.conn, self.ids["e1"])[0])
+
+    def test_live_an_age_answer_skips_nothing(self):
+        """Chris, 2026-10-15: "Get rid of the gate all together!" A final check that answers possible_minor true
+        (an old-style answer) leaves the photo on the post."""
+        os.environ["AI_MONTHLY_CAP_USD"] = "5"
+        os.environ["AI_MODEL"] = "template"
+        config.reset()
+        client = FinalClient({}, minors={"e1"})
+        orig = self.fetch
+
+        def fetch(row):
+            client.current = row["drive_id"]
+            return orig(row)
+        line = content.draft_one(self.ctx(dry=False), fetch, now=MONDAY_6AM, check_client=client)
+        self.assertIn("drafted post", line)
+        self.assertEqual(json.loads(self.queue()[0]["photo_ids"]), [self.ids["e1"]])
+        self.assertEqual(client.calls, 1)
 
     def test_nothing_cleared_nothing_drafted(self):
         self.conn.execute("UPDATE drive_folders SET clearance='not_cleared'")
@@ -468,7 +491,7 @@ class NewDesigns(Content):
         content.draft_one(self.ctx(dry=False), fetch, now=SUNDAY, check_client=client, art_client=art)
         _, meta_, _, ids = self.last()
         self.assertEqual(meta_["design"], "spotlight")
-        self.assertNotIn(self.ids["e2"], ids)                              # may be under 18: never on the post
+        self.assertNotIn(self.ids["e2"], ids)                              # a readable plate: never on the post
         self.assertEqual(len(ids), 3)
         from convention_social.library import eligibility
         self.assertTrue(all(eligibility.is_eligible(self.conn, i)[0] for i in ids))

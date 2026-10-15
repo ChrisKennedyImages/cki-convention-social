@@ -24,6 +24,7 @@ class Page(IsolatedCase):
         super().setUp()
         os.environ["DASHBOARD_PASSWORD_HASH"] = auth.hash_password("correct horse")
         os.environ["BUFFER_API_KEY"] = "test-key"
+        os.environ["POST_NETWORKS"] = "instagram,facebook,pinterest"     # each network's Use is pinned; Instagram only by default since 2026-10-15
         config.reset()
         self.conn = db.connect()
         self.addCleanup(self.conn.close)
