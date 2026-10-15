@@ -3,10 +3,12 @@
 Two answers, both failing closed:
 
   is_candidate()  may the daily picker consider it? (rules 1 to 6, with the
-                  sorter's minor and details answer, Ollama or Claude)
+                  sorter's details answer, Ollama or Claude)
   is_eligible()   may it be POSTED? A candidate that also passed Claude's final
-                  check (final_checks: possible_minor 0, no blocking personal
-                  detail; a name badge or a name in the photo is fine, 2026-10-12).
+                  check (final_checks: no blocking personal detail, not a wedding
+                  or a private occasion; a name badge or a name in the photo is
+                  fine, 2026-10-12). No age gate (Chris, 2026-10-15: his Approve
+                  is the check).
                   The dashboard's Approve and the publisher's door ask this one.
 
 A photo is a candidate only when ALL of these hold:
@@ -14,8 +16,7 @@ A photo is a candidate only when ALL of these hold:
   2. Chris cleared it: the photo itself is 'cleared', or it is 'inherit' and
      the nearest folder above it with a decision is 'cleared' (an 'excluded'
      folder nearer to the photo wins; no decision anywhere means not cleared);
-  3. it was classified and the classifier said nobody in it could be a minor
-     (possible_minor = 0; NULL, unchecked, is a no);
+  3. a model sorted it (method ollama or vision; the free folder row is a no);
   4. no readable personal detail (badge name, plate, screen, document) was seen;
   5. nothing on the do-not-use list covers it: the photo, any folder above it,
      or a person or handle credited on it;
@@ -32,6 +33,7 @@ import sqlite3
 from ..core import db
 
 MAX_DEPTH = 64
+SORTED_METHODS = ("ollama", "vision")    # a model looked at it; 'folder' is the free guess from the path
 
 
 def folder_chain(conn: sqlite3.Connection, folder_id: str | None) -> list[sqlite3.Row]:
@@ -185,10 +187,10 @@ def is_candidate(conn: sqlite3.Connection, photo_id: int) -> tuple[bool, str]:
     for c in credits_for(conn, photo):
         if c["consent"] == "no":
             return False, "the credits sheet says no consent"
-    cls = db.one(conn, "SELECT possible_minor, personal_details, subject, space, residential, empty_room, shot_type, event_kind "
+    cls = db.one(conn, "SELECT method, personal_details, subject, space, residential, empty_room, shot_type, event_kind "
                        "FROM classifications WHERE photo_id=?", (photo_id,))
-    if cls is None or cls["possible_minor"] is None:
-        return False, "not checked for minors yet"
+    if cls is None or cls["method"] not in SORTED_METHODS:
+        return False, "not sorted yet"
     if cls["shot_type"] in NOT_OFFERED:
         return False, "a costume photo: Event Caliber does no cosplay"
     if cls["event_kind"] in NOT_OFFERED_KINDS:
@@ -197,8 +199,6 @@ def is_candidate(conn: sqlite3.Connection, photo_id: int) -> tuple[bool, str]:
         why = building_blocked(cls)
         if why:
             return False, why
-    if cls["possible_minor"] != 0:
-        return False, "someone in it may be under 18"
     try:
         details = json.loads(cls["personal_details"] or "[]")
     except ValueError:
@@ -213,11 +213,9 @@ def is_eligible(conn: sqlite3.Connection, photo_id: int) -> tuple[bool, str]:
     ok, why = is_candidate(conn, photo_id)
     if not ok:
         return ok, why
-    fc = db.one(conn, "SELECT possible_minor, personal_details, event_kind FROM final_checks WHERE photo_id=?", (photo_id,))
+    fc = db.one(conn, "SELECT personal_details, event_kind FROM final_checks WHERE photo_id=?", (photo_id,))
     if fc is None:
         return False, "not given the final check yet"
-    if fc["possible_minor"] != 0:
-        return False, "the final check says someone may be under 18"
     if fc["event_kind"] in NOT_OFFERED_KINDS:
         return False, "the final check says " + NOT_OFFERED_KIND_WHY
     try:

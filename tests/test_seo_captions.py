@@ -219,7 +219,8 @@ class AltTextAndPins(AgentCase):
         super().setUp()
         self.conn = self.connect()
         add_channels(self.conn, "instagram", "facebook", "pinterest")
-        os.environ.update(PINTEREST_BOARD_ID="board-123", BRAND_DOMAIN="eventcaliber.com")
+        # all three networks on, so each one's alt text and pin link is pinned (since 2026-10-15 the default is Instagram only)
+        os.environ.update(PINTEREST_BOARD_ID="board-123", BRAND_DOMAIN="eventcaliber.com", POST_NETWORKS="instagram,facebook,pinterest")
         config.reset()
 
     def post(self):

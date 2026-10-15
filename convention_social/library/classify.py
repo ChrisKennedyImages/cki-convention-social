@@ -2,20 +2,19 @@
 
 1. folder_pass(): every photo gets a 'folder' row from its folder path and
    date (free): event work, architecture work, other, or no signal.
-   possible_minor stays NULL, so nothing is postable from this.
+   method stays 'folder', so nothing is postable from this.
 2. sort_pass(): a small Drive thumbnail (512 px, never the original) goes to
    a vision model with a strict JSON schema: event or building or other,
    which event if signage shows it, shot type, inside or outside, technical
-   quality, how many people, readable personal details, whether anyone
-   could be a minor. Order: photos Chris already cleared, then event and
+   quality, how many people, readable personal details. Order: photos Chris already cleared, then event and
    architecture folders, newest first. Results are cached.
    The sorter is Ollama on the Mini when it has a vision model (free; Chris
    2026-10-09), otherwise Claude (claude-haiku-4-5, CLASSIFY_MODEL) under the
    monthly spend cap.
 3. final_check(): Claude (claude-opus-5) looks once more at the one photo
-   picked for a post, for minors and personal details. Only a passing final
-   check makes a photo postable (eligibility.py). A local model's "no minor"
-   is a sorting hint, never the last word.
+   picked for a post, for personal details and the kind of occasion. Only a
+   passing final check makes a photo postable (eligibility.py). No model judges
+   anyone's age (Chris, 2026-10-15: his Approve is the check).
 
 A refusal or an unreadable answer leaves the photo unchecked (never postable).
 """
@@ -62,7 +61,7 @@ BANNED_SPACES = frozenset({"bathroom", "closet_or_utility"})
 SYSTEM = """You sort a photographer's archive of event and architecture work. For each photo, say what it shows, factually and briefly.
 subject: "event" for conventions, conferences, galas, expos and similar gatherings; "architecture" for a building, its exterior or its interior shown as architecture; "other" for anything else.
 event_kind: "fan" for a fan convention (comics, anime, gaming), "business" for a business, trade or political conference or a corporate gala; "wedding" for a wedding or its reception (a bride, a groom, a wedding party, a first dance, a cake); "private" for a party, a family or personal occasion, a religious ceremony or a portrait session with no event around it; "unknown" when the kind of gathering cannot be told.
-Judge only what is visible. When unsure whether anyone could be under 18, answer true.
+Judge only what is visible.
 
 Read the picture for text before you answer about it. Look at signs above doors, numbers on
 facades, street signs, name badges, screens and papers. house_number means any street number on a
@@ -104,19 +103,17 @@ SCHEMA = {
         "light": {"type": "integer", "description": "1 flat or blown, 5 light that makes the picture"},
         "moment": {"type": "integer", "description": "1 nothing happening, 5 a real moment; for a building, composition"},
         "people_count": {"type": "integer"},
-        "possible_minor": {"type": "boolean"},
         "personal_details": {"type": "array", "items": {"type": "string", "enum": list(DETAILS)}},
         "summary": {"type": "string", "description": "one short sentence"},
     },
     "required": ["subject", "event_kind", "event_name_seen", "shot_type", "view", "quality", "space",
                  "residential", "empty_room", "sharp", "light", "moment", "people_count",
-                 "possible_minor", "personal_details", "summary"],
+                 "personal_details", "summary"],
     "additionalProperties": False,
 }
 
 FINAL_SYSTEM = """You are the last check before a photographer posts a photo publicly.
-Answer four things about the photo only from what is visible:
-possible_minor: true if anyone in the photo could be under 18. When unsure, true.
+Answer three things about the photo only from what is visible:
 personal_details: anything readable that identifies a private person or a home: a name on a badge, a vehicle plate, a screen or document with private information (a message, an email, a form, a medical or financial paper), a house number, a street sign. A book cover, a program, a slide, signage, a title or a name on its own is not private information. Empty when none.
 shot_type: what the photo is of. stage_panel for anyone on a stage, at a podium or on a panel, however close the framing; portrait (a headshot is a portrait) only for a posed picture of a person made for its own sake, away from a stage; group for a posed group; candid for an unposed moment; crowd for an audience or a room of people; vendor_hall for an exhibition hall, an exhibit floor, vendors or a booth (all one thing); backstage; dinner_reception; venue, building_exterior or building_interior for a building with no event in it; cosplay_portrait for a person in costume; other when none fits.
 event_kind: what kind of occasion the photo is from. fan for a fan convention (comics, anime, gaming); business for a business, trade or political conference or a corporate gala; wedding for a wedding or its reception (a bride, a groom, a wedding party, a first dance, a cake, wedding dress); private for a party, a family or personal occasion, a religious ceremony or a portrait session with no event around it; unknown only when nothing visible tells. A wedding is never business.
@@ -125,13 +122,12 @@ Return JSON only, matching the schema."""
 FINAL_SCHEMA = {
     "type": "object",
     "properties": {
-        "possible_minor": {"type": "boolean"},
         "personal_details": {"type": "array", "items": {"type": "string", "enum": list(DETAILS)}},
         "shot_type": {"type": "string", "enum": list(SHOT_TYPES)},
         "event_kind": {"type": "string", "enum": list(KINDS)},
         "summary": {"type": "string"},
     },
-    "required": ["possible_minor", "personal_details", "shot_type", "event_kind", "summary"],
+    "required": ["personal_details", "shot_type", "event_kind", "summary"],
     "additionalProperties": False,
 }
 
@@ -365,13 +361,13 @@ def save_sort(conn: sqlite3.Connection, photo: sqlite3.Row, data: dict, method: 
         "UPDATE classifications SET method=?, is_convention=?, subject=?, view=?, "
         "convention_name=COALESCE(?, convention_name), "
         "event_kind=CASE WHEN ?='unknown' THEN event_kind ELSE ? END, shot_type=?, quality=?, people_count=?, personal_details=?, "
-        "possible_minor=?, space=?, residential=?, empty_room=?, sharp=?, light=?, moment=?, "
+        "space=?, residential=?, empty_room=?, sharp=?, light=?, moment=?, "
         "summary=?, model=?, classified_at=? WHERE photo_id=?",
         (method, int(subject == "event" and data.get("event_kind") not in NOT_OFFERED_KINDS), subject, view,
          event_name_seen(data.get("event_name_seen")),
          data.get("event_kind"), data.get("event_kind"), data.get("shot_type"),
          _score_1_5(data.get("quality")), int(data.get("people_count") or 0),
-         json.dumps(data.get("personal_details") or []), _flag(data.get("possible_minor"), True),
+         json.dumps(data.get("personal_details") or []),
          space, _flag(data.get("residential"), True),   # unreadable counts as residential, so it is kept out
          _flag(data.get("empty_room"), True),      # and as empty, likewise
          _flag(data.get("sharp"), False),          # and as not sharp, so it does not rank
@@ -424,7 +420,7 @@ vision_pass = sort_pass   # the name the first build used
 
 # ------------------------------------------------------------------------ the final check
 def look(conn: sqlite3.Connection, image: bytes, *, client=None, agent: str = "content") -> Optional[dict]:
-    """Claude's final look at one picture: the answer (possible_minor, personal_details, shot_type,
+    """Claude's final look at one picture: the answer (personal_details, shot_type,
     event_kind, summary), or None (no key, cap reached, refused, unreadable). Paid through the one till.
     final_check stores it for a library photo; the website's uploaded hero (site/hero.py) keeps its own."""
     from ..core import runner
@@ -475,11 +471,12 @@ def final_check(conn: sqlite3.Connection, photo_id: int, image: bytes, *, client
     answered = data.get("model_used") or config.getenv("FINAL_CHECK_MODEL") or FINAL_MODEL
     shot = data.get("shot_type") if data.get("shot_type") in SHOT_TYPES else None
     kind = data.get("event_kind") if data.get("event_kind") in KINDS else "unknown"
+    # possible_minor is a NOT NULL column from before 2026-10-15; no model is asked and nothing reads it (no age gate)
     conn.execute("INSERT INTO final_checks (photo_id, possible_minor, personal_details, summary, model, checked_at, shot_type, event_kind) "
                  "VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(photo_id) DO UPDATE SET possible_minor=excluded.possible_minor, "
                  "personal_details=excluded.personal_details, summary=excluded.summary, model=excluded.model, "
                  "checked_at=excluded.checked_at, shot_type=excluded.shot_type, event_kind=excluded.event_kind",
-                 (photo_id, 1 if data.get("possible_minor", True) else 0, json.dumps(data.get("personal_details") or []),
+                 (photo_id, 0, json.dumps(data.get("personal_details") or []),
                   (data.get("summary") or "")[:300], answered, db.utcnow(), shot, kind))
     if shot:
         # Claude's word beats the local sorter's guess (2026-10-11: a stage shot called a portrait)

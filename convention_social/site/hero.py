@@ -120,7 +120,7 @@ def checked(conn: sqlite3.Connection, look: Optional[Callable[[bytes], Optional[
     """(usable, note). Chris, 2026-10-12: "That's still not the ... landing page photo I uploaded on the
     dashboard." The photo he sends is the hero, full stop: his own photo, chosen by him, for his own
     site. Claude's look is still asked once per file, for the alt text and a note on the card (what it
-    saw; anyone who may be under 18, a readable plate), never to hold the photo back. Without a look
+    saw; a readable plate), never to hold the photo back. Without a look
     (no key, the cap) the photo is used all the same and the card says Claude has not looked yet."""
     from ..library import classify, eligibility
     if not present():
@@ -132,8 +132,6 @@ def checked(conn: sqlite3.Connection, look: Optional[Callable[[bytes], Optional[
             details = eligibility.blocking_details(list(data.get("personal_details") or []), "event")
             kind = data.get("event_kind") if data.get("event_kind") in classify.KINDS else "unknown"
             notes = []
-            if data.get("possible_minor", True):
-                notes.append("someone in it may be under 18")
             if details:
                 notes.append("it shows " + ", ".join(map(str, details)))
             if kind in classify.NOT_OFFERED_KINDS:
