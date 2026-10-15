@@ -254,7 +254,106 @@ it live on the Agents page.
 The dashboard listens on 127.0.0.1:4610. From your phone, reach it over
 Tailscale on port 8443, never 443 (another dashboard on this Mini uses 443):
 `tailscale serve --bg --https=8443 http://127.0.0.1:4610` on the Mini, then open the address it
-prints. Every agent starts in dry run.
+prints. Every agent starts in dry run. Away from home without Tailscale: 9a.
+
+## 9a. The dashboard away from home: a private address
+
+Chris chose (2026-10-15): https://dash.eventcaliber.com from any browser,
+without Tailscale. Cloudflare Access stands in front of it (a code emailed to
+chriskimages@gmail.com, nobody else), and the dashboard's own password behind
+that. Free. Nothing is opened on the Mini's network: the Mini calls out to
+Cloudflare. The Tailscale address keeps working as it is.
+
+It is never public without Access, so the order matters: Access first, the
+address second. In Cloudflare (dash.cloudflare.com, the account that holds
+eventcaliber.com; a computer is easiest):
+
+1. **Zero Trust, the first time only.** Zero Trust; choose a team name (for
+   example `eventcaliber`) and the **Free** plan. Cloudflare asks for payment
+   details even for the Free plan; nothing is charged. Your team domain is
+   `<team name>.cloudflareaccess.com` (Zero Trust, Settings, Team name and
+   domain).
+2. **The email code.** Zero Trust, Integrations, Identity providers, Add new
+   identity provider, **One-time PIN**.
+3. **Access, before the address exists.** Zero Trust, Access controls,
+   Applications, Create new application, Self-hosted and private. Name it
+   `Event Caliber dashboard` (Cloudflare's sign-in page says "Log in to Event
+   Caliber dashboard"). Add public hostname: subdomain `dash`, domain
+   `eventcaliber.com`.
+   - Access policies: create a new policy named `Chris only`, action
+     **Allow**, Include, selector **Emails**, value `chriskimages@gmail.com`.
+     Nothing else in it: "Everyone", or a login method on its own, lets
+     anyone in.
+   - Login methods: **One-time PIN** only, with Apply instant authentication on.
+   - Session Duration: **1 week**.
+   - Create. Then the application, Configure, Additional settings: copy the
+     **Application Audience (AUD) Tag**.
+4. **The tunnel.** Networking, Tunnels, Create Tunnel, name
+   `event-caliber-dashboard`, Create Tunnel. Setup Environment: macOS. Copy
+   the command under Install and Run into a note and **do not run it**: it
+   would start the tunnel without the suite's checks. Its `eyJ...` part is the
+   token.
+5. **Its one route.** Networking, Tunnels, the tunnel, Routes, Add route,
+   Published application: subdomain `dash`, domain `eventcaliber.com`,
+   Service URL `http://127.0.0.1:4610`. Add route. No other route and no
+   private network route: the suite stops the tunnel if Cloudflare ever routes
+   it anywhere else.
+
+On the Mini, once:
+
+```bash
+brew install cloudflared
+```
+
+```bash
+scripts/go-live.sh --tunnel
+```
+
+It asks for the address (Enter keeps `dash.eventcaliber.com`), the team
+domain, the AUD tag, the one email and the token (paste the whole command
+from step 4; nothing is shown). Then it lists any other cloudflared service on
+the Mini (and leaves it alone), checks from outside that every path of the
+address answers Cloudflare's sign-in, installs the tunnel with the other
+services (your Mac password), waits for it to report its one route, and points
+the pings and Approve links at the new address. It ends with `LIVE` and
+`Away from home: https://dash.eventcaliber.com`, or says what is missing.
+`bin/ccs tunnel check` says the same at any time.
+
+Check it from your phone with Wi-Fi off and Tailscale off:
+
+1. Open https://dash.eventcaliber.com. Cloudflare's page asks for your email:
+   `chriskimages@gmail.com`, **Send login code**. Then "Enter your code": the
+   six digits from that inbox (they last 10 minutes), **Verify**.
+2. The dashboard's own login follows: your dashboard password.
+3. More, Keys, Phone alerts, Send a test ping. Tapping the ping opens the new
+   address.
+4. The proof that nobody else gets in: in a private tab, any other email.
+   Cloudflare's page still says a code was sent (it never tells who is
+   allowed), but none arrives, and the dashboard never shows.
+
+What changes on the pings: behind Access only a browser gets in, so Approve
+on a ping opens the approve page (one more tap there: Approve post N), and
+the ping no longer carries the post's picture (the ntfy app would fetch it
+without your sign-in). The one-tap Approve and the picture came with the
+Tailscale address; setting Keys, This dashboard back to it brings them back.
+
+Everything the dashboard shows works at the new address: the photos, the
+posts, the design samples and their reels (they play with their sound and
+seek, as on Tailscale). Nothing of it is kept in Cloudflare's cache: every
+answer through the tunnel says `private, no-store`. Two limits of Cloudflare's
+free plan: a photo sent from the phone must be under 100 MB, and Cloudflare's
+terms say a free site that serves a lot of video may be slowed or redirected.
+Previewing your own reels is far from that; if it ever happened, Cloudflare
+emails you and the Tailscale address still plays them.
+
+What the suite does: the tunnel starts only when Access answers for every
+path from outside, and stops if Cloudflare routes it to anything but
+`http://127.0.0.1:4610`. The dashboard refuses whatever came through
+Cloudflare without your valid Access sign-in, before any page, the login
+included. cloudflared also opens one port on the Mini itself, between 20241
+and 20245, for its own health figures (Cloudflare's default); nothing outside
+the Mini reaches it. To stop the tunnel: delete `CLOUDFLARE_TUNNEL_TOKEN` from
+`.env` and run `scripts/go-live.sh` (it removes the service).
 
 ## 10. A photo from your phone while you shoot
 

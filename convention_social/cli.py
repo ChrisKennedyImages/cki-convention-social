@@ -20,6 +20,10 @@
   ccs site check [--wait S]   check the live site and its booking API from this machine (scripts/go-live.sh runs it)
   ccs copy-key NAME --from FILE [--as OTHER]   copy one key from another .env file into this suite's .env;
                               the other file is only read, and the value is never shown
+  ccs tunnel setup            the dashboard away from home: paste Cloudflare's details into .env (never shown)
+  ccs tunnel check [--quiet]  every piece, other cloudflared services on the Mini, Access from outside
+  ccs tunnel run              the launchd service: cloudflared, only behind Access, only to this dashboard
+  ccs tunnel status [--wait S] [--use]   is it running; --use points the links (pings, Approve) at it
 """
 from __future__ import annotations
 
@@ -186,6 +190,18 @@ def cmd_launchd(args) -> int:
         state = "loaded" if r.returncode == 0 else ("not loaded" if "Could not find service" in (r.stderr + r.stdout) else "installed (sudo to read)")
         print(f"  {state:<28}{label}")
     return 0
+
+
+def cmd_tunnel(args) -> int:
+    """The dashboard away from home (2026-10-15): core/tunnel.py, behind Cloudflare Access (core/access.py)."""
+    from .core import tunnel
+    if args.what == "setup":
+        return tunnel.setup()
+    if args.what == "check":
+        return 0 if tunnel.check(out=(lambda _line: None) if args.quiet else print) else 1
+    if args.what == "status":
+        return tunnel.status(wait=args.wait, use=args.use)
+    return tunnel.run()
 
 
 def cmd_drive(args) -> int:
@@ -476,6 +492,12 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("dashboard").set_defaults(fn=cmd_dashboard)
     sub.add_parser("sync").set_defaults(fn=cmd_sync)
     l = sub.add_parser("launchd"); l.add_argument("what", choices=["status", "installed"]); l.set_defaults(fn=cmd_launchd)
+    tn = sub.add_parser("tunnel", help="the dashboard away from home, behind Cloudflare Access")
+    tn.add_argument("what", choices=["setup", "check", "run", "status"])
+    tn.add_argument("--quiet", action="store_true", help="check: no output, the exit code only")
+    tn.add_argument("--wait", type=float, default=0, help="status: wait this many seconds for it to run")
+    tn.add_argument("--use", action="store_true", help="status: once it runs, point DASHBOARD_PUBLIC_URL at it")
+    tn.set_defaults(fn=cmd_tunnel)
     dv = sub.add_parser("drive"); dv.add_argument("what", choices=["login", "scan", "report"])
     dv.add_argument("--wait", type=float, default=0, help="login: seconds to wait for the browser to return here")
     dv.add_argument("--classify", type=int, default=0, help="scan: sort this many photos (Ollama free; Claude under the cap)")
