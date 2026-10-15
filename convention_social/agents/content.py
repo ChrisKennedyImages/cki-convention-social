@@ -401,6 +401,8 @@ def redraw(conn: sqlite3.Connection, row, meta: dict, *, agent: str = "content")
     art = meta.get("art") or {}
     focus = tuple(art["focus"]) if isinstance(art.get("focus"), list) and len(art["focus"]) == 2 else (0.5, 0.42)
     paths = render(focus)
+    if design == "reel":
+        meta["music"] = track.name if track else None       # the track this reel carries, named under its player
     if reel_failed:
         meta["design"], meta["reel_failed"] = "carousel", reel_failed[0]
     return paths, "card drawn again with today's words"

@@ -285,11 +285,13 @@ class LibraryPage(IsolatedCase):
         folder.mkdir(parents=True)
         (folder / "index.html").write_text("<p>samples</p>")
         (folder / "rooms-reel.mp4").write_bytes(b"\x00\x00\x00\x18ftypmp42")
+        (folder / "rooms-reel-cover.jpg").write_bytes(jpeg_bytes(size=(90, 160)))
         (folder / "notes.txt").write_text("not a file the designer writes")
         (config.get_config().data_root / "secret.txt").write_text("no")
         r = self.client.get("/library/design", follow_redirects=False)
         self.assertEqual(r.headers["location"], "/library/design/design-20261011-1800/index.html")
         self.assertEqual(self.client.get("/library/design/design-20261011-1800/rooms-reel.mp4").headers["content-type"], "video/mp4")
+        self.assertEqual(self.client.get("/library/design/design-20261011-1800/rooms-reel-cover.jpg").headers["content-type"], "image/jpeg")
         for bad in ("/library/design/design-20261011-1800/..%2F..%2Fsecret.txt", "/library/design/renders/index.html",
                     "/library/design/design-20261011-1800/notes.txt"):
             self.assertEqual(self.client.get(bad).status_code, 404, bad)
