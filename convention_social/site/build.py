@@ -73,7 +73,8 @@ class SiteCopyRefused(ValueError):
     pass
 
 
-HERO_ROWS, COVERAGE_ROWS, VENUE_ROWS = 1, 12, 4      # 2026-10-14: the strip grew from six to twelve (Chris: "expand the gallery to more images")
+HERO_ROWS, COVERAGE_ROWS, VENUE_ROWS = 1, 12, 2      # 2026-10-14: the strip grew from six to twelve (Chris: "expand the gallery to more images");
+# 2026-10-15, the venues: "Just one or two venue picks at most and not labeled on the image itself"
 EVENT_POOL = 20               # eligible event photos the hero is chosen among; the strip draws from the whole usable pool
 HERO_CANDIDATES = 12          # landscape frames looked at (fetched) for the hero's colour and punch
 RECHECKS = 12                 # Claude calls one site build may spend asking what kind of occasion a photo is from
@@ -441,7 +442,7 @@ def coverage_rows(coverage: list[dict], skip: str = "") -> str:
         for i, c in enumerate(coverage) if c["key"] != skip)
 
 
-def home_body(t: dict, hero: str, frames: list[tuple[str, str, str, str]], stack: list[tuple[str, str]], venues: list[tuple[str, str, str]]) -> str:
+def home_body(t: dict, hero: str, frames: list[tuple[str, str, str, str]], stack: list[tuple[str, str]], venues: list[tuple[str, str]]) -> str:
     """`frames`: (img tag, caption, the coverage page it opens, the photo's shape); `stack`: (img tag, shape); `venues`:
     (img tag, label, shape). The shape (--ar) gives every frame the photo's own proportions, so nothing is cropped."""
     e = html.escape
@@ -452,7 +453,8 @@ def home_body(t: dict, hero: str, frames: list[tuple[str, str, str, str]], stack
     # the strip doubled, so it rolls round without a jump; the copy is hidden from readers and the keyboard
     again = reel.replace('<div class="frame">', '<div class="frame" aria-hidden="true">').replace("<a href=", '<a tabindex="-1" href=')
     stack_html = "".join(f'<figure style="--ar:{ar}">{img}</figure>' for img, ar in stack[:3])
-    venue_html = "".join(f'<figure style="--ar:{ar}">{img}<span class="mono">{e(label)}</span></figure>' for img, label, ar in venues[:3])
+    # no word on the picture (2026-10-15: it said Interior over a building's outside, by position, never by the photo)
+    venue_html = "".join(f'<figure style="--ar:{ar}">{img}</figure>' for img, ar in venues[:VENUE_ROWS])
     steps = "".join(f'<div class="rv"><div class="n">{i:02d}</div><h3>{e(h)}</h3><p>{e(p)}</p></div>'
                     for i, (h, p) in enumerate(t["steps"], start=1))
     short = ["Backstage", "Green rooms", "Breakouts", "Main stage", "Evening events", "Dinners", "Portraits",
@@ -475,7 +477,7 @@ def home_body(t: dict, hero: str, frames: list[tuple[str, str, str, str]], stack
 <section class="deliver"><div class="rv"><div class="kick mono c">Photos during the event</div>
 <h2>Photos find <span class="o">their</span> people.</h2><p>{e(t['deliver_p'])}</p></div>
 {f'<div class="stack rv">{stack_html}<span class="stamp mono">Sent</span></div>' if stack_html else ''}</section>
-{f'<section id="venues" class="venues"><div class="head rv"><div><div class="kick mono c">Venues</div><h2>The building is <span class="o">part of</span> the story.</h2></div><p>{e(t["venues_p"])}</p></div><div class="grid">{venue_html}</div></section>' if venue_html else ''}
+{f'<section id="venues" class="venues"><div class="head rv"><div><div class="kick mono c">Venues</div><h2>The building is <span class="o">part of</span> the story.</h2></div><p>{e(t["venues_p"])}</p></div><div class="grid{' one' if len(venues[:VENUE_ROWS]) == 1 else ''}">{venue_html}</div></section>' if venue_html else ''}
 <section><div class="kick mono c rv">How it works</div><h2 class="rv">Three steps.</h2><div class="steps">{steps}</div></section>
 {_ticker(list(reversed(short)), rev=True)}
 <section class="cta"><div class="kick mono c" style="justify-content:center">Planning an event</div>
@@ -629,11 +631,11 @@ def build(conn: Optional[sqlite3.Connection], photos: SitePhotos, *, out: Path =
             if id(im) not in saved:
                 saved[id(im)] = save_web(im, assets, f"cover-{key}-{j}", m)
             page_files[key].append((saved[id(im)], alt, m, aspect(im)))
-    for i, entry in enumerate(photos.venues):
+    for i, entry in enumerate(photos.venues[:VENUE_ROWS]):
         im, alt, m = _photo(entry)
         files = save_web(im, assets, f"venue-{i}", m)
         shown.append((f"/assets/{files[max(files)]}", alt, m))
-        venues.append((img_tag(files, alt, "(max-width:760px) 100vw, 50vw"), "Exterior" if i % 2 == 0 else "Interior", aspect(im)))
+        venues.append((img_tag(files, alt, "(max-width:760px) 100vw, 50vw"), aspect(im)))
     base = f"https://{cfg.brand_domain}"
     pages = {"index.html": (t["title"], t["description"], home_body(t, hero, frames, stack, venues))}
     page_shown: dict[str, list[tuple[str, str, ImageMeta]]] = {"/": list(shown)}     # per page, for the sitemap and the image blocks

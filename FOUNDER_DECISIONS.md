@@ -934,6 +934,55 @@ samples were for review only and had no road to Buffer; the only road was the da
 - The lane follows the content lane's dry-run switch. In dry run nothing is drafted and the page says why: the
   final check is a paid look, and a sample is never drafted without it.
 
+## 2026-10-15: Post to Event Caliber, his send is his approval
+
+Chris: "i want to be able to text an image from a current event im doing to
+the dashboard to auto post immediately. right now you have to be on the
+dashboard to do that and thats a pain". His answers: a share sheet button on
+the iPhone (in Photos, Share, "Post to Event Caliber", an optional line),
+sent through eventcaliber.com with no dashboard and no Tailscale; and post
+right away.
+
+- **A photo he sends from the share sheet is approved by the act of sending.**
+  It is the one exception to "nothing publishes without Chris's Approve on
+  the dashboard" (standing rules, below). A photo sent from the Send a photo
+  page still waits for his Approve, as on 2026-10-14.
+- The road: the Shortcut posts the photo and the line to
+  `eventcaliber.com/api/send` with the send token in its Authorization header
+  (`SEND_TOKEN`, made on the Keys page, put on the Worker by every deploy).
+  The Worker refuses anything without that token, anything that is not a
+  JPEG, PNG or HEIC by its own bytes, anything over 40 MB, more than twenty an
+  hour and more than thirty waiting; it keeps the photo under
+  `private/sends/` in the company's R2 bucket, which `/m/` never serves, and
+  answers "Received." The Mini pulls with its own token every minute
+  (`launchd` `phone`, `--when-waiting`; the inbox's ten-minute run starts it
+  too), keeps each one like a send from the page (re-encoded, no camera data,
+  no GPS, never in Drive), deletes it at the site, and drafts it on the same
+  road: the sorter, Claude's final check, the captions with his line, the
+  single design, the art director.
+- What still stops it, and the phone hears why each time: a file that is not a
+  photo or is too small; a line that names an event or a person; Claude's
+  final check (a readable plate, house number, street sign, screen or
+  document; a wedding or a private occasion; every other eligibility rule);
+  the art director turning it back, or not able to look (then it waits for
+  his Approve); the publisher's door (a caption that still breaks a rule
+  after one rewrite, a photo no longer usable, a repeat). In the content
+  lane's dry run Claude does not look, so nothing is approved and the ping
+  says what it would have posted; in the publisher's dry run it is approved
+  but nothing goes out, and the ping says when it would have.
+- Approved, it posts right away. Asked whether to keep the 35 minutes the
+  asap rule leaves to pull it back, Chris chose "Right away": it goes to
+  Buffer to post now (`shareNow`, `publisher.posts_now`), with no pre-post
+  window, and the publisher is started at once; a time he sets on the draft
+  still wins. The ping says it is going out now; when Buffer reports it sent,
+  the next ping opens it on Instagram, where he can delete it, with the
+  dashboard beside it. The daily draft, Post this and the Send page keep
+  their windows.
+- Only Chris can do: press Make a send token on the Keys page and copy it into
+  the Shortcut; build the Shortcut (docs/SETUP.md, section 10a); run
+  `scripts/go-live.sh` once on the Mini for the one-minute pickup (until then
+  the inbox's ten-minute run picks the photos up).
+
 ## 2026-10-14: the website for three sizes
 
 Chris, on the site: About needs a real place in the navigation; the words over
@@ -1334,8 +1383,9 @@ Pinned by `tests/test_tunnel.py`.
   (2026-10-13, above).
 
 - Nothing publishes without Chris's Approve on the dashboard, until he says
-  otherwise. Every agent that sends or publishes starts in dry run
-  (`core/settings.py`).
+  otherwise. He said so once: a photo he sends from the share sheet is
+  approved by the act of sending (2026-10-15, Post to Event Caliber). Every
+  agent that sends or publishes starts in dry run (`core/settings.py`).
 - Nothing in Drive is ever modified, moved, renamed or deleted
   (`drive/`, pinned by `tests/test_drive_readonly.py`).
 - No photo is eligible until Chris clears its folder or the photo itself.

@@ -371,6 +371,64 @@ wedding, the monthly AI cap). Post now sends it out at once; Follow the pace
 takes the next open slot. The photo stays on the Mini and is
 never written to Drive.
 
+### 10a. Post to Event Caliber: a photo straight from the iPhone's share sheet
+
+In Photos, pick one photo, tap Share, then **Post to Event Caliber**, add a
+line if you like, and that is it: no dashboard, no Tailscale. Your send is
+your approval (2026-10-15): the suite still runs its checks, and a readable
+plate, a wedding, a caption that will not come right or the art director's no
+stops it and your phone says why. Otherwise it goes to Instagram right away
+(your choice, 2026-10-15: no window to pull it back), and your phone gets two
+pings: when it passed the checks and is going out, and when it is up (it
+opens the post on Instagram, where you can delete it; the dashboard is the
+other button).
+
+Once, on the Mini or from the dashboard on your phone:
+
+1. Keys, **Make a send token**. The page shows the token once: copy it. The
+   site takes it by itself within about twenty minutes (the next publish puts
+   it on the Worker as `SEND_TOKEN`); a new token replaces the old one.
+2. For the pickup every minute, run `scripts/go-live.sh` once on the Mini
+   (it installs the new `phone` job; the dashboard flags it until then). Until
+   you do, the inbox's ten-minute run picks the photos up.
+
+Then build the Shortcut on the iPhone, in the Shortcuts app:
+
+1. Tap **+** for a new shortcut. Tap its name at the top, Rename, and call it
+   `Post to Event Caliber`.
+2. Tap the **i** (Details) and turn on **Show in Share Sheet**. The first step
+   becomes "Receive ... input from Share Sheet": tap the input types and leave
+   only **Images**; for "If there's no input" choose **Stop and Respond**.
+3. Add **Ask for Input**: input type Text, prompt `A line about it (optional)`.
+4. Add **Get Contents of URL** and set its address to
+   `https://eventcaliber.com/api/send`. Tap the arrow to show more:
+   - Method: **POST**
+   - Headers: add one, key `Authorization`, value `Bearer ` (the word Bearer
+     and one space) followed by the token you copied.
+   - Request Body: **Form**. Add a **File** field with key `photo` and the
+     **Shortcut Input** as its value; add a **Text** field with key `note` and
+     **Provided Input** as its value.
+5. Add **Show Result** with **Contents of URL**, so you see the site's answer.
+6. Tap Done. In Photos, the share sheet's Edit Actions can put it at the top.
+
+Send one photo at a time. What the site answers:
+
+- `Received. ...` it is on its way; the pings follow.
+- `Not received: the site does not know this token. ...`
+  The header is wrong, or the site has not taken a new token yet.
+- `Not received: sending from the phone is not set up on the site yet. ...`
+  the site has no token yet: wait for the publish after Make a send token.
+- `Not received: not a JPEG, PNG or HEIC photo.`, `... over 40 MB.`,
+  `... 20 photos an hour is the limit.`, `... 30 photos are already waiting`
+  (the Mini is not picking them up: check it).
+
+The token only sends photos: it cannot read or delete anything on the site.
+But a photo sent with it can post, so it lives only in the Shortcut. If the
+phone is lost, Make a send token again and the old one stops working once the
+site has the new one. No signed `.shortcut` file is kept in the
+repo: signing one needs Apple's servers under your Apple ID, and it could not
+carry your token anyway, so the steps above are the way.
+
 ## 11. The dashboard: four tabs (2026-10-15)
 
 - **Today** is the whole daily flow on one page. **Needs you**: every draft

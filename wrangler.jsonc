@@ -5,6 +5,7 @@
 //   npx wrangler d1 execute eventcaliber-booking --remote --file worker/schema.sql
 //   npx wrangler secret put UPLOAD_TOKEN               (the same value as MEDIA_UPLOAD_TOKEN on the Mini)
 //   npx wrangler secret put NTFY_TOPIC                 (optional: a push on every quote request)
+//   (SEND_TOKEN, the share sheet's, is made on the Keys page and put by every deploy from .env: site/deploy.py)
 //   bin/ccs site build && npx wrangler deploy
 {
   "$schema": "node_modules/wrangler/config-schema.json",

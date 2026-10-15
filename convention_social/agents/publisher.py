@@ -128,6 +128,19 @@ def asap_slot(ctx: runner.Context, row, now: Optional[datetime] = None) -> Optio
     return pacing.slot_value(local)
 
 
+def posts_now(row) -> bool:
+    """Chris, 2026-10-15, asked whether a photo from the share sheet should keep the 35 minutes to pull it back or post at
+    once: "Right away". A post approved by his send (agents/phone.py approve_sent: source and approved_by "share") goes
+    to Buffer to post now (shareNow), with no slot and no pre-post window, unless he set a time on it himself. So does
+    every post he chose Post now on, on Today, the draft page or the ping (`rule_report.approved_how` "now"; his words:
+    "an option to post immediately or to follow the pace"). Follow the pace keeps its slot, and a post approved before
+    the choices existed keeps asap_slot."""
+    meta = _json(row["rule_report"], {})
+    if not isinstance(meta, dict) or row["scheduled_for"]:
+        return False
+    return (meta.get("source") == "share" and meta.get("approved_by") == "share") or meta.get("approved_how") == "now"
+
+
 def for_day_of(row) -> Optional[date]:
     """The day the content agent drafted the post for (rule_report for_day), or None."""
     meta = _json(row["rule_report"], {}) if "rule_report" in row.keys() else {}
@@ -506,9 +519,12 @@ def publish_ready(ctx: runner.Context, client: Optional[BufferClient] = None, up
             continue
         if skipped:
             record_once(ctx.conn, ctx.agent, "no_channel", f"post {row['id']}: {skip_note}")
-        when = pacing.plan(ctx.conn, list(channels), row["scheduled_for"] or asap_slot(ctx, row, now), now, ctx.cfg,
-                           include_dry=not live, not_before=for_day_of(row))
-        no_day = [n for n, v in when.items() if v is None]
+        if posts_now(row):
+            when = {net: None for net in channels}            # no time: the payload's mode is shareNow
+        else:
+            when = pacing.plan(ctx.conn, list(channels), row["scheduled_for"] or asap_slot(ctx, row, now), now, ctx.cfg,
+                               include_dry=not live, not_before=for_day_of(row))
+        no_day = [] if posts_now(row) else [n for n, v in when.items() if v is None]
         if no_day:
             why = NO_DAY.format(days=pacing.HORIZON_DAYS, nets=", ".join(no_day))
             _set_last_error(ctx.conn, row, why)
@@ -600,6 +616,17 @@ def posted(ctx: runner.Context, row, nets: list[str]) -> None:
     links = {h["service"]: h["external_link"] for h in db.rows(ctx.conn, "SELECT service, external_link FROM post_history WHERE queue_id=?",
                                                               (row["id"],)) if h["external_link"]}
     live = next((links[n] for n in ("instagram", "facebook", "pinterest") if links.get(n)), next(iter(links.values()), None))
+    meta = _json(row["rule_report"], {})
+    if isinstance(meta, dict) and meta.get("source") == "share":
+        # Post to Event Caliber (2026-10-15): his send was his approval, so the ping is where it lives and how it comes down
+        page = notify.link(f"/queue/{row['id']}")
+        where = " and ".join(n.capitalize() for n in nets)
+        notify.push(f"{ctx.cfg.brand_name}: your photo is on {where}",
+                    f"Post {row['id']}, the photo you sent, is on {where}. Tap to open it. To take it down, open it there, "
+                    "tap the three dots, then Delete. The dashboard has the post too.",
+                    dry_run=ctx.dry_run, priority="default", click=live or page, conn=ctx.conn, agent=ctx.agent,
+                    actions=(f"view, Instagram, {live}; " if live else "") + f"view, Dashboard, {page}")
+        return
     notify.push(f"{ctx.cfg.brand_name}: posted", f"Post {row['id']} went out on {', '.join(nets)}. Tap to see it.",
                 dry_run=ctx.dry_run, priority="default", click=live or notify.link(f"/queue/{row['id']}"), conn=ctx.conn, agent=ctx.agent)
 

@@ -372,11 +372,13 @@ def make_renderer(conn: sqlite3.Connection, agent: str, *, design: str, rows: li
     """The day's design on its photos, as `render(focus) -> {aspect: [paths]}` for the art director, and the
     list a failed reel is written to (the same photos then go out as a carousel). Shared by the fresh draft
     and the mend, so a redrawn card is the same card the day would have made."""
-    from ..render import bold, motion
+    from ..render import bold, design_samples, motion
     words = confirmed_rooms(conn, [r["id"] for r in rows])
     kicker = kicker_for(hero).upper()
-    if kicker == words[hero["id"]][0]:
-        kicker = "EVENT CALIBER"                       # the small line never repeats the title under it
+    if kicker == words[hero["id"]][0] or words[hero["id"]] == design_samples.UNCONFIRMED:
+        # the small line never repeats the title under it: no room confirmed, the title is EVENT PHOTOGRAPHY and the small
+        # line EVENT CALIBER (2026-10-15; "CONFERENCE PHOTOGRAPHY" over "EVENT PHOTOGRAPHY" was a near repeat)
+        kicker = "EVENT CALIBER"
     copy = motion.MotionCopy(kicker=kicker)
     tag = f"{hero['id']}-{design}"
     reel_failed: list[str] = []
@@ -530,10 +532,11 @@ def photo_file(cfg, row) -> Path:
 
 def make_draft(ctx: runner.Context, day: date, chosen: list[tuple[dict, bytes]], design: str, *, want: str, kind_used: str,
                asked: str, track, drafter=None, art_client=None, why: str = "", note: str = "", extra_meta: Optional[dict] = None,
-               ping: Optional[tuple[str, str]] = None) -> tuple[int, dict, str]:
+               ping: Optional[tuple[str, str]] = None, quiet: bool = False) -> tuple[int, dict, str]:
     """One draft from photos already chosen and checked: the captions, the design, the art director, the queue row and
     the ping. (queue id, the art director's verdict, the run line). The daily draft (draft_one) and a photo sent from
-    the phone (agents/phone.py) both end here. A turned-back draft is kept as a rejected row and said in the line."""
+    the phone (agents/phone.py) both end here. A turned-back draft is kept as a rejected row and said in the line.
+    `quiet`: no ping here; the caller pings (a photo from the share sheet is approved by his send, 2026-10-15)."""
     for row, data in chosen:
         if (row.get("source") or "drive") != "drive":
             continue                        # a phone photo's own file is its copy for good; never the cache that is swept
@@ -596,8 +599,9 @@ def make_draft(ctx: runner.Context, day: date, chosen: list[tuple[dict, bytes]],
     title, message = ping or (f"{ctx.cfg.brand_name}: a post to approve",
                               f"{what} for {day:%A}. Post now, follow the pace or skip. "
                               f"{'Tap to watch it with its sound.' if design == 'reel' else 'Tap to see it.'}")
-    notify.push(title, message, dry_run=ctx.dry_run, priority="default", click=notify.link(f"/queue/{qid}"), conn=ctx.conn,
-                agent=ctx.agent, **ping_extras(ctx.conn, {"id": qid, "updated_at": now_s}, art))
+    if not quiet:
+        notify.push(title, message, dry_run=ctx.dry_run, priority="default", click=notify.link(f"/queue/{qid}"), conn=ctx.conn,
+                    agent=ctx.agent, **ping_extras(ctx.conn, {"id": qid, "updated_at": now_s}, art))
     fell = (f", the reel could not be made ({reel_failed[0]})" if reel_failed
             else f", {asked} wanted but too few photos passed" if asked != design else "")
     line = (f"{'DRY RUN ' if ctx.dry_run else ''}drafted post #{qid} for {day} ({kind_used}"
