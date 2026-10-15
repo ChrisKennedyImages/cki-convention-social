@@ -92,7 +92,7 @@ def clean_note(conn: sqlite3.Connection, note: str) -> str:
     note = " ".join((note or "").split())[:NOTE_MAX]
     named = names.mentions(note, names.public_names(conn))
     if named:
-        raise Refused(f"the note names {', '.join(named)}; say what the room was, never who or which event")
+        raise Refused(f"your line names {', '.join(named)}; say what the room was, never who or which event")
     return note
 
 
@@ -196,11 +196,14 @@ def recent(conn: sqlite3.Connection, n: int = 20) -> list[dict]:
         d["line"] = {"pending": "waiting its turn: sorted, checked and drafted in a few minutes; your phone gets a ping",
                      "drafting": "being sorted, checked and drafted now; your phone gets a ping",
                      "drafted": f"drafted as post #{d['queue_id']}; approve it there or on the ping",
-                     "failed": f"not drafted: {d['error'] or 'no reason recorded'}"}[d["status"]]
-        if d.get("via") == VIA_SHARE and d["status"] == "drafted" and d.get("queue_status") not in (None, "draft", "rejected"):
-            d["line"] = f"from the share sheet, approved by your send as post #{d['queue_id']}"
-        elif d.get("via") == VIA_SHARE and d["status"] == "failed":
-            d["line"] = f"from the share sheet, not posted: {d['error'] or 'no reason recorded'}"
+                     "failed": f"not drafted: {plain(d['error'])}"}[d["status"]]
+        if d.get("via") == VIA_SHARE:
+            d["line"] = {"pending": "from the share sheet, waiting its turn: checked in a few minutes; your phone gets a ping",
+                         "drafting": "from the share sheet, being checked now; your phone gets a ping",
+                         "failed": f"from the share sheet, not posted: {plain(d['error'])}"}.get(
+                d["status"], f"from the share sheet, approved by your send as post #{d['queue_id']}"
+                if d.get("queue_status") not in (None, "draft", "rejected")
+                else f"from the share sheet, drafted as post #{d['queue_id']} and waiting for your Approve")
         out.append(d)
     return out
 
@@ -223,6 +226,20 @@ def local_time(ctx: runner.Context, iso: str) -> str:
         return (iso or "")[11:16]
 
 
+DETAIL_WORDS = {"badge_name": "a name on a badge", "vehicle_plate": "a readable car plate", "screen": "a readable screen",
+                "document": "a readable document", "house_number": "a house number", "street_sign": "a street sign"}
+
+
+def plain(why: str) -> str:
+    """A reason in words for the phone: the final check's codes (library/classify.py DETAILS) in plain words, a network
+    named as it is written, no full stop of its own (the ping adds the next sentence)."""
+    why = (why or "no reason recorded").strip().rstrip(".")
+    why = re.sub(r"shows personal details: ([a-z_, ]+)",
+                 lambda m: "it shows " + " and ".join(DETAIL_WORDS.get(d.strip(), d.strip().replace("_", " ")) for d in m.group(1).split(",")), why)
+    why = re.sub(r"\b(instagram|facebook|pinterest)\b", lambda m: m.group(1).capitalize(), why)
+    return why[0].lower() + why[1:] if why.startswith("The ") else why
+
+
 def tell(ctx: runner.Context, title: str, message: str, **kw) -> bool:
     """A send from the share sheet is answered on the phone, dry run or not: he sent a real photo and is not at the
     dashboard (the same reasoning as the publisher's eight-hour nudge)."""
@@ -235,7 +252,7 @@ def _failed(ctx: runner.Context, send, why: str, *, queue_id: Optional[int] = No
     runner.record_error(ctx.conn, ctx.agent, "send", f"The photo you sent at {send['created_at'][11:16]} UTC was not drafted: {why}")
     if via_of(send) == VIA_SHARE:
         tell(ctx, f"{ctx.cfg.brand_name}: your photo was not posted",
-             f"The photo you sent at {local_time(ctx, send['created_at'])} was not posted: {why}. Tap to see it.",
+             f"The photo you sent at {local_time(ctx, send['created_at'])} was not posted: {plain(why)}. Tap to see it.",
              click=notify.link(f"/queue/{queue_id}" if queue_id else "/send"))
     return f"send #{send['id']} not drafted: {why}"
 
@@ -344,9 +361,10 @@ def approve_sent(ctx: runner.Context, send, qid: int, art: dict, line: str) -> s
         return f"{line}; dry run: not approved, and the phone was told"
     if art.get("verdict") != "pass":
         _status(conn, send["id"], "drafted", queue_id=qid)
+        why = ("the art director could not look at it this time" if art.get("verdict") == "not reviewed"
+               else f"the art director did not pass it: {plain(art.get('notes') or str(art.get('verdict')))}")
         tell(ctx, f"{brand}: your photo was not posted yet",
-             f"The photo you sent at {at} is drafted as post {qid} but not posted: the art director did not pass it "
-             f"({art.get('notes') or art.get('verdict')}). It waits for your Approve. Tap to see it.",
+             f"The photo you sent at {at} is drafted as post {qid} but not posted: {why}. It waits for your Approve. Tap to see it.",
              click=notify.link(f"/queue/{qid}"), **content_ping(conn, row, art))
         return f"{line}; not approved: the art director did not pass it"
     stop, row = publisher.check_in(ctx, row)
@@ -388,7 +406,7 @@ def content_ping(conn, row, art) -> dict:
 def say_refused(ctx: runner.Context, sent: dict, why: str) -> None:
     runner.record_error(ctx.conn, ctx.agent, "send", f"A photo from the share sheet was not kept: {why}")
     tell(ctx, f"{ctx.cfg.brand_name}: your photo was not posted",
-         f"The photo you sent at {local_time(ctx, str(sent.get('received_at') or ''))} was not posted: {why}.",
+         f"The photo you sent at {local_time(ctx, str(sent.get('received_at') or ''))} was not posted: {plain(why)}.",
          click=notify.link("/send"))
 
 

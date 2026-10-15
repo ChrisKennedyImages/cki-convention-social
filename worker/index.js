@@ -280,18 +280,18 @@ const said = (status, text) => new Response(text, { status, headers: { "content-
 
 async function sendPhoto(request, env) {
   if (request.method !== "POST") return said(405, "Not received: send the photo from the share sheet.");
-  if (!env.SEND_TOKEN) return said(503, "Not received: sending from the phone is not set up yet (no SEND_TOKEN on the site).");
+  if (!env.SEND_TOKEN) return said(503, "Not received: sending from the phone is not set up on the site yet. Make a send token on the Keys page; the site takes it within about twenty minutes.");
   const auth = request.headers.get("authorization") || "";
   if (!auth.startsWith("Bearer ") || !(await sameSecret(auth.slice(7), env.SEND_TOKEN))) {
-    return said(403, "Not received: the token in the Shortcut is not the one on the Keys page.");
+    return said(403, "Not received: the site does not know this token. A new one takes about twenty minutes to reach the site; if yours is older, make a new one on the Keys page and put it in the Shortcut.");
   }
   if (Number(request.headers.get("content-length") || 0) > SEND_MAX_BYTES + 1024 * 1024) {
     return said(413, "Not received: the photo is over 40 MB.");
   }
   let form;
-  try { form = await request.formData(); } catch { return said(400, "Not received: no photo in it (the Shortcut sends a form with the photo)."); }
+  try { form = await request.formData(); } catch { return said(400, "Not received: no photo came with it. In the Shortcut, the request body is a Form."); }
   const file = form.get("photo");
-  if (!file || typeof file === "string") return said(400, "Not received: no photo in it (the form field is called photo).");
+  if (!file || typeof file === "string") return said(400, "Not received: no photo came with it. In the Shortcut, the photo goes in a File field called photo.");
   if (file.size > SEND_MAX_BYTES) return said(413, "Not received: the photo is over 40 MB.");
   const type = photoType(new Uint8Array(await file.slice(0, 16).arrayBuffer()));
   if (!type) return said(415, "Not received: not a JPEG, PNG or HEIC photo.");
@@ -309,7 +309,7 @@ async function sendPhoto(request, env) {
   await env.MEDIA.put(`${SENDS_PREFIX}${id}`, file, { httpMetadata: { contentType: type },
     customMetadata: { note: line, type, received_at: new Date(now).toISOString() } });
   await env.MEDIA.put(SEND_LOG_KEY, JSON.stringify([...log, now]), { httpMetadata: { contentType: "application/json" } });
-  return said(200, "Received. It is checked and posted in a few minutes; your phone gets a ping.");
+  return said(200, "Received. In a few minutes your phone gets a ping saying whether it passed and when it goes out.");
 }
 
 async function sends(request, env, url) {

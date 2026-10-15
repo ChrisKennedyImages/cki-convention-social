@@ -1498,7 +1498,7 @@ def create_app() -> FastAPI:
             {"title": "Image hosting", "note": "Where Buffer fetches post images from.",
              "fields": [f("MEDIA_BASE_URL", "Image address"), f("MEDIA_UPLOAD_TOKEN", "Upload token", secret=True)]},
             {"title": "Post from your iPhone", "note": "The token the Post to Event Caliber Shortcut sends with each photo "
-                                                      "(docs/SETUP.md, section 10). Make one with the button below the keys; the "
+                                                      "(docs/SETUP.md, section 10a). Make one with the button below the keys; the "
                                                       "site takes it on its own within about twenty minutes.",
              "fields": [f("SEND_TOKEN", "Send token", secret=True)]},
             {"title": "Phone alerts", "note": "This company's own ntfy topic. Pings: a post ready to approve, a post that went out, "

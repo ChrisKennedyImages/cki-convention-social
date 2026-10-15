@@ -294,10 +294,10 @@ Then build the Shortcut on the iPhone, in the Shortcuts app:
 Send one photo at a time. What the site answers:
 
 - `Received. ...` it is on its way; the pings follow.
-- `Not received: the token in the Shortcut is not the one on the Keys page.`
+- `Not received: the site does not know this token. ...`
   The header is wrong, or the site has not taken a new token yet.
-- `Not received: sending from the phone is not set up yet` the site has no
-  token yet: wait for the publish after Make a send token.
+- `Not received: sending from the phone is not set up on the site yet. ...`
+  the site has no token yet: wait for the publish after Make a send token.
 - `Not received: not a JPEG, PNG or HEIC photo.`, `... over 40 MB.`,
   `... 20 photos an hour is the limit.`, `... 30 photos are already waiting`
   (the Mini is not picking them up: check it).

@@ -130,6 +130,7 @@ class Pull(ShareCase):
                          [("share", ID1, "pending", "the keynote room, just before the doors"),
                           ("share", ID2, "pending", "the keynote room, just before the doors")])
         self.assertEqual({(r["folder_id"], r["clearance"], r["source"]) for r in rows}, {("phone", "cleared", "phone")})
+        self.assertTrue(all(s["line"].startswith("from the share sheet, waiting its turn") for s in phone.recent(self.conn)))
 
     def test_a_send_kept_before_the_delete_went_is_not_kept_twice(self):
         site = self.site(ID1)
@@ -209,8 +210,8 @@ class Approved(ShareCase):
 
     def test_a_readable_plate_or_a_wedding_stops_it_and_he_hears_why(self):
         ctx = self.live()
-        for i, (look, word) in enumerate(((LookClient(personal_details=["vehicle_plate"]), "vehicle_plate"),
-                                          (LookClient(event_kind="wedding"), "wedding"))):
+        for i, (look, word) in enumerate(((LookClient(personal_details=["vehicle_plate"]), "it shows a readable car plate"),
+                                          (LookClient(event_kind="wedding"), "a wedding"))):
             self.pings.clear()
             phone.run(ctx, api=self.api(self.site(ID1 if i == 0 else ID2)), check_client=look, art_client=ArtClientAny([say("pass")]))
             self.assertIsNone(db.one(self.conn, "SELECT 1 FROM content_queue WHERE status IN ('approved', 'scheduled')"), "nothing posts")
@@ -219,7 +220,10 @@ class Approved(ShareCase):
             (title, message), kw = self.pings[0]
             self.assertIn("not posted", title + message)
             self.assertIn(word, message)
+            self.assertNotIn("vehicle_plate", message, "plain words on the phone, never the check's code")
+            self.assertNotIn("..", message)
             self.assertFalse(kw["dry_run"])
+            self.assertIn(f"from the share sheet, not posted: {word}", phone.recent(self.conn)[0]["line"], "the Send page, in the same words")
         self.assertEqual(self.started, [], "the publisher is not started for a photo that stopped")
 
     def test_a_caption_that_still_breaks_a_rule_after_one_rewrite_stops_it(self):
@@ -236,7 +240,8 @@ class Approved(ShareCase):
         self.assertEqual(self.send_row()["status"], "failed")
         (title, message), kw = self.pings[0]
         self.assertIn("not posted", title + message)
-        self.assertIn("still breaks a rule", message)
+        self.assertIn("not posted: the suite rewrote the captions and one still breaks a rule. The Instagram caption", message)
+        self.assertNotIn("..", message)
         self.assertTrue(kw["click"].endswith(f"/queue/{row['id']}"))
 
     def test_the_art_directors_no_stops_it(self):
@@ -246,7 +251,7 @@ class Approved(ShareCase):
         self.assertEqual(row["status"], "rejected")
         (title, message), _ = self.pings[0]
         self.assertIn("not posted", title + message)
-        self.assertIn("Flat light", message)
+        self.assertIn("the art director turned it back: Flat light. Tap to see it.", message)
 
     def test_an_art_director_who_could_not_look_leaves_it_for_his_approve(self):
         ctx = self.live()
@@ -261,7 +266,7 @@ class Approved(ShareCase):
         self.assertEqual((row["status"], meta["art"]["verdict"]), ("draft", "not reviewed"))
         (title, message), kw = self.pings[0]
         self.assertIn("not posted", title + message)
-        self.assertIn("art director", message)
+        self.assertIn("the art director could not look at it this time. It waits for your Approve.", message)
         self.assertTrue(kw["click"].endswith(f"/queue/{row['id']}"))
 
     def test_a_photo_from_the_send_page_still_waits_for_his_approve(self):
