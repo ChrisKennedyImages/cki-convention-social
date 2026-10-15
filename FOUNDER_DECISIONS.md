@@ -1100,6 +1100,65 @@ Instagram channel in Use.
   alerts. Facebook and Pinterest come back by adding them to that field once
   their channel is connected and in Use.
 
+## 2026-10-15: four new designs, colour from the photo, and the week
+
+Chris: "could you also come up with some new designs (like 4 so they arent
+all exactly the same design everytime) and make sure you follow strict color
+theory and proper design and make them super super super dynamic and punchy".
+On the first renders: "i like the design of 7,8,9 and 10 and create one more
+thats radically different with a new technique use". On round 2, through the
+coordinating session: "perfect! and we still keep the original one we started
+with on the very first post to insta".
+
+- **The four** (`render/bold.py`), each the same design at 4:5 and as its own
+  2:3 card: the **poster** (the room's name stacked to the full width on
+  paper, the photo under it, black and white as he picked), the **slit scan**
+  (the new technique: the photo whole, its most colourful line of pixels drawn
+  out into light streaks above and below it, the words on black tape), the
+  **cascade** (three photos stepping down the frame, the hero last and
+  largest, a band of colour behind) and the **select** (the hero large over a
+  contact strip of the set, the pick boxed). The colour field design of the
+  first round was dropped.
+- **Kept:** the **spotlight**, the design of the very first post that went to
+  Instagram (queue post 2, Buffer 6ad00a04117064a577d1469f, drafted for Monday
+  2026-10-12).
+- **Every photo whole**, its own shape, never cropped or covered, and no word
+  is set over a photo (the 2026-10-14 ruling on horizontals, kept on these
+  posts).
+- **Colour** (`render/palette.py`): the brand's black, greys, white and cyan,
+  plus one accent taken from the photos: their colours found by k-means in
+  OKLab, the photo's hue the colour with the most weight times chroma, turned
+  by the design's rule (cascade split complementary, select triadic, each the
+  side farthest from the photos' other colours and the brand cyan), at the
+  design's lightness and the most chroma sRGB shows. A photo with no hue takes
+  the cyan; an accent that would be muddy is not used. The poster and the
+  slit scan add no colour of their own (the slit scan's streaks are the
+  photo's own pixels).
+- **Contrast is checked before anything is drawn**: every word against the flat
+  colour under it, 4.5 to 1 for small type and 3 to 1 for large (64 px and up
+  on a 1080 px post). A palette that fails is drawn in the brand's black and
+  white. A word that would leave the frame, or a letter a brand face lacks
+  (Michroma has no arrows), is refused.
+- **The week** (`agents/content.py` `DESIGNS`): Monday spotlight, Tuesday
+  poster, Wednesday slit scan (the building day too), Thursday cascade, Friday
+  select, Saturday the reel when a music track is on, Sunday poster; no design
+  two days running. A day with too few photos that pass the final check, a
+  building photo on a day of several, and a Saturday with no track take the
+  one-photo design neither neighbour uses (`fallback_for`). The single, the
+  carousel and the fan leave the week; a phone send, a Post this on a sample
+  and a reel that cannot be made still use them.
+- **A room is named only when Claude's final check of the full photo confirms
+  it.** The first renders put "After Dark" on a sunny garden and "Main Stage"
+  on a reception room, from the sorter's shot type. The final check now also
+  answers which room the photo plainly shows (main stage, backstage,
+  portraits, expo floor, after dark, the crowd, the venue) or none
+  (`library/classify.py` `ROOMS`, `final_checks.room`, migration 0077); a post
+  prints that room's words (`render/design_samples.ROOM_WORDS`) or EVENT
+  PHOTOGRAPHY, with EVENT CALIBER as the small line so it never repeats. This
+  holds for every design that prints a room, the spotlight and the reel
+  included; a dry-run draft and a photo checked before 2026-10-15 name no room.
+- Pinned by `tests/test_bold_designs.py`.
+
 ## Standing rules from the brief
 
 - CPAC, the ACU and their affiliates are never contacted, by code

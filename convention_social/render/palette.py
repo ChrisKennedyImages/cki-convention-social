@@ -321,7 +321,8 @@ class Setter:
         if ratio + 1e-9 < need:
             raise ContrastError(f"{text!r} is {ratio:.2f} to 1 on {hexa(bg)}, {need} needed")
         path = getattr(f, "path", None)
-        if path:
+        from . import fonts
+        if path and str(path).rsplit("/", 1)[-1] in fonts.FACES:
             missing = [ch for ch in set(text) if not _has(path, 48, ch)]
             if missing:
                 raise ValueError(f"{text!r}: the typeface has no {''.join(sorted(missing))!r}")

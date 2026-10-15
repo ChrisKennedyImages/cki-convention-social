@@ -3,14 +3,15 @@
 Chris, 2026-10-15: "could you also come up with some new designs (like 4 so they arent all exactly the same
 design everytime) and make sure you follow strict color theory and proper design and make them super super super
 dynamic and punchy". The motion set (render/motion.py) is one look: near black, photos as cards in depth, Unbounded
-with a cyan ghost. These four are its opposite in every way that shows in a feed: flat colour fields taken from the
-photo, the photo whole and large, type on a strict grid, and each with its own rhythm and its own pair of brand
-typefaces.
+with a cyan ghost. These four are its opposite in every way that shows in a feed: the photo whole and large, flat
+colour taken from the photo, type on a strict grid, and each with its own rhythm and its own pair of brand typefaces.
+On the first renders he kept three ("i like the design of 7,8,9 and 10") and asked for "one more thats radically
+different with a new technique use"; on round 2: "perfect!".
 
-  field    one photo whole and edge to edge, the rest of the frame a flat field in the photo's complementary
-           colour with the room's name huge on it, the ask on a black bar           Unbounded, Inter Tight
   poster   type first: the room's name stacked word by word, each line set to the full width, on paper; the
-           photo whole under it on a block of its analogous colour                 Unbounded, JetBrains Mono
+           photo whole under it on a black block; black and white, as he picked     Unbounded, JetBrains Mono
+  scan     slit scan, the new technique: the photo whole, its most colourful line of pixels drawn out into
+           light streaks above and below it, the words on black tape                Unbounded, Inter Tight
   cascade  three photos whole on a staircase down the frame, the smallest first and the hero last and largest,
            a band of the set's split complementary colour running behind them      Michroma, JetBrains Mono
   select   the photographer's pick: the hero whole and large, every photo of the set whole on a contact strip
@@ -26,16 +27,17 @@ The rules every one keeps:
 - Type: two families per design (the mark is the logo, not type), every word inside the frame, every letter one
   its typeface has; no word is ever set over a photo.
 - The words are the cards' own (motion.MotionCopy and each Shot's room and line, the same path as the motion set)
-  and pass ai.copy_rules first, as social copy.
+  and pass ai.copy_rules first, as social copy. A room is named only when the final check confirmed it
+  (agents/content.confirmed_rooms).
 - 4:5 for Instagram and 2:3 for Pinterest, the same design at both sizes.
 
-Not in the rotation until Chris gives his go on the renders (show first).
+In the week since 2026-10-15 (agents/content.py DESIGNS), beside the spotlight he kept.
 """
 from __future__ import annotations
 
 import itertools
 import math
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Callable, Optional, Sequence
 
@@ -335,19 +337,29 @@ def _cascade(shots, ims, copy: MotionCopy, w, h, p: Palette) -> Made:
         st.text((m - hf.size * 0.02, y), t, hf, pal.W, pal.K)
         y += hf.size * 1.25
     # each room on a black tab beside its photo, on the side with more room: its number over its name
-    lab = face(MONO, 21 * s)
     tabs = []
     for i, (b, k) in enumerate(zip(boxes, order)):
         num, name = f"{i + 1:02d}", shots[k].room
-        tw = max(st.width(num, lab, 0.14), st.width(name, lab, 0.14)) + 24 * s
-        th = 2 * cap(lab) + 34 * s
         right = (w - m - b[2]) >= (b[0] - m)
-        tx = b[2] + 14 * s if right else b[0] - 14 * s - tw
-        if tx < m * 0.5 or tx + tw > w - m * 0.5:
+        side = max(w - m * 0.5 - b[2], b[0] - m * 0.5) - 14 * s - 24 * s      # the widest the words may be beside the photo
+        # its number over its name; a long name breaks between words, then comes down in size (never below 16 px)
+        for size in range(round(21 * s), round(16 * s) - 1, -1):
+            lab = face(MONO, size)
+            lines = next((ls for ls in splits(name, 3) if all(st.width(t, lab, 0.14) <= side for t in ls)), None)
+            if lines:
+                break
+        else:
             raise Clipped(f"the tab for {name!r} has no room beside its photo")
+        rows = [num, *lines]
+        tw = max(st.width(t, lab, 0.14) for t in rows) + 24 * s
+        th = len(rows) * cap(lab) + (len(rows) - 1) * 10 * s + 24 * s
+        tx = b[2] + 14 * s if right else b[0] - 14 * s - tw
         st.d.rectangle([tx, b[1], tx + tw, b[1] + th], fill=pal.K)
-        st.text((tx + 12 * s, b[1] + 12 * s + cap(lab)), num, lab, acc_text, pal.K, tracking=0.14)
-        st.text((tx + 12 * s, b[1] + 22 * s + 2 * cap(lab)), name, lab, pal.W, pal.K, tracking=0.14)
+        y = b[1] + 12 * s
+        for j, t in enumerate(rows):
+            y += cap(lab)
+            st.text((tx + 12 * s, y), t, lab, acc_text if j == 0 else pal.W, pal.K, tracking=0.14)
+            y += 10 * s
         tabs.append((tx, b[1], tx + tw, b[1] + th))
     # the ask in the bottom left, clear of the hero, with the mark and the address over it
     last = boxes[-1]
