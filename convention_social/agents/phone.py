@@ -33,6 +33,7 @@ from zoneinfo import ZoneInfo
 
 from PIL import Image, ImageOps, UnidentifiedImageError
 
+from .. import storage
 from ..ai import names
 from ..core import config, db, runner, settings
 from ..library import classify, eligibility
@@ -130,6 +131,7 @@ def keep(conn: sqlite3.Connection, data: bytes, note: str = "", *, now: Optional
     if max(im.width, im.height) < MIN_WIDTH:
         raise Refused(f"too small for a post: {im.width} by {im.height} pixels, {MIN_WIDTH} or more on the long side needed "
                       "(send the original, not a preview)")
+    im.thumbnail((storage.MAX_EDGE, storage.MAX_EDGE), Image.LANCZOS)      # kept for good, so kept small (2026-10-15)
     now = now or db.utcnow()
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S") + "-" + pysecrets.token_hex(3)
     drive_id = PREFIX + stamp
