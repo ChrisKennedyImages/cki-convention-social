@@ -29,7 +29,8 @@ def old_lists(conn):
     srt = lambda r: r["method"] in ("ollama", "vision")  # noqa: E731
     review = []
     for r in rows:
-        if not srt(r) or r["possible_minor"] != 0 or eligibility.decision_of(r, decisions) != "not_cleared":
+        # 2026-10-15: no age filter (Chris: "If I approve something, it means I checked it"); it was possible_minor != 0
+        if not srt(r) or eligibility.decision_of(r, decisions) != "not_cleared":
             continue
         try:
             details = json.loads(r["personal_details"] or "[]")

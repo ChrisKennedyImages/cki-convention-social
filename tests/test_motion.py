@@ -225,8 +225,9 @@ class DesignSamples(IsolatedCase):
         self.assertEqual(len(picked), 6)
         self.assertEqual(len(set(rooms)), 6)                 # the second stage frame waits for a seventh place
 
-    def test_never_a_minor_a_blocked_a_listed_or_a_detail_photo(self):
-        """Fewer good frames than asked for, so anything the filter lets through would be picked."""
+    def test_never_a_blocked_a_listed_or_a_detail_photo_and_an_age_flag_stops_nothing(self):
+        """Fewer good frames than asked for, so anything the filter lets through would be picked. Deliberate change,
+        2026-10-15 (no age gate): the photo flagged as maybe under 18 is now picked like any approved photo."""
         for n, st in enumerate(("stage_panel", "backstage", "portrait")):
             self.photo(n, st)
         self.photo(10, "vendor_hall", minor=1)
@@ -236,7 +237,7 @@ class DesignSamples(IsolatedCase):
         db.insert(self.conn, "do_not_use", kind="photo", value="d12", reason="takedown", added_at=db.utcnow())
         self.photo(13, "group", details='["vehicle_plate"]')          # a name badge would be fine (2026-10-12); a plate is not
         picked = [r["drive_id"] for r in design_samples.pick(self.conn, 6)]
-        self.assertEqual(sorted(picked), ["d0", "d1", "d2"])
+        self.assertEqual(sorted(picked), ["d0", "d1", "d10", "d2"])
 
     def test_makes_every_still_the_carousel_and_one_page(self):
         for n, st in enumerate(("stage_panel", "backstage", "portrait", "vendor_hall")):

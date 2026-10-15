@@ -71,9 +71,10 @@ class Keep(IsolatedCase):
         self.assertEqual(client.calls, 1)
         self.assertEqual(db.one(self.conn, "SELECT COUNT(*) n FROM api_usage WHERE agent='site'")["n"], 1)
         hero.save(jpeg_bytes(seed=2, size=(1600, 1000)))                   # a new file: Claude looks again
-        self.assertEqual(hero.checked(self.conn, looker(self.conn, LookClient(possible_minor=True))),
-                         (True, "your photo; Claude notes: someone in it may be under 18"))
-        self.assertEqual(hero.status(self.conn)["notes"], ["someone in it may be under 18"])
+        # 2026-10-15: no age note any more (no age gate); a plate is still noted, never holding the photo back
+        self.assertEqual(hero.checked(self.conn, looker(self.conn, LookClient(possible_minor=True, personal_details=["vehicle_plate"]))),
+                         (True, "your photo; Claude notes: it shows vehicle_plate"))
+        self.assertEqual(hero.status(self.conn)["notes"], ["it shows vehicle_plate"])
         hero.save(jpeg_bytes(seed=3, size=(1600, 1000)))
         ok, note = hero.checked(self.conn, looker(self.conn, LookClient(event_kind="wedding")))
         self.assertTrue(ok)
@@ -120,9 +121,9 @@ class OnTheSite(IsolatedCase):
 
     def test_claudes_note_never_holds_the_upload_back(self):
         hero.save(jpeg_bytes(size=(1600, 1000)))
-        photos = build.pick_photos(self.conn, self.fetch, look=looker(self.conn, LookClient(possible_minor=True)))
+        photos = build.pick_photos(self.conn, self.fetch, look=looker(self.conn, LookClient(personal_details=["vehicle_plate"])))
         self.assertEqual(photos.hero[0][0].size, (1600, 1000))
-        self.assertEqual(photos.hero_note, "your uploaded photo (your photo; Claude notes: someone in it may be under 18)")
+        self.assertEqual(photos.hero_note, "your uploaded photo (your photo; Claude notes: it shows vehicle_plate)")   # 2026-10-15: a plate, no age note
 
 
 class TheCard(IsolatedCase):
@@ -205,8 +206,8 @@ class Shipped(IsolatedCase):
         hero.save(jpeg_bytes(seed=8, size=(1600, 1000)))
         self.assertEqual(hero.status(self.conn)["source"], "phone")
         self.assertEqual(hero.image().size, (1600, 1000))
-        self.assertEqual(hero.checked(self.conn, looker(self.conn, LookClient(possible_minor=True))),
-                         (True, "your photo; Claude notes: someone in it may be under 18"))
+        self.assertEqual(hero.checked(self.conn, looker(self.conn, LookClient(personal_details=["vehicle_plate"]))),
+                         (True, "your photo; Claude notes: it shows vehicle_plate"))      # 2026-10-15: a plate, no age note
         self.assertTrue(hero.remove(self.conn))
         self.assertEqual((hero.status(self.conn)["source"], hero.image().size), ("code", (2576, 1281)))
         self.assertEqual(hero.checked(self.conn, looker(self.conn, LookClient())), (True, "your photo, seen by Claude"), "looked at again, on its own")

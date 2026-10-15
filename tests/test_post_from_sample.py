@@ -194,8 +194,8 @@ class ThePress(Case):
 class FinalCheck(Case):
     def test_a_photo_that_fails_the_final_check_drops_the_draft_and_says_why(self):
         self.live()
-        for answer, said in (({"possible_minor": True}, "may be under 18"), ({"personal_details": ["vehicle_plate"]}, "vehicle_plate"),
-                             ({"event_kind": "wedding"}, "wedding")):
+        # 2026-10-15: "someone may be under 18" is no longer a failing answer (no age gate); a plate and a wedding are
+        for answer, said in (({"personal_details": ["vehicle_plate"]}, "vehicle_plate"), ({"event_kind": "wedding"}, "wedding")):
             self.conn.execute("DELETE FROM final_checks")
             self.press("fan")
             line = sample.run(self.ctx(), fetch=self.fetch, check_client=LookClient(**answer), art_client=ArtClientAny([say("pass")] * 4))

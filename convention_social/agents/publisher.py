@@ -372,11 +372,15 @@ def reel_urls(row, fields: list[dict], *, live: bool, uploader=None) -> tuple[st
 # ------------------------------------------------------------------ publishing
 
 def usable_networks(ctx: runner.Context, row) -> tuple[dict[str, dict], dict[str, str]]:
-    """({network: channel row} that can go, {network: why not} for the rest)."""
+    """({network: channel row} that can go, {network: why not} for the rest). A network switched off on the Keys
+    page (POST_NETWORKS; Instagram only by default, 2026-10-15) is left out quietly: no channel is expected for it."""
     active, skipped = {}, {}
+    on = payloads.posting_networks()
     for net in targets_of(row):
         if net not in payloads.NETWORKS:
             skipped[net] = "not a network this suite posts to"
+            continue
+        if net not in on:
             continue
         ch = channel_for(ctx.conn, net)
         if not ch:

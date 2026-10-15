@@ -13,8 +13,8 @@ pass never marks it trashed and the nightly sweep never deletes its file.
 
 Then this agent (`ccs run phone`, started by the page; a second start while one runs waits its turn) does
 for the one photo what the daily draft does: the sorter when one is on (the free local one even in dry
-run), Claude's final check (someone who may be under 18, a plate, a wedding: the draft stops and the page
-says why), the captions with his line as a fact, the single design, the art director, a queue row for
+run), Claude's final check (a readable plate or a wedding: the draft stops and the page
+says why; no age gate, 2026-10-15), the captions with his line as a fact, the single design, the art director, a queue row for
 today marked `asap` (the publisher sends it as soon as he approves it, never at the day's usual slot), and
 the ping with the card and the Approve button. Nothing posts without his Approve; the pre-post window
 stays. The lane follows the content lane's dry-run switch: it is a draft of that lane.
@@ -197,15 +197,15 @@ PHOTO_SQL = """SELECT p.*, c.subject, c.convention_name, c.event_kind, c.shot_ty
 
 
 def fill_sort_from_check(conn: sqlite3.Connection, photo_id: int, verdict: dict) -> None:
-    """A photo Claude looked at in full is never "not checked for minors yet": when no sorter ran, the final check's
+    """A photo Claude looked at in full is never "not sorted yet": when no sorter ran, the final check's
     answer is the sort (library/eligibility.is_candidate reads classifications first)."""
-    row = db.one(conn, "SELECT possible_minor FROM classifications WHERE photo_id=?", (photo_id,))
-    if row is None or row["possible_minor"] is not None:
+    row = db.one(conn, "SELECT method FROM classifications WHERE photo_id=?", (photo_id,))
+    if row is None or row["method"] in eligibility.SORTED_METHODS:
         return
     kind = verdict.get("event_kind") if verdict.get("event_kind") in classify.KINDS else "unknown"
-    conn.execute("UPDATE classifications SET method='vision', possible_minor=?, personal_details=?, "
+    conn.execute("UPDATE classifications SET method='vision', personal_details=?, "
                  "shot_type=COALESCE(shot_type, ?), event_kind=?, is_convention=?, summary=?, model=?, classified_at=? WHERE photo_id=?",
-                 (1 if verdict.get("possible_minor", True) else 0, __import__("json").dumps(verdict.get("personal_details") or []),
+                 (__import__("json").dumps(verdict.get("personal_details") or []),
                   verdict.get("shot_type") if verdict.get("shot_type") in classify.SHOT_TYPES else None, kind,
                   0 if kind in classify.NOT_OFFERED_KINDS else 1, (verdict.get("summary") or "")[:300],
                   verdict.get("model_used") or "", db.utcnow(), photo_id))

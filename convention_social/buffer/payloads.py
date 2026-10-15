@@ -60,6 +60,18 @@ def due_at_utc(local_value: Optional[str]) -> Optional[str]:
     return dt.astimezone(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
+POSTING_KEY = "POST_NETWORKS"
+POSTING_DEFAULT = ("instagram",)   # Chris, 2026-10-15: "we are ONLY using Insta now"
+
+
+def posting_networks() -> tuple[str, ...]:
+    """The networks posts go to (Keys page, Posting: POST_NETWORKS, comma separated). Blank is Instagram only;
+    a network left out is not posted to and not reported as missing a channel."""
+    raw = config.getenv(POSTING_KEY, "") or ""
+    picked = tuple(n for n in (w.strip().lower() for w in raw.split(",")) if n in NETWORKS)
+    return picked or POSTING_DEFAULT
+
+
 def pinterest_board_id() -> str:
     return config.getenv("PINTEREST_BOARD_ID", "") or ""
 
