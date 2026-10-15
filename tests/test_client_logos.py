@@ -1,0 +1,141 @@
+"""The logos under the hero (Chris, 2026-10-15): "should we add the companies we have worked for on the website? like
+their logos", then "it can be political organizations, i just dont want them the only thing on the site". His answers:
+under the top photo on the home page, in their own colours, headed "We've photographed for", no permission needed.
+Off until he turns it on in offer.json (`clients.show`)."""
+from __future__ import annotations
+
+import io
+import json
+import os
+
+from PIL import Image
+
+from convention_social import offer
+from convention_social.ai import copy_rules
+from convention_social.site import build, theme
+from tests._base import IsolatedCase
+from tests._photos import jpeg_bytes
+
+
+def photo(seed=0):
+    return Image.open(io.BytesIO(jpeg_bytes((80, 90 + seed * 20, 120), size=(2400, 1600), seed=seed)))
+
+
+class Logos(IsolatedCase):
+    def setUp(self):
+        super().setUp()
+        (self.root / "site" / "clients").mkdir(parents=True)
+        self.offer = json.loads(json.dumps(offer.load()))
+
+    def logo(self, name: str, size=(600, 200), color=(20, 60, 140, 255), exif: bool = False) -> str:
+        im = Image.new("RGBA", size, color)
+        path = self.root / "site" / "clients" / f"{name}.png"
+        if exif:
+            ex = Image.Exif()
+            ex[0x010E] = "a description that must not travel"
+            im.save(path, exif=ex.tobytes())
+        else:
+            im.save(path)
+        return f"site/clients/{name}.png"
+
+    def use(self, show=True, items=(), heading=None):
+        self.offer["clients"] = {"show": show, "heading": heading or "We've photographed for", "list": list(items)}
+        (self.root / "offer.json").write_text(json.dumps(self.offer))
+        os.environ["OFFER_FILE"] = str(self.root / "offer.json")
+
+    def built(self):
+        photos = build.SitePhotos(hero=[(photo(), "a")], coverage=[(photo(i), "c") for i in range(3)])
+        out = build.build(None, photos, out=self.root / "dist", preview=True)
+        return out, (out / "index.html").read_text()
+
+    def test_off_by_default_and_the_repo_list_is_empty(self):
+        repo = offer.load()["clients"]
+        self.assertIs(repo["show"], False)
+        self.assertEqual(repo["list"], [])
+        self.assertEqual(build.client_logos(), ([], []))
+        _, home = self.built()
+        self.assertNotIn('class="clients"', home)
+
+    def test_on_the_strip_sits_under_the_hero_with_each_logo_named_at_its_own_shape(self):
+        self.use(items=[{"name": "Plain One", "logo": self.logo("one"), "political": False},
+                        {"name": "Plain Two", "logo": self.logo("two", (300, 300)), "political": False, "tile": "dark"}])
+        out, home = self.built()
+        self.assertIn('<section class="clients" aria-label="We&#x27;ve photographed for">', home)
+        self.assertLess(home.index('<section class="hero">'), home.index('class="clients"'))
+        self.assertLess(home.index('class="clients"'), home.index('class="ticker'))
+        self.assertIn('alt="Plain One" width="360" height="120"', home)          # 600x200 kept at its shape, LOGO_H tall
+        self.assertIn('<li class="tile dark"><img src="/assets/clients/plain-two.png" alt="Plain Two" width="120" height="120"', home)
+        with Image.open(out / "assets" / "clients" / "plain-one.png") as im:
+            self.assertEqual(im.size, (360, 120))
+
+    def test_a_logo_is_saved_fresh_from_its_pixels(self):
+        self.use(items=[{"name": "Plain One", "logo": self.logo("one", exif=True), "political": False}])
+        out, _ = self.built()
+        with Image.open(out / "assets" / "clients" / "plain-one.png") as im:
+            self.assertNotIn("exif", im.info)
+            self.assertEqual(len(im.getexif()), 0)
+
+    def test_political_logos_never_lead_never_bunch_and_never_outnumber_the_rest(self):
+        """"i just dont want them the only thing on the site"."""
+        p = lambda n: {"name": n, "logo": self.logo(n.lower().replace(" ", "-")), "political": True}   # noqa: E731
+        q = lambda n: {"name": n, "logo": self.logo(n.lower().replace(" ", "-")), "political": False}  # noqa: E731
+        self.use(items=[p("Pol A"), p("Pol B"), p("Pol C"), q("Plain A"), q("Plain B")])
+        shown, why = build.client_logos()
+        self.assertEqual([c["name"] for c in shown], ["Plain A", "Pol A", "Plain B", "Pol B"])
+        self.assertEqual(len(why), 1)
+        self.assertIn("Pol C", why[0])
+        self.use(items=[p("Pol A"), p("Pol B")])
+        shown, why = build.client_logos()
+        self.assertEqual(shown, [])
+        self.assertEqual(len(why), 2)
+        _, home = self.built()
+        self.assertNotIn('class="clients"', home)
+
+    def test_unsaid_politics_counts_as_political(self):
+        """Fail closed: only `political: false` makes a logo count as not political."""
+        self.use(items=[{"name": "Unsaid", "logo": self.logo("unsaid")}])
+        self.assertEqual(build.client_logos()[0], [])
+        self.use(items=[{"name": "Unsaid", "logo": self.logo("unsaid")}, {"name": "Plain", "logo": self.logo("plain"), "political": False}])
+        self.assertEqual([c["name"] for c in build.client_logos()[0]], ["Plain", "Unsaid"])
+
+    def test_a_logo_without_its_name_its_file_or_a_safe_svg_is_left_out_and_said(self):
+        bad_svg = self.root / "site" / "clients" / "bad.svg"
+        bad_svg.write_text('<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>')
+        far_svg = self.root / "site" / "clients" / "far.svg"
+        far_svg.write_text('<svg xmlns="http://www.w3.org/2000/svg"><image href="https://elsewhere.example/x.png"/></svg>')
+        good_svg = self.root / "site" / "clients" / "good.svg"
+        good_svg.write_text('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 30 10"><rect width="30" height="10"/></svg>')
+        (self.root / "outside.png").write_bytes((self.root / self.logo("tmp")).read_bytes())
+        self.use(items=[{"name": "", "logo": self.logo("noname"), "political": False},
+                        {"name": "No File", "logo": "site/clients/missing.png", "political": False},
+                        {"name": "Outside", "logo": "outside.png", "political": False},
+                        {"name": "Climbs Out", "logo": "site/clients/../../outside.png", "political": False},
+                        {"name": "Script", "logo": "site/clients/bad.svg", "political": False},
+                        {"name": "Far", "logo": "site/clients/far.svg", "political": False},
+                        {"name": "Good", "logo": "site/clients/good.svg", "political": False}])
+        shown, why = build.client_logos()
+        self.assertEqual([c["name"] for c in shown], ["Good"])
+        self.assertEqual(len(why), 6)
+        out, home = self.built()
+        self.assertTrue((out / "assets" / "clients" / "good.svg").is_file())
+        self.assertIn('<img src="/assets/clients/good.svg" alt="Good" loading="lazy"', home)
+
+    def test_the_heading_passes_the_copy_rules(self):
+        self.use(items=[{"name": "Plain", "logo": self.logo("plain"), "political": False}], heading="Trusted by")
+        with self.assertRaises(build.SiteCopyRefused):
+            self.built()
+
+    def test_the_names_rule_still_holds_everywhere_else(self):
+        """The strip is the one place an organization is named; a caption naming one is still refused."""
+        self.assertFalse(copy_rules.check("Backstage at Plain One this week.", names=["Plain One"], social=True).ok)
+
+    def test_three_sizes(self):
+        css = theme.CSS
+        self.assertIn(".clients .tile{height:84px", css)
+        ipad = css[css.index("@media (min-width:761px) and (max-width:1100px)"):]
+        ipad = ipad[:ipad.index("}}") + 2]
+        self.assertIn(".clients .tile{height:74px", ipad)
+        phone = css[css.index("@media (max-width:760px)"):]
+        phone = phone[:phone.index("}}") + 2]
+        self.assertIn(".clients .tile{height:62px", phone)
+        self.assertIn("flex-wrap:wrap", css[css.index(".clients .logos{"):][:200])

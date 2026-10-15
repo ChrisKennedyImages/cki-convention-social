@@ -10,7 +10,9 @@ saved fresh from pixels at web size so no EXIF or GPS travels. With
 first look) and stamps every page PREVIEW so it can never be mistaken for live.
 
 Every word on every page passes ai.copy_rules: no price, no dash, no claim of
-an official role, a client list or past bookings.
+an official role. The one list of organizations is the logo strip under the hero
+(Chris, 2026-10-15: "should we add the companies we have worked for on the
+website? like their logos"), off until he turns it on in offer.json.
 """
 from __future__ import annotations
 
@@ -409,6 +411,84 @@ def copy_text() -> dict:
     }
 
 
+# ------------------------------------------------------------------ the logos under the hero (Chris, 2026-10-15)
+# "should we add the companies we have worked for on the website? like their logos and say we have worked with them?",
+# then "it can be political organizations, i just dont want them the only thing on the site". His answers when asked:
+# under the top photo on the home page, in their own colours, headed "We've photographed for", no permission needed.
+# The list is offer.json `clients`; the files are under site/clients/ as he sent them.
+LOGO_TYPES = (".png", ".jpg", ".jpeg", ".webp", ".svg")
+LOGO_H = 120                       # stored height in pixels: twice the tallest a logo is shown (60 px on a computer)
+SVG_UNSAFE = re.compile(rb"<script|javascript:|<foreignObject|\bon[a-z]+\s*=|(?:href|src)\s*=\s*[\"']?\s*(?:https?:)?//", re.I)
+
+
+def logos_dir() -> Path:
+    return offer.path().parent / "site" / "clients"
+
+
+def client_logos(o: Optional[dict] = None) -> tuple[list[dict], list[str]]:
+    """The logos the home page shows, in order, and why any listed one is left out (said on the Agents page).
+
+    Nothing unless `clients.show` is true. A logo needs its name and its file (under site/clients/; an SVG with a
+    script or a link to elsewhere is refused). Fail closed on politics: an entry counts as political unless it says
+    `political: false`. Political logos never outnumber the others ("i just dont want them the only thing on the site"):
+    a non-political logo comes first and they alternate, and a political one past the count waits for another."""
+    block = (o or offer.load()).get("clients") or {}
+    if not block.get("show"):
+        return [], []
+    base, ok, why = logos_dir().resolve(), [], []
+    for c in block.get("list") or []:
+        name = " ".join(str(c.get("name") or "").split())
+        file = str(c.get("logo") or "")
+        path = (offer.path().parent / file).resolve() if file else None
+        if not name:
+            why.append(f"a logo with no name ({file or 'no file'})")
+        elif path is None or not path.is_file() or path.suffix.lower() not in LOGO_TYPES or base not in path.parents:
+            why.append(f"{name}: no logo file under site/clients/ ({file or 'none listed'})")
+        elif path.suffix.lower() == ".svg" and SVG_UNSAFE.search(path.read_bytes()):
+            why.append(f"{name}: its SVG carries a script or a link to elsewhere; send a PNG instead")
+        else:
+            ok.append({"name": name, "path": path, "political": c.get("political") is not False,
+                       "tile": "dark" if c.get("tile") == "dark" else "light"})
+    plain = [c for c in ok if not c["political"]]
+    political = [c for c in ok if c["political"]]
+    why += [f"{c['name']}: waits for another non-political logo (political logos never outnumber the others)"
+            for c in political[len(plain):]]
+    shown = []
+    for i, c in enumerate(plain):
+        shown.append(c)
+        if i < len(political):
+            shown.append(political[i])
+    return shown, why
+
+
+def save_logo(c: dict, out_dir: Path) -> tuple[str, int, int]:
+    """The logo saved for the web under assets/clients: a picture re-encoded from its pixels at LOGO_H tall (no
+    metadata travels), an SVG as sent. (file name, width, height); 0 x 0 for an SVG (its own box sizes it)."""
+    out_dir.mkdir(parents=True, exist_ok=True)
+    slug = re.sub(r"[^a-z0-9]+", "-", c["name"].lower()).strip("-") or "logo"
+    if c["path"].suffix.lower() == ".svg":
+        shutil.copyfile(c["path"], out_dir / f"{slug}.svg")
+        return f"{slug}.svg", 0, 0
+    with Image.open(c["path"]) as src:
+        im = ImageOps.exif_transpose(src).convert("RGBA")
+    if im.height > LOGO_H:
+        im = im.resize((max(1, round(im.width * LOGO_H / im.height)), LOGO_H), Image.LANCZOS)
+    im.save(out_dir / f"{slug}.png", format="PNG", optimize=True)
+    return f"{slug}.png", im.width, im.height
+
+
+def clients_body(heading: str, logos: list[tuple[str, str, str, int, int]]) -> str:
+    """The strip under the hero: the heading and each logo on its own tile. `logos`: (file, name, tile, w, h)."""
+    if not logos:
+        return ""
+    e = html.escape
+    items = "".join(f'<li class="tile {tile}"><img src="/assets/clients/{e(file)}" alt="{e(name)}"'
+                    + (f' width="{w}" height="{h}"' if w and h else "") + ' loading="lazy" decoding="async"></li>'
+                    for file, name, tile, w, h in logos)
+    return (f'<section class="clients" aria-label="{e(heading)}"><div class="kick mono c">{e(heading)}</div>'
+            f'<ul class="logos">{items}</ul></section>')
+
+
 def check_copy(texts) -> None:
     for t in texts:
         r = copy_rules.check(t)
@@ -441,9 +521,11 @@ def coverage_rows(coverage: list[dict], skip: str = "") -> str:
         for i, c in enumerate(coverage) if c["key"] != skip)
 
 
-def home_body(t: dict, hero: str, frames: list[tuple[str, str, str, str]], stack: list[tuple[str, str]], venues: list[tuple[str, str, str]]) -> str:
+def home_body(t: dict, hero: str, frames: list[tuple[str, str, str, str]], stack: list[tuple[str, str]], venues: list[tuple[str, str, str]],
+              clients: str = "") -> str:
     """`frames`: (img tag, caption, the coverage page it opens, the photo's shape); `stack`: (img tag, shape); `venues`:
-    (img tag, label, shape). The shape (--ar) gives every frame the photo's own proportions, so nothing is cropped."""
+    (img tag, label, shape). The shape (--ar) gives every frame the photo's own proportions, so nothing is cropped.
+    `clients`: the logo strip under the hero (clients_body), or nothing."""
     e = html.escape
     coverage = offer.load()["coverage"]
     rows = coverage_rows(coverage)
@@ -464,7 +546,7 @@ def home_body(t: dict, hero: str, frames: list[tuple[str, str, str, str]], stack
 <h1 class="mega"><span><em>Two</em></span><span class="o"><em>brothers,</em></span><span><em>every room<b>.</b></em></span></h1>
 <p class="first">{e(t['first'])}</p>
 <div class="row"><p class="lede">{e(t['lede'])}</p><a class="btn fill" href="/book/">Request a quote <span class="arr">&#8599;</span></a></div></div></section>
-{_ticker(short)}
+{clients}{_ticker(short)}
 <section id="coverage" class="index"><div class="head rv"><div><div class="kick mono c">Coverage</div>
 <h2>From the green room<br><span class="o">to the last</span> reception.</h2></div><p>{e(t['coverage_p'])}</p></div>
 <div class="list rv">{rows}</div></section>
@@ -634,8 +716,20 @@ def build(conn: Optional[sqlite3.Connection], photos: SitePhotos, *, out: Path =
         files = save_web(im, assets, f"venue-{i}", m)
         shown.append((f"/assets/{files[max(files)]}", alt, m))
         venues.append((img_tag(files, alt, "(max-width:760px) 100vw, 50vw"), "Exterior" if i % 2 == 0 else "Interior", aspect(im)))
+    logos, left_out = client_logos(o)
+    heading = (o.get("clients") or {}).get("heading") or "We've photographed for"
+    if logos:
+        check_copy([heading])
+    saved_logos = []
+    for c in logos:
+        file, lw, lh = save_logo(c, assets / "clients")
+        saved_logos.append((file, c["name"], c["tile"], lw, lh))
+    strip = clients_body(heading, saved_logos)
+    if left_out and conn is not None and not preview:
+        from ..core import runner
+        runner.record_error_once(conn, "site", "client_logos", "Logos left off the home page: " + "; ".join(left_out) + ".")
     base = f"https://{cfg.brand_domain}"
-    pages = {"index.html": (t["title"], t["description"], home_body(t, hero, frames, stack, venues))}
+    pages = {"index.html": (t["title"], t["description"], home_body(t, hero, frames, stack, venues, strip))}
     page_shown: dict[str, list[tuple[str, str, ImageMeta]]] = {"/": list(shown)}     # per page, for the sitemap and the image blocks
     page_og: dict[str, str] = {}
     page_jsonld: dict[str, str] = {}

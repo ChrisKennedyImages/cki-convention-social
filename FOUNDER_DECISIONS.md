@@ -1100,6 +1100,36 @@ Instagram channel in Use.
   alerts. Facebook and Pinterest come back by adding them to that field once
   their channel is connected and in Use.
 
+## 2026-10-15: the logos of the organizations he has photographed for
+
+Chris: "should we add the companies we have worked for on the website? like
+their logos and say we have worked with them?", then "it can be political
+organizations, i just dont want them the only thing on the site". His answers
+when asked: under the top photo on the home page; each logo in its own
+colours; headed "We've photographed for"; no permission from the
+organizations needed (his call: a logo is the organization's trademark and
+some contracts forbid showing it; he was told).
+
+- The one exception to "never which event, never who" (2026-10-11): the
+  organizations he lists may be named, by their logo and its label, in this
+  strip on the home page and nowhere else. Captions, the words on the posts,
+  the photo text and the search fields still name no one (`ai/names.py`,
+  `ai/copy_rules.py` rule `names`, unchanged).
+- The list is `offer.json` `clients` (name, logo file under `site/clients/` as
+  he sent it, `political`, `tile`), off until he turns it on (`show`); the
+  heading passes the copy rules at build (`site/build.py` `client_logos`).
+- Politics fail closed: a logo counts as political unless its entry says
+  `political: false`. Political logos never outnumber the others; a
+  non-political logo comes first and they alternate; one past the count waits
+  for another non-political logo, said on the Agents page.
+- Each logo sits on a light tile (a dark one for a logo drawn in white), all
+  one height, re-encoded from its pixels (no metadata travels); an SVG with a
+  script or a link to elsewhere is refused. The strip wraps at the three
+  sizes (pinned by `tests/test_client_logos.py`).
+- Only Chris can do: send the logo files and say which organizations are
+  political; the strip is shown to him with his real logos before `show` is
+  turned on.
+
 ## Standing rules from the brief
 
 - CPAC, the ACU and their affiliates are never contacted, by code

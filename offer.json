@@ -81,5 +81,11 @@
     "Whether photos go out during the event, and to whom",
     "Where the images will be used"
   ],
-  "call_to_action": "Request a quote"
+  "call_to_action": "Request a quote",
+  "clients": {
+    "_about": "The logos under the hero on the home page (Chris, 2026-10-15). Off until he says so (show). Each entry: name (the organization, as its logo's label), logo (its file, under site/clients/, as he sent it), political (false only for an organization that is not political; left out it counts as political), tile (light, or dark for a logo drawn in white). Political logos never outnumber the others and a non-political one comes first.",
+    "show": false,
+    "heading": "We've photographed for",
+    "list": []
+  }
 }
