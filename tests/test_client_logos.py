@@ -48,13 +48,28 @@ class Logos(IsolatedCase):
         out = build.build(None, photos, out=self.root / "dist", preview=True)
         return out, (out / "index.html").read_text()
 
-    def test_off_by_default_and_the_repo_list_is_empty(self):
+    def test_off_by_default_until_he_confirms_his_list(self):
         repo = offer.load()["clients"]
         self.assertIs(repo["show"], False)
-        self.assertEqual(repo["list"], [])
         self.assertEqual(build.client_logos(), ([], []))
         _, home = self.built()
         self.assertNotIn('class="clients"', home)
+
+    def test_his_twelve_each_with_its_file_its_source_and_its_date(self):
+        """His list (2026-10-15), less Miner Feinstein Architects, which has no website and waits for his file."""
+        repo = offer.load()["clients"]["list"]
+        self.assertEqual(len(repo), 12)
+        names = [c["name"] for c in repo]
+        for want in ("Library of Congress", "Hamel Builders", "Center for Adoption Support and Education (C.A.S.E.)",
+                     "Washington Nationals", "American Heart Association", "Associated Press", "American Conservative Union",
+                     "CPAC", "WC Smith", "Bozzuto", "APTA Pelvic Health", "Grimm + Parker Architects"):
+            self.assertIn(want, names)
+        for c in repo:
+            self.assertTrue((offer.path().parent / c["logo"]).is_file(), c["logo"])
+            self.assertTrue(c["logo"].startswith("site/clients/") and c["logo"].endswith(".png"), c["logo"])
+            self.assertTrue(c["source"] and c["fetched"], c["name"])
+            self.assertIs(c["political"], c["name"] in ("American Conservative Union", "CPAC"), c["name"])
+        self.assertEqual(next(c for c in repo if c["name"] == "CPAC")["tile"], "dark")       # its mark is white
 
     def test_on_the_strip_sits_under_the_hero_with_each_logo_named_at_its_own_shape(self):
         self.use(items=[{"name": "Plain One", "logo": self.logo("one"), "political": False},
@@ -90,6 +105,46 @@ class Logos(IsolatedCase):
         self.assertEqual(len(why), 2)
         _, home = self.built()
         self.assertNotIn('class="clients"', home)
+
+    def test_political_logos_are_spread_through_the_row(self):
+        mk = lambda n, pol: {"name": n, "logo": self.logo(n.lower().replace(" ", "-")), "political": pol}   # noqa: E731
+        plain = [mk(f"Plain {i}", False) for i in range(10)]
+        self.use(items=plain[:3] + [mk("Pol A", True), mk("Pol B", True)] + plain[3:])
+        order = [c["name"] for c in build.client_logos()[0]]
+        self.assertEqual(order.index("Pol A"), 3, order)                    # after the third of ten
+        self.assertEqual(order.index("Pol B"), 8, order)                    # after the seventh
+        for i in range(len(order) - 1):
+            self.assertFalse(order[i].startswith("Pol") and order[i + 1].startswith("Pol"), order)
+
+    def test_the_acu_and_cpac_may_be_on_the_strip_and_are_still_never_contacted(self):
+        """Chris, 2026-10-15: "no you can use acu and cpac for this, i just donrt want them emailed for outreach as i
+        stated in the beginning"."""
+        from convention_social.outreach import compliance
+        plain = [{"name": f"Plain {i}", "logo": self.logo(f"plain-{i}"), "political": False} for i in range(2)]
+        self.use(items=plain + [{"name": "American Conservative Union", "logo": self.logo("acu"), "political": True},
+                                {"name": "CPAC", "logo": self.logo("cpac"), "political": True, "tile": "dark"}])
+        _, home = self.built()
+        self.assertIn('alt="American Conservative Union"', home)
+        self.assertIn('alt="CPAC"', home)
+        for refused in (compliance.never_contact(names=("CPAC",)), compliance.never_contact(names=("American Conservative Union",)),
+                        compliance.never_contact(email="press@conservative.org"), compliance.never_contact(urls=("https://www.cpac.org/",))):
+            self.assertIsNotNone(refused)
+
+    def test_each_logo_is_cut_to_what_shows_and_set_by_its_weight(self):
+        im = Image.new("RGBA", (900, 300), (255, 255, 255, 255))           # a white box with the mark in its middle
+        im.paste((20, 60, 140, 255), (300, 100, 600, 200))
+        path = self.root / "site" / "clients" / "boxed.png"
+        im.save(path)
+        self.use(items=[{"name": "Boxed", "logo": "site/clients/boxed.png", "political": False}])
+        out, home = self.built()
+        with Image.open(out / "assets" / "clients" / "boxed.png") as got:
+            self.assertAlmostEqual(got.width / got.height, 3.0, delta=0.25)   # the mark, not the box
+            self.assertEqual(got.getpixel((1, 1))[3], 0, "the white box went clear")
+        self.assertIn('style="--k:', home)
+        self.assertEqual(build.optical(120, 120), 1.3)                       # a square mark is set up to the tile's height
+        self.assertEqual(build.optical(745, 120), 0.6)                       # a long wordmark comes down
+        self.assertLess(build.optical(484, 120), build.optical(199, 120))
+        self.assertIn("height:calc(var(--lh) * var(--k, 1))", theme.CSS)
 
     def test_unsaid_politics_counts_as_political(self):
         """Fail closed: only `political: false` makes a logo count as not political."""

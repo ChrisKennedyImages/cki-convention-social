@@ -1115,20 +1115,45 @@ some contracts forbid showing it; he was told).
   strip on the home page and nowhere else. Captions, the words on the posts,
   the photo text and the search fields still name no one (`ai/names.py`,
   `ai/copy_rules.py` rule `names`, unchanged).
-- The list is `offer.json` `clients` (name, logo file under `site/clients/` as
-  he sent it, `political`, `tile`), off until he turns it on (`show`); the
-  heading passes the copy rules at build (`site/build.py` `client_logos`).
+- The list is `offer.json` `clients` (name, logo file under `site/clients/`,
+  `political`, `tile`, and where the logo came from and when: `source`,
+  `fetched`), off until he turns it on (`show`); the heading passes the copy
+  rules at build (`site/build.py` `client_logos`).
+- His list, as he gave it and corrected it through the coordinating session:
+  Library of Congress, Hamel Builders (one logo; "Hamel Commercial" is the same
+  company), C.A.S.E. (the Center for Adoption Support and Education,
+  adoptionsupport.org, not case.org), Washington Nationals, American Heart
+  Association (the file he sent), Associated Press, ACU (the older American
+  Conservative Union mark, from conservative.org as archived on 2018-12-22),
+  CPAC, WC Smith, Bozzuto, APTA Pelvic Health (the former Women's Health
+  section, its current logo), Grimm + Parker Architects. Every other logo was
+  taken from the organization's own site. Waiting on his file: Miner Feinstein
+  Architects ("MF Architects", Frederick, MD; "yes thats the company"), which
+  has no website. Not on it: Absolute Love Adoptions ("dont add absolute
+  love").
 - Politics fail closed: a logo counts as political unless its entry says
   `political: false`. Political logos never outnumber the others; a
-  non-political logo comes first and they alternate; one past the count waits
-  for another non-political logo, said on the Agents page.
-- Each logo sits on a light tile (a dark one for a logo drawn in white), all
-  one height, re-encoded from its pixels (no metadata travels); an SVG with a
-  script or a link to elsewhere is refused. The strip wraps at the three
-  sizes (pinned by `tests/test_client_logos.py`).
-- Only Chris can do: send the logo files and say which organizations are
-  political; the strip is shown to him with his real logos before `show` is
-  turned on.
+  non-political logo comes first and the political ones are spread evenly
+  through the row, never side by side; one past the count waits for another
+  non-political logo, said on the Agents page.
+- Each logo sits on a white tile (a dark one for a logo drawn in white),
+  trimmed to what shows on its tile, sized by its weight rather than one
+  height (a long wordmark comes down, a square mark goes up), re-encoded from
+  its pixels (no metadata travels); an SVG with a script or a link to
+  elsewhere is refused. The strip wraps at the three sizes (pinned by
+  `tests/test_client_logos.py`).
+- The strip is shown to him with his real logos at the three sizes before
+  `show` is turned on.
+
+## 2026-10-15: the ACU and CPAC on the logo strip, never in outreach
+
+Chris: "no you can use acu and cpac for this, i just donrt want them emailed
+for outreach as i stated in the beginning". Their logos may be on the "We've
+photographed for" strip (both marked political, so they never lead and never
+outnumber the others). The rule of 2026-10-13 is untouched: CPAC, the ACU and
+their affiliates are never contacted (`outreach/compliance.never_contact`, the
+scout, the outreach agent, `ai/names.ALWAYS`). Pinned both ways in
+`tests/test_client_logos.py`.
 
 ## 2026-10-15: the doctor fixes what it knows, and files what it does not
 

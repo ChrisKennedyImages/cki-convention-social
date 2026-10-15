@@ -79,12 +79,12 @@ a{color:inherit;text-decoration:none}img{display:block;max-width:100%}
 .ticker span{font:400 clamp(26px,3.6vw,54px)/1 var(--display);text-transform:uppercase;padding:0 26px;white-space:nowrap}
 .ticker span.o{color:transparent;-webkit-text-stroke:1px var(--g4)}.ticker span.dot{color:var(--c);padding:0 6px}
 /* the logos under the hero (Chris, 2026-10-15): each in its own colours on a tile, one height, wrapping on a phone */
-.clients{padding:clamp(26px,3.4vw,44px) var(--pad) clamp(30px,3.8vw,48px);background:var(--k);border-top:1px solid var(--g3)}
+.clients{--lh:46px;padding:clamp(26px,3.4vw,44px) var(--pad) clamp(30px,3.8vw,48px);background:var(--k);border-top:1px solid var(--g3)}
 .clients .kick{margin-bottom:20px}
 .clients .logos{list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;gap:12px;align-items:center}
-.clients .tile{height:84px;padding:12px 20px;border-radius:10px;background:var(--w);display:flex;align-items:center;justify-content:center}
+.clients .tile{height:84px;padding:12px 20px;border-radius:10px;background:#fff;display:flex;align-items:center;justify-content:center}
 .clients .tile.dark{background:var(--g2);border:1px solid var(--g3)}
-.clients .tile img{height:60px;width:auto;max-width:220px;object-fit:contain}
+.clients .tile img{height:calc(var(--lh) * var(--k, 1));width:auto;max-width:240px;object-fit:contain}
 @keyframes tick{to{transform:translateX(-50%)}}
 /* sections */
 section{position:relative;padding:clamp(80px,12vw,160px) var(--pad)}
@@ -199,7 +199,7 @@ form.book textarea{min-height:120px;resize:vertical}
 @media (min-width:761px) and (max-width:1100px){.top{gap:16px}.top .logo svg{height:40px}.top .tel{display:none}.top nav{gap:12px}.top .btn{padding:13px 14px}
 .hero .photo{height:54svh;min-height:380px}.mega{font-size:clamp(36px,7.4vw,84px)}
 .frame{--h:clamp(280px,40vh,480px)}.cover .grid{columns:2}footer .foot{grid-template-columns:1fr 1fr}
-.clients .tile{height:74px;padding:11px 16px}.clients .tile img{height:52px;max-width:190px}}
+.clients{--lh:40px}.clients .tile{height:74px;padding:11px 16px}.clients .tile img{max-width:200px}}
 /* the phone (2026-10-14): one column, the bar at the bottom, the hero words under the photo on the first screen */
 @media (max-width:760px){.top{gap:10px}.top nav{display:none}.top .logo svg{height:36px}.top .tel{margin-left:auto}.top .btn{padding:12px 14px}.top .btn .long{display:none}
 .tabbar{position:fixed;left:0;right:0;bottom:0;z-index:55;display:flex;justify-content:space-around;align-items:stretch;gap:4px;padding:8px 6px calc(8px + env(safe-area-inset-bottom));background:rgba(10,10,11,.94);backdrop-filter:blur(12px);border-top:1px solid var(--g3)}
@@ -214,7 +214,7 @@ body{padding-bottom:calc(74px + env(safe-area-inset-bottom))}.preview{bottom:cal
 .hero .first{font-size:17px;margin-top:18px}.hero .lede{font-size:16px}.hero .row{margin-top:16px;gap:18px}
 .vf i{width:28px;height:28px}.list a{grid-template-columns:44px 1fr auto}
 .cover .grid{columns:2;gap:10px}.cover figure{margin-bottom:10px}.contact .hand{grid-template-columns:1fr}footer .foot{grid-template-columns:1fr;gap:28px}
-.clients .logos{gap:10px}.clients .tile{height:62px;padding:9px 13px;border-radius:8px}.clients .tile img{height:44px;max-width:140px}}
+.clients{--lh:34px}.clients .logos{gap:10px}.clients .tile{height:62px;padding:9px 13px;border-radius:8px}.clients .tile img{max-width:150px}}
 @media (max-width:360px){.top .tel span{display:none}}
 @media (prefers-reduced-motion:reduce){*,*:before,*:after{animation:none!important;transition:none!important}.mega span em{transform:none}.rv{opacity:1;transform:none}.hero canvas.web{display:none}}
 """
