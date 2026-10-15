@@ -7,8 +7,9 @@ Each sample on the samples page names its design and the photos it was made from
 records the press (`sample_posts`, pending) and starts this agent (`ccs run sample --wait`: a press while one is being
 drafted waits its turn, never lost). For each press this agent does what the daily draft does, never a shortcut:
 
-- the sample must still stand: its folder is the newest samples (they are made again when the approved photos
-  change) and every photo in it is still approved (design_samples.stale); else it says why and drafts nothing;
+- the sample must still stand: its folder is the newest samples and every photo in it is still approved
+  (design_samples.stale), and none of its photos is on a post inside the repeat window by any road (used_lately,
+  2026-10-15); else it says why and drafts nothing;
 - the same photos, fetched again at full size (the cache of the Drive original, else Drive, read only);
 - Claude's final check on every one (someone who may be under 18, a readable plate, a wedding) and eligibility; one
   photo that fails drops the draft and says which and why (one gone would change the design);
@@ -36,8 +37,8 @@ from .. import music
 
 STALE_DRAFTING = timedelta(minutes=20)       # a press left "drafting" this long was a run that died: tried again
 DESIGNS = ("fan", "spotlight", "carousel", "reel")
-DRY_RUN = ("the content lane is in dry run, so Claude cannot give the photos their final check and nothing is drafted "
-           "(switch the content lane live on the Agents page)")
+DRY_RUN = ("the content lane is in practice run (dry run), so Claude cannot give the photos their final check and nothing "
+           "is drafted (switch the content lane live: Settings, Agents)")
 PHOTO_SQL = """SELECT p.*, c.subject, c.convention_name, c.event_kind, c.shot_type, c.quality, c.people_count, c.summary
                FROM photos p JOIN classifications c ON c.photo_id = p.id WHERE p.id=?"""
 
@@ -54,6 +55,19 @@ def pending(conn: sqlite3.Connection, now: Optional[str] = None) -> list[sqlite3
     stale = ((datetime.fromisoformat(now) if now else datetime.now(timezone.utc)) - STALE_DRAFTING).replace(microsecond=0).isoformat()
     return db.rows(conn, "SELECT * FROM sample_posts WHERE status = 'pending' OR (status = 'drafting' AND updated_at < ?) ORDER BY id",
                    (stale,))
+
+
+def used_lately(conn: sqlite3.Connection, photo_ids: list[int]) -> Optional[str]:
+    """Why these photos cannot go out now, or None: one of them is already on a post inside the repeat window, by any
+    road (Chris, 2026-10-15: "we keep reusing the same photos too"; config.repeat_window)."""
+    from ..core import config
+    from . import content
+    days = config.repeat_window(config.get_config())
+    used, _, _ = content.recent_use(conn, days)
+    again = [int(p) for p in photo_ids if int(p) in used]
+    if again:
+        return f"photo {again[0]} is already on a post inside {days} days, and a photo goes out once inside that window"
+    return None
 
 
 def _status(conn, sid: int, status: str, *, queue_id: Optional[int] = None, error: Optional[str] = None) -> None:
@@ -84,6 +98,9 @@ def draft_sample(ctx: runner.Context, rec, fetch: Callable[[dict], bytes], *, ch
     ids = [int(p) for p in json.loads(rec["photo_ids"] or "[]")]
     if ids != [int(p) for p in sample["photos"]]:
         return _failed(ctx, rec, "the photos asked for are not the photos this sample was made from")
+    again = used_lately(conn, ids)
+    if again:
+        return _failed(ctx, rec, again)
     if ctx.dry_run:
         return _failed(ctx, rec, DRY_RUN)
     if len(ids) < content.NEEDS[design]:
@@ -123,7 +140,8 @@ def draft_sample(ctx: runner.Context, rec, fetch: Callable[[dict], bytes], *, ch
         drafter=drafter, art_client=art_client, why="from the design samples",
         extra_meta={"source": "sample", "asap": True, "sample_folder": rec["folder"], "sample_id": rec["id"]},
         ping=(f"{ctx.cfg.brand_name}: the sample you chose, a post to approve",
-              f"The {design} sample, made into a post for today. Approved, it goes out as soon as Buffer takes it. Tap to see it."))
+              f"The {design} idea, made into a post for today. Post now and it goes out as soon as Buffer takes it, or follow "
+              "the pace, or skip. Tap to see it."))
     if art.get("verdict") == "reject":
         return _failed(ctx, rec, f"the art director turned it back: {art.get('notes', '')}", queue_id=qid)
     _status(conn, rec["id"], "drafted", queue_id=qid)

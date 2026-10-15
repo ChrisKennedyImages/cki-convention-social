@@ -273,11 +273,9 @@ class LibraryPage(IsolatedCase):
         self.client.cookies.set(COOKIE, make_token("chris"))
 
     def test_the_button_starts_the_designer_and_the_page_serves_only_its_files(self):
-        self.assertIn("Make design samples", self.client.get("/library?view=design").text)
-        with mock.patch.object(design_samples, "start_in_background") as start:
-            r = self.client.post("/library/design", follow_redirects=False)
-        self.assertEqual((r.status_code, start.call_count), (303, 1))
-        self.assertIn("Being made now", self.client.get(r.headers["location"]).text)
+        """2026-10-15: the designed drafts on Today replaced the samples; the dashboard no longer starts the designer
+        (`ccs design` still runs by hand), and the folder serves only the files the designer writes."""
+        self.assertEqual(self.client.post("/library/design", follow_redirects=False).status_code, 405)
         with mock.patch("subprocess.Popen") as popen:
             REAL_START()
         self.assertEqual(popen.call_args[0][0][-2:], ["convention_social.cli", "design"])
@@ -290,7 +288,7 @@ class LibraryPage(IsolatedCase):
         (folder / "notes.txt").write_text("not a file the designer writes")
         (config.get_config().data_root / "secret.txt").write_text("no")
         r = self.client.get("/library/design", follow_redirects=False)
-        self.assertEqual(r.headers["location"], "/library/design/design-20261011-1800/index.html")
+        self.assertEqual(r.headers["location"], "/", "the samples page opens Today")
         self.assertEqual(self.client.get("/library/design/design-20261011-1800/rooms-reel.mp4").headers["content-type"], "video/mp4")
         self.assertEqual(self.client.get("/library/design/design-20261011-1800/rooms-reel-cover.jpg").headers["content-type"], "image/jpeg")
         for bad in ("/library/design/design-20261011-1800/..%2F..%2Fsecret.txt", "/library/design/renders/index.html",

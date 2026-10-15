@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block body %}
+<h1>All posts</h1>
+<div class="chips" style="padding:0 0 10px;margin:0;flex-wrap:wrap">
+  {% for key, label in filters %}<a href="/history?show={{ key }}" class="{{ 'on' if show == key else '' }}">{{ label }}</a>{% endfor %}
+</div>
+{% if not items %}<div class="card muted">No post is {{ '' if show == 'all' else status_words.get(show, show)|lower }} yet.</div>{% endif %}
+{% for it in items %}
+<a class="card row" href="/queue/{{ it.id }}" style="text-decoration:none;color:inherit;align-items:flex-start">
+  {% if it.card %}<img src="{{ it.card }}" alt="" style="width:72px;aspect-ratio:4/5;object-fit:cover;border-radius:6px;border:1px solid var(--line)" loading="lazy">{% endif %}
+  <span style="flex:1 1 180px"><strong>{{ it.origin }}</strong><br><span class="muted">post {{ it.id }}, made {{ it.created_at[:10] }}</span>
+    {% if it.last_error and it.status in ('failed', 'rejected', 'draft') %}<br><span class="muted">{{ it.last_error }}</span>{% endif %}</span>
+  <span class="badge {{ it.status }}">{{ status_words.get(it.status, it.status) }}</span>
+</a>
+{% endfor %}
+<div class="card">
+  <strong>By week</strong>
+  <table style="margin-top:8px"><tr><th>Week of</th><th>Posts</th><th>Reach</th><th>Engagement</th></tr>
+    {% for w in trend %}<tr><td>{{ w.week }}</td><td>{{ w.posts }}</td><td>{{ w.reach|int }}</td><td>{{ w.engagement|int }}</td></tr>{% endfor %}
+  </table>
+</div>
+{% endblock %}

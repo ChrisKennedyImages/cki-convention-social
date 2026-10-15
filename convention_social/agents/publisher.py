@@ -30,7 +30,7 @@ from typing import Optional
 from ..ai import copy_rules, names
 from ..buffer import budget, media, payloads
 from ..buffer.client import BufferBudgetExceeded, BufferClient, BufferError, BufferRateLimited
-from ..core import db, notify, runner, settings
+from ..core import config, db, notify, runner, settings
 from . import pacing
 
 READY_SQL = "SELECT * FROM content_queue WHERE status = 'approved' ORDER BY COALESCE(approved_at, created_at), id"
@@ -168,8 +168,8 @@ def tend_drafts(ctx: runner.Context, now: Optional[datetime] = None) -> dict:
         meta = _json(row["rule_report"], {})
         meta = meta if isinstance(meta, dict) else {}
         made = made_at(row)
-        if meta.get("nudged_at") or made is None or now - made < NUDGE_AFTER:
-            continue
+        if meta.get("nudged_at") or made is None or now - made < NUDGE_AFTER or meta.get("source") == "designed":
+            continue            # a designed draft is an idea he may let pass: never chased (2026-10-15)
         day = for_day_of(row)
         what = f"{day:%A}'s post" if day else f"post {row['id']}"
         from . import content
@@ -241,7 +241,7 @@ def door(ctx: runner.Context, row) -> Optional[tuple[str, str]]:
                 return "hold", f"The photo check could not run for photo {pid} ({type(e).__name__}: {e}). Nothing was sent."
             if not ok:
                 return "back", f"Photo {pid} can no longer be used: {why}. Pick another photo."
-    days = ctx.cfg.photo_repeat_days
+    days = config.repeat_window(ctx.cfg)          # the longer of PHOTO_REPEAT_DAYS and VARIETY_DAYS (2026-10-15)
     repeat = repeat_of(ctx.conn, row, ids, days, include_dry=ctx.dry_run)
     if repeat:
         pid, qid = repeat

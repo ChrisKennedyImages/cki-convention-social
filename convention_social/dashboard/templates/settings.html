@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block body %}
+<h1>Settings</h1>
+{% for title, pages in groups %}
+<h2 style="margin-top:{{ '4px' if loop.first else '18px' }}">{{ title }}</h2>
+{% for href, label, line in pages %}
+<a class="card row" href="{{ href }}" style="text-decoration:none;color:inherit;min-height:64px"><strong style="min-width:84px">{{ label }}</strong>
+  {% if href == '/errors' and open_n %}<span class="badge failed">{{ open_n }} open</span>{% endif %}<span class="muted" style="flex:1 1 200px">{{ line }}</span></a>
+{% endfor %}
+{% endfor %}
+<form method="post" action="/logout" style="margin-top:18px"><button type="submit">Sign out of the dashboard</button></form>
+{% endblock %}

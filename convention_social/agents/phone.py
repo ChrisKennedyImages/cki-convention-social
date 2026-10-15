@@ -256,7 +256,8 @@ def draft_send(ctx: runner.Context, send, *, check_client=None, drafter=None, ar
         art_client=art_client, why="sent from your phone", note=send["note"] or "",
         extra_meta={"source": "phone", "asap": True, "note": send["note"] or "", "send_id": send["id"]},
         ping=(f"{ctx.cfg.brand_name}: your photo from the floor, a post to approve",
-              "A single post for today from the photo you sent. Approved, it goes out as soon as Buffer takes it. Tap to see it."))
+              "A single post for today from the photo you sent. Post now and it goes out as soon as Buffer takes it, or follow "
+              "the pace, or skip. Tap to see it."))
     if art.get("verdict") == "reject":
         return _failed(ctx, send, f"the art director turned it back: {art.get('notes', '')}", queue_id=qid)
     _status(conn, send["id"], "drafted", queue_id=qid)

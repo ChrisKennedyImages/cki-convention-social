@@ -76,7 +76,7 @@ class Rotate(IsolatedCase):
         self.assertEqual(report.use_line(None), "never used yet")
         self.assertEqual(report.use_line({"n": 1, "last": "2026-10-14", "surfaces": ["post"]}), "used 1 time, last on 2026-10-14 (post)")
         self.assertEqual(report.use_line({"n": 3, "last": "2026-10-14", "surfaces": ["post", "sample", "site"]}),
-                         "used 3 times, last on 2026-10-14 (post, samples, site)")
+                         "used 3 times, last on 2026-10-14 (post, ideas, site)")      # the samples are called ideas (2026-10-15)
 
 
 class Drafts(IsolatedCase):

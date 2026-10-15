@@ -5,17 +5,17 @@
 <div class="card"><strong>AI spend this month:</strong> ${{ '%.2f'|format(ai_mtd) }} of ${{ '%.2f'|format(ai_cap) }}</div>
 <div class="card">
   <strong>{{ live_n }} of {{ switch_n }} agents live</strong>
-  <div class="muted">Live means the agents do their real work on their schedules. Still, nothing posts, emails a person or replies to a request until you press Approve on it, and AI spending stops at the monthly cap above.</div>
+  <div class="muted">Live means the agents do their real work on their schedules. Practice run means they go through the motions and nothing leaves: the publisher keeps what you approve as a practice run, and the content lane makes no designed drafts and cannot post the daily one. Still, nothing posts, emails a person or replies to a request until you approve it, and AI spending stops at the monthly cap above.</div>
   <div class="row" style="margin-top:8px">
-    {% if live_n < switch_n %}<form method="post" action="/agents/all/dry-run" class="inline" onsubmit="return confirm('Switch every agent live? Nothing posts or emails anyone until you press Approve on it; what you approved in dry run goes out.')"><input type="hidden" name="state" value="off"><button class="danger" type="submit">Switch everything live</button></form>{% endif %}
-    {% if live_n %}<form method="post" action="/agents/all/dry-run" class="inline"><input type="hidden" name="state" value="on"><button class="small" type="submit">Everything back to dry run</button></form>{% endif %}
+    {% if live_n < switch_n %}<form method="post" action="/agents/all/dry-run" class="inline" onsubmit="return confirm('Switch every agent live? Nothing posts or emails anyone until you approve it; what you approved in practice run goes out.')"><input type="hidden" name="state" value="off"><button class="danger" type="submit">Switch everything live</button></form>{% endif %}
+    {% if live_n %}<form method="post" action="/agents/all/dry-run" class="inline"><input type="hidden" name="state" value="on"><button class="small" type="submit">Everything back to practice run</button></form>{% endif %}
   </div>
 </div>
 {% for a in agents %}
 <div class="card">
   <div class="row"><strong>{{ a.name }}</strong>
     {% if not a.built %}<span class="badge">not built yet</span>{% endif %}
-    {% if a.dry_run is not none %}<span class="badge {{ 'dry' if a.dry_run else 'live' }}">{{ 'dry run' if a.dry_run else 'LIVE' }}</span>{% endif %}
+    {% if a.dry_run is not none %}<span class="badge {{ 'dry' if a.dry_run else 'live' }}">{{ 'practice run' if a.dry_run else 'LIVE' }}</span>{% endif %}
     <span class="muted" style="margin-left:auto">{{ a.meta.schedule }}</span></div>
   <div class="muted">{{ a.meta.job }}</div>
   <div class="muted">last run: {% if a.last %}{{ a.last.started_at[:16].replace('T',' ') }} UTC, {{ 'ok' if a.last.ok == 1 else ('failed' if a.last.ok == 0 else 'running') }}, {{ a.last.summary or '' }}{% else %}never{% endif %}</div>
@@ -26,12 +26,12 @@
   {% if a.dry_run is not none %}
   <form method="post" action="/agents/{{ a.name }}/dry-run" class="inline">
     {% if a.dry_run %}<input type="hidden" name="state" value="off"><button class="danger" type="submit">Switch {{ a.name }} to LIVE</button>
-    {% else %}<input type="hidden" name="state" value="on"><button class="ok" type="submit">Back to dry run</button>{% endif %}
+    {% else %}<input type="hidden" name="state" value="on"><button class="ok" type="submit">Back to practice run</button>{% endif %}
   </form>
   {% endif %}
   </div>
 </div>
 {% endfor %}
-<h2>Open errors</h2>
+<h2>Open alerts</h2>
 {% include "_errors.html" %}
 {% endblock %}

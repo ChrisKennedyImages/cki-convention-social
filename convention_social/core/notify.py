@@ -4,9 +4,10 @@ Only fires when NTFY_TOPIC is set and the caller is live; dry runs and test
 processes never reach the network. Email remains the alert of record.
 
 What pings Chris (2026-10-11, "I haven't received any ntfy"): a post ready to
-approve (the content agent), a post that went out (the publisher), the
-watchdog's alerts, the morning brief, and the test button on the Keys page.
-Each one opens the right dashboard page when tapped.
+approve (the content agent, a designed draft, a photo from the phone), a post
+that went out (the publisher), the watchdog's alerts, the morning brief, and
+the test button on the Keys page. Each one opens the right dashboard page when
+tapped; a draft's ping carries Post now, Follow the pace and Skip (2026-10-15).
 """
 from __future__ import annotations
 
@@ -32,19 +33,34 @@ def link(path: str = "/") -> str:
 NOT_A_FAILURE = ("sent", "dry run: nothing sent", "no push from a test")
 
 
-def approve_actions(qid: int, token: str) -> str:
-    """The ntfy `Actions` header for a draft the art director passed (Chris, 2026-10-13: Approve on the ping).
-    Two buttons: Approve, an http POST carrying the signed single-use token in its body (a GET on that
-    address approves nothing), and Open, the draft page. The forms are the ones docs.ntfy.sh/publish
-    documents: `http, <label>, <url>, method=, headers.<h>=, body=, clear=true; view, <label>, <url>`."""
-    return (f"http, Approve, {link(f'/queue/{qid}/approve-by-token')}, method=POST, "
-            f"headers.Content-Type=application/x-www-form-urlencoded, body='token={token}', clear=true; "
-            f"view, Open, {link(f'/queue/{qid}')}")
+CHOICES = (("now", "Post now"), ("pace", "Follow the pace"), ("skip", "Skip"))
+
+
+def _choice(qid: int, token: str, how: str, label: str) -> str:
+    """One ntfy `http` action: a POST carrying the signed single-use token in its body (a GET on that address
+    decides nothing). The form is the one docs.ntfy.sh/publish documents:
+    `http, <label>, <url>, method=, headers.<h>=, body=, clear=true`."""
+    return (f"http, {label}, {link(f'/queue/{qid}/choose-by-token/{how}')}, method=POST, "
+            f"headers.Content-Type=application/x-www-form-urlencoded, body='token={token}', clear=true")
+
+
+def choice_actions(qid: int, token: str) -> str:
+    """The ntfy `Actions` header for a draft the art director passed (Chris, 2026-10-15): his three choices, the most
+    ntfy shows. Post now (out as soon as Buffer takes it), Follow the pace (the next open Instagram slot, one post a
+    slot) and Skip (set aside, its photos back in the rotation). A tap on the notification itself opens the draft
+    (`Click`), where a reel plays with its sound. One token: the first button used spends it."""
+    return "; ".join(_choice(qid, token, how, label) for how, label in CHOICES)
 
 
 def open_action(qid: int) -> str:
-    """Open only: the art director did not pass the draft (or did not look), so he looks himself."""
+    """Open only: the draft page (the doctor's ping after it remade a reel: he looks before he chooses)."""
     return f"view, Open, {link(f'/queue/{qid}')}"
+
+
+def look_actions(qid: int, token: str) -> str:
+    """The art director did not pass the draft (or did not look): Open, so he looks himself before anything can go
+    out, and Skip."""
+    return f"{open_action(qid)}; " + _choice(qid, token, "skip", "Skip")
 
 
 def card_link(qid: int, token: str) -> str:
@@ -56,7 +72,7 @@ def push_result(title: str, message: str, *, dry_run: bool = True, priority: str
                 click: str | None = None, conn=None, agent: str = "suite", actions: str | None = None,
                 attach: str | None = None, filename: str | None = None) -> str:
     """Sends, and says what happened: "sent", or why nothing was. `click` is the address the phone
-    opens when the notification is tapped; `actions` the ntfy Actions header (approve_actions); `attach`
+    opens when the notification is tapped; `actions` the ntfy Actions header (choice_actions); `attach`
     a picture's address the phone fetches itself (nothing is copied to ntfy). With `conn`, a push that did
     not go (live, and not from a test) is recorded once as an `ntfy` error for the Agents page and the
     watchdog's mail: a failed ping used to be a False nobody read (2026-10-13)."""
