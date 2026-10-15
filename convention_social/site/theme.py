@@ -124,7 +124,7 @@ h2 .o{color:transparent;-webkit-text-stroke:1.2px var(--w)}
 .venues .grid{columns:2;gap:18px;margin-top:56px}
 .venues figure{margin:0 0 18px;break-inside:avoid;position:relative;overflow:hidden;background:var(--g2);aspect-ratio:var(--ar,1.5)}
 .venues figure img{width:100%;height:100%;object-fit:contain}
-.venues figure .mono{position:absolute;left:14px;bottom:12px;background:rgba(10,10,11,.7);padding:6px 9px}
+.venues .grid.one{columns:1}
 .venues .head{display:grid;grid-template-columns:1fr minmax(260px,420px);gap:40px;align-items:end}.venues .head p{color:var(--g5);margin:0}
 /* process */
 .steps{display:grid;grid-template-columns:repeat(3,1fr);gap:0;border:1px solid var(--g3);margin-top:56px}
