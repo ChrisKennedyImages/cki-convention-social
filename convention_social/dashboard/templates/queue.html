@@ -22,7 +22,8 @@
     <span class="badge {{ it.status }}">{{ it.status.replace('_',' ') }}</span>
     {% if it.scheduled_for %}<span class="muted">{{ it.scheduled_for.replace('T',' ') }}</span>{% endif %}
   </div>
-  {% if it.video %}<video class="reel" src="/media/render/{{ it.id }}/9x16/1"{% if it.cover %} poster="/media/render/{{ it.id }}/cover/1"{% endif %} controls playsinline muted loop preload="metadata"></video>{% endif %}
+  {% if it.video %}<video class="reel" src="/media/render/{{ it.id }}/9x16/1"{% if it.cover %} poster="/media/render/{{ it.id }}/cover/1"{% endif %} controls playsinline loop preload="metadata"></video>
+  <div class="muted" style="margin:-4px 0 10px">{{ 'Music: ' + it.music if it.music else 'No music' }}</div>{% endif %}
   {% if it.renders %}<div class="thumbs" style="margin:10px 0">{% for aspect, idx in it.renders.items() %}{% for i in idx %}<a href="/media/render/{{ it.id }}/{{ aspect.replace(':','x') }}/{{ i }}"><img src="/media/render/{{ it.id }}/{{ aspect.replace(':','x') }}/{{ i }}" alt=""></a>{% endfor %}{% endfor %}</div>{% endif %}
   <div class="caption">{{ it.captions.get('instagram') or (it.captions.values()|list)[0] if it.captions else '' }}</div>
   {% if it.captions|length > 1 %}<details style="margin-top:6px"><summary class="muted">The other captions</summary>

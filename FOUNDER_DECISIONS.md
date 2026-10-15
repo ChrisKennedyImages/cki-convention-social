@@ -1002,6 +1002,24 @@ results.
   and his own hero pick on a twin is still his pick. Both builds that reached
   the live site that day had shown seven distinct pictures; the repeats he saw
   were the loop's copies and two portraits on one backdrop.
+- **"the top website scroller cuts off on the left side when viewing on a
+  computer. who we are - should be more than two fucking words! dont just
+  skip the small stuuf becuse thats just as important as the main page"**
+  (Chris, 2026-10-14, on the live site from his computer). The rule: the
+  small stuff on every inner page gets the same care as the home page, at the
+  three sizes. The ticker under the hero fades out over the page's gutter at
+  both ends (`theme.CSS .ticker`, a mask over `var(--pad)`): the word leaving
+  at the left was sliced flat at the screen's edge while everything else sits
+  behind the gutter. The Privacy page's "Who we are" was one line ("Event
+  Caliber is a brand of CKI, LLC."); it says who the two of them are, where
+  they are based and the company behind the brand (`copy_text` `who_we_are`).
+  From a pass over the sixteen live pages at the four sizes the same day: the
+  Contact page's email address broke mid-word in its box on an iPad and a
+  computer (the links are 16 to 24px now, the boxes a little wider); the
+  Thanks and Not-found pages were a headline and a button over an empty band
+  (each says what happens or where to go, in a sentence, and inner pages end
+  closer to the footer); the quote form's Kind of event menu cut its first
+  choice short in a half-width field (full width now).
 - **One page per coverage item** (`/coverage/<key>/`, nine of them, and the
   coverage index): the title with the place ("Backstage event photography,
   Washington, DC | Event Caliber"), a plain first sentence, a paragraph, up to

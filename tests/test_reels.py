@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
@@ -352,6 +353,46 @@ class Dashboard(IsolatedCase):
             self.assertIn(f'<video class="reel" src="/media/render/{self.qid}/9x16/1" poster="/media/render/{self.qid}/cover/1"', page)
             self.assertIn(f'/media/render/{self.qid}/2x3/1', page)
             self.assertNotIn(f'/media/render/{self.qid}/stills/1', page)
+
+    def reel_tag(self, page: str) -> str:
+        tags = re.findall(r'<video class="reel"[^>]*>', page)
+        self.assertEqual(len(tags), 1, page)
+        return tags[0]
+
+    def reel_music(self, file):
+        self.conn.execute("UPDATE content_queue SET rule_report=? WHERE id=?",
+                          (json.dumps({"design": "reel", "reel": "rooms", "music": file}), self.qid))
+
+    def assert_plays_with_sound_and_names_the_track(self, url: str):
+        """Chris, 2026-10-14: "where is the music on the insta posts!!!! i uploaded it the other day". The track was in
+        every reel; the dashboard's player was muted. A reel plays on a tap with its sound, never by itself, and the
+        line under it names the track from its record, or says there is none."""
+        music.add(self.conn, "night.wav", tone(), **RECORD)
+        self.reel_music(music.current(self.conn).name)
+        page = self.client.get(url).text
+        tag = self.reel_tag(page)
+        for word in ("muted", "autoplay"):
+            self.assertNotIn(word, tag)
+        for word in ("controls", "playsinline", "loop", 'preload="metadata"', f'poster="/media/render/{self.qid}/cover/1"'):
+            self.assertIn(word, tag)
+        self.assertIn("Music: Night Shift, Sample Artist", page)
+        self.assertNotIn("No music", page)
+        # an artist Chris does not know (2026-10-14, "its a meat musics free track"): the source he recorded instead
+        self.conn.execute("UPDATE music_tracks SET artist='unknown', source='Meta Sound Collection'")
+        page = self.client.get(url).text
+        self.assertIn("Music: Night Shift (Meta Sound Collection)", page)
+        self.assertNotIn("unknown", page)
+        self.reel_music(None)
+        page = self.client.get(url).text
+        self.assertNotIn("muted", self.reel_tag(page))
+        self.assertIn("No music", page)
+        self.assertNotIn("Night Shift", page)
+
+    def test_the_queue_card_plays_the_reel_with_sound_and_names_its_track(self):
+        self.assert_plays_with_sound_and_names_the_track("/")
+
+    def test_the_draft_page_plays_the_reel_with_sound_and_names_its_track(self):
+        self.assert_plays_with_sound_and_names_the_track(f"/queue/{self.qid}")
 
     def test_the_video_is_served_as_video_and_seeks(self):
         r = self.client.get(f"/media/render/{self.qid}/9x16/1")

@@ -67,7 +67,10 @@ a{color:inherit;text-decoration:none}img{display:block;max-width:100%}
 .hero .row{display:flex;gap:32px;align-items:flex-end;justify-content:space-between;flex-wrap:wrap;margin-top:22px}
 .hero .lede{max-width:560px;margin:0;color:var(--g5);font-size:18px}
 /* ticker */
-.ticker{border-block:1px solid var(--g3);overflow:hidden;padding:22px 0;background:var(--k)}
+/* the ticker fades out over the page's gutter at both ends (Chris, 2026-10-14: "the top website scroller cuts off on the left
+   side when viewing on a computer"): the word leaving at the left was sliced flat at the screen's edge while everything else
+   on the page sits behind the gutter */
+.ticker{border-block:1px solid var(--g3);overflow:hidden;padding:22px 0;background:var(--k);-webkit-mask-image:linear-gradient(90deg,transparent,#000 var(--pad),#000 calc(100% - var(--pad)),transparent);mask-image:linear-gradient(90deg,transparent,#000 var(--pad),#000 calc(100% - var(--pad)),transparent)}
 .ticker .track{display:flex;width:max-content;animation:tick 38s linear infinite}
 .ticker.rev .track{animation-direction:reverse;animation-duration:46s}
 .ticker span{font:400 clamp(26px,3.6vw,54px)/1 var(--display);text-transform:uppercase;padding:0 26px;white-space:nowrap}
@@ -142,15 +145,15 @@ footer .about{color:var(--g5);max-width:420px;margin:0}
 footer .legal{margin-top:40px;padding-top:20px;border-top:1px solid var(--g3);color:var(--g4);display:flex;flex-wrap:wrap;gap:12px 30px;justify-content:space-between}
 footer a:hover{color:var(--c)}
 /* coverage pages and the contact page (2026-10-14) */
-.cover .first,.contact .first{font:400 clamp(19px,1.6vw,24px)/1.45 var(--body);color:var(--w);max-width:760px;margin:26px 0 0}
+.page .first{font:400 clamp(19px,1.6vw,24px)/1.45 var(--body);color:var(--w);max-width:760px;margin:26px 0 0}  /* every inner page's lead line, the same (2026-10-14) */
 .cover .prose{margin-top:24px}.cover .grid{columns:3;gap:18px;margin-top:50px}
 .cover figure{margin:0 0 18px;break-inside:avoid;aspect-ratio:var(--ar,0.8);overflow:hidden;background:var(--g2)}.cover figure img{width:100%;height:100%;object-fit:contain}
 .cover .more{margin-top:70px}
-.contact .hand{display:grid;grid-template-columns:1fr 1fr;gap:30px;margin-top:40px;max-width:900px}
+.contact .hand{display:grid;grid-template-columns:1fr 1fr;gap:30px;margin-top:40px;max-width:1000px}
 .contact .hand>div{border:1px solid var(--g3);padding:26px}
-.contact .hand a.l{display:block;font:400 clamp(18px,2.2vw,30px)/1.25 var(--display);margin-top:12px;overflow-wrap:anywhere}.contact .hand a.l:hover{color:var(--c)}
+.contact .hand a.l{display:block;font:400 clamp(16px,1.6vw,24px)/1.3 var(--display);margin-top:12px;overflow-wrap:anywhere}.contact .hand a.l:hover{color:var(--c)}  /* 2026-10-14: at 30px the address broke mid-word on an iPad and a computer */
 /* inner pages */
-.page{padding-top:clamp(130px,16vh,170px)}
+.page{padding-top:clamp(130px,16vh,170px);padding-bottom:clamp(60px,8vw,110px)}  /* a short page no longer ends in an empty band before the footer (2026-10-14) */
 .page h1{font:400 clamp(40px,7vw,120px)/.94 var(--display);text-transform:uppercase;letter-spacing:-.02em;margin:0}
 .page h1 .o{color:transparent;-webkit-text-stroke:1.4px var(--w)}.page h1 b{color:var(--c);font-weight:400}
 .split2{display:grid;grid-template-columns:minmax(260px,.8fr) 1.2fr;gap:clamp(30px,6vw,90px);margin-top:60px;align-items:start}

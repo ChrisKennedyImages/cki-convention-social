@@ -72,5 +72,30 @@ def current(conn: sqlite3.Connection) -> Optional[Path]:
     return None
 
 
+UNKNOWN_ARTIST = ("unknown", "none", "n/a", "na")
+
+
+def artist_known(artist: Optional[str]) -> bool:
+    """False for what Chris types when he has no artist (every field must be filled before a track is used):
+    nothing, a dash or other punctuation, "unknown", "none", "n/a". Chris, 2026-10-14: "i dont ho the artist is.
+    its a meat musics free track" (a free track from Meta's Sound Collection)."""
+    a = (artist or "").strip().lower()
+    return a not in UNKNOWN_ARTIST and any(ch.isalnum() for ch in a)
+
+
+def credit(conn: sqlite3.Connection, file: Optional[str]) -> str:
+    """The words under a reel that name its track, from the record of the file the reel was made with (a draft's
+    rule_report.music, the samples' about.json music): "title, artist" when the artist is known, else
+    "title (source)" with the source as Chris recorded it. The file's own name when its record is gone; "" when
+    the reel was made with no track. Chris, 2026-10-14, of a reel the dashboard played muted: "where is the music
+    on the insta posts!!!!": the line says what plays, so a silent player is never mistaken for a silent reel."""
+    if not file:
+        return ""
+    t = db.one(conn, "SELECT title, artist, source FROM music_tracks WHERE file=?", (file,))
+    if t is None:
+        return Path(file).stem
+    return f"{t['title']}, {t['artist']}" if artist_known(t["artist"]) else f"{t['title']} ({t['source']})"
+
+
 def set_active(conn: sqlite3.Connection, tid: int, active: bool) -> None:
     conn.execute("UPDATE music_tracks SET active=? WHERE id=?", (1 if active else 0, tid))
