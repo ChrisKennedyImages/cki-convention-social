@@ -30,6 +30,9 @@
 .slot{display:block;margin-top:8px;color:inherit;text-decoration:none}
 .slot img{display:block;width:100%;aspect-ratio:4/5;object-fit:cover;border-radius:8px;border:1px solid var(--line)}
 .slot .t{font-size:13px;margin-top:3px;display:block}
+.sched p{margin:0 0 8px}.sched p:last-child{margin:0}
+.went .from{display:flex;align-items:center;justify-content:center;aspect-ratio:4/5;padding:10px;border-radius:8px;border:1px dashed var(--line);
+  background:#fafaf8;font-size:13px;color:var(--muted);overflow:hidden;text-align:left}
 .went{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:12px}
 .went .card{margin:0;padding:10px}
 .went img{display:block;width:100%;aspect-ratio:4/5;object-fit:cover;border-radius:8px;border:1px solid var(--line)}
@@ -43,7 +46,7 @@ section{margin-bottom:28px}
 }
 @media (max-width:480px){.drafts{grid-template-columns:1fr}
   .went{grid-template-columns:1fr}.went .card{display:grid;grid-template-columns:96px 1fr;gap:4px 12px;align-items:start}
-  .went .card>a{grid-row:span 3}.went .card .muted{margin-top:0!important}.went .btn{margin-top:4px}}
+  .went .card>.thumb{grid-row:span 3}.went .from{font-size:12px;padding:6px}.went .card .muted{margin-top:0!important}.went .btn{margin-top:4px}}
 </style>
 {% if msg %}<div class="msg{{ ' bad' if msg.startswith('Not ') else '' }}" id="said">{{ msg }}</div>{% endif %}
 
@@ -124,15 +127,28 @@ section{margin-bottom:28px}
   </div>
 </section>
 
+<section id="schedule">
+  <div class="today-h"><h2>How posting works</h2></div>
+  <div class="card sched">
+    <p><strong>Every morning at 8:00</strong> the daily post is drafted for the next day, and your phone gets it.{% if schedule.designed %} Designed drafts come from {{ schedule.hours[0] }}:00 to {{ schedule.hours[1] }}:00, up to {{ schedule.designed }} a day, one an hour.{% endif %}</p>
+    {% for line in schedule.times %}<p>{{ line }}, one post a slot when you choose Follow the pace. Post now sends a post in about 35 minutes.</p>{% endfor %}
+    <p><strong>The daily designs:</strong> {{ schedule.days|join(', ') }}.</p>
+    <p><strong>Next out:</strong> {{ schedule.next_out or 'nothing is set to go out yet' }}. <strong>Next daily draft:</strong> {{ schedule.next_draft }}.</p>
+    <p class="muted">Times are set on the Keys page, under Posting.</p>
+  </div>
+</section>
+
 <section id="went-out">
   <div class="today-h"><h2>Went out</h2></div>
-  <p class="muted lede">{% if summary.totals.posts %}Last {{ summary.days }} days: {{ summary.totals.posts }} post{{ 's' if summary.totals.posts != 1 else '' }}, reach {{ summary.totals.reach|int }}, engagement {{ summary.totals.engagement|int }}, clicks {{ summary.totals.clicks|int }}{% if summary.last_pull %}, numbers from Buffer as of {{ summary.last_pull }}{% endif %}.{% else %}The last posts that went out. Their numbers come from Buffer once a day.{% endif %}</p>
+  <p class="muted lede">{% if summary.totals.posts %}Last {{ summary.days }} days: {{ summary.totals.posts }} post{{ 's' if summary.totals.posts != 1 else '' }}, reach {{ summary.totals.reach|int }}, engagement {{ summary.totals.engagement|int }}, clicks {{ summary.totals.clicks|int }}{% if summary.last_pull %}, numbers from Buffer as of {{ summary.last_pull }}{% endif %}.{% else %}The last posts that went out. Their numbers come from Buffer once a day.{% endif %}
+  {% if sent_checked %}Checked with Buffer {{ sent_checked }}.{% endif %}</p>
   {% if went %}
   <div class="went">
   {% for w in went %}
     <div class="card">
-      <a href="/queue/{{ w.id }}">{% if w.card %}<img src="{{ w.card }}" alt="post {{ w.id }}" loading="lazy">{% endif %}</a>
-      <div class="muted" style="margin-top:6px">{{ w.when }}</div>
+      <div class="thumb">{% if w.id %}<a href="/queue/{{ w.id }}">{% if w.card %}<img src="{{ w.card }}" alt="post {{ w.id }}" loading="lazy">{% endif %}</a>
+      {% else %}<div class="from">{{ w.text[:140] }}{{ '…' if w.text|length > 140 else '' }}</div>{% endif %}</div>
+      <div class="muted" style="margin-top:6px">{{ w.when }}{% if not w.id %}<br>Sent from Buffer, not made here{% endif %}</div>
       {% set ig = (w.links|selectattr('href')|list) %}
       {% if ig %}<a class="btn" href="{{ ig[0].href }}" rel="noopener noreferrer" target="_blank">Open on {{ ig[0].service|capitalize }}</a>
       {% else %}<div class="muted">No link from Buffer yet</div>{% endif %}

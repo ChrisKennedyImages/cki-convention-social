@@ -115,23 +115,91 @@ def _is_reel(row) -> bool:
         return False
 
 
+def _local_when(ts: str) -> tuple[Optional[datetime], str]:
+    try:
+        sent = datetime.fromisoformat((ts or "").replace("Z", "+00:00")).astimezone(ZoneInfo(config.get_config().timezone))
+    except ValueError:
+        return None, ""
+    return sent, f"{sent:%A} {sent:%b} {sent.day}, {clock(sent)}"
+
+
 def went_out(conn: sqlite3.Connection, n: int = WENT_OUT) -> list[dict]:
-    """The last n posts that went out, newest first: when, where, the card, and the link to each network's post."""
+    """The last n posts that went out, newest first: the suite's own (post_history, kept true by the publisher's hourly
+    look at what Buffer sent) and any other post Buffer last said it sent on this company's channels (2026-10-15: a post
+    Buffer sent always shows, from the publisher's cached list; the page never asks Buffer itself)."""
+    from ..agents import publisher
     out = []
+    known = set()
     for g in db.rows(conn, "SELECT queue_id, MAX(COALESCE(sent_at, '')) AS sent FROM post_history WHERE queue_id IS NOT NULL "
                            "GROUP BY queue_id ORDER BY sent DESC LIMIT ?", (n,)):
         row = db.one(conn, "SELECT * FROM content_queue WHERE id=?", (g["queue_id"],))
-        links = [{"service": h["service"], "href": h["external_link"]}
-                 for h in db.rows(conn, "SELECT service, external_link FROM post_history WHERE queue_id=? ORDER BY "
-                                        "CASE service WHEN 'instagram' THEN 0 ELSE 1 END, id", (g["queue_id"],))]
-        try:
-            sent = datetime.fromisoformat((g["sent"] or "").replace("Z", "+00:00")).astimezone(ZoneInfo(config.get_config().timezone))
-            when = f"{sent:%A} {sent:%b} {sent.day}, {clock(sent)}"
-        except ValueError:
-            when = ""
-        out.append({"id": g["queue_id"], "when": when, "card": card_path(row) if row else None, "links": links,
-                    "video": _is_reel(row) if row else False})
-    return out
+        hist = db.rows(conn, "SELECT buffer_post_id, service, external_link FROM post_history WHERE queue_id=? ORDER BY "
+                             "CASE service WHEN 'instagram' THEN 0 ELSE 1 END, id", (g["queue_id"],))
+        known.update(h["buffer_post_id"] for h in hist)
+        at, when = _local_when(g["sent"])
+        out.append({"id": g["queue_id"], "when": when, "at": at, "card": card_path(row) if row else None,
+                    "links": [{"service": h["service"], "href": h["external_link"]} for h in hist],
+                    "video": _is_reel(row) if row else False, "text": ""})
+    known.update(h["buffer_post_id"] for h in db.rows(conn, "SELECT buffer_post_id FROM post_history"))
+    try:
+        cached = json.loads(settings.get(conn, publisher.SENT_CACHE_KEY) or "[]")
+    except ValueError:
+        cached = []
+    for c in cached if isinstance(cached, list) else []:
+        if not isinstance(c, dict) or c.get("id") in known:
+            continue
+        at, when = _local_when(c.get("sent_at") or "")
+        out.append({"id": None, "when": when, "at": at, "card": None, "video": False, "text": c.get("text") or "",
+                    "links": [{"service": c.get("service") or "instagram", "href": c.get("link")}]})
+    floor = datetime.min.replace(tzinfo=timezone.utc)
+    return sorted(out, key=lambda x: x["at"] or floor, reverse=True)[:n]
+
+
+def sent_checked(conn: sqlite3.Connection) -> str:
+    """When the publisher last read what Buffer sent, in his words ("" before the first look)."""
+    from ..agents import publisher
+    ts = settings.get(conn, publisher.SENT_CHECKED_KEY) or ""
+    return local_words(ts) if ts else ""
+
+
+def schedule(conn: sqlite3.Connection, now: Optional[datetime] = None) -> dict:
+    """How posting works, from the code that does it, in plain words (Chris, 2026-10-15: "what is even the schedule for
+    posting auto and why does this seem so messy?"): the 8:00 draft, the designed drafts, each network's times (POST_TIMES
+    and what the learner moved), the design of each weekday (content.DESIGNS), what goes out next and the next draft."""
+    from ..agents import content, designed, learner, pacing
+    from .. import music
+    t = local_now(now)
+    monday = t.date() + timedelta(days=(7 - t.weekday()) % 7 or 7)
+    saturday = monday + timedelta(days=5)
+    times = []
+    for net in alerts.networks_on():
+        weekday, weekend = pacing.times_table().get(net, (pacing.FALLBACK_TIME, pacing.FALLBACK_TIME))
+        wd = learner.post_time_for(conn, net, weekday, monday)
+        we = learner.post_time_for(conn, net, weekend, saturday)
+        same = wd == we
+        when = (f"{clock(datetime.combine(monday, wd))} every day" if same else
+                f"{clock(datetime.combine(monday, wd))} on weekdays and {clock(datetime.combine(saturday, we))} on weekends")
+        times.append(f"{net.capitalize()} posts go out at {when}")
+    building = (config.getenv("BUILDING_WEEKDAY") or "wednesday").strip().lower()
+    has_music = music.current(conn) is not None
+    words = {"single": "single photo", "spotlight": "spotlight", "carousel": "carousel", "fan": "fan", "reel": "reel"}
+    days = []
+    for name in content.WEEKDAYS:
+        if name == building:
+            days.append(f"{name.capitalize()} single photo of a building")
+            continue
+        d = content.DESIGNS[name]
+        extra = " (a single photo while no music is on)" if d == "reel" and not has_music else ""
+        days.append(f"{name.capitalize()} {words.get(d, d)}{extra}")
+    upcoming = [i for d in week(conn, now) for i in d["items"] if i["at"] and i["at"] >= t]
+    nxt = min(upcoming, key=lambda i: i["at"]) if upcoming else None
+    draft_at = datetime.combine(t.date() + timedelta(days=0 if t.hour < 8 else 1), datetime.min.time()).replace(hour=8)
+    for_day = draft_at.date() + timedelta(days=1)
+    n = designed.per_day()
+    return {"times": times, "days": days, "designed": n, "hours": designed.HOURS,
+            "next_out": (f"{day_words(nxt['at'], now).capitalize()} {nxt['time']}, post {nxt['id']}" if nxt else ""),
+            "next_draft": f"{day_words(draft_at, now).capitalize()} at 8:00, for {for_day:%A} "
+                          f"({words.get(content.design_for(for_day, content.subject_for(for_day), has_music), 'single photo')})"}
 
 
 def pace_slot(conn: sqlite3.Connection, row, *, now: Optional[datetime] = None, publisher_dry: Optional[bool] = None) -> Optional[datetime]:

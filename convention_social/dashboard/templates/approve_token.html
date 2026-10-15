@@ -5,7 +5,8 @@
 <div class="card">This post is {{ status_words.get(status, status)|lower }}; there is nothing to choose here. <a href="/queue/{{ qid }}">Open it</a>.</div>
 {% elif token %}
 <div class="card">
-  <p>Nothing was decided by opening this page. Choose below, or <a href="/queue/{{ qid }}">open the draft</a> to look at it first.</p>
+  <p>Nothing was decided by opening this page. Choose below, or open the draft to look at it first.</p>
+  <a class="btn" href="/queue/{{ qid }}">Open the draft</a>
   <div class="choices">
   {% for how, label in choices.items() %}
     <form method="post" action="/queue/{{ qid }}/choose-by-token/{{ how }}"><input type="hidden" name="token" value="{{ token }}">

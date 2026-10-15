@@ -53,7 +53,14 @@ def pull(ctx: runner.Context, client, today: Optional[date] = None) -> dict:
     by_channel = {r["buffer_channel_id"]: r["service"]
                   for r in db.rows(ctx.conn, "SELECT buffer_channel_id, service FROM channels ORDER BY id")}
     if by_channel:
+        # ours: what post_history holds, and every post the suite scheduled (2026-10-15: a sent post the ten-minute check
+        # missed was counted as someone else's, so its numbers left Went out with it)
         ours_ids = {r["buffer_post_id"] for r in db.rows(ctx.conn, "SELECT buffer_post_id FROM post_history")}
+        for r in db.rows(ctx.conn, "SELECT buffer_post_ids FROM content_queue WHERE buffer_post_ids IS NOT NULL"):
+            try:
+                ours_ids.update(str(v) for v in (json.loads(r["buffer_post_ids"]) or {}).values())
+            except (ValueError, AttributeError):
+                continue
         after, pages = None, 0
         try:
             while pages < MAX_PAGES:

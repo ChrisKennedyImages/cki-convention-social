@@ -563,7 +563,7 @@ def create_app() -> FastAPI:
         return render(request, "today.html", drafts=drafts, others=others, alerts=alerts.open_alerts(conn),
                       auth_state=settings.get(conn, "drive.auth_state") or "missing", msg=MSGS.get(msg, msg)[:400],
                       week=today_view.week(conn), went=today_view.went_out(conn), summary=metrics.summary(conn, 30),
-                      designed_note=designed_note(conn))
+                      designed_note=designed_note(conn), schedule=today_view.schedule(conn), sent_checked=today_view.sent_checked(conn))
 
     @app.get("/history", response_class=HTMLResponse)
     def history(request: Request, user: str = Depends(require_user), conn=Depends(conn_dep), show: str = "all"):

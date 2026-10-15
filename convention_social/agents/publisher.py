@@ -555,52 +555,153 @@ def publish_ready(ctx: runner.Context, client: Optional[BufferClient] = None, up
     return stats
 
 
-def verify_scheduled(ctx: runner.Context, client: Optional[BufferClient] = None) -> dict:
-    """Poll every scheduled row's Buffer posts. A row settles once every network is sent or errored."""
-    stats = {"published": 0, "failed": 0, "pending": 0}
-    rows = db.rows(ctx.conn, "SELECT * FROM content_queue WHERE status='scheduled' AND buffer_post_ids IS NOT NULL ORDER BY id")
-    if not rows:
+# Chris, 2026-10-15: "dashboard also says nothing has gone out yet and one did get posted within the last 24hrs". Every
+# scheduled post was asked about every ten minutes, one due tomorrow as much as one due now: about 14 requests an hour,
+# so the suite's own 24-hour Buffer ceiling (200) was reached by 12:34 UTC, every request after that was refused, and
+# the post Buffer sent at 15:30 was never written down. A post is now asked about from just before its time, and once
+# an hour one request reads what Buffer says was sent and writes down whatever the ten-minute check missed.
+VERIFY_EARLY = timedelta(minutes=5)
+RECONCILE_EVERY = timedelta(hours=1)
+SENT_CHECKED_KEY = "buffer.sent_checked_at"
+SENT_CACHE_KEY = "buffer.sent"          # what Buffer last said was sent on this company's channels (the Today page reads it)
+SENT_KEEP = 20
+
+
+def due_at(row) -> Optional[datetime]:
+    """The earliest time Buffer holds one of this row's posts for (its payload's dueAt, on the networks Buffer has), or
+    None when no time can be read: then the row is asked about, never left unchecked."""
+    payload = _json(row["payload"], {}) or {}
+    ids = _json(row["buffer_post_ids"], {}) or {}
+    times = []
+    for net in ids if isinstance(ids, dict) else []:
+        try:
+            dt = datetime.fromisoformat(str((payload.get(net) or {}).get("dueAt") or "").replace("Z", "+00:00"))
+        except (ValueError, AttributeError):
+            continue
+        times.append(dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc))
+    return min(times) if times else None
+
+
+def record_sent(conn, row, net: str, pid: str, sent_at: str, link: Optional[str], captions: dict) -> bool:
+    """One network of a post went out: its post_history row (the Today page's Went out, the numbers). True when new."""
+    if db.one(conn, "SELECT id FROM post_history WHERE buffer_post_id=?", (pid,)):
+        if link:
+            conn.execute("UPDATE post_history SET external_link=COALESCE(external_link, ?) WHERE buffer_post_id=?", (link, pid))
+        return False
+    db.insert(conn, "post_history", buffer_post_id=pid, queue_id=row["id"], service=net, sent_at=sent_at,
+              caption=captions.get(net, ""), external_link=link)
+    return True
+
+
+def posted(ctx: runner.Context, row, nets: list[str]) -> None:
+    """The row went out on every network it was sent to: published, and the ping that opens the post itself."""
+    now = db.utcnow()
+    ctx.conn.execute("UPDATE content_queue SET status='published', published_at=?, updated_at=? WHERE id=?", (now, now, row["id"]))
+    links = {h["service"]: h["external_link"] for h in db.rows(ctx.conn, "SELECT service, external_link FROM post_history WHERE queue_id=?",
+                                                              (row["id"],)) if h["external_link"]}
+    live = next((links[n] for n in ("instagram", "facebook", "pinterest") if links.get(n)), next(iter(links.values()), None))
+    notify.push(f"{ctx.cfg.brand_name}: posted", f"Post {row['id']} went out on {', '.join(nets)}. Tap to see it.",
+                dry_run=ctx.dry_run, priority="default", click=live or notify.link(f"/queue/{row['id']}"), conn=ctx.conn, agent=ctx.agent)
+
+
+def verify_scheduled(ctx: runner.Context, client: Optional[BufferClient] = None, now: Optional[datetime] = None) -> dict:
+    """Ask Buffer about each scheduled row that is due (from VERIFY_EARLY before its time on). A network Buffer says went
+    out is written down at once; the row settles once every network is sent or errored."""
+    stats = {"published": 0, "failed": 0, "pending": 0, "not_due": 0}
+    now_dt = now or datetime.now(timezone.utc)
+    due_rows = []
+    for row in db.rows(ctx.conn, "SELECT * FROM content_queue WHERE status='scheduled' AND buffer_post_ids IS NOT NULL ORDER BY id"):
+        due = due_at(row)
+        if due is not None and due > now_dt + VERIFY_EARLY:
+            stats["not_due"] += 1                 # not its time yet: no request spent on it
+            continue
+        due_rows.append(row)
+    if not due_rows:
         return stats
     client = client or BufferClient.from_config(ctx.conn, ctx.agent)
     if client is None:
         return stats
-    for row in rows:
+    for row in due_rows:
         ids = _json(row["buffer_post_ids"], {}) or {}
         infos: dict[str, dict] = {}
         try:
             for net, pid in ids.items():
-                infos[net] = client.post_info(pid)
+                try:
+                    infos[net] = client.post_info(pid)
+                except (BufferBudgetExceeded, BufferRateLimited):
+                    raise
+                except BufferError as e:          # one network unreadable: the others are still written down
+                    runner.record_error_once(ctx.conn, ctx.agent, "verify_failed", f"post {row['id']}, {net}: {e}")
         except (BufferBudgetExceeded, BufferRateLimited) as e:
             record_once(ctx.conn, ctx.agent, "buffer_budget", str(e))
             break
-        except BufferError as e:
-            runner.record_error(ctx.conn, ctx.agent, "verify_failed", f"post {row['id']}: {e}")
-            continue
+        stamp = db.utcnow()
+        captions = captions_of(row) or {}
+        for net, info in infos.items():
+            if info["status"] in TERMINAL_OK:
+                record_sent(ctx.conn, row, net, ids[net], info["sent_at"] or stamp, info.get("external_link"), captions)
         bad = {net: i for net, i in infos.items() if i["status"] in TERMINAL_BAD}
         if bad:
             why = "Buffer could not send it: " + "; ".join(f"{net}: {i['error'] or i['status']}" for net, i in bad.items())
             if row["last_error"] != why:
                 runner.record_error(ctx.conn, ctx.agent, "post_error", f"post {row['id']}: {why}")
-                ctx.conn.execute("UPDATE content_queue SET last_error=?, updated_at=? WHERE id=?", (why[:500], db.utcnow(), row["id"]))
-        if not all(i["status"] in TERMINAL_OK | TERMINAL_BAD for i in infos.values()):
+                ctx.conn.execute("UPDATE content_queue SET last_error=?, updated_at=? WHERE id=?", (why[:500], stamp, row["id"]))
+        if len(infos) < len(ids) or not all(i["status"] in TERMINAL_OK | TERMINAL_BAD for i in infos.values()):
             stats["pending"] += 1
             continue
-        now = db.utcnow()
-        captions = captions_of(row) or {}
-        for net, info in infos.items():
-            if info["status"] in TERMINAL_OK and not db.one(ctx.conn, "SELECT id FROM post_history WHERE buffer_post_id=?", (ids[net],)):
-                db.insert(ctx.conn, "post_history", buffer_post_id=ids[net], queue_id=row["id"], service=net,
-                          sent_at=info["sent_at"] or now, caption=captions.get(net, ""), external_link=info.get("external_link"))
         if bad:
-            ctx.conn.execute("UPDATE content_queue SET status='failed', updated_at=? WHERE id=?", (now, row["id"]))
+            ctx.conn.execute("UPDATE content_queue SET status='failed', updated_at=? WHERE id=?", (stamp, row["id"]))
             stats["failed"] += 1
         else:
-            ctx.conn.execute("UPDATE content_queue SET status='published', published_at=?, updated_at=? WHERE id=?", (now, now, row["id"]))
+            posted(ctx, row, list(infos))
             stats["published"] += 1
-            live = next((infos[n]["external_link"] for n in ("instagram", "facebook", "pinterest") if infos.get(n, {}).get("external_link")),
-                        next((i["external_link"] for i in infos.values() if i.get("external_link")), None))
-            notify.push(f"{ctx.cfg.brand_name}: posted", f"Post {row['id']} went out on {', '.join(infos)}. Tap to see it.",
-                        dry_run=ctx.dry_run, priority="default", click=live or notify.link(f"/queue/{row['id']}"), conn=ctx.conn, agent=ctx.agent)
+    return stats
+
+
+def reconcile_sent(ctx: runner.Context, client: Optional[BufferClient] = None, now: Optional[datetime] = None) -> dict:
+    """Once an hour, one request: what Buffer says was sent on this company's connected channels. Each of the suite's
+    posts among them is written to post_history and a scheduled row whose every network went out is published, whatever
+    the ten-minute check managed; the list itself is kept (SENT_CACHE_KEY) so a post sent from Buffer directly shows on
+    Today too. Never past the budget: at the ceiling it asks nothing and says so once."""
+    stats = {"seen": 0, "recorded": 0, "published": 0}
+    now_dt = now or datetime.now(timezone.utc)
+    try:
+        last = datetime.fromisoformat(settings.get(ctx.conn, SENT_CHECKED_KEY) or "")
+        if now_dt - last < RECONCILE_EVERY:
+            return stats
+    except ValueError:
+        pass
+    channels = {r["buffer_channel_id"]: r["service"] for r in db.rows(ctx.conn, "SELECT buffer_channel_id, service FROM channels WHERE connected=1")}
+    if not channels:
+        return stats
+    client = client or BufferClient.from_config(ctx.conn, ctx.agent)
+    if client is None:
+        return stats
+    try:
+        nodes, _ = client.posts(status="sent", channel_ids=list(channels), first=SENT_KEEP)
+    except (BufferBudgetExceeded, BufferRateLimited) as e:
+        record_once(ctx.conn, ctx.agent, "buffer_budget", str(e))
+        return stats
+    except BufferError as e:
+        runner.record_error_once(ctx.conn, ctx.agent, "sent_check", f"Buffer's list of sent posts could not be read: {e}")
+        return stats
+    settings.set(ctx.conn, SENT_CHECKED_KEY, now_dt.isoformat(timespec="seconds"))
+    sent = {n["id"]: n for n in nodes if n.get("id") and str(n.get("status") or "sent").lower() in TERMINAL_OK}
+    settings.set(ctx.conn, SENT_CACHE_KEY, json.dumps([
+        {"id": pid, "service": channels.get(n.get("channelId")) or str(n.get("channelService") or "").lower(),
+         "sent_at": n.get("sentAt"), "link": n.get("externalLink"), "text": (n.get("text") or "")[:280]} for pid, n in sent.items()]))
+    stats["seen"] = len(sent)
+    for row in db.rows(ctx.conn, "SELECT * FROM content_queue WHERE buffer_post_ids IS NOT NULL AND status IN ('scheduled', 'failed', 'published')"):
+        ids = _json(row["buffer_post_ids"], {}) or {}
+        captions = captions_of(row) or {}
+        for net, pid in ids.items():
+            n = sent.get(pid)
+            if n and record_sent(ctx.conn, row, net, pid, n.get("sentAt") or db.utcnow(), n.get("externalLink"), captions):
+                stats["recorded"] += 1
+        if row["status"] == "scheduled" and ids and all(db.one(ctx.conn, "SELECT 1 FROM post_history WHERE buffer_post_id=?", (pid,))
+                                                         for pid in ids.values()):
+            posted(ctx, row, list(ids))
+            stats["published"] += 1
     return stats
 
 
@@ -608,12 +709,14 @@ def run(ctx: runner.Context) -> str:
     t = tend_drafts(ctx)
     p = publish_ready(ctx)
     v = verify_scheduled(ctx)
+    r = reconcile_sent(ctx)
     snap = budget.snapshot(ctx.conn)
     used = "/".join(str(s["used"]) for s in snap)
     return (f"{'DRY RUN ' if ctx.dry_run else ''}would_publish={p['would_publish']} scheduled={p['scheduled']} failed={p['failed']} "
             f"turned_back={p['turned_back']} held={p['held']} skipped_networks={p['skipped_networks']}; "
             f"drafts waiting={t['waiting']} nudged={t['nudged']}; "
-            f"verified published={v['published']} failed={v['failed']} pending={v['pending']}; "
+            f"verified published={v['published']} failed={v['failed']} pending={v['pending']} not_due={v['not_due']}; "
+            f"sent per Buffer seen={r['seen']} recorded={r['recorded']} published={r['published']}; "
             f"buffer requests 15m/24h/30d={used}")
 
 

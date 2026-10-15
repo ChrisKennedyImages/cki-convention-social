@@ -1211,6 +1211,20 @@ immediately or to follow the pace"; Skip puts the photos back in rotation. Then:
 - **Plain words.** Queue is To approve; would publish is Practice run (posting is off); rejected is Skipped; dry run
   is practice run; the samples are Ideas where the word still shows. A big amber banner on every page while the
   publisher or the content lane is in practice run says posts are not going out and links to Settings, Agents.
+- **Went out tells the truth, and the schedule is said.** Chris: "dashboard also says nothing has gone out yet and one
+  did get posted within the last 24hrs. what is even the schedule for posting auto and why does this seem so messy?"
+  Buffer sent queue post 2 at 15:30 UTC; the Mini never wrote it down. The publisher asked Buffer about every
+  scheduled post every ten minutes, one due tomorrow as much as one due now (about 14 requests an hour), so the
+  suite's own 24-hour Buffer ceiling (200 of 250) was reached by 12:34 UTC and every request after that was refused,
+  the check of that post and the scheduling of the approved post 5 among them. Now a post is asked about from five
+  minutes before its time (`publisher.due_at`); a network Buffer says went out is written down at once even when
+  another network on the row cannot be read; and once an hour one request reads what Buffer says was sent on this
+  company's channels (`publisher.reconcile_sent`): each of the suite's posts among them goes into `post_history`, a
+  scheduled post whose every network went out is published with its ping, and the list is kept so Went out on
+  Today also shows a post sent from Buffer itself. The daily numbers count every post the suite scheduled as ours.
+  Today has How posting works, read from the code: the 8:00 draft for the next day, the designed drafts' hours,
+  each network's times (`POST_TIMES` and what the learner moved), the design of each weekday (`content.DESIGNS`, the
+  building day), what goes out next and the next draft. Pinned by `tests/test_went_out.py`, each seen to fail first.
 - **Four tabs: Today, Photos, Bookings, Settings.** More became Settings: the system pages first (Agents, Errors,
   Keys, Buffer), then the pages that find work (Outreach, Scout, Search, Learner); `/more` opens it. Every alert,
   on the Errors page and in Needs you, is one card per kind with the button that fixes it where a fix exists (Sign
