@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import sys
 
-from . import config, runner
+from . import access, config, runner
 
 NTFY_URL = "https://ntfy.sh"
 
@@ -37,9 +37,13 @@ CHOICES = (("now", "Post now"), ("pace", "Follow the pace"), ("skip", "Skip"))
 
 
 def _choice(qid: int, token: str, how: str, label: str) -> str:
-    """One ntfy `http` action: a POST carrying the signed single-use token in its body (a GET on that address
-    decides nothing). The form is the one docs.ntfy.sh/publish documents:
-    `http, <label>, <url>, method=, headers.<h>=, body=, clear=true`."""
+    """One of his choices as an ntfy action. On the Tailscale address, an `http` action: a POST carrying the signed
+    single-use token in its body (a GET on that address decides nothing), in the form docs.ntfy.sh/publish documents:
+    `http, <label>, <url>, method=, headers.<h>=, body=, clear=true`. Behind Cloudflare Access (2026-10-15) only a
+    browser gets in: the ntfy app's own POST would meet the sign-in and look done when nothing was decided, so the
+    button opens the choice page in the browser instead (one more tap there)."""
+    if access.through_access(link("/")):
+        return f"view, {label}, {link(f'/queue/{qid}/choose-by-token/{how}?token={token}')}, clear=true"
     return (f"http, {label}, {link(f'/queue/{qid}/choose-by-token/{how}')}, method=POST, "
             f"headers.Content-Type=application/x-www-form-urlencoded, body='token={token}', clear=true")
 
@@ -48,7 +52,7 @@ def choice_actions(qid: int, token: str) -> str:
     """The ntfy `Actions` header for a draft the art director passed (Chris, 2026-10-15): his three choices, the most
     ntfy shows. Post now (out as soon as Buffer takes it), Follow the pace (the next open Instagram slot, one post a
     slot) and Skip (set aside, its photos back in the rotation). A tap on the notification itself opens the draft
-    (`Click`), where a reel plays with its sound. One token: the first button used spends it."""
+    (`Click`), where a reel plays with its sound. One token: the first choice made spends it."""
     return "; ".join(_choice(qid, token, how, label) for how, label in CHOICES)
 
 
@@ -63,8 +67,11 @@ def look_actions(qid: int, token: str) -> str:
     return f"{open_action(qid)}; " + _choice(qid, token, "skip", "Skip")
 
 
-def card_link(qid: int, token: str) -> str:
-    """The rendered card, served by the dashboard to the phone with the token and no login (`Attach`)."""
+def card_link(qid: int, token: str) -> str | None:
+    """The rendered card, served by the dashboard to the phone with the token and no login (`Attach`). None behind
+    Cloudflare Access: the ntfy app fetches it itself, without the browser's sign-in, and would get the sign-in page."""
+    if access.through_access(link("/")):
+        return None
     return link(f"/media/card/{qid}/{token}.jpg")
 
 
@@ -103,7 +110,7 @@ def _push(title: str, message: str, *, dry_run: bool, priority: str, transport, 
             headers["Actions"] = _ascii(actions)
         if attach:
             headers["Attach"] = attach
-        if filename:
+        if attach and filename:                  # a Filename alone makes ntfy take the words as a file
             headers["Filename"] = _ascii(filename)
         r = transport(f"{NTFY_URL}/{cfg.ntfy_topic}", data=message.encode("utf-8"), headers=headers)
         code = getattr(r, "status_code", 200)

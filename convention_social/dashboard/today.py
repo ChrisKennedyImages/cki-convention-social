@@ -180,17 +180,19 @@ def schedule(conn: sqlite3.Connection, now: Optional[datetime] = None) -> dict:
         when = (f"{clock(datetime.combine(monday, wd))} every day" if same else
                 f"{clock(datetime.combine(monday, wd))} on weekdays and {clock(datetime.combine(saturday, we))} on weekends")
         times.append(f"{net.capitalize()} posts go out at {when}")
-    building = (config.getenv("BUILDING_WEEKDAY") or "wednesday").strip().lower()
     has_music = music.current(conn) is not None
-    words = {"single": "single photo", "spotlight": "spotlight", "carousel": "carousel", "fan": "fan", "reel": "reel"}
+    words = {"single": "single photo"}         # every other design is called by its own name
     days = []
-    for name in content.WEEKDAYS:
-        if name == building:
-            days.append(f"{name.capitalize()} single photo of a building")
-            continue
-        d = content.DESIGNS[name]
-        extra = " (a single photo while no music is on)" if d == "reel" and not has_music else ""
-        days.append(f"{name.capitalize()} {words.get(d, d)}{extra}")
+    for i, name in enumerate(content.WEEKDAYS):
+        day = monday + timedelta(days=i)
+        subject = content.subject_for(day)
+        d = content.design_for(day, subject, has_music)
+        if subject == "architecture":
+            days.append(f"{name.capitalize()} {words.get(d, d)} of a building")
+        elif content.DESIGNS[name] == "reel" and d != "reel":
+            days.append(f"{name.capitalize()} reel ({words.get(d, d)} while no music is on)")
+        else:
+            days.append(f"{name.capitalize()} {words.get(d, d)}")
     upcoming = [i for d in week(conn, now) for i in d["items"] if i["at"] and i["at"] >= t]
     nxt = min(upcoming, key=lambda i: i["at"]) if upcoming else None
     draft_at = datetime.combine(t.date() + timedelta(days=0 if t.hour < 8 else 1), datetime.min.time()).replace(hour=8)
@@ -199,7 +201,7 @@ def schedule(conn: sqlite3.Connection, now: Optional[datetime] = None) -> dict:
     return {"times": times, "days": days, "designed": n, "hours": designed.HOURS,
             "next_out": (f"{day_words(nxt['at'], now).capitalize()} {nxt['time']}, post {nxt['id']}" if nxt else ""),
             "next_draft": f"{day_words(draft_at, now).capitalize()} at 8:00, for {for_day:%A} "
-                          f"({words.get(content.design_for(for_day, content.subject_for(for_day), has_music), 'single photo')})"}
+                          f"({(lambda d: words.get(d, d))(content.design_for(for_day, content.subject_for(for_day), has_music))})"}
 
 
 def pace_slot(conn: sqlite3.Connection, row, *, now: Optional[datetime] = None, publisher_dry: Optional[bool] = None) -> Optional[datetime]:

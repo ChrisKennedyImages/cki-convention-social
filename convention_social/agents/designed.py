@@ -65,7 +65,8 @@ def per_day() -> int:
 
 def designs(has_music: bool) -> list[str]:
     """Every design the daily draft's renderer makes (content.NEEDS) but the plain single photo, in its order, so a
-    design added to that list joins the designed drafts by itself; the reel only with a music track."""
+    design added to that list joins the designed drafts by itself (the four of 2026-10-15 did); the reel only with a
+    music track."""
     from . import content
     return [d for d in content.NEEDS if d != "single" and (d != "reel" or has_music)]
 
@@ -282,7 +283,7 @@ def draft(ctx: runner.Context, fetch: Callable[[dict], bytes], *, now: Optional[
         return f"no designed draft: no photo passed the final check (tried {len(order)})"
     asked = design
     if len(chosen) < content.NEEDS[design]:
-        design, chosen = "single", chosen[:1]
+        design, chosen = content.fallback_for(day), chosen[:1]      # too few passed: the day's one-photo design
     hero = chosen[0][0]
     words = {"reel": "Tap to watch it with its sound."}.get(design, "Tap to see it.")
     qid, art, line = content.make_draft(

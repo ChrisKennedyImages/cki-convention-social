@@ -35,6 +35,21 @@ chown "$USER_NAME":staff "$DATA" "$DATA/logs"
 templates=("$REPO"/launchd/${PREFIX}*.plist.template(N))
 if (( ${#templates} == 0 )); then echo "no templates in $REPO/launchd"; exit 1; fi
 
+# the dashboard away from home (2026-10-15): the tunnel service goes in only when `ccs tunnel check` passes, run as
+# you with your .env (its token, the address, Access answering for every path from outside); otherwise this suite's
+# own tunnel service, if one is here, is stopped and removed. No other cloudflared on this Mini is ever touched.
+TUNNEL_LABEL="${PREFIX}tunnel"
+if (cd "$REPO" && sudo -u "$USER_NAME" env HOME="$USER_HOME" CCS_DATA_ROOT="$DATA" "$PY" -m convention_social.cli tunnel check --quiet); then
+  say "the tunnel: its check passed, so it is installed with the rest"
+else
+  templates=(${templates:#*/${TUNNEL_LABEL}.plist.template})
+  if [[ -f "$DST/$TUNNEL_LABEL.plist" ]]; then
+    launchctl bootout "system/$TUNNEL_LABEL" 2>/dev/null || true
+    rm -f "$DST/$TUNNEL_LABEL.plist"
+    echo "    stopped and removed $TUNNEL_LABEL (its check does not pass now: bin/ccs tunnel check says why)"
+  fi
+fi
+
 say "installing ${#templates} services as system daemons running as $USER_NAME (data: $DATA)"
 failed=()
 for t in "${templates[@]}"; do

@@ -85,7 +85,7 @@ class Draft(IsolatedCase):
         self.assertEqual(push.call_count, 1)
         args, kw = push.call_args
         self.assertEqual(args[0], "Event Caliber: a post to approve")
-        self.assertIn("A single photo post for Wednesday. Post now, follow the pace or skip.", args[1])
+        self.assertIn("A scan on 1 of your photos for Wednesday. Post now, follow the pace or skip.", args[1])   # the building day's slit scan (2026-10-15)
         self.assertEqual((kw["click"], kw["dry_run"]), (f"https://mac-mini.example:8443/queue/{qid}", True))
         self.assertIs(kw["conn"], conn, "a ping that fails is recorded as an error")
         # 2026-10-13: the ping carries the card; the Approve button only when the art director passed it

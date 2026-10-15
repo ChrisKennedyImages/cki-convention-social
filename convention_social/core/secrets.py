@@ -26,6 +26,7 @@ SECRET_NAMES = (
     "GOOGLE_OAUTH_CLIENT_SECRET",
     "DASHBOARD_PASSWORD_HASH",
     "GITHUB_TOKEN",
+    "CLOUDFLARE_TUNNEL_TOKEN",       # the dashboard away from home (core/tunnel.py)
 )
 
 

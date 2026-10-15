@@ -157,10 +157,11 @@ class Schedule(Case):
     def test_the_schedule_is_on_today_in_plain_words(self):
         page = re.sub(r"\s+", " ", self.page())
         sched = page[page.index('id="schedule"'):page.index('id="went-out"')]
+        from convention_social.agents import content
+        week = [f"{name.capitalize()} {d}" for name, d in content.DESIGNS.items() if name not in ("wednesday", "saturday")]
         for words in ("8:00", "the daily post is drafted for the next day", "Instagram", "11:30 am on weekdays", "10:00 am on weekends",
-                      "Monday spotlight", "Thursday carousel", "Friday fan", "Wednesday single photo of a building",
-                      "Saturday reel", "Next daily draft"):
-            self.assertIn(words, sched, words)
+                      f"Wednesday {content.DESIGNS['wednesday']} of a building", "Saturday reel (", "Next daily draft", *week):
+            self.assertIn(words, sched, words)          # the week as content.DESIGNS has it; no music here, so Saturday falls back
         os.environ["POST_TIMES"] = "instagram=12:15/09:45"
         config.reset()
         sched = re.sub(r"\s+", " ", self.page())

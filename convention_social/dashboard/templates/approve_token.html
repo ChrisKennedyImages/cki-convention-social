@@ -5,12 +5,13 @@
 <div class="card">This post is {{ status_words.get(status, status)|lower }}; there is nothing to choose here. <a href="/queue/{{ qid }}">Open it</a>.</div>
 {% elif token %}
 <div class="card">
-  <p>Nothing was decided by opening this page. Choose below, or open the draft to look at it first.</p>
+  {% if how %}<p>You chose <strong>{{ choices[how] }}</strong> on your phone. Nothing is decided until you press it here.</p>
+  {% else %}<p>Nothing was decided by opening this page. Choose below, or open the draft to look at it first.</p>{% endif %}
   <a class="btn" href="/queue/{{ qid }}">Open the draft</a>
   <div class="choices">
-  {% for how, label in choices.items() %}
-    <form method="post" action="/queue/{{ qid }}/choose-by-token/{{ how }}"><input type="hidden" name="token" value="{{ token }}">
-      <button class="{{ {'now': 'primary', 'pace': 'ok', 'skip': 'skip'}[how] }}" type="submit">{{ label }}</button></form>
+  {% for key, label in choices.items() %}
+    <form method="post" action="/queue/{{ qid }}/choose-by-token/{{ key }}"><input type="hidden" name="token" value="{{ token }}">
+      <button class="{{ {'now': 'primary', 'pace': 'ok', 'skip': 'skip'}[key] }}" type="submit"{% if how and key != how %} style="opacity:.55"{% endif %}>{{ label }}</button></form>
   {% endfor %}
   </div>
 </div>

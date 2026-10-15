@@ -237,6 +237,10 @@ class Saturday(IsolatedCase):
             db.insert(self.conn, "classifications", photo_id=pid, method="ollama", subject="event", convention_name="Awesome Con",
                       is_convention=1, quality=q, possible_minor=0, personal_details="[]", space="exterior", residential=0,
                       empty_room=0, sharp=1, light=4, moment=4, shot_type=room, classified_at=now)
+            confirmed = {"stage_panel": "main_stage", "backstage": "backstage", "portrait": "portraits"}.get(room)
+            if confirmed:                    # the final check confirmed the room, so the reel may name it (2026-10-15)
+                db.insert(self.conn, "final_checks", photo_id=pid, possible_minor=0, personal_details="[]", summary="ok",
+                          model="t", checked_at=now, shot_type=room, event_kind="business", room=confirmed)
             self.ids[did] = pid
         self.reels = []
         fake = mock.patch.dict(motion.REELS, {"rooms": self.fake_reel("rooms")})
@@ -283,19 +287,20 @@ class Saturday(IsolatedCase):
         self.assertEqual(len(self.reels), 1)
         kind, rooms, audio = self.reels[0]
         self.assertEqual((kind, audio), ("rooms", track))
-        self.assertEqual(sorted(rooms[:4]), ["BACKSTAGE", "MAIN STAGE", "ON THE FLOOR", "PORTRAITS"],
-                         "one photo per room first; a room repeats only after every room has had one")
-        self.assertEqual(ids[0], self.ids["e1"] if rooms[0] == "ON THE FLOOR" else self.ids["s1"])
+        self.assertEqual(sorted(rooms[:4]), ["BACKSTAGE", "EVENT PHOTOGRAPHY", "MAIN STAGE", "PORTRAITS"],
+                         "one photo per room first; a room repeats only after every room has had one; a room is named "
+                         "only when the final check confirmed it (2026-10-15), the rest say EVENT PHOTOGRAPHY")
+        self.assertEqual(ids[0], self.ids["e1"] if rooms[0] == "EVENT PHOTOGRAPHY" else self.ids["s1"])
         self.assertEqual(sorted(renders), ["2:3", "9:16", "cover", "stills"])
         self.assertTrue(renders["9:16"][0].endswith("-rooms.mp4"))
         self.assertTrue(Path(renders["cover"][0]).name.startswith("rooms-060"))
         self.assertEqual(len(ids), len(rooms))
         self.assertTrue(4 <= len(ids) <= 6)
 
-    def test_without_a_track_saturday_is_a_single_photo_never_a_silent_reel(self):
+    def test_without_a_track_saturday_is_a_one_photo_design_never_a_silent_reel(self):
         content.draft_one(self.ctx(), self.fetch, now=FRIDAY)
         _, meta_, renders, ids = self.last()
-        self.assertEqual((meta_["design"], meta_["design_wanted"], len(ids)), ("single", "single", 1))
+        self.assertEqual((meta_["design"], meta_["design_wanted"], len(ids)), ("scan", "scan", 1))   # Friday select, Sunday poster
         self.assertEqual(self.reels, [])
         self.assertEqual(sorted(renders), ["2:3", "4:5"])
 

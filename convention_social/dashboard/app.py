@@ -35,7 +35,7 @@ from ..ai import names as ai_names
 from ..ai.claude import NETWORKS
 from ..buffer import payloads as buffer_payloads
 from ..buffer.client import BufferBudgetExceeded, BufferClient, BufferError, BufferRateLimited
-from ..core import approve_token, auth, config, db, runner, secrets, settings, state_io
+from ..core import access, approve_token, auth, config, db, runner, secrets, settings, state_io
 from .. import music
 from ..library import eligibility, report
 from . import alerts
@@ -513,6 +513,23 @@ def create_app() -> FastAPI:
             response.headers["Cache-Control"] = "no-store"
         return response
 
+    @app.middleware("http")
+    async def through_access_only(request: Request, call_next):
+        """Chris, 2026-10-15: the dashboard away from home is never public without Access. Whatever came through
+        Cloudflare (the tunnel) without a valid Access token for him is refused before any page, the login
+        included (core/access.py). Tailscale and the Mini itself carry no Cloudflare header: untouched."""
+        from starlette.concurrency import run_in_threadpool
+        if not access.from_outside(request.headers):
+            return await call_next(request)
+        why = await run_in_threadpool(access.refusal, request.headers, request.cookies)     # may read Cloudflare's keys
+        if why:
+            return HTMLResponse(access.refused_page(why), status_code=403, headers={"Cache-Control": access.PRIVATE})
+        response = await call_next(request)
+        # Cloudflare keeps .jpg and .mp4 for two hours unless told otherwise (developers.cloudflare.com/cache/concepts/
+        # default-cache-behavior/): his photos, renders, samples and reels never stay in its cache
+        response.headers["Cache-Control"] = access.PRIVATE
+        return response
+
     # ------------------------------------------------------------------ login
     @app.get("/login", response_class=HTMLResponse)
     def login_form(request: Request, next: str = "/", bad: str = ""):
@@ -529,7 +546,8 @@ def create_app() -> FastAPI:
             time.sleep(0.5)
             return RedirectResponse(f"/login?bad=1&next={next}", status_code=303)
         resp = RedirectResponse(next if next.startswith("/") and not next.startswith("//") else "/", status_code=303)
-        resp.set_cookie(COOKIE, make_token("chris"), max_age=SESSION_DAYS * 86400, httponly=True, samesite="lax")
+        resp.set_cookie(COOKIE, make_token("chris"), max_age=SESSION_DAYS * 86400, httponly=True, samesite="lax",
+                        secure=access.secure_request(request.url.scheme, request.headers))     # https: never sent in the clear
         return resp
 
     @app.get("/healthz")
@@ -776,7 +794,8 @@ def create_app() -> FastAPI:
     def queue_choose_by_token_page(qid: int, request: Request, conn=Depends(conn_dep), token: str = "", how: str = ""):
         """A GET never decides anything (a link preview, a browser prefetch): a page with the buttons, and nothing more."""
         row = load_queue_row(conn, qid)
-        return render(request, "approve_token.html", qid=qid, token=token, status=row["status"], choices=CHOICE_WORDS)
+        return render(request, "approve_token.html", qid=qid, token=token, status=row["status"], choices=CHOICE_WORDS,
+                      how=how if how in CHOICE_WORDS else "")
 
     async def token_of(request: Request) -> str:
         from urllib.parse import parse_qs
