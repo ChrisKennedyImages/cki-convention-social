@@ -112,11 +112,16 @@ SCHEMA = {
     "additionalProperties": False,
 }
 
+# the rooms a post may name (render/design_samples.ROOM_WORDS gives each its words); Claude says which one a photo plainly
+# shows, or none (2026-10-15: the sorter's shot type had put "After Dark" on a sunny garden)
+ROOMS = ("main_stage", "backstage", "portraits", "expo_floor", "after_dark", "the_crowd", "the_venue")
+
 FINAL_SYSTEM = """You are the last check before a photographer posts a photo publicly.
-Answer three things about the photo only from what is visible:
+Answer four things about the photo only from what is visible:
 personal_details: anything readable that identifies a private person or a home: a name on a badge, a vehicle plate, a screen or document with private information (a message, an email, a form, a medical or financial paper), a house number, a street sign. A book cover, a program, a slide, signage, a title or a name on its own is not private information. Empty when none.
 shot_type: what the photo is of. stage_panel for anyone on a stage, at a podium or on a panel, however close the framing; portrait (a headshot is a portrait) only for a posed picture of a person made for its own sake, away from a stage; group for a posed group; candid for an unposed moment; crowd for an audience or a room of people; vendor_hall for an exhibition hall, an exhibit floor, vendors or a booth (all one thing); backstage; dinner_reception; venue, building_exterior or building_interior for a building with no event in it; cosplay_portrait for a person in costume; other when none fits.
 event_kind: what kind of occasion the photo is from. fan for a fan convention (comics, anime, gaming); business for a business, trade or political conference or a corporate gala; wedding for a wedding or its reception (a bride, a groom, a wedding party, a first dance, a cake, wedding dress); private for a party, a family or personal occasion, a religious ceremony or a portrait session with no event around it; unknown only when nothing visible tells. A wedding is never business.
+room: the one room of an event the photo plainly shows, printed on the post as its title; none unless it is plain from the photo itself. main_stage for someone speaking or presenting on a stage with the stage in view; backstage for behind the scenes of an event (the wings, the crew, the preparation); portraits for a posed, lit portrait of a speaker or guest; expo_floor for an exhibition hall, its booths or a vendor at one; after_dark for a reception, dinner or party that is plainly in the evening or at night; the_crowd for an audience or a room full of people in the moment; the_venue for the room or the building itself with no event in it. A daytime garden reception is not after_dark; a speech at a reception with no stage is not main_stage; when in doubt, none.
 Return JSON only, matching the schema."""
 
 FINAL_SCHEMA = {
@@ -125,9 +130,10 @@ FINAL_SCHEMA = {
         "personal_details": {"type": "array", "items": {"type": "string", "enum": list(DETAILS)}},
         "shot_type": {"type": "string", "enum": list(SHOT_TYPES)},
         "event_kind": {"type": "string", "enum": list(KINDS)},
+        "room": {"type": "string", "enum": [*ROOMS, "none"]},
         "summary": {"type": "string"},
     },
-    "required": ["personal_details", "shot_type", "event_kind", "summary"],
+    "required": ["personal_details", "shot_type", "event_kind", "room", "summary"],
     "additionalProperties": False,
 }
 
@@ -471,13 +477,14 @@ def final_check(conn: sqlite3.Connection, photo_id: int, image: bytes, *, client
     answered = data.get("model_used") or config.getenv("FINAL_CHECK_MODEL") or FINAL_MODEL
     shot = data.get("shot_type") if data.get("shot_type") in SHOT_TYPES else None
     kind = data.get("event_kind") if data.get("event_kind") in KINDS else "unknown"
+    room = data.get("room") if data.get("room") in ROOMS else None        # "none", missing or unknown: no room is printed
     # possible_minor is a NOT NULL column from before 2026-10-15; no model is asked and nothing reads it (no age gate)
-    conn.execute("INSERT INTO final_checks (photo_id, possible_minor, personal_details, summary, model, checked_at, shot_type, event_kind) "
-                 "VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(photo_id) DO UPDATE SET possible_minor=excluded.possible_minor, "
+    conn.execute("INSERT INTO final_checks (photo_id, possible_minor, personal_details, summary, model, checked_at, shot_type, event_kind, room) "
+                 "VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT(photo_id) DO UPDATE SET possible_minor=excluded.possible_minor, "
                  "personal_details=excluded.personal_details, summary=excluded.summary, model=excluded.model, "
-                 "checked_at=excluded.checked_at, shot_type=excluded.shot_type, event_kind=excluded.event_kind",
+                 "checked_at=excluded.checked_at, shot_type=excluded.shot_type, event_kind=excluded.event_kind, room=excluded.room",
                  (photo_id, 0, json.dumps(data.get("personal_details") or []),
-                  (data.get("summary") or "")[:300], answered, db.utcnow(), shot, kind))
+                  (data.get("summary") or "")[:300], answered, db.utcnow(), shot, kind, room))
     if shot:
         # Claude's word beats the local sorter's guess (2026-10-11: a stage shot called a portrait)
         conn.execute("UPDATE classifications SET shot_type=? WHERE photo_id=? AND COALESCE(shot_type, '') != ?", (shot, photo_id, shot))

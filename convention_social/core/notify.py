@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import sys
 
-from . import config, runner
+from . import access, config, runner
 
 NTFY_URL = "https://ntfy.sh"
 
@@ -36,7 +36,12 @@ def approve_actions(qid: int, token: str) -> str:
     """The ntfy `Actions` header for a draft the art director passed (Chris, 2026-10-13: Approve on the ping).
     Two buttons: Approve, an http POST carrying the signed single-use token in its body (a GET on that
     address approves nothing), and Open, the draft page. The forms are the ones docs.ntfy.sh/publish
-    documents: `http, <label>, <url>, method=, headers.<h>=, body=, clear=true; view, <label>, <url>`."""
+    documents: `http, <label>, <url>, method=, headers.<h>=, body=, clear=true; view, <label>, <url>`.
+    Behind Cloudflare Access (2026-10-15) only a browser gets in: the ntfy app's own POST would meet the sign-in
+    and look done when nothing was approved, so Approve opens the approve page (one more tap there)."""
+    if access.through_access(link("/")):
+        return (f"view, Approve, {link(f'/queue/{qid}/approve-by-token?token={token}')}, clear=true; "
+                f"view, Open, {link(f'/queue/{qid}')}")
     return (f"http, Approve, {link(f'/queue/{qid}/approve-by-token')}, method=POST, "
             f"headers.Content-Type=application/x-www-form-urlencoded, body='token={token}', clear=true; "
             f"view, Open, {link(f'/queue/{qid}')}")
@@ -47,8 +52,11 @@ def open_action(qid: int) -> str:
     return f"view, Open, {link(f'/queue/{qid}')}"
 
 
-def card_link(qid: int, token: str) -> str:
-    """The rendered card, served by the dashboard to the phone with the token and no login (`Attach`)."""
+def card_link(qid: int, token: str) -> str | None:
+    """The rendered card, served by the dashboard to the phone with the token and no login (`Attach`). None behind
+    Cloudflare Access: the ntfy app fetches it itself, without the browser's sign-in, and would get the sign-in page."""
+    if access.through_access(link("/")):
+        return None
     return link(f"/media/card/{qid}/{token}.jpg")
 
 
@@ -87,7 +95,7 @@ def _push(title: str, message: str, *, dry_run: bool, priority: str, transport, 
             headers["Actions"] = _ascii(actions)
         if attach:
             headers["Attach"] = attach
-        if filename:
+        if attach and filename:                  # a Filename alone makes ntfy take the words as a file
             headers["Filename"] = _ascii(filename)
         r = transport(f"{NTFY_URL}/{cfg.ntfy_topic}", data=message.encode("utf-8"), headers=headers)
         code = getattr(r, "status_code", 200)
