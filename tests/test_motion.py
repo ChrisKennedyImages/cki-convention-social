@@ -7,7 +7,7 @@ import os
 from unittest import mock
 
 from fastapi.testclient import TestClient
-from PIL import Image, ImageStat
+from PIL import Image, ImageChops, ImageStat
 
 from convention_social.core import auth, config, db
 from convention_social.dashboard.app import COOKIE, create_app, make_token
@@ -134,6 +134,67 @@ class Pieces(IsolatedCase):
         self.assertEqual(design_samples.ROOMS["portrait"], ("PORTRAITS", "Speakers and guests, backstage."))
         motion.check_copy(*design_samples.OTHER, motion.MotionCopy().words(), social=True)
         self.assertFalse((self.root / "x.jpg").exists())
+
+
+def near_pixels(im: Image.Image, box, colour, tol: int = 18) -> Image.Image:
+    """A mask of the pixels in `box` within `tol` of `colour` on every channel."""
+    chans = im.convert("RGB").crop(box).split()
+    near = [ImageChops.invert(ImageChops.difference(ch, Image.new("L", ch.size, v))).point(lambda x: 255 if x > 255 - tol else 0)
+            for ch, v in zip(chans, colour)]
+    return ImageChops.multiply(ImageChops.multiply(near[0], near[1]), near[2])
+
+
+def widest_row(mask: Image.Image) -> float:
+    """The largest share of any one row the mask covers."""
+    rows = mask.resize((1, mask.height), Image.BOX)
+    return ImageStat.Stat(rows).extrema[0][1] / 255
+
+
+class RoomsReelLayout(IsolatedCase):
+    """Chris, 2026-10-14, on the reel at phone width: "photos need to be more prominent in the reel frame".
+    In every room section the lifted card takes most of the frame's width, under the room's title and line."""
+
+    def room_frame(self, n: int = 6, k: int = 0) -> Image.Image:
+        deal, room, _, _, _ = motion.ROOMS_TIMING
+        got = []
+        motion.rooms_reel(shots()[:n], motion.MotionCopy(), out=self.root / "r.mp4", only=[deal + room * k + 20],
+                          encoder=lambda frames, out: got.extend(frames))
+        return got[0]
+
+    def test_the_lifted_photo_spans_at_least_three_quarters_of_the_frame(self):
+        """Measured on the drawn cover frame (the first room, lifted), not on the geometry."""
+        sh = shots()[0]
+        colour = motion.card_face(sh, 400, 540, 0, label=False).convert("RGB").getpixel((200, 120))
+        frame = self.room_frame()
+        share = widest_row(near_pixels(frame, (0, 0, 1080, 1920), colour))
+        self.assertGreaterEqual(share, 0.75, f"the photo spans {share:.2f} of the frame's width")
+
+    def test_the_lifted_card_sits_inside_the_frame_under_the_room_type_for_four_to_six_rooms(self):
+        for n in (4, 5, 6):
+            for k in range(n):
+                x0, y0, x1, y1 = motion.room_card_box(n, k)
+                self.assertGreaterEqual((x1 - x0) / motion.RW, 0.75, (n, k))
+                self.assertTrue(40 <= x0 and x1 <= motion.RW - 40, (n, k, x0, x1))            # whole, with a margin
+                self.assertGreater(y0, motion.ROOMS_TYPE["line"] + 60, (n, k, y0))             # under a two line caption
+                self.assertLessEqual(y1, motion.RH - 120, (n, k, y1))                          # above the frame's foot
+        self.assertEqual(motion.still_frames("rooms", 6)[0], motion.ROOMS_TIMING[0] + 20)     # the cover is this frame
+
+    def test_the_room_title_and_line_are_drawn_clear_of_the_card(self):
+        frame = self.room_frame(k=1)
+        x0, y0, x1, y1 = motion.room_card_box(6, 1)
+        band = (0, 200, 1080, int(y0) - 4)
+        white = ImageStat.Stat(near_pixels(frame, band, motion.W, 40)).sum[0] / 255
+        self.assertGreater(white, 12000, "the title is not above the card")
+        colour = motion.card_face(shots()[1], 400, 540, 1, label=False).convert("RGB").getpixel((200, 120))
+        self.assertEqual(widest_row(near_pixels(frame, band, colour)), 0.0, "the card reaches into the type")
+        self.assertGreater(widest_row(near_pixels(frame, (0, int(y0) + 20, 1080, int(y0) + 200), colour)), 0.7)
+
+    def test_the_posts_keep_the_small_lift(self):
+        """fan_post and the carousel cover are unchanged: only the reel's hand lifts the card this far."""
+        faces = [Image.new("RGBA", (100, 140), (200, 200, 200, 255))] * 7
+        card = motion.fan(faces, focus=3, lift=1.0)[3]
+        self.assertEqual((card.z, round(card.scale, 4)), (-220, round(0.78 * 1.14, 4)))
+        self.assertEqual((motion.ROOMS_HAND["lift_z"], motion.ROOMS_HAND["lift_scale"]), (460, 0.49))
 
 
 class DesignSamples(IsolatedCase):
