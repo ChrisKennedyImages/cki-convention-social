@@ -750,6 +750,30 @@ class Digest(DoctorCase):
         self.assertTrue(any(lines[0] in x for x in chief.gather(cctx, NOW + timedelta(minutes=1))["done"]))
 
 
+    def test_one_line_per_problem_per_day_with_its_tries(self):
+        """Chris, 2026-10-15, on the examples: "one digest line per problem per day": the last try's outcome, with
+        how many tries and when."""
+        self.healthy(NOW, but=("scanner",))
+        self.ran("scanner", NOW - timedelta(hours=5))
+        for minutes in (0, 80, 205, 290):
+            at = NOW + timedelta(minutes=minutes)
+            self.healthy(at, but=("scanner",))
+            self.doc(at)
+        lines = doctor.digest_lines(self.conn, NOW - timedelta(hours=24))
+        scanner = [x for x in lines if "canner" in x]
+        self.assertEqual(len(scanner), 1, lines)
+        self.assertIn("tried 3 times (12:00, 13:20, 15:25): not fixed.", scanner[0])
+        self.assertIn("Scanner last ran", scanner[0])
+        wctx = make_ctx(self.conn, agent="watchdog")
+        self.assertEqual([x for x in watchdog.digest_data(wctx, NOW + timedelta(hours=7))["doctor"] if "canner" in x], scanner)
+
+        tomorrow = NOW + timedelta(days=1)
+        self.healthy(tomorrow, but=("scanner",))
+        self.doc(tomorrow)
+        lines = doctor.digest_lines(self.conn, NOW - timedelta(hours=24))
+        self.assertEqual(len([x for x in lines if "canner" in x]), 2, "a new day is a new line")
+
+
 # ---------------------------------------------------------------------------- the words
 
 class Words(unittest.TestCase):

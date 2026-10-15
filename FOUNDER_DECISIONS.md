@@ -1127,7 +1127,9 @@ with him the same day:
   loop: at most three tries per problem per day, the second after 30 minutes,
   the third after two hours. A remedy that did not work is said to Chris once,
   with what it tried; one that cannot run at all is said once, at once. A fix
-  is a quiet ping. The digest and the morning brief carry a line per remedy.
+  is a quiet ping. The digest and the morning brief carry one line per problem
+  per day (Chris, on the examples: "one digest line per problem per day"): the
+  last try's outcome, with how many tries and when.
 - **For a bug in the code it never edits live code**, because a bad self-fix
   at 3am breaks production. An exception in our code becomes one GitHub issue
   per distinct error (the agent, the kind and the traceback's frames make it

@@ -30,7 +30,7 @@ The token is GITHUB_TOKEN on the Keys page (fine-grained, Issues only); without 
 It never edits code, never runs a command on the Mini's checkout, never stops a process that is not this
 suite's dashboard, and deletes nothing itself. Dry run (the default): it says what it would do, at the cadence
 it would do it, and does nothing. Chris switches it live on the Agents page. The digest and the morning brief
-carry a line per remedy (digest_lines).
+carry one line per problem per day, with its tries (digest_lines).
 """
 from __future__ import annotations
 
@@ -737,15 +737,27 @@ VERDICT = {"would": " (dry run)", "pending": "; checking", "fixed": ": fixed", "
 
 
 def digest_lines(conn: sqlite3.Connection, since: datetime) -> list[str]:
-    """One plain line per remedy since `since`, for the watchdog's digest and the morning brief."""
+    """One plain line per problem per local day since `since`, for the watchdog's digest and the morning brief (Chris,
+    2026-10-15: "one digest line per problem per day"): the last try's outcome, with how many tries and when."""
     try:
         rows = db.rows(conn, "SELECT * FROM doctor_remedies WHERE started_at >= ? ORDER BY id", (iso(since),))
     except sqlite3.OperationalError:          # the table arrives with this agent's migration
         return []
-    out = []
+    days: dict[tuple, list] = {}
     for r in rows:
-        detail = f" {cap(r['detail'])}" if r["detail"] and r["outcome"] in ("fixed", "not_fixed", "cannot", "left") else ""
-        out.append(f"{hhmm(r['started_at'])}: {cap(r['found'])} {cap(r['remedy'])}{VERDICT.get(r['outcome'], '')}.{detail}")
+        started = watchdog.parse_ts(r["started_at"])
+        days.setdefault((r["problem"], started.astimezone(zone()).date() if started else None), []).append(r)
+    out = []
+    for tries in days.values():
+        last = tries[-1]
+        detail = f" {cap(last['detail'])}" if last["detail"] and last["outcome"] in ("fixed", "not_fixed", "cannot", "left") else ""
+        verdict = VERDICT.get(last["outcome"], "")
+        if len(tries) == 1:
+            out.append(f"{hhmm(last['started_at'])}: {cap(last['found'])} {cap(last['remedy'])}{verdict}.{detail}")
+            continue
+        times = ", ".join(hhmm(t["started_at"]) for t in tries)
+        count = f" {len(tries)} times" if last["outcome"] == "would" else f", tried {len(tries)} times"
+        out.append(f"{cap(last['found'])} {cap(last['remedy'])}{count} ({times}){verdict}.{detail}")
     return out
 
 

@@ -346,7 +346,7 @@ def digest_data(ctx: runner.Context, now: datetime) -> dict:
                        "dry_run": settings.dry_run(conn, name) if name in settings.AGENTS_WITH_DRY_RUN else None,
                        "last": dict(last) if last else None})
     channels = [dict(r) for r in db.rows(conn, "SELECT service, display_name, connected, last_checked_at FROM channels ORDER BY service")]
-    from . import doctor                    # what the doctor did, a line per remedy (2026-10-15)
+    from . import doctor                    # what the doctor did, one line per problem per day (2026-10-15)
     return {"doctor": doctor.digest_lines(conn, now - timedelta(hours=24)), "published": published, "waiting": waiting, "approved": approved, "scheduled": scheduled, "would_publish": would,
             "failed": failed, "errors": errors, "agents": agents, "channels": channels,
             "drive": (settings.get(conn, DRIVE_STATE_KEY) or "unknown"),
