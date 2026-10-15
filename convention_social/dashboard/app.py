@@ -483,7 +483,7 @@ def create_app() -> FastAPI:
             return await call_next(request)
         why = await run_in_threadpool(access.refusal, request.headers, request.cookies)     # may read Cloudflare's keys
         if why:
-            return PlainTextResponse(why, status_code=403, headers={"Cache-Control": "no-store"})
+            return HTMLResponse(access.refused_page(why), status_code=403, headers={"Cache-Control": "no-store"})
         return await call_next(request)
 
     # ------------------------------------------------------------------ login

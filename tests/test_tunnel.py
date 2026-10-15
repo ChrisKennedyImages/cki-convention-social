@@ -199,7 +199,7 @@ class Supervisor(AccessCase):
         code, out = self.supervise(cmd)
         self.assertEqual(code, 0)
         self.assertIn("Registered tunnel connection", out, "cloudflared's own lines reach the log")
-        self.assertIn("routes only to http://127.0.0.1:4610", out)
+        self.assertIn("running, routed only to http://127.0.0.1:4610", out)
         self.assertEqual(tunnel.read_status()["state"], "stopped")
 
     def test_a_route_to_anything_else_stops_cloudflared_at_once(self):
@@ -326,6 +326,12 @@ class OutsideCheck(AccessCase):
         ok, why = access.check_outside(access.settings(), get=down)
         self.assertFalse(ok)
         self.assertIn("ConnectionError", why)
+
+        def no_name(url, **kw):
+            raise ConnectionError("HTTPSConnectionPool(host='dash.eventcaliber.com'): (Caused by NameResolutionError)")
+        ok, why = access.check_outside(access.settings(), get=no_name)
+        self.assertFalse(ok)
+        self.assertIn("does not exist yet", why, "said in words, not Python's")
         self.configure(ACCESS_TEAM_DOMAIN=None)
         ok, why = access.check_outside(access.settings(), get=lambda *a, **k: self.fail("asked with no team"))
         self.assertFalse(ok)
@@ -395,6 +401,7 @@ class DashboardBehindAccess(AccessCase):
             r = self.client.get(path, headers=self.outside(), follow_redirects=False)
             self.assertEqual(r.status_code, 403, path)
             self.assertIn("Cloudflare Access", r.text)
+            self.assertIn('name="viewport"', r.text, "a page a phone can read, not tiny plain text")
             self.assertNotIn("password", r.text.lower())
         r = self.client.post("/login", data={"password": "correct horse"}, headers=self.outside(), follow_redirects=False)
         self.assertEqual(r.status_code, 403, "the password is never even checked")

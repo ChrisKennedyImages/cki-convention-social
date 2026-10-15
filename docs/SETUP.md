@@ -259,8 +259,10 @@ eventcaliber.com; a computer is easiest):
 2. **The email code.** Zero Trust, Integrations, Identity providers, Add new
    identity provider, **One-time PIN**.
 3. **Access, before the address exists.** Zero Trust, Access controls,
-   Applications, Create new application, Self-hosted and private, Add public
-   hostname: subdomain `dash`, domain `eventcaliber.com`.
+   Applications, Create new application, Self-hosted and private. Name it
+   `Event Caliber dashboard` (Cloudflare's sign-in page says "Log in to Event
+   Caliber dashboard"). Add public hostname: subdomain `dash`, domain
+   `eventcaliber.com`.
    - Access policies: create a new policy named `Chris only`, action
      **Allow**, Include, selector **Emails**, value `chriskimages@gmail.com`.
      Nothing else in it: "Everyone", or a login method on its own, lets
@@ -303,12 +305,14 @@ the pings and Approve links at the new address. It ends with `LIVE` and
 Check it from your phone with Wi-Fi off and Tailscale off:
 
 1. Open https://dash.eventcaliber.com. Cloudflare's page asks for your email:
-   `chriskimages@gmail.com`, Send me a code, then the code from that inbox.
+   `chriskimages@gmail.com`, **Send login code**. Then "Enter your code": the
+   six digits from that inbox (they last 10 minutes), **Verify**.
 2. The dashboard's own login follows: your dashboard password.
 3. More, Keys, Phone alerts, Send a test ping. Tapping the ping opens the new
    address.
-4. The proof that nobody else gets in: in a private tab, any other email. No
-   code arrives and the dashboard never shows.
+4. The proof that nobody else gets in: in a private tab, any other email.
+   Cloudflare's page still says a code was sent (it never tells who is
+   allowed), but none arrives, and the dashboard never shows.
 
 What changes on the pings: behind Access only a browser gets in, so Approve
 on a ping opens the approve page (one more tap there: Approve post N), and

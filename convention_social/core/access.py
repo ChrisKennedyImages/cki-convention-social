@@ -44,8 +44,15 @@ REFETCH_AFTER = 60       # an unknown key id reads them again, at most this ofte
 LEEWAY = 60              # seconds of clock difference allowed on exp and nbf
 # the paths the outside check asks for: the start, the login, the token paths a ping opens, the updater's check
 OUTSIDE_PATHS = ("/", "/login", "/queue/0/approve-by-token", "/media/card/0/x.jpg", "/healthz")
-REFUSED = ("This address opens only through Cloudflare Access sign-in, and this request did not come with a valid "
-           "one. Open the address again in your browser to get the email code. ({why})")
+# what anyone who reached the dashboard through Cloudflare without the sign-in sees: a page a phone can read
+REFUSED_PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>Sign in through Cloudflare first</title></head>
+<body style="margin:0;padding:24px 16px;font:17px/1.45 -apple-system,system-ui,sans-serif;background:#f4f3f1;color:#1a1a1a">
+<h1 style="font-size:22px;margin:0 0 12px">Sign in through Cloudflare first</h1>
+<p style="margin:0 0 12px">This address opens only after the Cloudflare Access sign-in, and this visit did not come with it.</p>
+<p style="margin:0 0 12px">Open the address again in your browser. Cloudflare emails you a code.</p>
+<p style="margin:0;color:#5c5c5c;font-size:14px">Why: {why}.</p>
+</body></html>"""
 
 
 @dataclass(frozen=True)
@@ -103,14 +110,19 @@ def token_from(headers: Mapping[str, str], cookies: Mapping[str, str]) -> str:
 
 def refusal(headers: Mapping[str, str], cookies: Mapping[str, str], now: Optional[float] = None) -> Optional[str]:
     """None: let the request through (it did not come through Cloudflare, or it carries a valid Access token for
-    Chris). Else the sentence the 403 says. Every doubt is a refusal."""
+    Chris). Else why not, for the 403 page (refused_page). Every doubt is a refusal."""
     s = settings()
     if not from_outside(headers, s):
         return None
     if s.missing():
-        return REFUSED.format(why="this Mini has no Access settings: " + ", ".join(s.missing()))
+        return "this Mini has no Access settings: " + ", ".join(s.missing())
     ok, why = verify(token_from(headers, cookies), s, now=now)
-    return None if ok else REFUSED.format(why=why)
+    return None if ok else why
+
+
+def refused_page(why: str) -> str:
+    import html
+    return REFUSED_PAGE.format(why=html.escape(why))
 
 
 def secure_request(scheme: str, headers: Mapping[str, str]) -> bool:
@@ -232,7 +244,10 @@ def check_outside(s: Settings, get: Optional[Callable] = None) -> tuple[bool, st
             r = get(url, allow_redirects=False, timeout=10,
                     headers={"Accept": "text/html", "User-Agent": "event-caliber-suite outside check"})
         except Exception as e:  # noqa: BLE001  no answer is not a pass
-            return False, f"{url} did not answer ({type(e).__name__}: {str(e)[:120]})"
+            if "NameResolution" in str(e) or "nodename nor servname" in str(e):
+                return False, (f"{url} does not exist yet: Cloudflare adds the address with the tunnel's route "
+                               f"(or this Mini is offline)")
+            return False, f"{url} did not answer ({type(e).__name__})"
         code = getattr(r, "status_code", 0)
         where = (getattr(r, "headers", {}) or {}).get("Location") or (getattr(r, "headers", {}) or {}).get("location") or ""
         to = (urlsplit(where).hostname or "").lower()

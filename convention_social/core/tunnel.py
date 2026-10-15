@@ -236,7 +236,7 @@ def supervise(cmd: list[str], env: dict, hostname: str, port: int, confirm_withi
                 stop_child()
                 return 4
             if not confirmed:
-                _say(out, f"the tunnel routes only to http://127.0.0.1:{port} (https://{hostname}); running")
+                _say(out, f"running, routed only to http://127.0.0.1:{port} (https://{hostname})")
                 write_status("routed", f"https://{hostname} to http://127.0.0.1:{port}")
             confirmed = True
         code = proc.wait()
@@ -327,16 +327,16 @@ def status(wait: float = 0, use: bool = False, out: Callable[[str], None] = prin
             break
         if time.time() >= deadline:
             state = st.get("state") or "never run"
-            out(f"the tunnel is not running ({state}{': ' + st['why'] if st.get('why') else ''})")
+            out(f"The tunnel is not running ({state}{': ' + st['why'] if st.get('why') else ''})")
             return 1
         time.sleep(3)
     host = access.settings().hostname
-    out(f"the tunnel runs: https://{host}, Cloudflare Access in front, routed only to this dashboard")
+    out(f"The tunnel runs: https://{host}, Cloudflare Access in front, routed only to this dashboard.")
     if use and host:
         url = f"https://{host}"
         if config.get_config().dashboard_public_url != url:
             config.write_env({"DASHBOARD_PUBLIC_URL": url})
-            out(f"pings and Approve links now open {url} (the Tailscale address still works when you open it)")
+            out(f"Pings and Approve links now open {url} (the Tailscale address still works when you open it).")
     return 0
 
 
@@ -347,7 +347,7 @@ def setup(ask: Callable[[str], str] = input, ask_secret: Optional[Callable[[str]
         ask_secret = getpass.getpass
     domain = config.get_config().brand_domain
     print("The dashboard away from home: the details from Cloudflare (docs/SETUP.md, 9a).")
-    raw = ask(f"address [{default_hostname()}]: ").strip() or default_hostname()
+    raw = ask(f"Address [{default_hostname()}]: ").strip() or default_hostname()
     host = norm_hostname(raw)
     if not host:
         print(f"{raw} cannot be the dashboard's address: use a name under {domain} (not {domain} or www.{domain}, "
@@ -360,20 +360,20 @@ def setup(ask: Callable[[str], str] = input, ask_secret: Optional[Callable[[str]
         return 2
     aud = access.norm_aud(ask("Application Audience (AUD) tag (the Access application, Additional settings): "))
     if not aud:
-        print("that is not an Application Audience (AUD) tag: copy it whole from the Access application. Nothing saved.")
+        print("That is not an Application Audience (AUD) tag: copy it whole from the Access application. Nothing saved.")
         return 2
     fallback = access.norm_email(config.getenv("ALERT_EMAIL"))
-    raw = ask(f"the one email Access lets in{' [' + fallback + ']' if fallback else ''}: ").strip() or fallback
+    raw = ask(f"The one email Access lets in{' [' + fallback + ']' if fallback else ''}: ").strip() or fallback
     email = access.norm_email(raw)
     if not email:
         print(f"{raw or 'nothing'} is not an email address. Nothing saved.")
         return 2
-    tok = parse_token(ask_secret("the tunnel token (paste the whole install command Cloudflare shows; nothing is shown): "))
+    tok = parse_token(ask_secret("The tunnel token (paste the whole install command Cloudflare shows; nothing is shown): "))
     if not tok:
-        print("that holds no tunnel token (Cloudflare's starts with eyJ). Nothing saved.")
+        print("That holds no tunnel token (Cloudflare's starts with eyJ). Nothing saved.")
         return 2
     path = config.write_env({access.HOST_KEY: host, access.TEAM_KEY: team, access.AUD_KEY: aud,
                              access.EMAIL_KEY: email, TOKEN_KEY: tok})
-    print(f"saved to {path} (the token is not shown). Do not run the install command Cloudflare showed: it would "
+    print(f"Saved to {path} (the token is not shown). Do not run the install command Cloudflare showed: it would "
           "start the tunnel without this suite's Access check. scripts/go-live.sh installs the tunnel.")
     return 0
