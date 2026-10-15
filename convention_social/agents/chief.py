@@ -93,6 +93,8 @@ def gather(ctx: runner.Context, now: datetime) -> dict:
     sorted_n = _count(conn, "SELECT COUNT(*) FROM classifications WHERE method IN ('ollama','vision') AND classified_at >= ?", (since,))
     if sorted_n:
         done.append(f"Sorted {sorted_n} photo(s) from the library.")
+    done += [f"Doctor: {line}" if line[:1].isalpha() else f"Doctor at {line}"     # one line per problem per day
+             for line in d.get("doctor", [])]
     learner = settings.get(conn, "learner.note") or ""
     if learner:
         done.append(f"Learner: {learner}")
