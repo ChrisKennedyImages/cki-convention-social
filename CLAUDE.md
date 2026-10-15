@@ -11,12 +11,13 @@ FOUNDER_DECISIONS.md is the source of truth. Read it first.
   used: a real test post, a real email in Chris's inbox, the dashboard on his
   phone. A check you have not seen fire is not a check.
 - **Fail closed.** A gate that cannot run says no. Unknown clearance, an
-  unchecked minor flag, a missing key, a blind spend ledger: all mean "do not
+  unsorted photo, a missing key, a blind spend ledger: all mean "do not
   use, do not send".
 - **The photo library is read only.** The suite lists and downloads; it never
   writes to Drive. Only the `drive.readonly` scope is ever requested.
-- **People's photos fail closed.** Not cleared by default; never anyone who
-  may be a minor; the do-not-use list is honoured everywhere.
+- **People's photos fail closed.** Not cleared by default; the do-not-use list
+  is honoured everywhere. No model judges anyone's age: Chris's Approve is the
+  check (his ruling, 2026-10-15).
 - **No prices, ever, in anything public.** Quote requests only.
 - **No affiliation claims** unless Chris confirmed the event.
 - **Show first.** Anything visual goes to Chris as a rendered file before it

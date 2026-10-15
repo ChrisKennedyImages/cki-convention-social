@@ -192,14 +192,14 @@ class Draft(IsolatedCase):
                          "its own file stays its copy; never the cache the sweep takes")
         self.assertEqual(list((config.get_config().data_root / "photos").glob("phone-*")), [])
         self.assertEqual(db.one(self.conn, "SELECT COUNT(*) n FROM photo_use WHERE photo_id=? AND surface='post'", (pid,))["n"], 1)
-        c = db.one(self.conn, "SELECT method, quality, shot_type, possible_minor FROM classifications WHERE photo_id=?", (pid,))
-        self.assertEqual(tuple(c), ("ollama", 4, "stage_panel", 0))
+        c = db.one(self.conn, "SELECT method, quality, shot_type FROM classifications WHERE photo_id=?", (pid,))
+        self.assertEqual(tuple(c), ("ollama", 4, "stage_panel"))         # no age is written since 2026-10-15
         self.assertEqual(phone.run(self.ctx(), sorter=sorter), "nothing sent from the phone is waiting")
 
     def test_dry_run_without_a_sorter_says_why_on_the_page_and_the_agents_page(self):
         sid = self.send()
         line = phone.run(self.ctx())
-        self.assertIn("not drafted: dry run, so Claude did not look at it, and it is not checked for minors yet", line)
+        self.assertIn("not drafted: dry run, so Claude did not look at it, and it is not sorted yet", line)   # 2026-10-15: no age gate
         s = db.one(self.conn, "SELECT status, error FROM phone_sends WHERE id=?", (sid,))
         self.assertEqual(s["status"], "failed")
         self.assertIn("switch the content lane live", s["error"])
@@ -208,12 +208,9 @@ class Draft(IsolatedCase):
         self.assertIsNone(self.last_post()[0])
 
     def test_live_claude_looks_and_the_draft_fails_closed(self):
+        """Deliberate change, 2026-10-15: "someone may be under 18" no longer stops a draft (Chris: "If I approve
+        something, it means I checked it"); a plate and a wedding still do, and an old-style age answer drafts."""
         ctx = self.live()
-        sid = self.send()
-        line = phone.run(ctx, check_client=LookClient(possible_minor=True), art_client=ArtClientAny([say("pass")]))
-        self.assertIn("may be under 18", line)
-        self.assertEqual(db.one(self.conn, "SELECT status FROM phone_sends WHERE id=?", (sid,))["status"], "failed")
-        self.assertIsNone(self.last_post()[0], "nothing drafted")
         sid = self.send()
         line = phone.run(ctx, check_client=LookClient(personal_details=["vehicle_plate"]), art_client=ArtClientAny([say("pass")]))
         self.assertIn("vehicle_plate", line)
@@ -222,6 +219,10 @@ class Draft(IsolatedCase):
         line = phone.run(ctx, check_client=LookClient(event_kind="wedding"), art_client=ArtClientAny([say("pass")]))
         self.assertIn("wedding", line)
         self.assertIsNone(self.last_post()[0])
+        sid = self.send()
+        line = phone.run(ctx, check_client=LookClient(possible_minor=True), art_client=ArtClientAny([say("pass")]))
+        self.assertIn("drafted post", line)
+        self.assertNotIn("under 18", line)
 
     def test_live_the_check_passes_and_the_post_is_drafted_with_the_card_and_the_ping(self):
         ctx = self.live()
@@ -235,8 +236,8 @@ class Draft(IsolatedCase):
         self.assertEqual((row["status"], meta_["art"]["verdict"], meta_["asap"]), ("draft", "pass", True))
         fc = db.one(self.conn, "SELECT possible_minor, event_kind FROM final_checks WHERE photo_id=?", (pid,))
         self.assertEqual(tuple(fc), (0, "business"))
-        c = db.one(self.conn, "SELECT method, possible_minor, shot_type FROM classifications WHERE photo_id=?", (pid,))
-        self.assertEqual(tuple(c), ("vision", 0, "stage_panel"), "no sorter ran: Claude's look is the sort")
+        c = db.one(self.conn, "SELECT method, shot_type FROM classifications WHERE photo_id=?", (pid,))
+        self.assertEqual(tuple(c), ("vision", "stage_panel"), "no sorter ran: Claude's look is the sort")
         from convention_social.library import eligibility
         self.assertEqual(eligibility.is_eligible(self.conn, pid), (True, "ok"))
         self.assertEqual(push.call_count, 1)

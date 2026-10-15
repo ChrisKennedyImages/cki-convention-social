@@ -5,8 +5,8 @@ totals (folders, images, RAW skipped, checked so far), convention photos by
 event and year, and the folders that look like event work with their
 clearance state. write_contact_sheet() lays the best N convention frames on
 one JPEG with a label under each (event, year, shot type, folder). Both are
-for Chris only and are never published. Possible minors and photos with
-readable personal details are left off the sheet.
+for Chris only and are never published. Photos with readable personal
+details are left off the sheet.
 """
 from __future__ import annotations
 
@@ -63,12 +63,11 @@ def summary(conn: sqlite3.Connection) -> dict:
     total = db.one(conn, "SELECT COUNT(*) n FROM photos WHERE trashed=0")["n"]
     vision = db.one(conn, "SELECT COUNT(*) n FROM classifications WHERE method IN ('vision','ollama')")["n"]
     vision_yes = db.one(conn, "SELECT COUNT(*) n FROM classifications WHERE method IN ('vision','ollama') AND is_convention=1")["n"]
-    minors = db.one(conn, "SELECT COUNT(*) n FROM classifications WHERE possible_minor=1")["n"]
     buildings = db.rows(conn, "SELECT p.taken_at, p.modified_time, c.view FROM photos p JOIN classifications c ON c.photo_id=p.id "
                               "WHERE p.trashed=0 AND c.subject='architecture'")
     by_year_b: Counter = Counter(_year(b) for b in buildings)
     return {"total_images": total, "convention_photos": len(rows), "vision_checked": vision,
-            "vision_convention": vision_yes, "possible_minors": minors,
+            "vision_convention": vision_yes,
             "skipped_raw": stats.get("skipped_raw", 0), "folders": stats.get("folders", 0),
             "building_photos": len(buildings), "buildings_by_year": dict(sorted(by_year_b.items())),
             "building_exteriors": sum(1 for b in buildings if b["view"] == "exterior"),
@@ -179,16 +178,16 @@ def use_line(use: Optional[dict]) -> str:
 
 
 def best(conn: sqlite3.Connection, n: int = 30, *, subject: str = "event", cap: int | None = PER_EVENT_CAP) -> list[sqlite3.Row]:
-    """The strongest frames, at most PER_EVENT_CAP per event, never a possible minor.
+    """The strongest frames, at most PER_EVENT_CAP per event.
 
     `subject` is "event" for convention work or "architecture" for Chris's building work. The
-    same safety filters apply to both: sorted by a model, no possible minor, no readable
+    same safety filters apply to both: sorted by a model, no readable
     personal detail. For buildings that last one matters most, since a house number or a street
     sign keeps a photo out (Chris, 2026-10-09).
     """
     source = architecture_rows if subject == "architecture" else convention_rows
     rows = [r for r in source(conn)
-            if r["method"] in ("vision", "ollama") and r["possible_minor"] == 0 and r["thumbnail_link"]
+            if r["method"] in ("vision", "ollama") and r["thumbnail_link"]
             and not eligibility.blocking_details(json.loads(r["personal_details"] or "[]"), subject)
             and not (subject == "architecture" and eligibility.building_blocked(r))]
     rows.sort(key=lambda r: (-strength(r), -(min(r["people_count"] or 0, 3)), -(r["width"] or 0)))
@@ -268,8 +267,7 @@ th{{background:#f4f4f5}}.big{{font-size:28px;font-weight:700}}</style>
 <p class="big">{s['convention_photos']} convention photos found</p>
 <ul><li>{s['total_images']} photos in Drive that can be posted (JPEG, PNG, HEIC and the like)</li>
 <li>{s['skipped_raw']} RAW camera files skipped</li>
-<li>{s['vision_checked']} looked at closely so far, {s['vision_convention']} of them convention work</li>
-<li>{s['possible_minors']} set aside because someone may be under 18</li></ul>
+<li>{s['vision_checked']} looked at closely so far, {s['vision_convention']} of them convention work</li></ul>
 <p class="big">{s['building_photos']} building photos found</p>
 <p>{s['building_exteriors']} exteriors. By year: {e(', '.join(f'{y}: {n}' for y, n in s['buildings_by_year'].items()) or 'none yet')}</p>
 <h2>Event photos by event and year</h2><table><tr><th>Event</th>{head}<th>Total</th></tr>{body}</table>

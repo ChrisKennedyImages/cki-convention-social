@@ -290,9 +290,9 @@ PAGE_FROM = """FROM photos p LEFT JOIN classifications c ON c.photo_id = p.id
                LEFT JOIN drive_folders f ON f.drive_id = p.folder_id
                LEFT JOIN temp.folder_decision fd ON fd.drive_id = p.folder_id"""
 VIEWS = {
-    # Sorted photos Chris has not decided on that could ever be used: nobody who may be under 18,
-    # no readable personal detail (temp.hidden_photo). Strongest first.
-    "review": (f"p.trashed = 0 AND {SORTED} AND c.possible_minor = 0 AND {DECISION} = 'not_cleared' "
+    # Sorted photos Chris has not decided on that could ever be used: no readable personal detail
+    # (temp.hidden_photo). No age filter: he judges every photo himself (2026-10-15). Strongest first.
+    "review": (f"p.trashed = 0 AND {SORTED} AND {DECISION} = 'not_cleared' "
                "AND COALESCE(c.shot_type, '') NOT IN ('cosplay_portrait') "
                "AND COALESCE(c.event_kind, '') NOT IN ('wedding', 'private') "
                "AND p.id NOT IN (SELECT id FROM temp.hidden_photo)",
@@ -796,15 +796,14 @@ def create_app() -> FastAPI:
             rows = db.rows(conn, f"""
                 SELECT * FROM (
                   SELECT f.drive_id, f.name, f.path, f.clearance, f.image_count, f.shared_by,
-                         SUM(CASE WHEN c.is_convention=1 THEN 1 ELSE 0 END) AS conv,
-                         SUM(CASE WHEN c.possible_minor=1 THEN 1 ELSE 0 END) AS minors
+                         SUM(CASE WHEN c.is_convention=1 THEN 1 ELSE 0 END) AS conv
                   FROM drive_folders f LEFT JOIN photos p ON p.folder_id=f.drive_id AND p.trashed=0
                   LEFT JOIN classifications c ON c.photo_id=p.id
                   GROUP BY f.drive_id) f
                 WHERE image_count > 0 AND {where} ORDER BY conv DESC, image_count DESC LIMIT 400""")
             note = ""
             if show == "events" and not rows:
-                rows = db.rows(conn, """SELECT f.drive_id, f.name, f.path, f.clearance, f.image_count, f.shared_by, 0 AS conv, 0 AS minors
+                rows = db.rows(conn, """SELECT f.drive_id, f.name, f.path, f.clearance, f.image_count, f.shared_by, 0 AS conv
                                         FROM drive_folders f WHERE f.image_count > 0 ORDER BY f.image_count DESC LIMIT 400""")
                 if rows:
                     note = "No folder has been recognised as event work yet, so every folder with photos is shown."
@@ -1486,7 +1485,8 @@ def create_app() -> FastAPI:
                         f("PINTEREST_BOARD_ID", "Pinterest board id"), f("PINTEREST_LINK", "Page a pin opens (blank: the quote page)")]},
             {"title": "Posting", "note": "Blank keeps the default. Times are local. Post times: one per network (facebook=09:30) or "
                                          "weekdays/weekends (instagram=11:30/10:00); the building day is the weekday for building photos.",
-             "fields": [f("POST_TIMES", "Post times (default instagram 11:30 weekdays and 10:00 weekends, facebook 09:30, pinterest 20:30)"),
+             "fields": [f("POST_NETWORKS", "Networks posts go to, comma separated (blank: instagram only; add facebook or pinterest once connected)"),
+                        f("POST_TIMES", "Post times (default instagram 11:30 weekdays and 10:00 weekends, facebook 09:30, pinterest 20:30)"),
                         f("BUILDING_WEEKDAY", "Building day (default wednesday)"), f("VARIETY_DAYS", "No same event or person twice inside, days (default 14)"),
                         f("PHOTO_REPEAT_DAYS", "A photo sits out after it airs, days (default 180)"),
                         f("TIMEZONE", "Time zone (default America/New_York)"), f("DIGEST_HOUR", "Morning brief hour (default 7)")]},

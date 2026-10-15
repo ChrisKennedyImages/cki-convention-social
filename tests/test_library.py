@@ -143,10 +143,12 @@ class Eligibility(IsolatedCase):
         self.assertEqual(eligibility.eligible_photo_ids(self.conn, ids), [])
         self.assertEqual(eligibility.is_eligible(self.conn, self.pid("p1")), (False, "not cleared yet"))
 
-    def test_cleared_parent_folder_minor_check_and_final_check(self):
+    def test_cleared_parent_folder_sorting_and_final_check(self):
+        """Deliberate change, Chris's ruling of 2026-10-15 (no age gate): the first door was "checked for minors"; it
+        is now "a model sorted it" (the free folder row is still a no)."""
         self.conn.execute("UPDATE drive_folders SET clearance='cleared' WHERE drive_id='fcon'")
-        # cleared, but not checked for minors yet: still no
-        self.assertEqual(eligibility.is_candidate(self.conn, self.pid("p1")), (False, "not checked for minors yet"))
+        # cleared, but only the free folder row so far: still no
+        self.assertEqual(eligibility.is_candidate(self.conn, self.pid("p1")), (False, "not sorted yet"))
         self.vision()
         self.assertEqual(eligibility.is_candidate(self.conn, self.pid("p1")), (True, "ok"))
         # a candidate is not postable until Claude's final check passes
@@ -182,20 +184,25 @@ class Eligibility(IsolatedCase):
         self.conn.execute("UPDATE drive_folders SET clearance='cleared' WHERE drive_id='fcon'")
         self.assertEqual(eligibility.is_candidate(self.conn, self.pid("p1")), (False, "Chris blocked this photo"), "Don't use still wins over a cleared folder")
 
-    def test_final_check_minor_or_details_blocks(self):
+    def test_final_check_details_block_and_an_age_flag_does_not(self):
+        """Deliberate change, Chris's ruling of 2026-10-15: "Get rid of the gate all together! If I approve something,
+        it means I checked it." An old final check that flagged someone as maybe under 18 no longer blocks."""
         self.conn.execute("UPDATE drive_folders SET clearance='cleared' WHERE drive_id='fcon'")
         self.vision()
         self.final("p1", minor=1)
-        self.assertEqual(eligibility.is_eligible(self.conn, self.pid("p1")), (False, "the final check says someone may be under 18"))
+        self.assertEqual(eligibility.is_eligible(self.conn, self.pid("p1")), (True, "ok"))
         self.final("p2", details='["house_number"]')
         self.assertIn("house_number", eligibility.is_eligible(self.conn, self.pid("p2"))[1])
 
-    def test_possible_minor_never_eligible(self):
+    def test_an_old_age_flag_from_the_sorter_never_blocks(self):
+        """Deliberate change, Chris's ruling of 2026-10-15 (it was test_possible_minor_never_eligible): a sort row that
+        says possible_minor=1, from before the ruling, is a candidate and, with the final check, eligible."""
         self.conn.execute("UPDATE drive_folders SET clearance='cleared' WHERE drive_id='fcon'")
-        self.vision({**ADULTS, "possible_minor": True})
-        self.assertEqual(eligibility.is_eligible(self.conn, self.pid("p1")), (False, "someone in it may be under 18"))
-        self.conn.execute("UPDATE photos SET clearance='cleared' WHERE drive_id='p1'")
-        self.assertFalse(eligibility.is_eligible(self.conn, self.pid("p1"))[0])
+        self.vision()
+        self.conn.execute("UPDATE classifications SET possible_minor=1")
+        self.assertEqual(eligibility.is_candidate(self.conn, self.pid("p1")), (True, "ok"))
+        self.final("p1", minor=1)
+        self.assertEqual(eligibility.is_eligible(self.conn, self.pid("p1")), (True, "ok"))
 
     def test_personal_details_block_but_never_a_name(self):
         # Chris, 2026-10-12: "If they're wearing a name badge or there's a name in the photo it's fine to use"

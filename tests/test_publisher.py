@@ -20,6 +20,9 @@ class PublisherCase(AgentCase):
     def setUp(self):
         super().setUp()
         os.environ["PINTEREST_BOARD_ID"] = "board-123"
+        # all three networks switched on, as when Chris turns Facebook and Pinterest back on (POST_NETWORKS, Keys page):
+        # since 2026-10-15 the default is Instagram only (tests/test_no_minor_gate.py pins that default)
+        os.environ["POST_NETWORKS"] = "instagram,facebook,pinterest"
         config.reset()
         self.elig = all_eligible()
         self.use_eligibility(self.elig)
@@ -342,6 +345,8 @@ class RealEligibility(AgentCase):
     def setUp(self):
         super().setUp()
         self.conn = self.connect()
+        os.environ["POST_NETWORKS"] = "facebook"         # this door test posts to Facebook; since 2026-10-15 it is off by default
+        config.reset()
         add_channels(self.conn, "facebook")
         now = db.utcnow()
         db.insert(self.conn, "drive_folders", drive_id="f-1", name="Con 2026", clearance="not_cleared",
