@@ -240,6 +240,24 @@ class Approved(ShareCase):
         ig = self.buffer_input(now=datetime(2026, 10, 15, 19, 0, tzinfo=timezone.utc))
         self.assertEqual((ig["mode"], ig["dueAt"]), ("customScheduled", "2026-10-16T13:00:00Z"))
 
+    def test_the_card_never_says_photography_twice_when_no_room_is_confirmed(self):
+        """2026-10-15 (#79): a post prints the confirmed room's words or EVENT PHOTOGRAPHY, with EVENT CALIBER as the small
+        line so it never repeats; a conference photo had "CONFERENCE PHOTOGRAPHY" over "EVENT PHOTOGRAPHY"."""
+        from convention_social.render import motion
+        seen, real = [], motion.single_post
+
+        def spy(shot, copy, **kw):
+            seen.append((shot.room, kw.get("kicker")))
+            return real(shot, copy, **kw)
+        with mock.patch.object(motion, "single_post", spy):
+            phone.run(self.live(), api=self.api(self.site()), check_client=LookClient(event_kind="business"),
+                      art_client=ArtClientAny([say("pass")]))
+        self.assertEqual(seen[0], ("EVENT PHOTOGRAPHY", "EVENT CALIBER"))
+        with mock.patch.object(motion, "single_post", spy):
+            phone.run(self.live(), api=self.api(self.site(ID2)), check_client=LookClient(event_kind="business", room="main_stage"),
+                      art_client=ArtClientAny([say("pass")]))
+        self.assertEqual(seen[-1], ("MAIN STAGE", "CONFERENCE PHOTOGRAPHY"), "a confirmed room keeps the kind of work above it")
+
     def test_a_readable_plate_or_a_wedding_stops_it_and_he_hears_why(self):
         ctx = self.live()
         for i, (look, word) in enumerate(((LookClient(personal_details=["vehicle_plate"]), "it shows a readable car plate"),
@@ -468,3 +486,27 @@ class TheToken(IsolatedCase):
         go, why = deploy.photos_pending(self.conn)
         self.assertTrue(go)
         self.assertIn("send token", why)
+
+
+class Migration(IsolatedCase):
+    """core/db.py applies every migration file not yet recorded in schema_migrations, in file-name order, and records it by
+    its name. Main has 0076_doctor and 0077_final_check_room; this change's file is 0078_share_sends."""
+
+    def schema(self, conn):
+        return {t: sorted(r[1] for r in conn.execute(f"PRAGMA table_info({t})")) for t in db.table_names(conn)}
+
+    def test_a_fresh_database_and_the_minis_existing_one_end_with_every_table(self):
+        files = db.migration_files()
+        self.assertEqual([p.stem for p in files if p.stem.startswith("0078_")], ["0078_share_sends"], "its own number")
+        stems = [p.stem for p in files]
+        self.assertGreater(stems.index("0078_share_sends"), max(stems.index("0076_doctor"), stems.index("0077_final_check_room")))
+        fresh = db.connect(self.root / "fresh.sqlite3")
+        self.addCleanup(fresh.close)
+        with mock.patch.object(db, "migration_files", return_value=[p for p in files if p.stem != "0078_share_sends"]):
+            old = db.connect(self.root / "old.sqlite3")                 # the Mini's database as main leaves it
+        self.addCleanup(old.close)
+        self.assertNotIn("via", self.schema(old)["phone_sends"])
+        self.assertEqual(db.migrate(old), ["0078_share_sends"], "only this change's file is applied to it")
+        self.assertEqual(self.schema(old), self.schema(fresh), "the same tables and columns either way")
+        self.assertTrue({"via", "remote_id"} <= set(self.schema(fresh)["phone_sends"]))
+        self.assertEqual(db.migrate(old), [], "applied once")

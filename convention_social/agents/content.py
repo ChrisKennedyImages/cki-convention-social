@@ -359,11 +359,13 @@ def make_renderer(conn: sqlite3.Connection, agent: str, *, design: str, rows: li
     """The day's design on its photos, as `render(focus) -> {aspect: [paths]}` for the art director, and the
     list a failed reel is written to (the same photos then go out as a carousel). Shared by the fresh draft
     and the mend, so a redrawn card is the same card the day would have made."""
-    from ..render import bold, motion
+    from ..render import bold, design_samples, motion
     words = confirmed_rooms(conn, [r["id"] for r in rows])
     kicker = kicker_for(hero).upper()
-    if kicker == words[hero["id"]][0]:
-        kicker = "EVENT CALIBER"                       # the small line never repeats the title under it
+    if kicker == words[hero["id"]][0] or words[hero["id"]] == design_samples.UNCONFIRMED:
+        # the small line never repeats the title under it: no room confirmed, the title is EVENT PHOTOGRAPHY and the small
+        # line EVENT CALIBER (2026-10-15; "CONFERENCE PHOTOGRAPHY" over "EVENT PHOTOGRAPHY" was a near repeat)
+        kicker = "EVENT CALIBER"
     copy = motion.MotionCopy(kicker=kicker)
     tag = f"{hero['id']}-{design}"
     reel_failed: list[str] = []
