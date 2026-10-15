@@ -25,6 +25,7 @@ SECRET_NAMES = (
     "MEDIA_UPLOAD_TOKEN",
     "GOOGLE_OAUTH_CLIENT_SECRET",
     "DASHBOARD_PASSWORD_HASH",
+    "CLOUDFLARE_TUNNEL_TOKEN",       # the dashboard away from home (core/tunnel.py)
 )
 
 

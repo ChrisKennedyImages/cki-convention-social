@@ -34,7 +34,7 @@ from ..ai import names as ai_names
 from ..ai.claude import NETWORKS
 from ..buffer import payloads as buffer_payloads
 from ..buffer.client import BufferBudgetExceeded, BufferClient, BufferError, BufferRateLimited
-from ..core import approve_token, auth, config, db, runner, secrets, settings, state_io
+from ..core import access, approve_token, auth, config, db, runner, secrets, settings, state_io
 from .. import music
 from ..library import eligibility, report
 
@@ -473,6 +473,19 @@ def create_app() -> FastAPI:
             response.headers["Cache-Control"] = "no-store"
         return response
 
+    @app.middleware("http")
+    async def through_access_only(request: Request, call_next):
+        """Chris, 2026-10-15: the dashboard away from home is never public without Access. Whatever came through
+        Cloudflare (the tunnel) without a valid Access token for him is refused before any page, the login
+        included (core/access.py). Tailscale and the Mini itself carry no Cloudflare header: untouched."""
+        from starlette.concurrency import run_in_threadpool
+        if not access.from_outside(request.headers):
+            return await call_next(request)
+        why = await run_in_threadpool(access.refusal, request.headers, request.cookies)     # may read Cloudflare's keys
+        if why:
+            return PlainTextResponse(why, status_code=403, headers={"Cache-Control": "no-store"})
+        return await call_next(request)
+
     # ------------------------------------------------------------------ login
     @app.get("/login", response_class=HTMLResponse)
     def login_form(request: Request, next: str = "/", bad: str = ""):
@@ -489,7 +502,8 @@ def create_app() -> FastAPI:
             time.sleep(0.5)
             return RedirectResponse(f"/login?bad=1&next={next}", status_code=303)
         resp = RedirectResponse(next if next.startswith("/") and not next.startswith("//") else "/", status_code=303)
-        resp.set_cookie(COOKIE, make_token("chris"), max_age=SESSION_DAYS * 86400, httponly=True, samesite="lax")
+        resp.set_cookie(COOKIE, make_token("chris"), max_age=SESSION_DAYS * 86400, httponly=True, samesite="lax",
+                        secure=access.secure_request(request.url.scheme, request.headers))     # https: never sent in the clear
         return resp
 
     @app.get("/healthz")

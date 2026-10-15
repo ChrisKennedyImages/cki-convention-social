@@ -1067,6 +1067,38 @@ results.
   same name, phone and email as the site) and Bing Places; a photo of the two
   of them for the About page, if he wants one there.
 
+## 2026-10-15: the dashboard away from home, never public without Access
+
+Chris: "can i reach this dashboard without running tailscale when im out of town?" Asked, he chose a private web
+address: a Cloudflare Tunnel from the Mini to `dash.eventcaliber.com`, Cloudflare Access in front (a one-time code
+sent to chriskimages@gmail.com, only that email, a session of one week), the dashboard's own password behind it.
+Free; nothing opened on the Mini's network; one setup run on the Mini (docs/SETUP.md, 9a).
+
+- The rule: **never public without Access.** Every gate fails closed:
+  - The tunnel starts only with its token, the address, the Access team, the application's AUD tag and the one
+    email in place, and only when every path of the address answers Cloudflare's sign-in from outside, never the
+    dashboard (`core/tunnel.py`, `core/access.py` `check_outside`). cloudflared is stopped the moment Cloudflare
+    routes it to anything but `http://127.0.0.1:4610` (another port, another machine, another name), or when it
+    has not said its routes within two minutes. Our tunnel reaches our dashboard and nothing else on the shared
+    Mini.
+  - The dashboard refuses whatever came through Cloudflare (its `Cf-Ray` or `Cf-Connecting-Ip` header, or the
+    tunnel's address) without a valid Access token for his email: RS256, signed by the team's keys, for this
+    application, from the team, unexpired. Missing settings or keys that cannot be read: refused, before any page,
+    the login included (`core/access.py` `refusal`, the dashboard's middleware). The password is still asked
+    behind it; the session cookie is Secure over https.
+  - `scripts/install-daemons.sh` installs the service (`launchd/com.chriskennedyimages.conventionsocial.tunnel`)
+    only when `ccs tunnel check` passes, and otherwise removes our own. No other cloudflared service and no
+    Tailscale setting is touched; the Tailscale address keeps working as it is.
+- The token lives in `.env` (or the Keychain) only: never in the repo, a file under /Library, a command line or
+  on screen. cloudflared reads it from its environment.
+- The links move to the new address only once the tunnel runs (`ccs tunnel status --use`, from go-live). Behind
+  Access only a browser gets in, so Approve on a ping opens the approve page (one more tap) and the ping carries no
+  picture: the ntfy app's own request would meet Cloudflare's sign-in, and its Approve would look done when nothing
+  was. Letting the ping's token paths bypass Access would make them public on the token alone: not done unless he
+  says so.
+
+Pinned by `tests/test_tunnel.py`.
+
 ## Standing rules from the brief
 
 - CPAC, the ACU and their affiliates are never contacted, by code
@@ -1085,3 +1117,5 @@ results.
   `affiliation`).
 - Captions and copy: plain, short sentences, no dashes, never promise what
   the system does not do today.
+- The dashboard is never public without Cloudflare Access in front: no
+  Access, no page (2026-10-15, above).
