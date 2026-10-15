@@ -80,8 +80,8 @@ a{color:inherit;text-decoration:none}img{display:block;max-width:100%}
 .ticker span.o{color:transparent;-webkit-text-stroke:1px var(--g4)}.ticker span.dot{color:var(--c);padding:0 6px}
 /* the logos under the hero (Chris, 2026-10-15): each in its own colours on a tile, one height, wrapping on a phone */
 .clients{--lh:46px;padding:clamp(26px,3.4vw,44px) var(--pad) clamp(30px,3.8vw,48px);background:var(--k);border-top:1px solid var(--g3)}
-.clients .kick{margin-bottom:20px}
-.clients .logos{list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;gap:12px;align-items:center}
+.clients .kick{margin-bottom:20px;justify-content:center}
+.clients .logos{list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:center}
 .clients .tile{height:84px;padding:12px 20px;border-radius:10px;background:#fff;display:flex;align-items:center;justify-content:center}
 .clients .tile.dark{background:var(--g2);border:1px solid var(--g3)}
 .clients .tile img{height:calc(var(--lh) * var(--k, 1));width:auto;max-width:240px;object-fit:contain}

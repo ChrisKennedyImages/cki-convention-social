@@ -4,6 +4,7 @@ under the top photo on the home page, in their own colours, headed "We've photog
 Off until he turns it on in offer.json (`clients.show`)."""
 from __future__ import annotations
 
+import html
 import io
 import json
 import os
@@ -48,9 +49,26 @@ class Logos(IsolatedCase):
         out = build.build(None, photos, out=self.root / "dist", preview=True)
         return out, (out / "index.html").read_text()
 
-    def test_off_by_default_until_he_confirms_his_list(self):
-        repo = offer.load()["clients"]
-        self.assertIs(repo["show"], False)
+    def test_on_by_his_word_with_his_twelve_in_order_rows_centred(self):
+        """Chris, 2026-10-15, on the renders at the three sizes: "On, rows centered (Recommended)"."""
+        self.assertIs(offer.load()["clients"]["show"], True)
+        shown, why = build.client_logos()
+        self.assertEqual(why, [])
+        order = [c["name"] for c in shown]
+        self.assertEqual(len(order), 12)
+        self.assertEqual(order[0], "Library of Congress")
+        self.assertEqual((order.index("American Conservative Union"), order.index("CPAC")), (3, 8))   # after the 3rd and 7th
+        os.environ.pop("OFFER_FILE", None)
+        _, home = self.built()
+        self.assertIn('<section class="clients"', home)
+        for name in order:
+            self.assertIn(f'alt="{html.escape(name)}"', home)
+        css = theme.CSS
+        self.assertIn("justify-content:center", css[css.index(".clients .logos{"):][:220])
+        self.assertIn("justify-content:center", css[css.index(".clients .kick{"):][:80])
+
+    def test_off_when_he_turns_it_off(self):
+        self.use(show=False, items=[{"name": "Plain", "logo": self.logo("plain"), "political": False}])
         self.assertEqual(build.client_logos(), ([], []))
         _, home = self.built()
         self.assertNotIn('class="clients"', home)

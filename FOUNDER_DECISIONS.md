@@ -1117,8 +1117,8 @@ some contracts forbid showing it; he was told).
   `ai/copy_rules.py` rule `names`, unchanged).
 - The list is `offer.json` `clients` (name, logo file under `site/clients/`,
   `political`, `tile`, and where the logo came from and when: `source`,
-  `fetched`), off until he turns it on (`show`); the heading passes the copy
-  rules at build (`site/build.py` `client_logos`).
+  `fetched`), on and off by `show`; the heading passes the copy rules at build
+  (`site/build.py` `client_logos`).
 - His list, as he gave it and corrected it through the coordinating session:
   Library of Congress, Hamel Builders (one logo; "Hamel Commercial" is the same
   company), C.A.S.E. (the Center for Adoption Support and Education,
@@ -1142,8 +1142,9 @@ some contracts forbid showing it; he was told).
   its pixels (no metadata travels); an SVG with a script or a link to
   elsewhere is refused. The strip wraps at the three sizes (pinned by
   `tests/test_client_logos.py`).
-- The strip is shown to him with his real logos at the three sizes before
-  `show` is turned on.
+- On since his word on the renders at the three sizes: "On, rows centered
+  (Recommended)". Every row of the strip is centred, the short last row under
+  the full ones, the heading over them.
 
 ## 2026-10-15: the ACU and CPAC on the logo strip, never in outreach
 
