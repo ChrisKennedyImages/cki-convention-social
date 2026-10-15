@@ -1116,9 +1116,10 @@ some contracts forbid showing it; he was told).
   the photo text and the search fields still name no one (`ai/names.py`,
   `ai/copy_rules.py` rule `names`, unchanged).
 - The list is `offer.json` `clients` (name, logo file under `site/clients/`,
-  `political`, `tile`, and where the logo came from and when: `source`,
+  `spread`, `tile`, and where the logo came from and when: `source`,
   `fetched`), on and off by `show`; the heading passes the copy rules at build
-  (`site/build.py` `client_logos`).
+  (`site/clients.py`). `spread` marks a political organization; offer.json and
+  `site/build.py` still never say the word (2026-10-12, pinned).
 - His list, as he gave it and corrected it through the coordinating session:
   Library of Congress, Hamel Builders (one logo; "Hamel Commercial" is the same
   company), C.A.S.E. (the Center for Adoption Support and Education,
@@ -1132,7 +1133,7 @@ some contracts forbid showing it; he was told).
   has no website. Not on it: Absolute Love Adoptions ("dont add absolute
   love").
 - Politics fail closed: a logo counts as political unless its entry says
-  `political: false`. Political logos never outnumber the others; a
+  `spread: false`. Political logos never outnumber the others; a
   non-political logo comes first and the political ones are spread evenly
   through the row, never side by side; one past the count waits for another
   non-political logo, said on the Agents page.

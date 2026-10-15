@@ -68,7 +68,7 @@ class Logos(IsolatedCase):
         self.assertIn("justify-content:center", css[css.index(".clients .kick{"):][:80])
 
     def test_off_when_he_turns_it_off(self):
-        self.use(show=False, items=[{"name": "Plain", "logo": self.logo("plain"), "political": False}])
+        self.use(show=False, items=[{"name": "Plain", "logo": self.logo("plain"), "spread": False}])
         self.assertEqual(build.client_logos(), ([], []))
         _, home = self.built()
         self.assertNotIn('class="clients"', home)
@@ -86,12 +86,12 @@ class Logos(IsolatedCase):
             self.assertTrue((offer.path().parent / c["logo"]).is_file(), c["logo"])
             self.assertTrue(c["logo"].startswith("site/clients/") and c["logo"].endswith(".png"), c["logo"])
             self.assertTrue(c["source"] and c["fetched"], c["name"])
-            self.assertIs(c["political"], c["name"] in ("American Conservative Union", "CPAC"), c["name"])
+            self.assertIs(c["spread"], c["name"] in ("American Conservative Union", "CPAC"), c["name"])
         self.assertEqual(next(c for c in repo if c["name"] == "CPAC")["tile"], "dark")       # its mark is white
 
     def test_on_the_strip_sits_under_the_hero_with_each_logo_named_at_its_own_shape(self):
-        self.use(items=[{"name": "Plain One", "logo": self.logo("one"), "political": False},
-                        {"name": "Plain Two", "logo": self.logo("two", (300, 300)), "political": False, "tile": "dark"}])
+        self.use(items=[{"name": "Plain One", "logo": self.logo("one"), "spread": False},
+                        {"name": "Plain Two", "logo": self.logo("two", (300, 300)), "spread": False, "tile": "dark"}])
         out, home = self.built()
         self.assertIn('<section class="clients" aria-label="We&#x27;ve photographed for">', home)
         self.assertLess(home.index('<section class="hero">'), home.index('class="clients"'))
@@ -102,7 +102,7 @@ class Logos(IsolatedCase):
             self.assertEqual(im.size, (360, 120))
 
     def test_a_logo_is_saved_fresh_from_its_pixels(self):
-        self.use(items=[{"name": "Plain One", "logo": self.logo("one", exif=True), "political": False}])
+        self.use(items=[{"name": "Plain One", "logo": self.logo("one", exif=True), "spread": False}])
         out, _ = self.built()
         with Image.open(out / "assets" / "clients" / "plain-one.png") as im:
             self.assertNotIn("exif", im.info)
@@ -110,8 +110,8 @@ class Logos(IsolatedCase):
 
     def test_political_logos_never_lead_never_bunch_and_never_outnumber_the_rest(self):
         """"i just dont want them the only thing on the site"."""
-        p = lambda n: {"name": n, "logo": self.logo(n.lower().replace(" ", "-")), "political": True}   # noqa: E731
-        q = lambda n: {"name": n, "logo": self.logo(n.lower().replace(" ", "-")), "political": False}  # noqa: E731
+        p = lambda n: {"name": n, "logo": self.logo(n.lower().replace(" ", "-")), "spread": True}   # noqa: E731
+        q = lambda n: {"name": n, "logo": self.logo(n.lower().replace(" ", "-")), "spread": False}  # noqa: E731
         self.use(items=[p("Pol A"), p("Pol B"), p("Pol C"), q("Plain A"), q("Plain B")])
         shown, why = build.client_logos()
         self.assertEqual([c["name"] for c in shown], ["Plain A", "Pol A", "Plain B", "Pol B"])
@@ -125,7 +125,7 @@ class Logos(IsolatedCase):
         self.assertNotIn('class="clients"', home)
 
     def test_political_logos_are_spread_through_the_row(self):
-        mk = lambda n, pol: {"name": n, "logo": self.logo(n.lower().replace(" ", "-")), "political": pol}   # noqa: E731
+        mk = lambda n, pol: {"name": n, "logo": self.logo(n.lower().replace(" ", "-")), "spread": pol}   # noqa: E731
         plain = [mk(f"Plain {i}", False) for i in range(10)]
         self.use(items=plain[:3] + [mk("Pol A", True), mk("Pol B", True)] + plain[3:])
         order = [c["name"] for c in build.client_logos()[0]]
@@ -138,9 +138,9 @@ class Logos(IsolatedCase):
         """Chris, 2026-10-15: "no you can use acu and cpac for this, i just donrt want them emailed for outreach as i
         stated in the beginning"."""
         from convention_social.outreach import compliance
-        plain = [{"name": f"Plain {i}", "logo": self.logo(f"plain-{i}"), "political": False} for i in range(2)]
-        self.use(items=plain + [{"name": "American Conservative Union", "logo": self.logo("acu"), "political": True},
-                                {"name": "CPAC", "logo": self.logo("cpac"), "political": True, "tile": "dark"}])
+        plain = [{"name": f"Plain {i}", "logo": self.logo(f"plain-{i}"), "spread": False} for i in range(2)]
+        self.use(items=plain + [{"name": "American Conservative Union", "logo": self.logo("acu"), "spread": True},
+                                {"name": "CPAC", "logo": self.logo("cpac"), "spread": True, "tile": "dark"}])
         _, home = self.built()
         self.assertIn('alt="American Conservative Union"', home)
         self.assertIn('alt="CPAC"', home)
@@ -153,7 +153,7 @@ class Logos(IsolatedCase):
         im.paste((20, 60, 140, 255), (300, 100, 600, 200))
         path = self.root / "site" / "clients" / "boxed.png"
         im.save(path)
-        self.use(items=[{"name": "Boxed", "logo": "site/clients/boxed.png", "political": False}])
+        self.use(items=[{"name": "Boxed", "logo": "site/clients/boxed.png", "spread": False}])
         out, home = self.built()
         with Image.open(out / "assets" / "clients" / "boxed.png") as got:
             self.assertAlmostEqual(got.width / got.height, 3.0, delta=0.25)   # the mark, not the box
@@ -165,10 +165,11 @@ class Logos(IsolatedCase):
         self.assertIn("height:calc(var(--lh) * var(--k, 1))", theme.CSS)
 
     def test_unsaid_politics_counts_as_political(self):
-        """Fail closed: only `political: false` makes a logo count as not political."""
+        """Fail closed: only `spread: false` makes a logo count as not political (offer.json says "spread", never the word
+        itself: nothing there positions the company, 2026-10-12)."""
         self.use(items=[{"name": "Unsaid", "logo": self.logo("unsaid")}])
         self.assertEqual(build.client_logos()[0], [])
-        self.use(items=[{"name": "Unsaid", "logo": self.logo("unsaid")}, {"name": "Plain", "logo": self.logo("plain"), "political": False}])
+        self.use(items=[{"name": "Unsaid", "logo": self.logo("unsaid")}, {"name": "Plain", "logo": self.logo("plain"), "spread": False}])
         self.assertEqual([c["name"] for c in build.client_logos()[0]], ["Plain", "Unsaid"])
 
     def test_a_logo_without_its_name_its_file_or_a_safe_svg_is_left_out_and_said(self):
@@ -179,13 +180,13 @@ class Logos(IsolatedCase):
         good_svg = self.root / "site" / "clients" / "good.svg"
         good_svg.write_text('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 30 10"><rect width="30" height="10"/></svg>')
         (self.root / "outside.png").write_bytes((self.root / self.logo("tmp")).read_bytes())
-        self.use(items=[{"name": "", "logo": self.logo("noname"), "political": False},
-                        {"name": "No File", "logo": "site/clients/missing.png", "political": False},
-                        {"name": "Outside", "logo": "outside.png", "political": False},
-                        {"name": "Climbs Out", "logo": "site/clients/../../outside.png", "political": False},
-                        {"name": "Script", "logo": "site/clients/bad.svg", "political": False},
-                        {"name": "Far", "logo": "site/clients/far.svg", "political": False},
-                        {"name": "Good", "logo": "site/clients/good.svg", "political": False}])
+        self.use(items=[{"name": "", "logo": self.logo("noname"), "spread": False},
+                        {"name": "No File", "logo": "site/clients/missing.png", "spread": False},
+                        {"name": "Outside", "logo": "outside.png", "spread": False},
+                        {"name": "Climbs Out", "logo": "site/clients/../../outside.png", "spread": False},
+                        {"name": "Script", "logo": "site/clients/bad.svg", "spread": False},
+                        {"name": "Far", "logo": "site/clients/far.svg", "spread": False},
+                        {"name": "Good", "logo": "site/clients/good.svg", "spread": False}])
         shown, why = build.client_logos()
         self.assertEqual([c["name"] for c in shown], ["Good"])
         self.assertEqual(len(why), 6)
@@ -194,7 +195,7 @@ class Logos(IsolatedCase):
         self.assertIn('<img src="/assets/clients/good.svg" alt="Good" loading="lazy"', home)
 
     def test_the_heading_passes_the_copy_rules(self):
-        self.use(items=[{"name": "Plain", "logo": self.logo("plain"), "political": False}], heading="Trusted by")
+        self.use(items=[{"name": "Plain", "logo": self.logo("plain"), "spread": False}], heading="Trusted by")
         with self.assertRaises(build.SiteCopyRefused):
             self.built()
 
