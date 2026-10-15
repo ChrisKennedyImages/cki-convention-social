@@ -907,6 +907,30 @@ on the dashboard.
   run the page says Claude did not look and the draft cannot post.
 - The first phone send's ping is the show for this surface.
 
+## 2026-10-15: Post this on a design sample
+
+Chris: "Put a "Post this" on every design sample so I can turn a sample I like into a real draft post." The
+samples were for review only and had no road to Buffer; the only road was the daily draft.
+
+- The rule: **Post this takes the same road and the same gates as the daily draft.** Never a shortcut.
+- Every sample on the samples page (the fan, the spotlight, the carousel and the reel) has a Post this. The
+  samples record (`about.json` `samples`, written by `render/design_samples.make`) keeps each sample's design
+  and the photo ids it was made from, the hero first.
+- The press is recorded (`sample_posts`) and the sample agent drafts it (`agents/sample.py`, `ccs run sample
+  --wait`: a press while one is being drafted waits its turn). The same photos are fetched again at full size;
+  Claude's final check looks at every one (someone who may be under 18, a readable plate, a wedding), and one
+  that fails drops the whole draft, with the photo and the reason said on the samples page and the Agents page.
+  Then eligibility, the captions through the same writer and copy rules, the same renderer with the same design
+  (the reel with the current music track, the carousel when the reel fails), the art director, a queue row and
+  the ping with Approve (`content.make_draft`, the daily draft's own end). The photos' use is recorded for the
+  rotation.
+- The draft is for today and goes out as soon as Buffer takes it after his Approve (`rule_report.asap`, as a
+  photo from the phone). Nothing posts without his Approve.
+- A sample whose folder was made again since, or with a photo no longer approved, says so plainly on the page
+  and makes no draft. A reel with no music track says so too: a reel never goes out silent (2026-10-11).
+- The lane follows the content lane's dry-run switch. In dry run nothing is drafted and the page says why: the
+  final check is a paid look, and a sample is never drafted without it.
+
 ## 2026-10-14: the website for three sizes
 
 Chris, on the site: About needs a real place in the navigation; the words over

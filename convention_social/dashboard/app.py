@@ -888,14 +888,49 @@ def create_app() -> FastAPI:
         return RedirectResponse(f"/library/design/{latest}/index.html", status_code=303)
 
     @app.get("/library/design/{folder}/{name}")
-    def library_design_file(folder: str, name: str, user: str = Depends(require_user)):
+    def library_design_file(folder: str, name: str, user: str = Depends(require_user), conn=Depends(conn_dep), msg: str = ""):
         # only a design folder and only the files the designer writes, by exact name
         if not DESIGN_DIR.fullmatch(folder) or not DESIGN_FILE.fullmatch(name):
             raise HTTPException(404)
         path = config.get_config().data_root / "renders" / folder / name
         if not path.is_file():
             raise HTTPException(404)
+        if name == "index.html":
+            # the page as it stands now (2026-10-15): each sample's Post this, or why it can no longer be drafted
+            from ..render import design_samples
+            live = design_samples.live_page(conn, folder, msg=msg[:300])
+            if live is not None:
+                return HTMLResponse(live)
         return FileResponse(path, media_type=DESIGN_TYPES[Path(name).suffix])
+
+    @app.post("/library/design/{folder}/post")
+    def library_design_post(folder: str, user: str = Depends(require_user), conn=Depends(conn_dep), design: str = Form(...),
+                            photos: str = Form("")):
+        """Chris, 2026-10-15: "Put a Post this on every design sample so I can turn a sample I like into a real draft
+        post." The press is recorded and the sample agent drafts it on the daily post's road (agents/sample.py); a
+        sample made again since, or with a photo no longer approved, or a lane in dry run, says so and drafts nothing."""
+        from ..agents import sample
+        from ..render import design_samples
+        if not DESIGN_DIR.fullmatch(folder) or design not in sample.DESIGNS:
+            raise HTTPException(404)
+        back = f"/library/design/{folder}/index.html?msg="
+        rec = design_samples.sample_of(folder, design)
+        why = design_samples.stale(conn, folder, rec)
+        if why:
+            return RedirectResponse(back + quote_plus(f"Not drafted: {why}."), status_code=303)
+        try:
+            ids = [int(x) for x in photos.split(",") if x.strip()]
+        except ValueError:
+            ids = []
+        if ids != [int(p) for p in rec["photos"]]:
+            return RedirectResponse(back + quote_plus("Not drafted: the photos asked for are not the photos this sample was made from."),
+                                    status_code=303)
+        if settings.dry_run(conn, "content"):
+            return RedirectResponse(back + quote_plus(f"Not drafted: {sample.DRY_RUN}."), status_code=303)
+        sample.ask(conn, folder, design, ids)
+        start_agent("sample", wait=True)
+        return RedirectResponse(back + quote_plus(f"The {design} sample is being checked and drafted now, on the same road as the daily "
+                                                  "post. Your phone gets a ping with Approve in a few minutes."), status_code=303)
 
     @app.get("/library/renders/{name}")
     def library_render(name: str, user: str = Depends(require_user)):

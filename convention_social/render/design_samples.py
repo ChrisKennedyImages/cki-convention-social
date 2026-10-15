@@ -43,7 +43,8 @@ ROOMS = {
     "building_interior": ("THE VENUE", "The room, before the event."),
 }
 OTHER = ("ON THE FLOOR", "In the moment.")
-COPY_VERSION = "2026-10-11b"             # bump when the words on the cards change: the samples are made again
+COPY_VERSION = "2026-10-15"              # bump when the words on the cards change: the samples are made again (2026-10-15: once, so
+#                                          every set on the Mini records its photos per sample and has its Post this)
 FOLDER_PREFIX = "design-"
 STATUS_FILE = "design-status.json"       # in DATA_ROOT/renders: what the designer did last, for the Design card
 LAST_SET_KEY = "designer.last_set"         # the set the last finished run was made on (written by `ccs design` when done)
@@ -216,32 +217,173 @@ def make(conn, fetch: Callable[[str], bytes], *, out_root: Optional[Path] = None
             except Exception as e:  # noqa: BLE001 — the stills stand on their own; the page says why
                 failed.append(f"{name}: {e}")
                 log(f"{name} not made: {e}")
+    samples = samples_for(rows, made)
     (out / "about.json").write_text(json.dumps({"photos": [r["drive_id"] for r in rows], "made": made, "failed": failed,
-                                                "music": track.name if track else None,
+                                                "music": track.name if track else None, "samples": samples,
                                                 "at": datetime.now().isoformat(timespec="seconds")}, indent=1))
-    (out / "index.html").write_text(page(out.name, made, failed))
+    (out / "index.html").write_text(page(out.name, made, failed, samples))
     # the rotation's memory (a stand-in row without an id, as a test hands in, records nothing)
     report.record_use(conn, "sample", [r["id"] for r in rows if "id" in r.keys()], ref=f"sample:{out.name}")
     log(f"design samples: {out}")
     return out
 
 
-def page(folder: str, made: list[str], failed: list[str]) -> str:
-    """One dark page for the phone: the reels first, then the posts, then the carousel in order."""
+# ------------------------------------------------------------------ Post this (Chris, 2026-10-15)
+# "Put a Post this on every design sample so I can turn a sample I like into a real draft post." Each sample on the
+# page names the design it is and the photos it was made from (about.json `samples`, the hero first, the way the
+# daily draft's renderer takes them: agents/content.make_renderer puts the hero where the eye goes). The press goes
+# to the dashboard (POST /library/design/<folder>/post) and the sample agent (agents/sample.py) drafts it on the daily
+# draft's road and gates. A sample whose folder was made again, or whose photos are no longer approved, says so here.
+
+# the file each sample is shown as -> (the daily draft's design name, where its hero sits among the photos); the
+# hero is the one make() put in the middle of the fan, at the spotlight's index, or first on the carousel and the reel
+SAMPLE_DESIGNS = {"fan-post.jpg": "fan", "spotlight-post.jpg": "spotlight", "slide-01.jpg": "carousel", "rooms-reel.mp4": "reel"}
+
+
+def _hero_index(design: str, n: int) -> int:
+    return {"fan": n // 2, "spotlight": min(2, n - 1)}.get(design, 0)
+
+
+def samples_for(rows: list, made: list[str]) -> list[dict]:
+    """[{design, file, photos (ids, the hero first), hero}] for every sample make() made. A stand-in row without an id
+    (as a test hands in) leaves the photos empty, and that sample has no Post this."""
+    ids = [r["id"] for r in rows if "id" in r.keys()]
+    out = []
+    for name, design in SAMPLE_DESIGNS.items():
+        if name not in made:
+            continue
+        if len(ids) != len(rows) or not ids:
+            out.append({"design": design, "file": name, "photos": [], "hero": None})
+            continue
+        hero = ids[_hero_index(design, len(ids))]
+        out.append({"design": design, "file": name, "photos": [hero] + [i for i in ids if i != hero], "hero": hero})
+    return out
+
+
+def renders_root() -> Path:
+    return config.get_config().data_root / "renders"
+
+
+def latest_folder() -> Optional[str]:
+    """The newest samples folder with its page: the samples the Design card opens now."""
+    root = renders_root()
+    if not root.is_dir():
+        return None
+    names = sorted(p.name for p in root.iterdir()
+                   if p.name.startswith(FOLDER_PREFIX) and p.is_dir() and (p / "index.html").is_file())
+    return names[-1] if names else None
+
+
+def about(folder: str) -> dict:
+    try:
+        data = json.loads((renders_root() / folder / "about.json").read_text())
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def sample_of(folder: str, design: str) -> Optional[dict]:
+    """What the samples record keeps about one sample: its design and the photos it was made from."""
+    for s in about(folder).get("samples") or []:
+        if isinstance(s, dict) and s.get("design") == design:
+            return s
+    return None
+
+
+def stale(conn, folder: str, sample: Optional[dict]) -> Optional[str]:
+    """Why this sample can no longer become a draft, in plain words; None when it can. Fail closed: a sample the
+    record does not know, or a photo that is not approved now, is refused."""
+    latest = latest_folder()
+    if not (renders_root() / folder / "about.json").is_file():
+        return "these samples are gone from the Mini; open the newest ones from the Design card"
+    if latest != folder:
+        return "these samples were made again since, on your newest approved photos; open the newest ones from the Design card"
+    if not sample or not sample.get("photos"):
+        return "this sample does not record which photos it was made from; the next samples will"
+    if sample.get("design") == "reel" and music.current(conn) is None:
+        return "a reel never goes out silent and no music is added yet (Library page, Music for reels)"
+    for pid in sample["photos"]:
+        row = db.one(conn, """SELECT p.*, c.shot_type, c.event_kind FROM photos p LEFT JOIN classifications c ON c.photo_id = p.id
+                              WHERE p.id=?""", (int(pid),))
+        if row is None or row["trashed"]:
+            return f"photo {pid} in it is no longer in the library"
+        if eligibility.clearance_of(conn, row) != "cleared" or not usable(conn, row):
+            return f"photo {pid} in it is no longer approved"
+    return None
+
+
+def live_page(conn, folder: str, msg: str = "") -> Optional[str]:
+    """The samples page as it stands now: each sample's Post this, or why it cannot be drafted, and what its last
+    press became. None when the folder has no record (the page written at make time is served instead)."""
+    record = about(folder)
+    if not record:
+        return None
+    samples = [s for s in record.get("samples") or [] if isinstance(s, dict)]
+    if not samples and not msg:
+        msg = ("These samples were made before Post this and do not record their photos per sample; the next samples will, "
+               "and they are made again by themselves within the hour.")
+    state = {}
+    for s in samples:
+        last = db.one(conn, "SELECT * FROM sample_posts WHERE folder=? AND design=? ORDER BY id DESC LIMIT 1", (folder, s.get("design")))
+        state[s.get("design")] = {"stale": stale(conn, folder, s), "last": dict(last) if last else None}
+    return page(folder, record.get("made") or [], record.get("failed") or [], samples, state=state, msg=msg)
+
+
+def _post_this(folder: str, sample: Optional[dict], state: Optional[dict]) -> str:
+    """The Post this button under one sample, or the plain reason it cannot be drafted, and its last press."""
+    if not sample:
+        return ""
+    st = (state or {}).get(sample["design"]) or {}
+    last = st.get("last")
+    said = ""
+    if last:
+        said = {"pending": "Waiting its turn: checked and drafted in a few minutes; your phone gets a ping.",
+                "drafting": "Being checked and drafted now; your phone gets a ping.",
+                "drafted": f'Drafted as post #{last["queue_id"]}. <a href="/queue/{last["queue_id"]}">Open the draft</a> to approve it.',
+                "failed": f"Not drafted: {html.escape(last['error'] or 'no reason recorded')}"}.get(last["status"], "")
+        said = f'<p class="{"bad" if last["status"] == "failed" else "said"}">{said}</p>'
+    if st.get("stale"):
+        return f'<p class="stale">Cannot be posted: {html.escape(st["stale"])}.</p>{said}'
+    if not sample.get("photos"):
+        return f'<p class="stale">Cannot be posted: this sample does not record which photos it was made from; the next samples will.</p>{said}'
+    ids = ",".join(str(int(p)) for p in sample["photos"])
+    return (f'<form method="post" action="/library/design/{html.escape(folder)}/post" class="post">'
+            f'<input type="hidden" name="design" value="{html.escape(sample["design"])}">'
+            f'<input type="hidden" name="photos" value="{ids}">'
+            f'<button type="submit">Post this</button></form>{said}')
+
+
+def page(folder: str, made: list[str], failed: list[str], samples: Optional[list[dict]] = None, *,
+         state: Optional[dict] = None, msg: str = "") -> str:
+    """One dark page for the phone: the reels first, then the posts, then the carousel in order. Each sample with
+    the photos it was made from on record has its Post this (2026-10-15)."""
+    by_file = {s.get("file"): s for s in samples or [] if isinstance(s, dict)}
+
     def src(name: str) -> str:
         return html.escape(f"/library/design/{folder}/{name}")
     vids = "".join(f'<h2>{html.escape(n.replace("-", " ").replace(".mp4", ""))}</h2><video src="{src(n)}" controls playsinline loop muted autoplay></video>'
+                   f'{_post_this(folder, by_file.get(n), state)}'
                    for n in made if n.endswith(".mp4"))
     posts = "".join(f'<h2>{html.escape(n.replace("-", " ").replace(".jpg", ""))}</h2><img src="{src(n)}" alt="">'
+                    f'{_post_this(folder, by_file.get(n), state)}'
                     for n in made if n.endswith("-post.jpg"))
     slides = "".join(f'<img src="{src(n)}" alt="">' for n in sorted(n for n in made if n.startswith("slide-")))
+    slides_post = _post_this(folder, by_file.get("slide-01.jpg"), state)
     errs = "".join(f"<p class=bad>{html.escape(f)}</p>" for f in failed)
+    note = f'<p class="msg">{html.escape(msg)}</p>' if msg else ""
+    waiting = any(((v or {}).get("last") or {}).get("status") in ("pending", "drafting") for v in (state or {}).values())
+    refresh = f"<script>setTimeout(function(){{location.replace('/library/design/{html.escape(folder)}/index.html')}}, 20000)</script>" if waiting else ""
     return f"""<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Design samples</title><style>
 body{{margin:0;background:#0a0a0b;color:#f3f3f1;font:16px/1.5 -apple-system,Helvetica,Arial,sans-serif;padding:16px}}
 h1{{font-size:22px;margin:4px 0}}h2{{font-size:15px;color:#00e1ff;text-transform:uppercase;letter-spacing:.12em;margin:28px 0 8px}}
 p{{color:#8c8c93}}.bad{{color:#ff6b6b}}img,video{{width:100%;max-width:540px;display:block;border-radius:10px;margin:0 0 10px}}
 .strip{{display:flex;gap:10px;overflow-x:auto;scroll-snap-type:x mandatory}}.strip img{{flex:none;width:86%;max-width:460px;scroll-snap-align:start}}
+.post{{margin:0 0 6px}}.post button{{font:600 15px/1 -apple-system,Helvetica,Arial,sans-serif;background:#00e1ff;color:#0a0a0b;border:0;
+border-radius:10px;padding:0 20px;min-height:44px;cursor:pointer}}.stale{{color:#ffb454}}.said{{color:#c9c9cf}}.said a{{color:#00e1ff}}
+.msg{{color:#f3f3f1;background:#17171a;border-radius:10px;padding:10px 12px}}
 </style></head><body><h1>Design samples on your photos</h1>
-<p>Made on the Mini from the strongest frames in your library. For review only: nothing here is posted.</p>{errs}
-{vids}{posts}<h2>carousel, swipe</h2><div class="strip">{slides}</div></body></html>"""
+<p>Made on the Mini from the strongest frames in your library. For review: nothing here is posted by itself. Post this makes a draft
+on the same road as the daily post (Claude's final check on every photo, the captions, the art director) and your phone
+gets it with Approve. Nothing goes out until you approve it.</p>{note}{errs}
+{vids}{posts}<h2>carousel, swipe</h2><div class="strip">{slides}</div>{slides_post}{refresh}</body></html>"""
