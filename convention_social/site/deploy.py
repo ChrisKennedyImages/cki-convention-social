@@ -324,6 +324,13 @@ def run(*, repo: Optional[Path] = None, conn=None, say: Callable[[str], None] = 
         return 2
     own = conn is None
     conn = conn or db.connect()
+    from ..agents import updater
+    tested, why = updater.servable(conn, repo)
+    if not tested:                              # 2026-10-16: only the commit the Mini's tests passed ever goes live
+        lock.release()
+        write_status("failed", f"not deployed: {why}")
+        say(f"not deployed: {why}")
+        return 2
     head = _git(repo, "rev-parse", "HEAD")
     started = db.utcnow()                      # the photos the build holds are as of now; a tap during it publishes again
     try:

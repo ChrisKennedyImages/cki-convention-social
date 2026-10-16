@@ -12,7 +12,10 @@ dashboard that missed a restart catches up within ten minutes instead of serving
 If it is still on older code after that, Chris gets the one command that restarts it.
 
 A red run, a checkout on another branch or with local changes, or a history that is not a plain
-fast-forward leaves everything exactly as it is. A red run and a failed fetch are recorded as
+fast-forward leaves everything exactly as it is. Only the commit this updater's own suite passed
+(TESTED_KEY), on main with nothing changed, is ever served by the dashboard or deployed to the site
+(2026-10-16 audit: a branch went to eventcaliber.com three times on 10-14, and on 10-15 a commit the
+suite had just refused was served and deployed after it was brought into the checkout by hand). A red run and a failed fetch are recorded as
 errors, which the watchdog pushes to Chris. New service files (`launchd/` templates) need one
 `scripts/go-live.sh` on the Mini with his Mac password: that is flagged, never attempted.
 
@@ -40,12 +43,13 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Callable, Optional
 
-from ..core import config, runner, settings
+from ..core import config, db, runner, settings
 
 FETCH_TIMEOUT = 120
 DEPLOY_TIMEOUT = 40 * 60        # build (Claude looks at up to 12 photos), wrangler, the check from outside
 TEST_TIMEOUT = 60 * 60          # 2026-10-15: the suite reached ~990 tests (~21 min alone); at 30 min every busy hour was held back
 NEEDS_INSTALL_KEY = "updater.needs_install"
+TESTED_KEY = "updater.tested_commit"   # the last commit this updater's own suite passed: the only one ever served
 RESTARTED_KEY = "updater.dashboard_restarted_for"
 DASHBOARD_PROCESS = "-m convention_social.cli dashboard"
 KICKSTART = "sudo launchctl kickstart -k system/com.chriskennedyimages.conventionsocial.dashboard"
@@ -225,6 +229,34 @@ def ensure_site(ctx: runner.Context, repo: Path, *, deploy: Callable[[Path], tup
     return f"site: deployed ({why})"
 
 
+def _merged_after_suite(conn, head: str) -> bool:
+    """The updater's last merge was this very commit, after its own suite passed (how the first run with
+    TESTED_KEY knows the commit it is on was tested)."""
+    row = db.one(conn, "SELECT summary FROM agent_runs WHERE agent='updater' AND summary LIKE 'updated %' ORDER BY id DESC LIMIT 1")
+    summary = (row["summary"] if row else "") or ""
+    return bool(head) and f"-> {head[:7]} (" in summary and "tests passed" in summary
+
+
+def servable(conn, repo: Optional[Path] = None) -> tuple[bool, str]:
+    """(True, head) when the checkout is the commit this updater's suite passed, on main with no local
+    changes; else (False, why). Nothing else is ever served by the dashboard or deployed to the site."""
+    state = code_state(repo)
+    head = state["head"]
+    if not head:
+        return False, "the code folder is not a git checkout"
+    if state["branch"] != "main":
+        return False, f"the checkout is on {state['branch']}, not main"
+    if state["dirty"]:
+        return False, "the checkout has local changes"
+    tested = settings.get(conn, TESTED_KEY) or ""
+    if not tested and _merged_after_suite(conn, head):
+        settings.set(conn, TESTED_KEY, head)
+        tested = head
+    if head != tested:
+        return False, f"{head[:7]} is not the commit the Mini's tests passed ({tested[:7] or 'none recorded yet'})"
+    return True, head
+
+
 def run(ctx: runner.Context, *, repo: Optional[Path] = None,
         suite: Callable[[Path], tuple[bool, str]] = run_suite,
         requirements: Callable[[Path, Path], None] = install_requirements,
@@ -236,7 +268,14 @@ def run(ctx: runner.Context, *, repo: Optional[Path] = None,
     summary = update(ctx, repo, suite=suite, requirements=requirements, migrations=migrations)
     if summary == "fetch failed":
         return summary
-    summary = f"{summary}; {ensure_dashboard(ctx, _out(repo, 'rev-parse', 'HEAD'), probe=probe, restart=restart)}"
+    ok, why = servable(ctx.conn, repo)
+    if not ok:
+        runner.record_error_once(ctx.conn, ctx.agent, "untested_checkout",
+                                 f"The code the dashboard and the site run from is not tested: {why}. The dashboard is not "
+                                 f"restarted and the site is not deployed until the checkout is back on the commit the Mini's "
+                                 f"tests passed. A Claude session must never work in {repo}; it uses a worktree.")
+        return f"{summary}; dashboard and site left alone: {why}"
+    summary = f"{summary}; {ensure_dashboard(ctx, why, probe=probe, restart=restart)}"
     if site:                 # go-live's sync step leaves the site to go-live's own deploy step
         summary = f"{summary}; {ensure_site(ctx, repo, deploy=deploy)}"
     return summary
@@ -298,6 +337,7 @@ def update(ctx: runner.Context, repo: Path, *, suite: Callable[[Path], tuple[boo
         return f"held back {target[:7]}: tests failed{put_back}"
 
     _out(repo, "merge", "--ff-only", "--quiet", target)
+    settings.set(ctx.conn, TESTED_KEY, target)
     migrations(repo)
     if install:
         settings.set(ctx.conn, NEEDS_INSTALL_KEY, target)
