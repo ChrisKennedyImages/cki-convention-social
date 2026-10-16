@@ -150,13 +150,11 @@ class Card(Case):
         self.client = TestClient(create_app())
         self.client.cookies.set(COOKIE, make_token("chris"))
 
-    def test_the_card_says_ready_failed_or_being_made_and_the_counts(self):
-        self.photo()
-        self.photo(sorted_=False)
-        page = self.client.get("/library?view=design").text
-        self.assertIn("1 ready for designs, 1 still being sorted", page)
-        self.assertIn("made again by themselves", page)
-        design_samples.write_status("failed", "only 1 approved photo(s) are ready for designs")
-        self.assertIn("Not made: only 1 approved photo(s) are ready for designs.", self.client.get("/library?view=design").text)
-        design_samples.write_status("done", "made on 6 of your approved photos", folder="design-x")
-        self.assertIn("Ready: made on 6 of your approved photos", self.client.get("/library?view=design").text)
+    def test_the_design_card_became_the_designed_drafts_on_today(self):
+        """Chris, 2026-10-15: "design samples is completely in a different place then todays posts". The Design card
+        and the samples page are gone; their addresses open Today, where the designed drafts are."""
+        for path in ("/library?view=design", "/library/design"):
+            r = self.client.get(path, follow_redirects=False)
+            self.assertEqual((r.status_code, r.headers["location"]), (303, "/"), path)
+        self.assertIn("designed drafts", self.client.get("/").text)
+        self.assertNotIn("Make design samples", self.client.get("/library").text)

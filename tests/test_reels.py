@@ -356,8 +356,12 @@ class Dashboard(IsolatedCase):
         for url in (f"/queue/{self.qid}", "/"):
             page = self.client.get(url).text
             self.assertIn(f'<video class="reel" src="/media/render/{self.qid}/9x16/1" poster="/media/render/{self.qid}/cover/1"', page)
-            self.assertIn(f'/media/render/{self.qid}/2x3/1', page)
             self.assertNotIn(f'/media/render/{self.qid}/stills/1', page)
+        # the pin card shows while Pinterest is on (2026-10-15: posts go to Instagram only unless POST_NETWORKS says more)
+        self.assertNotIn(f'/media/render/{self.qid}/2x3/1', self.client.get(f"/queue/{self.qid}").text)
+        os.environ["POST_NETWORKS"] = "instagram,pinterest"
+        config.reset()
+        self.assertIn(f'/media/render/{self.qid}/2x3/1', self.client.get(f"/queue/{self.qid}").text)
 
     def reel_tag(self, page: str) -> str:
         tags = re.findall(r'<video class="reel"[^>]*>', page)

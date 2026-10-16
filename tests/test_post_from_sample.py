@@ -52,9 +52,11 @@ class Case(IsolatedCase):
         self.client.cookies.set(COOKIE, make_token("chris"))
 
     def page(self) -> str:
-        r = self.client.get(f"/library/design/{self.folder}/index.html")
-        self.assertEqual(r.status_code, 200)
-        return r.text
+        """The samples page as it stands now. Since 2026-10-15 its address opens Today (the designed drafts replaced
+        it), so the page is read from its maker; a press left on an old page still drafts on the same road."""
+        r = self.client.get(f"/library/design/{self.folder}/index.html", follow_redirects=False)
+        self.assertEqual((r.status_code, r.headers["location"]), (303, "/"))
+        return design_samples.live_page(self.conn, self.folder)
 
     def press(self, design: str, photos=None):
         rec = design_samples.sample_of(self.folder, design)
@@ -142,7 +144,7 @@ class ThePress(Case):
         for pid in want:
             self.assertIsNotNone(db.one(self.conn, "SELECT 1 FROM final_checks WHERE photo_id=?", (pid,)), f"photo {pid} checked")
         self.assertEqual(push.call_count, 1)
-        self.assertIn("Approve", push.call_args[1]["actions"])
+        self.assertIn("Post now", push.call_args[1]["actions"])        # his three choices since 2026-10-15
         self.assertIn(f"/media/card/{row['id']}/", push.call_args[1]["attach"])
         rec = db.one(self.conn, "SELECT status, queue_id FROM sample_posts")
         self.assertEqual((rec["status"], rec["queue_id"]), ("drafted", row["id"]))
@@ -249,7 +251,7 @@ class DryRun(Case):
     def test_dry_run_makes_no_draft(self):
         self.assertTrue(settings.dry_run(self.conn, "content"))
         r, start = self.press("fan")
-        self.assertIn("Not drafted: the content lane is in dry run", self.said(r))
+        self.assertIn("Not drafted: the content lane is in practice run (dry run)", self.said(r))
         self.assertEqual(start.call_count, 0)
         sample.ask(self.conn, self.folder, "fan", design_samples.sample_of(self.folder, "fan")["photos"])  # pressed while live
         look = LookClient()

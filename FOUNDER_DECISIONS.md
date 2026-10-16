@@ -168,7 +168,7 @@ only when Chris says so.
   (`library/eligibility.py`, `render/design_samples.py`); unapproved photos show
   only where he chooses: Photos, To review, and the library report sheets.
 - **Four tabs.** "The navigation is not intuitive or smart!" Today, Photos,
-  Bookings and More, each with one row of its own pages; every folder page links
+  Bookings and More (Settings since 2026-10-15), each with one row of its own pages; every folder page links
   back to the folder list and can clear or exclude the whole folder in place
   (`dashboard/app.py` `SECTIONS`).
 
@@ -289,7 +289,9 @@ only when Chris says so.
   and why, with how many approved photos are ready and how many the sorter
   still has to look at (it does approved photos first). A failure is also on
   the Agents page. The samples use every approved photo, not four per event
-  (`render/design_samples.py` `auto`, `cli.py` `cmd_design`).
+  (`render/design_samples.py` `auto`, `cli.py` `cmd_design`). Replaced on
+  2026-10-15 by the designed drafts on Today: the samples are no longer made
+  by themselves.
 
 ## 2026-10-11: what pings the phone
 
@@ -617,7 +619,8 @@ nudge after eight hours, never a post set aside; the photos stay as they are.
   is started at once so the day is drafted again: tomorrow's post when it is
   missing, else today's when today's was the one set aside
   (`content.set_aside_for`). Reject asks first. A post that already went
-  out cannot be rejected.
+  out cannot be rejected. Since 2026-10-15 it is Skip, and the photos of a
+  skipped post go back into the rotation instead of sitting out (below).
 - A draft waiting eight hours gets one push that opens it ("Still waiting:
   Tuesday's post. Nothing goes out unless you approve it."),
   `publisher.tend_drafts` on the ten-minute run; `rule_report.nudged_at`
@@ -1241,7 +1244,8 @@ some contracts forbid showing it; he was told).
   `tests/test_client_logos.py`).
 - On since his word on the renders at the three sizes: "On, rows centered
   (Recommended)". Every row of the strip is centred, the short last row under
-  the full ones, the heading over them.
+  the full ones, the heading over them. (The tiles and the rows gave way to a
+  scroller on 2026-10-16, below.)
 
 ## 2026-10-15: the ACU and CPAC on the logo strip, never in outreach
 
@@ -1361,6 +1365,86 @@ with him the same day:
 - Its service file is new: `scripts/go-live.sh` runs once on the Mini to
   install it (the updater flags it on the Agents page).
 
+## 2026-10-15: one Today page; designed drafts come to the phone
+
+Chris: "we really need to fix this dashboard. its very difficult to understand the UX and UI. design samples is
+completely in a different place then todays posts and today has no sign of design examples. why are they examples?
+cant they just create them and send them to ntfy for me to approve and watch? everything is just very confusing".
+Asked which of four changes to make, he chose all four; up to 3 designed drafts a day; on Approve "an option to post
+immediately or to follow the pace"; Skip puts the photos back in rotation. Then: "we keep reusing the same photos too."
+
+- **Designed drafts, no more samples page.** From 8:00 to 20:00 the hourly scanner starts the designed lane
+  (`agents/designed.py`) while today has fewer than `DESIGNED_PER_DAY` designed drafts (Keys page, Designed drafts;
+  default 3, 0 stops them, 6 at most) and fewer than that many still wait for him: one an hour, and none pile up
+  while he has not answered. Each is a real draft on the daily draft's road and gates, never a shortcut: approved
+  candidates only, Claude's final check on every photo (one that fails is passed over), the captions through the
+  same writer and copy rules, the same renderer, the art director, a queue row for today, the photos' use recorded.
+  The design is the one the designed drafts used least lately, read from the renderer's own list (`content.NEEDS`:
+  a design added there joins by itself), the reel only with a music track. The lane follows the content lane's
+  dry-run switch: in practice run nothing is made. The samples are no longer made every hour; their page and the
+  Design card answer with Today. A designed draft is never chased by the eight-hour nudge.
+- **His three choices, everywhere a draft waits.** Post now (posted at once, "post immediately": Buffer's shareNow with
+  no time, the share sheet's path, and the publisher started there and then; `rule_report.approved_how`), Follow the pace (the next open Instagram slot, one post a slot; a photo from the phone too)
+  and Skip. They are on Today, on the draft page (the edit form's own buttons, so an edit is never lost) and on
+  every draft's ping: the card (a reel's own cover), a tap that opens the draft where the reel plays with its sound,
+  and the three as ntfy actions with one signed single-use token (`core/notify.choice_actions`,
+  `POST /queue/<id>/choose-by-token/<now|pace|skip>`; a GET decides nothing). A draft the art director did not pass
+  pings with Open and Skip. Nothing posts without one of his two approve choices.
+- **Skip** sets the draft aside with him on the record (`rejected_by = "skip"`) and its photos go back into the
+  rotation, never Don't use: `content.recent_use` leaves a skipped post out, and its use stays on the rotation's
+  record, so the photos come round again after the others. A skipped daily post is drafted again at once; a
+  skipped designed draft is not replaced. This replaces Reject (2026-10-13), whose photos sat out the window.
+- **Variety.** No photo goes out twice inside the longer of `PHOTO_REPEAT_DAYS` and `VARIETY_DAYS`
+  (`config.repeat_window`), by any road: the publisher's door turns it back whatever made the draft (the daily
+  draft, a designed draft, Post this, the phone), the daily draft and the designed drafts never pick a photo on a
+  draft inside it, and Post this refuses one (`sample.used_lately`). The designed drafts draw the least recently
+  used first on any surface and spread: one room and one event before any repeats, each leading with an event no
+  post had inside `VARIETY_DAYS` while one is left, and a hero room the day's other designed drafts did not lead
+  with. They never take an event from the daily post (the approved library holds 34 events, most with one to four
+  photos; four posts a day under the daily post's hard 14-day event rule would leave mornings with nothing to post),
+  so their event is kept apart (`designed_event`).
+- **Why the photos repeated** (read from the code and the live database, 2026-10-15). The samples were the repeat:
+  `design_samples.pick` took one photo per room and per event before the rotation, and the rarest rooms and events
+  hold one or a few photos (of 1,871 approved candidates: the expo floor 1, backstage 2, after dark 13, on the floor
+  15; 20 of 34 events have four photos or fewer), so the same few led every set; and the set was made again
+  whenever the approved, sorted photos changed, 16 times in 21 hours as the sorter worked. Photo 11922 was in all
+  16 sets, 890 in 12, 26780 in 11. Every set counted as a use (`photo_use` surfaces: post, site, sample), which sent
+  those photos to the back for posts and the site but never kept them out of the next set. The site hero is never
+  rotated, by design. The windows held for the daily draft (180 days on any draft) and at the door (180 days on
+  anything that went out); Post this checked neither until the door, and `VARIETY_DAYS` covered only events and
+  people. Of 1,913 approved photos 144 had passed Claude's final check, which the daily draft runs on the photos it
+  picks; the age flag (removed by the ruling above) held 28 of them.
+- **One Today page** (`dashboard/today.py`, `templates/today.html`): Needs you (every draft waiting, newest first,
+  with its three choices and a reel playing inline with its sound; then quote requests, organizer notes and scout
+  finds; then each alert with its fix), This week (what is set to go out, by day, as cards) and Went out (the last
+  posts, each with its link on Instagram when Buffer gave one, and the 30-day numbers). The chips: Send a photo and
+  All posts (`/history`: every post in plain words, the numbers by week). `/posts`, `/queue`, `/library?view=design`,
+  the samples page and `/?show=` answer with a redirect. Music for reels and the library report moved to Photos,
+  Music.
+- **Plain words.** Queue is To approve; would publish is Practice run (posting is off); rejected is Skipped; dry run
+  is practice run; the samples are Ideas where the word still shows. A big amber banner on every page while the
+  publisher or the content lane is in practice run says posts are not going out and links to Settings, Agents.
+- **Went out tells the truth, and the schedule is said.** Chris: "dashboard also says nothing has gone out yet and one
+  did get posted within the last 24hrs. what is even the schedule for posting auto and why does this seem so messy?"
+  Buffer sent queue post 2 at 15:30 UTC; the Mini never wrote it down. The publisher asked Buffer about every
+  scheduled post every ten minutes, one due tomorrow as much as one due now (about 14 requests an hour), so the
+  suite's own 24-hour Buffer ceiling (200 of 250) was reached by 12:34 UTC and every request after that was refused,
+  the check of that post and the scheduling of the approved post 5 among them. Now a post is asked about from five
+  minutes before its time (`publisher.due_at`); a network Buffer says went out is written down at once even when
+  another network on the row cannot be read; and once an hour one request reads what Buffer says was sent on this
+  company's channels (`publisher.reconcile_sent`): each of the suite's posts among them goes into `post_history`, a
+  scheduled post whose every network went out is published with its ping, and the list is kept so Went out on
+  Today also shows a post sent from Buffer itself. The daily numbers count every post the suite scheduled as ours.
+  Today has How posting works, read from the code: the 8:00 draft for the next day, the designed drafts' hours,
+  each network's times (`POST_TIMES` and what the learner moved), the design of each weekday (`content.DESIGNS`, the
+  building day), what goes out next and the next draft. Pinned by `tests/test_went_out.py`, each seen to fail first.
+- **Four tabs: Today, Photos, Bookings, Settings.** More became Settings: the system pages first (Agents, Errors,
+  Keys, Buffer), then the pages that find work (Outreach, Scout, Search, Learner); `/more` opens it. Every alert,
+  on the Errors page and in Needs you, is one card per kind with the button that fixes it where a fix exists (Sign
+  in to Drive, add a key, link the channels, approve a failed post again, run an agent again; `dashboard/alerts.py`)
+  and Dismiss. An alert about a network that is switched off (`POST_NETWORKS`) never shows. Every tap target is 44
+  px or more.
+
 ## 2026-10-15: the dashboard away from home, never public without Access
 
 Chris: "can i reach this dashboard without running tailscale when im out of town?" Asked, he chose a private web
@@ -1397,6 +1481,53 @@ Free; nothing opened on the Mini's network; one setup run on the Mini (docs/SETU
   uploads up to 100 MB (a photo from the phone) and its terms may limit a free site that serves a lot of video.
 
 Pinned by `tests/test_tunnel.py`.
+
+## 2026-10-15: one change at a time, shown first, and one voice
+
+Chris, the same day, as the number of sessions grew:
+
+- "show me all examples always for approval": every visible change, small
+  fixes included, reaches him as a rendered before and after; nothing merges
+  without his OK on it.
+- "no, you coordinate, i mistakenly thought i was in this session so message
+  the agent": one coordinating session talks to him; the others report to it.
+- "you can merge if you ask me so merge": on his yes, Claude merges, pinned to
+  the tested commit.
+- "Let's slow down on merges and let things catch up if they're still things
+  working?": one change at a time on the Mini, each deployed and checked live
+  before the next. That afternoon six or seven sessions ran full test suites
+  at once on the Mini; the updater's 30-minute test run timed out on every
+  update from 14:52 to 21:52, and a test that read the Mini's own
+  `wrangler.live.jsonc` stopped `scripts/go-live.sh` (both fixed the same
+  night: the updater gives the suite an hour; tests never see that file).
+- "Put that in law": `CLAUDE.md`, "How changes reach the Mini".
+
+## 2026-10-16: the logos roll like the ticker, on the black, no tiles
+
+Chris, on the strip live: "The white background on the logos are intense!
+Could it be a scroller too without the white background?" Asked how, he
+chose "Their own colors, no tiles" and "Same speed as the ticker".
+
+- The strip is the ticker's own band (`.ticker.logos`, `site/clients.py`
+  `clients_body`): the same fade over the gutter at both ends, the same start
+  on the text column, the same keyframes, the run doubled for the loop and the
+  copy silent to readers. Its speed is the ticker's: `site.js` sets its
+  duration to the ticker's scaled by the two runs' widths. It holds under the
+  pointer and under a finger, stands still for visitors who ask for reduced
+  motion, and never scrolls the page sideways. The logos load at once (a lazy
+  copy would arrive late as it rolls in).
+- Each logo sits on the site's black as itself, at one optical height. Ink
+  that does not read there gets a light version (`site/clients.py`
+  `relight`): black and grey become the site's light; a dark colour (a navy, a
+  dark green) keeps its hue, lifted to 4.5 to 1; a brand colour (chroma 0.15
+  or more: the Nationals red, the AHA red, APTA's magenta, the ACU's stripes)
+  stays as it is. It is decided area by area: dark ink sitting on the black is
+  relit, dark ink inside the logo's own light ink (C.A.S.E.'s letters on its
+  tree) keeps its colour. A logo drawn on a white box (the AP's) loses the box.
+  offer.json records per logo whether it was relit (`relit`, measured by the
+  code, pinned against it): nine of the twelve; the Washington Nationals, the
+  American Heart Association and CPAC read on the black as they are.
+- Pinned by `tests/test_client_logos.py`.
 
 ## Standing rules from the brief
 

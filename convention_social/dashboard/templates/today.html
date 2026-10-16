@@ -1,0 +1,163 @@
+{% extends "base.html" %}
+{% block main_attr %} class="wide"{% endblock %}
+{% block body %}
+<style>
+.today-h{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin:6px 0 4px}
+.today-h h1,.today-h h2{margin:0}
+.count{display:inline-flex;align-items:center;justify-content:center;min-width:28px;height:28px;padding:0 8px;border-radius:999px;background:var(--ink);color:#fff;font-size:15px;font-weight:700}
+.lede{margin:0 0 12px}
+.drafts{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:14px;align-items:start}
+.drafts .card{margin:0}
+.draft-head{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px}
+.draft-head strong{font-size:17px}
+.media{display:block;width:100%;border-radius:10px;border:1px solid var(--line);background:#f0efeb}
+.reel-box{display:flex;justify-content:center;background:#000;border-radius:10px}
+.reel-box video{display:block;height:min(560px,70vh);max-width:100%;aspect-ratio:9/16;background:#000;border-radius:10px;margin:0;border:0}
+.slides{display:flex;gap:8px;overflow-x:auto;scroll-snap-type:x mandatory;scrollbar-width:thin}
+.slides img{flex:none;width:100%;scroll-snap-align:start}
+.hint{margin:4px 0 0}
+.cap{margin-top:10px;font-size:15px;white-space:pre-wrap;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}
+.checks{display:flex;gap:6px 12px;flex-wrap:wrap;margin-top:8px;font-size:14px}
+.when{margin:6px 0 0}
+.open-link{display:inline-flex;align-items:center;min-height:44px;color:var(--accent);font-weight:600;text-decoration:none}
+.also .card{margin-bottom:10px}
+.also a.need{display:flex;align-items:center;min-height:44px;color:var(--accent);font-weight:600;text-decoration:none}
+.week{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:8px}
+.day{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:8px;min-height:120px;min-width:0}
+.day.today{border-color:var(--ink);border-width:2px}
+.day-name{font-weight:700;font-size:15px;overflow-wrap:anywhere}
+.day .muted{font-size:13px}
+.slot{display:block;margin-top:8px;color:inherit;text-decoration:none}
+.slot img{display:block;width:100%;aspect-ratio:4/5;object-fit:cover;border-radius:8px;border:1px solid var(--line)}
+.slot .t{font-size:13px;margin-top:3px;display:block}
+.sched p{margin:0 0 8px}.sched p:last-child{margin:0}
+.went .from{display:flex;align-items:center;justify-content:center;aspect-ratio:4/5;padding:10px;border-radius:8px;border:1px dashed var(--line);
+  background:#fafaf8;font-size:13px;color:var(--muted);overflow:hidden;text-align:left}
+.went{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:12px}
+.went .card{margin:0;padding:10px}
+.went img{display:block;width:100%;aspect-ratio:4/5;object-fit:cover;border-radius:8px;border:1px solid var(--line)}
+.went .btn{width:100%;margin-top:8px;white-space:nowrap}
+section{margin-bottom:28px}
+@media (max-width:700px){
+  .week{grid-template-columns:1fr;gap:8px}
+  .day{display:grid;grid-template-columns:96px 1fr;gap:10px;min-height:0;align-items:start}
+  .day .slots{display:flex;gap:8px;overflow-x:auto}
+  .slot{margin-top:0;width:84px;flex:none}
+}
+@media (max-width:480px){.drafts{grid-template-columns:1fr}
+  .went{grid-template-columns:1fr}.went .card{display:grid;grid-template-columns:96px 1fr;gap:4px 12px;align-items:start}
+  .went .card>.thumb{grid-row:span 3}.went .from{font-size:12px;padding:6px}.went .card .muted{margin-top:0!important}.went .btn{margin-top:4px}}
+</style>
+{% if msg %}<div class="msg{{ ' bad' if msg.startswith('Not ') else '' }}" id="said">{{ msg }}</div>{% endif %}
+
+<section id="needs">
+  <div class="today-h"><h1>Needs you</h1>{% if drafts %}<span class="count" title="posts to approve">{{ drafts|length }}</span>{% endif %}</div>
+  <p class="muted lede">{{ designed_note }} Nothing goes out until you choose Post now or Follow the pace.</p>
+  {% if auth_state != 'ok' %}<div class="card alert"><strong>Google Drive is {{ 'not signed in yet' if auth_state == 'missing' else 'signed out' }}</strong>
+    <div class="alert-msg">No new drafts and no pictures until it is signed in again. Your photos and choices are all still here.</div>
+    <a class="btn primary" href="/drive/login">Sign in to Drive</a></div>{% endif %}
+  {% if drafts %}
+  <h2 style="margin-top:4px">To approve</h2>
+  <div class="drafts">
+  {% for it in drafts %}
+    <article class="card" id="d{{ it.id }}">
+      <div class="draft-head"><strong>{{ it.origin }}</strong>{% if it.design_name %}<span class="badge">{{ it.design_name }}</span>{% endif %}<span class="muted">post {{ it.id }}</span></div>
+      {% if it.video %}
+      <div class="reel-box"><video class="reel" src="/media/render/{{ it.id }}/9x16/1"{% if it.cover %} poster="/media/render/{{ it.id }}/cover/1"{% endif %} controls playsinline loop preload="metadata"></video></div>
+      <div class="muted hint">{{ 'Tap to play it with its sound. Music: ' + it.music if it.music else 'Tap to play it. No music.' }}</div>
+      {% elif it.renders.get('4:5') and it.renders['4:5']|length > 1 %}
+      <div class="slides">{% for i in it.renders['4:5'] %}<img class="media" src="/media/render/{{ it.id }}/4x5/{{ i }}" alt="slide {{ i }}" loading="lazy">{% endfor %}</div>
+      <div class="muted hint">{{ it.renders['4:5']|length }} slides: swipe to see each.</div>
+      {% elif it.card %}
+      <a href="/queue/{{ it.id }}"><img class="media" src="{{ it.card }}" alt="the post" loading="lazy"></a>
+      {% endif %}
+      {% set cap = it.captions.get('instagram') or ((it.captions.values()|list)[0] if it.captions else '') %}
+      {% if cap %}<div class="cap">{{ cap.split('\n\n')[0] }}</div>{% endif %}
+      <div class="checks">
+        {% if it.blocked_networks %}<span class="rule block">A caption breaks a rule; the suite rewrites it</span>
+        {% elif it.ineligible %}<span class="rule block">A photo in it can no longer be used</span>
+        {% else %}<span class="rule ok">Rules pass{{ ', rewritten by the suite' if it.mended else '' }}</span>{% endif %}
+        {% if it.art and it.art.verdict %}<span class="muted">Art director: {{ {'pass': 'happy with it', 'redo': 'wants a look from you', 'reject': 'turned it back', 'not reviewed': 'did not look'}.get(it.art.verdict, it.art.verdict) }}</span>{% endif %}
+      </div>
+      {% if it.last_error %}<div class="rule block" style="margin-top:6px">{{ it.last_error }}</div>{% endif %}
+      {% if it.choosable %}
+      <div class="choices">
+        <form method="post" action="/queue/{{ it.id }}/approve"><input type="hidden" name="how" value="now"><input type="hidden" name="back" value="/"><button class="primary" type="submit">Post now</button></form>
+        <form method="post" action="/queue/{{ it.id }}/approve"><input type="hidden" name="how" value="pace"><input type="hidden" name="back" value="/"><button class="ok" type="submit">Follow the pace</button></form>
+        <form method="post" action="/queue/{{ it.id }}/skip" onsubmit="return confirm('Skip this post? Its photos go back into the rotation.')"><input type="hidden" name="back" value="/"><button class="skip" type="submit">Skip</button></form>
+      </div>
+      <div class="muted when">Post now: it goes out now.{% if it.pace_words %} Follow the pace: {{ it.pace_words }}.{% endif %}</div>
+      {% else %}
+      <div class="choices">
+        <a class="btn primary" href="/queue/{{ it.id }}" style="grid-column:span 2">Open it to look first</a>
+        <form method="post" action="/queue/{{ it.id }}/skip" onsubmit="return confirm('Skip this post? Its photos go back into the rotation.')"><input type="hidden" name="back" value="/"><button class="skip" type="submit">Skip</button></form>
+      </div>
+      {% endif %}
+      <a class="open-link" href="/queue/{{ it.id }}">Open the draft to read or edit it</a>
+    </article>
+  {% endfor %}
+  </div>
+  {% else %}
+  <div class="card muted">Nothing waits for your approve. The daily post is drafted each morning at 8:00, and designed drafts come through the day; each one pings your phone.</div>
+  {% endif %}
+
+  {% if others or alerts %}
+  <div class="also" style="margin-top:16px">
+    <h2>Also needs you</h2>
+    {% for text, href in others %}<div class="card"><a class="need" href="{{ href }}">{{ text }}</a></div>{% endfor %}
+    {% set back = '/' %}{% for g in alerts[:4] %}{% include "_alert.html" %}{% endfor %}
+    {% if alerts|length > 4 %}<a class="open-link" href="/errors">Every alert ({{ alerts|length }}) on the Errors page</a>{% endif %}
+  </div>
+  {% endif %}
+</section>
+
+<section id="week">
+  <div class="today-h"><h2>This week</h2></div>
+  <p class="muted lede">What is set to go out, day by day. Tap one to open it.</p>
+  <div class="week">
+  {% for d in week %}
+    <div class="day{{ ' today' if loop.first else '' }}">
+      <div><div class="day-name">{{ d.label }}</div><div class="muted">{{ d.date }}</div></div>
+      <div class="slots">
+      {% for s in d['items'] %}<a class="slot" href="/queue/{{ s.id }}">{% if s.card %}<img src="{{ s.card }}" alt="post {{ s.id }}" loading="lazy">{% endif %}<span class="t">{{ s.time }}<br><span class="muted">{{ s.words }}</span></span></a>
+      {% else %}<div class="muted" style="margin-top:6px">Nothing set</div>{% endfor %}
+      </div>
+    </div>
+  {% endfor %}
+  </div>
+</section>
+
+<section id="schedule">
+  <div class="today-h"><h2>How posting works</h2></div>
+  <div class="card sched">
+    <p><strong>Every morning at 8:00</strong> the daily post is drafted for the next day, and your phone gets it.{% if schedule.designed %} Designed drafts come from {{ schedule.hours[0] }}:00 to {{ schedule.hours[1] }}:00, up to {{ schedule.designed }} a day, one an hour.{% endif %}</p>
+    {% for line in schedule.times %}<p>{{ line }}, one post a slot when you choose Follow the pace. Post now sends a post out at once.</p>{% endfor %}
+    <p><strong>The daily designs:</strong> {{ schedule.days|join(', ') }}.</p>
+    <p><strong>Next out:</strong> {{ schedule.next_out or 'nothing is set to go out yet' }}. <strong>Next daily draft:</strong> {{ schedule.next_draft }}.</p>
+    <p class="muted">Times are set on the Keys page, under Posting.</p>
+  </div>
+</section>
+
+<section id="went-out">
+  <div class="today-h"><h2>Went out</h2></div>
+  <p class="muted lede">{% if summary.totals.posts %}Last {{ summary.days }} days: {{ summary.totals.posts }} post{{ 's' if summary.totals.posts != 1 else '' }}, reach {{ summary.totals.reach|int }}, engagement {{ summary.totals.engagement|int }}, clicks {{ summary.totals.clicks|int }}{% if summary.last_pull %}, numbers from Buffer as of {{ summary.last_pull }}{% endif %}.{% else %}The last posts that went out. Their numbers come from Buffer once a day.{% endif %}
+  {% if sent_checked %}Checked with Buffer {{ sent_checked }}.{% endif %}</p>
+  {% if went %}
+  <div class="went">
+  {% for w in went %}
+    <div class="card">
+      <div class="thumb">{% if w.id %}<a href="/queue/{{ w.id }}">{% if w.card %}<img src="{{ w.card }}" alt="post {{ w.id }}" loading="lazy">{% endif %}</a>
+      {% else %}<div class="from">{{ w.text[:140] }}{{ '…' if w.text|length > 140 else '' }}</div>{% endif %}</div>
+      <div class="muted" style="margin-top:6px">{{ w.when }}{% if not w.id %}<br>Sent from Buffer, not made here{% endif %}</div>
+      {% set ig = (w.links|selectattr('href')|list) %}
+      {% if ig %}<a class="btn" href="{{ ig[0].href }}" rel="noopener noreferrer" target="_blank">Open on {{ ig[0].service|capitalize }}</a>
+      {% else %}<div class="muted">No link from Buffer yet</div>{% endif %}
+    </div>
+  {% endfor %}
+  </div>
+  {% else %}
+  <div class="card muted">Nothing has gone out yet. A post lands here once Buffer sends it.</div>
+  {% endif %}
+  <a class="open-link" href="/history">All posts, every state</a>
+</section>
+{% endblock %}

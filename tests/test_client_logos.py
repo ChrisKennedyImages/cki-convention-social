@@ -49,8 +49,9 @@ class Logos(IsolatedCase):
         out = build.build(None, photos, out=self.root / "dist", preview=True)
         return out, (out / "index.html").read_text()
 
-    def test_on_by_his_word_with_his_twelve_in_order_rows_centred(self):
-        """Chris, 2026-10-15, on the renders at the three sizes: "On, rows centered (Recommended)"."""
+    def test_on_by_his_word_with_his_twelve_in_order(self):
+        """Chris, 2026-10-15, on the renders at the three sizes: "On, rows centered (Recommended)"; a scroller since
+        2026-10-16."""
         self.assertIs(offer.load()["clients"]["show"], True)
         shown, why = build.client_logos()
         self.assertEqual(why, [])
@@ -63,9 +64,7 @@ class Logos(IsolatedCase):
         self.assertIn('<section class="clients"', home)
         for name in order:
             self.assertIn(f'alt="{html.escape(name)}"', home)
-        css = theme.CSS
-        self.assertIn("justify-content:center", css[css.index(".clients .logos{"):][:220])
-        self.assertIn("justify-content:center", css[css.index(".clients .kick{"):][:80])
+        self.assertIn('<div class="ticker logos"><ul class="track">', home)
 
     def test_off_when_he_turns_it_off(self):
         self.use(show=False, items=[{"name": "Plain", "logo": self.logo("plain"), "spread": False}])
@@ -87,17 +86,25 @@ class Logos(IsolatedCase):
             self.assertTrue(c["logo"].startswith("site/clients/") and c["logo"].endswith(".png"), c["logo"])
             self.assertTrue(c["source"] and c["fetched"], c["name"])
             self.assertIs(c["spread"], c["name"] in ("American Conservative Union", "CPAC"), c["name"])
-        self.assertEqual(next(c for c in repo if c["name"] == "CPAC")["tile"], "dark")       # its mark is white
+        from convention_social.site import clients
+        for c in repo:                                    # "relit" is measured, never chosen: the record matches the code
+            self.assertIs(c["relit"], clients.prepared(offer.path().parent / c["logo"])[1] > 0.01, c["name"])
+        self.assertEqual([c["name"] for c in repo if not c["relit"]], ["Washington Nationals", "American Heart Association", "CPAC"])
 
     def test_on_the_strip_sits_under_the_hero_with_each_logo_named_at_its_own_shape(self):
         self.use(items=[{"name": "Plain One", "logo": self.logo("one"), "spread": False},
-                        {"name": "Plain Two", "logo": self.logo("two", (300, 300)), "spread": False, "tile": "dark"}])
+                        {"name": "Plain Two", "logo": self.logo("two", (300, 300)), "spread": False}])
         out, home = self.built()
         self.assertIn('<section class="clients" aria-label="We&#x27;ve photographed for">', home)
         self.assertLess(home.index('<section class="hero">'), home.index('class="clients"'))
         self.assertLess(home.index('class="clients"'), home.index('class="ticker'))
         self.assertIn('alt="Plain One" width="360" height="120"', home)          # 600x200 kept at its shape, LOGO_H tall
-        self.assertIn('<li class="tile dark"><img src="/assets/clients/plain-two.png" alt="Plain Two" width="120" height="120"', home)
+        self.assertIn('<div class="ticker logos"><ul class="track"><li><img src="/assets/clients/plain-one.png" alt="Plain One"', home)
+        self.assertIn('<li><img src="/assets/clients/plain-two.png" alt="Plain Two" width="120" height="120"', home)
+        strip = home[home.index('<section class="clients"'):home.index("</section>", home.index('<section class="clients"'))]
+        self.assertEqual(strip.count("<li"), 4, "the run, doubled for the loop")
+        self.assertEqual(strip.count('<li aria-hidden="true"><img src="/assets/clients/plain-one.png" alt=""'), 1, "the copy is silent")
+        self.assertNotIn('loading="lazy"', strip, "a lazy copy would load late as it rolls in")
         with Image.open(out / "assets" / "clients" / "plain-one.png") as im:
             self.assertEqual(im.size, (360, 120))
 
@@ -140,7 +147,7 @@ class Logos(IsolatedCase):
         from convention_social.outreach import compliance
         plain = [{"name": f"Plain {i}", "logo": self.logo(f"plain-{i}"), "spread": False} for i in range(2)]
         self.use(items=plain + [{"name": "American Conservative Union", "logo": self.logo("acu"), "spread": True},
-                                {"name": "CPAC", "logo": self.logo("cpac"), "spread": True, "tile": "dark"}])
+                                {"name": "CPAC", "logo": self.logo("cpac"), "spread": True}])
         _, home = self.built()
         self.assertIn('alt="American Conservative Union"', home)
         self.assertIn('alt="CPAC"', home)
@@ -159,7 +166,7 @@ class Logos(IsolatedCase):
             self.assertAlmostEqual(got.width / got.height, 3.0, delta=0.25)   # the mark, not the box
             self.assertEqual(got.getpixel((1, 1))[3], 0, "the white box went clear")
         self.assertIn('style="--k:', home)
-        self.assertEqual(build.optical(120, 120), 1.3)                       # a square mark is set up to the tile's height
+        self.assertEqual(build.optical(120, 120), 1.3)                       # a square mark is set up to the strip's height
         self.assertEqual(build.optical(745, 120), 0.6)                       # a long wordmark comes down
         self.assertLess(build.optical(484, 120), build.optical(199, 120))
         self.assertIn("height:calc(var(--lh) * var(--k, 1))", theme.CSS)
@@ -192,7 +199,7 @@ class Logos(IsolatedCase):
         self.assertEqual(len(why), 6)
         out, home = self.built()
         self.assertTrue((out / "assets" / "clients" / "good.svg").is_file())
-        self.assertIn('<img src="/assets/clients/good.svg" alt="Good" loading="lazy"', home)
+        self.assertIn('<img src="/assets/clients/good.svg" alt="Good" decoding="async"', home)
 
     def test_the_heading_passes_the_copy_rules(self):
         self.use(items=[{"name": "Plain", "logo": self.logo("plain"), "spread": False}], heading="Trusted by")
@@ -203,13 +210,44 @@ class Logos(IsolatedCase):
         """The strip is the one place an organization is named; a caption naming one is still refused."""
         self.assertFalse(copy_rules.check("Backstage at Plain One this week.", names=["Plain One"], social=True).ok)
 
-    def test_three_sizes(self):
-        css = theme.CSS
-        self.assertIn(".clients .tile{height:84px", css)
-        ipad = css[css.index("@media (min-width:761px) and (max-width:1100px)"):]
-        ipad = ipad[:ipad.index("}}") + 2]
-        self.assertIn(".clients .tile{height:74px", ipad)
-        phone = css[css.index("@media (max-width:760px)"):]
-        phone = phone[:phone.index("}}") + 2]
-        self.assertIn(".clients .tile{height:62px", phone)
-        self.assertIn("flex-wrap:wrap", css[css.index(".clients .logos{"):][:200])
+    def test_a_scroller_on_the_tickers_own_band_and_speed(self):
+        """Chris, 2026-10-16: "Could it be a scroller too without the white background?"; "Same speed as the ticker"."""
+        css, js = theme.CSS, theme.JS
+        self.assertNotIn(".clients .tile", css, "no tiles")
+        own = css[css.index(".clients{"):css.index("@keyframes tick")]
+        self.assertNotIn("animation:", own, "the ticker's own keyframes and timing (.ticker .track); none of its own")
+        self.assertNotIn("@keyframes", own)
+        self.assertIn(".ticker.logos:hover .track,.ticker.logos.held .track{animation-play-state:paused}", css)
+        self.assertIn("band.addEventListener('touchstart',()=>band.classList.add('held')", js, "a finger holds it")
+        self.assertIn("logos.style.animationDuration=(parseFloat(getComputedStyle(tick).animationDuration)*logos.scrollWidth/tick.scrollWidth)+'s'",
+                      js, "the ticker's speed: its duration scaled by the two runs' widths")
+        for media, lh in (("@media (min-width:761px) and (max-width:1100px)", "40px"), ("@media (max-width:760px)", "34px")):
+            block = css[css.index(media):]
+            self.assertIn(f".clients{{--lh:{lh}}}", block[:block.index("}}") + 2], media)
+        self.assertIn("prefers-reduced-motion:reduce){*,*:before,*:after{animation:none!important", css, "still for those who ask")
+
+    def test_dark_ink_is_relit_and_the_brand_colours_kept(self):
+        from convention_social.render import palette as pal
+        from convention_social.site import clients
+        self.assertEqual(clients.light_version((0, 0, 0)), clients.SITE_LIGHT)                 # black type
+        navy = clients.light_version((19, 33, 106))                                             # Hamel's navy
+        self.assertGreaterEqual(pal.contrast(navy, clients.SITE_BLACK), clients.LIFT_TO)
+        self.assertLess(pal.hue_gap(pal.lch(navy)[2], pal.lch((19, 33, 106))[2]), 12, "the same blue, lifted")
+        for kept in ((171, 0, 3), (192, 36, 43), (255, 43, 39), (240, 81, 41), (255, 255, 255)):   # the W, the AHA, AP's bar, LoC's orange, white
+            self.assertEqual(clients.light_version(kept), kept, kept)
+        # area by area: dark letters on the logo's own pale ink keep their colour; the same ink on the clear is relit
+        im = Image.new("RGBA", (300, 100), (0, 0, 0, 0))
+        im.paste((208, 231, 184, 255), (10, 10, 110, 90))                    # a pale tree
+        im.paste((53, 98, 48, 255), (40, 40, 60, 60))                        # a dark green letter on it
+        im.paste((53, 98, 48, 255), (200, 40, 220, 60))                      # the same letter on the clear
+        out, share = clients.relight(im)
+        self.assertEqual(out.getpixel((50, 50))[:3], (53, 98, 48))
+        self.assertNotEqual(out.getpixel((210, 50))[:3], (53, 98, 48))
+        self.assertGreaterEqual(pal.contrast(out.getpixel((210, 50))[:3], clients.SITE_BLACK), clients.LIFT_TO)
+        self.assertGreater(share, 0.0)
+        # a logo on an opaque white box (the AP's) loses the box and keeps its ink
+        boxed = Image.new("RGBA", (200, 100), (255, 255, 255, 255))
+        boxed.paste((0, 0, 0, 255), (80, 30, 120, 70))
+        clear = clients.unbox(boxed)
+        self.assertEqual(clear.getpixel((5, 5))[3], 0)
+        self.assertEqual(clear.getpixel((100, 50)), (0, 0, 0, 255))

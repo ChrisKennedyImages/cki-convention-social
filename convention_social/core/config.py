@@ -172,6 +172,13 @@ def load_config() -> Config:
     )
 
 
+def repeat_window(cfg: Config) -> int:
+    """Days a photo sits out after it was on a post, by any road (the daily draft, a designed draft, Post this, the
+    phone): the longer of PHOTO_REPEAT_DAYS and VARIETY_DAYS, so neither setting can bring a photo back on Instagram
+    inside the other (Chris, 2026-10-15: "we keep reusing the same photos too")."""
+    return max(cfg.photo_repeat_days, cfg.variety_days)
+
+
 _CONFIG: Config | None = None
 
 

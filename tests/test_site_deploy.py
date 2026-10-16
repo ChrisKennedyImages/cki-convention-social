@@ -410,3 +410,17 @@ class TheCard(IsolatedCase):
             self.assertIn("ValueError: no photos", page)
         anon = TestClient(create_app())
         self.assertNotEqual(anon.post("/site/publish", follow_redirects=False).status_code, 303)
+
+
+class NoTestSeesTheRealCheckout(IsolatedCase):
+    """2026-10-15: test_hero_upload failed on the Mini's own checkout (go-live's test step) because go-live had
+    written wrangler.live.jsonc there and deploy.ready() said this machine can publish. A test never sees it."""
+
+    def test_the_default_checkout_has_no_live_config_in_a_test(self):
+        from convention_social.core import config as cfg
+        (self.root / "fake-checkout").mkdir()
+        self.assertFalse(deploy.ready()[0], "the real checkout's wrangler.live.jsonc must not reach a test")
+        self.assertNotEqual(deploy.live_config(), Path(cfg.REPO_ROOT) / deploy.LIVE_CONFIG)
+        repo = self.root / "fake-checkout"
+        (repo / deploy.LIVE_CONFIG).write_text("{}")
+        self.assertEqual(deploy.live_config(repo), repo / deploy.LIVE_CONFIG, "a test that names a repo still gets it")

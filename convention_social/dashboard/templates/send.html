@@ -3,7 +3,7 @@
 <h1>Send a photo</h1>
 {% if msg %}<div class="msg{{ ' bad' if msg.startswith('Not kept') else '' }}">{{ msg }}</div>{% endif %}
 <div class="card">
-  <div class="muted">A photo from your phone while you are shooting becomes a draft post for today within minutes: sorted, looked at by Claude (a readable plate or a wedding stops it and this page says so), captioned with your line, designed, and sent to your phone with Approve. Nothing posts until you approve it; approved, it goes out as soon as Buffer takes it, not at the day's usual time. Photos from the Post to Event Caliber share sheet on your iPhone are approved by the send and post on their own after the checks. The photo stays on the Mini, never in Drive.</div>
+  <div class="muted">A photo from your phone while you are shooting becomes a draft post for today within minutes: sorted, looked at by Claude (a readable plate or a wedding stops it and this page says so), captioned with your line, designed, and sent to your phone with Post now, Follow the pace and Skip. Nothing posts until you choose; Post now sends it out at once, not at the day's usual time. Photos from the Post to Event Caliber share sheet on your iPhone are approved by the send and post on their own after the checks. The photo stays on the Mini, never in Drive.</div>
   {% if lane_dry %}<div class="msg">The content lane is in dry run (Agents page): Claude does not look at the photo and the captions are the template's, so the draft cannot post until the lane is live.</div>{% endif %}
   <form method="post" action="/send" enctype="multipart/form-data" style="margin-top:10px">
     <label>The photo (the original from the camera roll, or take one now)</label><input type="file" name="file" accept="image/*" required>

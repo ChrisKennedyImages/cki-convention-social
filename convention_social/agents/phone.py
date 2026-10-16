@@ -337,7 +337,8 @@ def draft_send(ctx: runner.Context, send, *, check_client=None, drafter=None, ar
         extra_meta={"source": "team" if from_team else VIA_SHARE if shared else "phone", "asap": True, "note": send["note"] or "",
                     "send_id": send["id"], **instant},
         ping=(f"{ctx.cfg.brand_name}: your photo from the floor, a post to approve",
-              "A single post for today from the photo you sent. Approved, it goes out as soon as Buffer takes it. Tap to see it."),
+              "A single post for today from the photo you sent. Post now and it goes out at once, or follow the pace, or "
+              "skip. Tap to see it."),
         quiet=shared)                         # a send from the share sheet is answered below, once it is approved or stopped
     if art.get("verdict") == "reject":
         return _failed(ctx, send, f"the art director turned it back: {art.get('notes', '')}", queue_id=qid)

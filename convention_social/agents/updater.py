@@ -44,7 +44,7 @@ from ..core import config, runner, settings
 
 FETCH_TIMEOUT = 120
 DEPLOY_TIMEOUT = 40 * 60        # build (Claude looks at up to 12 photos), wrangler, the check from outside
-TEST_TIMEOUT = 30 * 60
+TEST_TIMEOUT = 60 * 60          # 2026-10-15: the suite reached ~990 tests (~21 min alone); at 30 min every busy hour was held back
 NEEDS_INSTALL_KEY = "updater.needs_install"
 RESTARTED_KEY = "updater.dashboard_restarted_for"
 DASHBOARD_PROCESS = "-m convention_social.cli dashboard"
@@ -361,7 +361,7 @@ def mark_installed(conn, repo: Optional[Path] = None) -> str:
 
 
 def sync(*, sleep: Optional[Callable[[float], None]] = None, say: Callable[[str], None] = print,
-         wait_seconds: int = 30 * 60) -> int:
+         wait_seconds: int = TEST_TIMEOUT + 10 * 60) -> int:
     """`ccs sync`, go-live's first step: bring this checkout up to date with GitHub main now, the
     updater's own way (tested first in a worktree, fast-forward only), and say where the code stands.
     0 only when the checkout IS GitHub's main afterwards; 1 with the reason otherwise. While the

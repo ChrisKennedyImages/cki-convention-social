@@ -20,6 +20,7 @@ from convention_social.agents import content, phone, publisher, team
 from convention_social.booking.remote import SiteAPI
 from convention_social.buffer.client import BufferClient
 from convention_social.core import approve_token, auth, config, db, runner, settings
+from convention_social.dashboard import app as dash
 from convention_social.dashboard.app import COOKIE, create_app, make_token
 from tests._base import IsolatedCase
 from tests._fakes import FakeBuffer, add_channels, make_ctx
@@ -65,9 +66,10 @@ class TeamCase(IsolatedCase):
         p.start()
         self.addCleanup(p.stop)
         self.started = []
-        s = mock.patch.object(runner, "start_agent", side_effect=lambda *a, **k: self.started.append((a, k)))
-        s.start()
-        self.addCleanup(s.stop)
+        for target in (runner, dash):                  # app.py binds runner.start_agent as its own name: both, or a real run starts
+            s = mock.patch.object(target, "start_agent", side_effect=lambda *a, **k: self.started.append((a, k)))
+            s.start()
+            self.addCleanup(s.stop)
 
     def ctx(self, dry=True):
         return runner.Context("phone", self.conn, logging.getLogger("t"), config.get_config(), dry, 0)
@@ -157,10 +159,10 @@ class TeamSends(TeamCase):
         self.assertEqual(len(self.pings), 1)
         (title, message), kw = self.pings[0]
         self.assertIn("a photo from your team", title)
-        self.assertIn(f"/queue/{row['id']}/team-approve-by-token", kw["actions"])
-        self.assertIn(f"/queue/{row['id']}/skip-by-token", kw["actions"])
-        self.assertIn("Approve", kw["actions"])
-        self.assertIn("Skip", kw["actions"])
+        self.assertIn(f"http, Approve, ", kw["actions"])
+        self.assertIn(f"/queue/{row['id']}/choose-by-token/now", kw["actions"], "Approve is his Post now (#80's choices)")
+        self.assertIn(f"http, Skip, ", kw["actions"])
+        self.assertIn(f"/queue/{row['id']}/choose-by-token/skip", kw["actions"])
         self.assertIn(f"/media/card/{row['id']}/", kw["attach"])
         self.assertNotIn("Anna", " ".join(self.ping_texts()), "never a name in a ping")
         self.assertEqual(self.started, [], "nothing goes to Buffer before his tap")
@@ -171,11 +173,11 @@ class TeamSends(TeamCase):
         row, _ = self.post()
         token = approve_token.issue(self.conn, row)
         client = TestClient(create_app())
-        r = client.post(f"/queue/{row['id']}/team-approve-by-token", data={"token": token})
+        r = client.post(f"/queue/{row['id']}/choose-by-token/now", data={"token": token})
         self.assertEqual(r.status_code, 200, r.text)
         self.assertEqual(self.post(row["id"])[0]["status"], "approved")
-        self.assertIn((("publisher",), {"wait": True}), self.started, "his tap hands it to Buffer at once")
-        self.assertEqual(client.post(f"/queue/{row['id']}/skip-by-token", data={"token": token}).status_code, 409, "one tap")
+        self.assertIn((("publisher",), {}), self.started, "his tap hands it to Buffer at once")
+        self.assertEqual(client.post(f"/queue/{row['id']}/choose-by-token/skip", data={"token": token}).status_code, 409, "one tap")
         publisher.publish_ready(make_ctx(self.conn, dry_run=True), client=BufferClient("test-key", conn=self.conn, transport=FakeBuffer()))
         ig = json.loads(self.post(row["id"])[0]["payload"])["instagram"]
         self.assertEqual((ig["mode"], ig["metadata"]["instagram"]["type"]), ("shareNow", "story"))
@@ -186,10 +188,20 @@ class TeamSends(TeamCase):
         row, _ = self.post()
         token = approve_token.issue(self.conn, row)
         client = TestClient(create_app())
-        r = client.post(f"/queue/{row['id']}/skip-by-token", data={"token": token})
+        r = client.post(f"/queue/{row['id']}/choose-by-token/skip", data={"token": token})
         self.assertEqual(r.status_code, 200)
         self.assertEqual(self.post(row["id"])[0]["status"], "rejected")
-        self.assertEqual(client.post(f"/queue/{row['id']}/skip-by-token", data={"token": token}).status_code, 409, "once")
+        self.assertEqual(self.started, [], "a skipped team photo is not drafted again")
+        self.assertEqual(client.post(f"/queue/{row['id']}/choose-by-token/skip", data={"token": token}).status_code, 409, "once")
+
+    def test_his_tap_past_the_cap_is_refused_with_the_plain_line(self):
+        self.run_sends(self.site((ID1, f"m{self.mid}")))
+        row, _ = self.post()
+        Cap.stories_today(self, 10)
+        r = TestClient(create_app()).post(f"/queue/{row['id']}/choose-by-token/now", data={"token": approve_token.issue(self.conn, row)})
+        self.assertEqual(r.status_code, 409)
+        self.assertIn("10 Stories", r.text)
+        self.assertEqual(self.post(row["id"])[0]["status"], "draft")
 
     def test_a_sender_not_on_the_team_or_switched_off_is_refused_and_deleted_there(self):
         team.set_active(self.conn, self.mid, False, api=self.api(TeamSite()))
@@ -340,7 +352,8 @@ class ThePage(IsolatedCase):
         self.client.cookies.set(COOKIE, make_token("chris"))
 
     def test_the_team_page_adds_shows_the_token_once_and_switches_off(self):
-        self.assertIn('href="/team"', self.client.get("/keys").text)
+        settings_page = self.client.get("/settings").text
+        self.assertIn('href="/team"', settings_page, "Team sits under Settings (#80's menu)")
         page = self.client.get("/team").text
         self.assertIn('name="name"', page)
         with mock.patch.object(team, "push", return_value=(True, "")):

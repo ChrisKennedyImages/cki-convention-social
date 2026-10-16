@@ -1,15 +1,21 @@
 {% extends "base.html" %}
 {% block body %}
-<h1>Post #{{ qid }}</h1>
+<h1>Post {{ qid }}</h1>
 {% if status != 'draft' %}
-<div class="card">This post is {{ status.replace('_', ' ') }}; there is nothing to approve here. <a href="/queue/{{ qid }}">Open it</a>.</div>
+<div class="card">This post is {{ status_words.get(status, status)|lower }}; there is nothing to choose here. <a href="/queue/{{ qid }}">Open it</a>.</div>
 {% elif token %}
 <div class="card">
-  <p>Nothing was approved by opening this page. Press the button to approve the post, or <a href="/queue/{{ qid }}">open the draft</a> to read it first.</p>
-  <form method="post" action="/queue/{{ qid }}/approve-by-token"><input type="hidden" name="token" value="{{ token }}">
-    <button class="ok" type="submit">Approve post {{ qid }}</button></form>
+  {% if how %}<p>You chose <strong>{{ choices[how] }}</strong> on your phone. Nothing is decided until you press it here.</p>
+  {% else %}<p>Nothing was decided by opening this page. Choose below, or open the draft to look at it first.</p>{% endif %}
+  <a class="btn" href="/queue/{{ qid }}">Open the draft</a>
+  <div class="choices">
+  {% for key, label in choices.items() %}
+    <form method="post" action="/queue/{{ qid }}/choose-by-token/{{ key }}"><input type="hidden" name="token" value="{{ token }}">
+      <button class="{{ {'now': 'primary', 'pace': 'ok', 'skip': 'skip'}[key] }}" type="submit"{% if how and key != how %} style="opacity:.55"{% endif %}>{{ label }}</button></form>
+  {% endfor %}
+  </div>
 </div>
 {% else %}
-<div class="card">This page approves nothing on its own. <a href="/queue/{{ qid }}">Open the draft</a> to approve it.</div>
+<div class="card">This page decides nothing on its own. <a href="/queue/{{ qid }}">Open the draft</a> to choose.</div>
 {% endif %}
 {% endblock %}

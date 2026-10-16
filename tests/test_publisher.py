@@ -395,7 +395,7 @@ class Live(PublisherCase):
         row = self.row(qid)
         self.assertEqual(row["status"], "scheduled")
         self.assertEqual(json.loads(row["buffer_post_ids"]), {"instagram": "post-1", "facebook": "post-2", "pinterest": "post-3"})
-        self.assertEqual(publisher.verify_scheduled(ctx, client=client), {"published": 0, "failed": 0, "pending": 1})
+        self.assertEqual(publisher.verify_scheduled(ctx, client=client), {"published": 0, "failed": 0, "pending": 1, "not_due": 0})
         self.assertEqual(publisher.verify_scheduled(ctx, client=client)["published"], 1)
         self.assertEqual(self.row(qid)["status"], "published")
         history = db.rows(self.conn, "SELECT service, sent_at, external_link FROM post_history ORDER BY id")

@@ -78,7 +78,7 @@ class Dashboard(IsolatedCase):
                      "/agents", "/keys", f"/queue/{qid}"):
             r = c.get(path)
             self.assertEqual(r.status_code, 200, path)
-            self.assertIn("<main>", r.text, path)
+            self.assertRegex(r.text, r'<main( class="wide")?>', path)          # Today is the wide one (2026-10-15)
 
     def test_folder_clearance_and_photo_block(self):
         c = self.signed_in()
@@ -156,27 +156,27 @@ class Dashboard(IsolatedCase):
         self.assertEqual(popen.call_count, 1)
 
     def test_reject_sets_the_post_aside_and_drafts_again(self):
-        """Chris's reject used to leave the day without a post until 08:00 and the photo free to come straight
-        back (2026-10-13): now the post is set aside with him on the record, its photo sits out
-        (agents/content.recent_use), and a new one is drafted at once. Reject asks first."""
+        """Chris's reject used to leave the day without a post until 08:00 (2026-10-13): the post is set aside with him
+        on the record and a new one is drafted at once. Since 2026-10-15 it is Skip, and its photos go back into the
+        rotation instead of sitting out (tests/test_today.py pins that). Skip asks first; the old address still works."""
         c = self.signed_in()
         popen = self.popen()
         q = self.draft()
         self.conn.execute("UPDATE content_queue SET rule_report=? WHERE id=?", (json.dumps({"for_day": "2026-10-14", "design": "single"}), q))
-        form = re.search(rf'<form[^>]*action="/queue/{q}/reject"[^>]*>', c.get(f"/queue/{q}").text).group(0)
+        form = re.search(rf'<form[^>]*action="/queue/{q}/skip"[^>]*>', c.get(f"/queue/{q}").text).group(0)
         self.assertIn("confirm(", form)
         r = c.post(f"/queue/{q}/reject", follow_redirects=False)
-        self.assertIn("msg=rejected", r.headers["location"])
+        self.assertIn("Skipped+post", r.headers["location"])
         row = db.one(self.conn, "SELECT status, rule_report, last_error FROM content_queue WHERE id=?", (q,))
         meta = json.loads(row["rule_report"])
-        self.assertEqual((row["status"], meta["rejected_by"], meta["for_day"]), ("rejected", "chris", "2026-10-14"))
+        self.assertEqual((row["status"], meta["rejected_by"], meta["for_day"]), ("rejected", "skip", "2026-10-14"))
         self.assertTrue(meta["rejected_at"])
-        self.assertIn("Set aside", row["last_error"])
+        self.assertIn("Skipped by you", row["last_error"])
         self.assertEqual(popen.call_args[0][0][-2:], ["run", "content"])
         self.assertEqual(popen.call_count, 1)
-        page = c.get("/?msg=rejected").text
-        self.assertIn("Set aside", page)
-        self.assertIn("new post is being made", page)
+        page = c.get(r.headers["location"]).text
+        self.assertIn("Skipped post", page)
+        self.assertIn("A new daily post is being made in its place", page)
         # a post that already went out is not something to reject
         p = self.draft()
         self.conn.execute("UPDATE content_queue SET status='published' WHERE id=?", (p,))
@@ -222,8 +222,8 @@ class Dashboard(IsolatedCase):
                                   email=f"{name}@example.org", subject="Hello", body="Hi.", status=st, token=keys.new_token(),
                                   approved_at=now, last_attempt_at=now, notes="dry run", created_at=now, updated_at=now)
         r = c.post("/agents/all/dry-run", data={"state": "off"}, follow_redirects=False)
-        self.assertIn("3+things+you+approved+in+dry+run", r.headers["location"])
-        self.assertIn("3 things you approved in dry run", c.get("/agents?" + r.headers["location"].split("?", 1)[1]).text)
+        self.assertIn("3+things+you+approved+in+practice+run", r.headers["location"])        # dry run is called practice run (2026-10-15)
+        self.assertIn("3 things you approved in practice run", c.get("/agents?" + r.headers["location"].split("?", 1)[1]).text)
         post = db.one(self.conn, "SELECT status, payload, last_error FROM content_queue WHERE id=?", (dry,))
         self.assertEqual((post["status"], post["payload"], post["last_error"]), ("approved", None, None))
         self.assertEqual(db.one(self.conn, "SELECT status FROM content_queue WHERE id=?", (gone,))["status"], "published")
@@ -235,20 +235,20 @@ class Dashboard(IsolatedCase):
         late = self.draft()
         self.conn.execute("UPDATE content_queue SET status='would_publish' WHERE id=?", (late,))
         r = c.post("/agents/all/dry-run", data={"state": "on"}, follow_redirects=False)
-        self.assertNotIn("approved+in+dry+run", r.headers["location"])
+        self.assertNotIn("approved+in+practice+run", r.headers["location"])
         self.assertEqual(db.one(self.conn, "SELECT status FROM content_queue WHERE id=?", (dry,))["status"], "approved")
         self.assertEqual(db.one(self.conn, "SELECT status FROM content_queue WHERE id=?", (late,))["status"], "would_publish")
         self.conn.execute("UPDATE content_queue SET status='would_publish' WHERE id=?", (dry,))
         r = c.post("/agents/publisher/dry-run", data={"state": "off"}, follow_redirects=False)
-        self.assertIn("2+things+you+approved+in+dry+run", r.headers["location"])
+        self.assertIn("2+things+you+approved+in+practice+run", r.headers["location"])
         self.assertEqual([r["status"] for r in db.rows(self.conn, "SELECT status FROM content_queue WHERE id IN (?, ?)", (dry, late))], ["approved", "approved"])
         self.conn.execute("UPDATE content_queue SET status='would_publish' WHERE id=?", (late,))
         self.conn.execute("UPDATE content_queue SET status='scheduled' WHERE id=?", (dry,))
         r = c.post("/agents/publisher/dry-run", data={"state": "off"}, follow_redirects=False)
-        self.assertIn("1+thing+you+approved+in+dry+run+goes+out", r.headers["location"])
+        self.assertIn("1+thing+you+approved+in+practice+run+goes+out", r.headers["location"])
         self.assertFalse(settings.dry_run(self.conn, "publisher"))
         r = c.post("/agents/publisher/dry-run", data={"state": "on"}, follow_redirects=False)
-        self.assertNotIn("approved+in+dry+run", r.headers["location"])
+        self.assertNotIn("approved+in+practice+run", r.headers["location"])
         self.assertTrue(settings.dry_run(self.conn, "publisher"))
 
     def rendered_draft(self, **kw):
@@ -262,10 +262,13 @@ class Dashboard(IsolatedCase):
         return q
 
     def test_save_and_approve_is_one_tap_and_keeps_the_edit(self):
-        """4.1 (2026-10-13): an edit without Save was lost on Approve. One form, two buttons; the gates still hold."""
+        """4.1 (2026-10-13): an edit without Save was lost on Approve. One form; the gates still hold. Since 2026-10-15
+        the form's choices are Post now and Follow the pace (do=now, do=pace); do=approve still follows the pace."""
         c = self.signed_in()
         q = self.draft()
-        self.assertIn('name="do" value="approve"', c.get(f"/queue/{q}").text)
+        page = c.get(f"/queue/{q}").text
+        self.assertIn('<button form="edit" class="primary" type="submit" name="do" value="now">Post now</button>', page)
+        self.assertIn('<button form="edit" class="ok" type="submit" name="do" value="pace">Follow the pace</button>', page)
         words = "Green room before the keynote, calm and ready. Request a quote for your event."
         data = {"caption_instagram": words, "caption_facebook": words, "caption_pinterest": words, "do": "approve"}
         r = c.post(f"/queue/{q}/save", data=data, follow_redirects=False)
@@ -283,7 +286,8 @@ class Dashboard(IsolatedCase):
 
     def test_the_list_approves_only_when_the_gates_pass_and_shows_the_card(self):
         """4.2: Approve on the Queue list for a draft whose rules pass, photos usable, art verdict pass or not
-        reviewed; the thumbnail opens the full card; every caption is there to read."""
+        reviewed. Since 2026-10-15 that list is Needs you on Today: the card is on it and opens the draft, where
+        every caption and every card is; the Instagram caption is on Today (posts go to Instagram)."""
         c = self.signed_in()
         good = self.rendered_draft()
         bad = self.draft("Coverage from $500 a day.")
@@ -292,9 +296,8 @@ class Dashboard(IsolatedCase):
         self.assertIn(f'action="/queue/{good}/approve"', page)
         self.assertIn(f'action="/queue/{plain}/approve"', page, "no art verdict (no render) is not a hold")
         self.assertNotIn(f'action="/queue/{bad}/approve"', page)
-        self.assertIn(f'<a href="/media/render/{good}/4x5/1"', page, "the thumbnail opens the full card")
-        self.assertIn("<details", page)
-        self.assertEqual(page.count("Request a quote for your event."), 6, "all three captions of both clean drafts")
+        self.assertIn(f'<a href="/queue/{good}"><img class="media" src="/media/render/{good}/4x5/1"', page, "the card opens the draft")
+        self.assertEqual(page.count("Request a quote for your event."), 2, "the caption of both clean drafts")
         c.post(f"/queue/{good}/approve")
         self.assertEqual(db.one(self.conn, "SELECT status FROM content_queue WHERE id=?", (good,))["status"], "approved")
         self.assertNotIn(f'action="/queue/{good}/approve"', c.get("/").text)
@@ -320,7 +323,7 @@ class Dashboard(IsolatedCase):
             m = re.search(rf'<form[^>]*action="{re.escape(action)}"[^>]*>', page)
             self.assertIsNotNone(m, action)
             return m.group(0)
-        self.assertIn("confirm(", form_tag(c.get(f"/queue/{q}").text, f"/queue/{q}/reject"))
+        self.assertIn("confirm(", form_tag(c.get(f"/queue/{q}").text, f"/queue/{q}/skip"))
         rid = db.one(self.conn, "SELECT id FROM do_not_use")["id"]
         self.assertIn("confirm(", form_tag(c.get("/donotuse").text, f"/donotuse/{rid}/remove"))
         cid = db.one(self.conn, "SELECT id FROM conventions")["id"]
@@ -336,7 +339,7 @@ class Dashboard(IsolatedCase):
         folder = c.get("/library/folder/fcon").text
         self.assertRegex(folder, r'<form[^>]*onsubmit="return confirm\([^"]*\)"[^>]*><input type="hidden" name="state" value="excluded">')
         self.assertNotRegex(folder, r'<form[^>]*confirm\([^"]*\)"[^>]*><input type="hidden" name="state" value="cleared">')
-        self.assertIn("button.small{min-height:40px", c.get("/").text)
+        self.assertIn("button.small,.btn.small{min-height:44px", c.get("/").text, "every tap target 44px or more (2026-10-15)")
 
     def test_words_match_the_law(self):
         """4.4: the draft page never tells him to fix a caption; a folder-approved photo says so instead of a no-op Undo."""
@@ -511,14 +514,16 @@ class Dashboard(IsolatedCase):
                       caption="Backstage.", external_link=f"https://{svc}.example/p/{pid}", metrics=json.dumps({"reach": 120, "likes": 7}))
             db.insert(self.conn, "post_metrics", buffer_post_id=pid, service=svc, ours=1, sent_at=sent, text="Backstage.",
                       captured_on=captured, metrics=json.dumps({"reach": 120, "likes": 7, "link_clicks": 3}), metrics_updated_at=captured + "T00:00:00Z")
-        self.assertIn('href="/posts"', c.get("/").text, "a chip on Today")
-        page = c.get("/posts").text
+        # 2026-10-15: the Posts page folded into Today (Went out, with the numbers); the weekly table is on All posts
+        self.assertEqual(c.get("/posts", follow_redirects=False).headers["location"], "/#went-out")
+        page = c.get("/").text
         self.assertIn('href="https://instagram.example/p/post-1"', page)
         self.assertIn("Open on Instagram", page)
         self.assertIn(f'/media/render/{q}/4x5/1', page)
-        self.assertIn("240", page, "reach over the last 30 days, two posts")
+        self.assertIn("reach 240", page, "reach over the last 30 days, two posts")
         self.assertIn("Last 30 days", page)
-        self.assertIn("Week of", page)
+        self.assertIn('href="/history"', page)
+        self.assertIn("Week of", c.get("/history").text)
 
     def test_today_says_what_needs_him(self):
         """7.3: the Queue page shows the needs list and the open-error count before the morning brief exists."""
@@ -531,9 +536,10 @@ class Dashboard(IsolatedCase):
         runner_module.record_error(self.conn, "content", "no_draft", "nothing drafted")
         page = c.get("/").text
         self.assertIn("Needs you", page)
-        self.assertIn("1 post(s) waiting for your Approve.", page)
+        self.assertIn('<span class="count" title="posts to approve">1</span>', page, "the draft itself, with its choices (2026-10-15)")
         self.assertIn("1 quote request(s) waiting for your reply.", page)
-        self.assertRegex(page, r'<a href="/errors">1 open error')
+        self.assertIn("No post was drafted", page, "each alert itself, with its fix")
+        self.assertIn("nothing drafted", page)
 
     def test_pull_back_a_scheduled_post(self):
         """7.5: a post Buffer already holds comes back to drafts, deleted there first; a draft is nothing to pull."""
@@ -624,7 +630,7 @@ class Dashboard(IsolatedCase):
         (renders / "contact-sheet-20261011.jpg").write_bytes(b"\xff\xd8jpeg")
         (renders / "building-sheet-20261011.jpg").write_bytes(b"\xff\xd8jpeg")
         (renders / "notes.txt").write_text("not for the web")
-        page = self.signed_in().get("/library?view=design").text
+        page = self.signed_in().get("/music").text          # with the music since the Design card left (2026-10-15)
         for name in ("library-report-20261011.html", "contact-sheet-20261011.jpg", "building-sheet-20261011.jpg"):
             self.assertIn(f"/library/renders/{name}", page)
         r = self.client.get("/library/report", follow_redirects=False)
@@ -698,11 +704,11 @@ class Dashboard(IsolatedCase):
         runner.record_error(self.conn, "seo", "site_check", "the sitemap did not answer")
         c = self.signed_in()
         page = c.get("/agents").text
-        self.assertIn("Dismiss all 3 drive auth", page)
-        self.assertIn("Dismiss all 1 site check", page)
+        self.assertIn("Dismiss all 3", page)
+        self.assertIn('<input type="hidden" name="kind" value="site_check">', page)
         r = c.post("/errors/ack-kind", data={"kind": "drive_auth"}, follow_redirects=False)
         self.assertEqual(r.status_code, 303)
-        self.assertIn("3+drive+auth+errors+dismissed", r.headers["location"])
+        self.assertIn("Dismissed+3%3A+Google+Drive+is+signed+out", r.headers["location"])
         open_kinds = [row["kind"] for row in db.rows(self.conn, "SELECT kind FROM errors WHERE alerted=0")]
         self.assertEqual(open_kinds, ["site_check"])
         self.assertEqual(db.one(self.conn, "SELECT COUNT(*) n FROM errors")["n"], 4)       # dismissed, never deleted
@@ -715,11 +721,11 @@ class Dashboard(IsolatedCase):
         r = c.get("/errors")
         self.assertEqual(r.status_code, 200)
         self.assertIn("No post was drafted for Tuesday", r.text)
-        self.assertIn("Dismiss all 1 no draft", r.text)
+        self.assertIn('<input type="hidden" name="kind" value="no_draft"><input type="hidden" name="back" value="/errors"><button type="submit">Dismiss</button>', r.text)
         r = c.post(f"/errors/{eid}/ack", data={"back": "/errors"}, follow_redirects=False)
         self.assertEqual(r.headers["location"], "/errors")
         self.assertIn("None.", c.get("/errors").text)
-        self.assertIn('href="/errors"', c.get("/more").text)
+        self.assertIn('href="/errors"', c.get("/settings").text)
         r = c.post(f"/errors/{eid}/ack", data={"back": "https://evil.example/"}, follow_redirects=False)
         self.assertEqual(r.headers["location"], "/agents", "only our own pages")
 
@@ -753,11 +759,12 @@ class Dashboard(IsolatedCase):
 
     def test_four_tabs_and_every_page_one_tap_from_its_section(self):
         c = self.signed_in()
-        for path, tab, chip in (("/", "Today", None), ("/library?view=folders", "Photos", "Folders"), ("/calendar", "Bookings", "Calendar"),
-                                ("/agents", "More", "Agents"), ("/keys", "More", "Keys"), ("/more", "More", None)):
+        # 2026-10-15: More became Settings
+        for path, tab, chip in (("/", "Today", "Today"), ("/library?view=folders", "Photos", "Folders"), ("/calendar", "Bookings", "Calendar"),
+                                ("/agents", "Settings", "Agents"), ("/keys", "Settings", "Keys"), ("/settings", "Settings", None)):
             page = c.get(path).text
             tabs = re.findall(r'<nav>(.*?)</nav>', page, flags=re.S)[0]
-            self.assertEqual(re.findall(r">([A-Za-z]+)</a>", tabs), ["Today", "Photos", "Bookings", "More"], path)
+            self.assertEqual(re.findall(r">([A-Za-z]+)</a>", tabs), ["Today", "Photos", "Bookings", "Settings"], path)
             self.assertIn(f'class="on">{tab}</a>', tabs, path)
             if chip:
                 self.assertRegex(page, rf'<div class="chips">.*class="on">{chip}</a>', path)

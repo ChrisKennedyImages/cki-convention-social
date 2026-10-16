@@ -5,9 +5,10 @@
    week); every other day is event work. When a day's kind has no photo
    ready, the other kind stands in.
 2. The photo: candidates only (cleared, sorted, nobody possibly under 18, no
-   readable details, not on the do-not-use list), never used inside
-   PHOTO_REPEAT_DAYS, and no event or credited person repeated inside
-   VARIETY_DAYS. Best quality first.
+   readable details, not on the do-not-use list), never on a post inside
+   the longer of PHOTO_REPEAT_DAYS and VARIETY_DAYS (config.repeat_window),
+   and no event or credited person repeated inside VARIETY_DAYS. The least
+   recently used first, quality breaking ties.
 3. The final check: the full-size photo is downloaded (read only) and Claude
    looks once more; a photo that fails is skipped and the next one is tried.
 4. Captions (ai/claude.py), the day's design from the motion set (render/motion.py:
@@ -64,15 +65,20 @@ def subject_for(day: date) -> str:
     return "architecture" if WEEKDAYS[day.weekday()] == building else "event"
 
 
+# The daily draft's own rows: a designed draft, a photo from the phone and Post this are drafted for today as well and
+# carry their `source`; they never stand in for the day's post, nor make a set-aside day look drafted (2026-10-15).
+DAILY = "json_extract(rule_report, '$.source') IS NULL"
+
+
 def already_drafted(conn: sqlite3.Connection, day: date) -> bool:
-    return bool(db.one(conn, "SELECT 1 FROM content_queue WHERE kind='photo' AND status != 'rejected' AND rule_report LIKE ?",
+    return bool(db.one(conn, f"SELECT 1 FROM content_queue WHERE kind='photo' AND status != 'rejected' AND {DAILY} AND rule_report LIKE ?",
                        (f'%"for_day": "{day.isoformat()}"%',)))
 
 
 def set_aside_for(conn: sqlite3.Connection, day: date) -> bool:
     """A post drafted for `day` that was set aside afterwards (Chris's reject, a do-not-use entry, a wrong shot;
     2026-10-13). The art director's own turn-backs carry no day and are drafted again inside their run."""
-    return bool(db.one(conn, "SELECT 1 FROM content_queue WHERE kind='photo' AND status='rejected' AND rule_report LIKE ?",
+    return bool(db.one(conn, f"SELECT 1 FROM content_queue WHERE kind='photo' AND status='rejected' AND {DAILY} AND rule_report LIKE ?",
                        (f'%"for_day": "{day.isoformat()}"%',)))
 
 
@@ -94,16 +100,23 @@ def inputs_fingerprint(conn: sqlite3.Connection) -> str:
     return hashlib.sha1("|".join(parts).encode()).hexdigest()[:16]
 
 
+SKIPPED = "skip"          # rule_report.rejected_by of a post Chris skipped: its photos go back into the rotation (2026-10-15)
+
+
 def recent_use(conn: sqlite3.Connection, days: int) -> tuple[set, set, set]:
-    """(photo ids, event names, credited people) used by posts drafted inside the window: every post not
-    rejected, the ones the art director turned back, and the photos of the ones set aside by Chris or the
-    do-not-use list (`rule_report.rejected_by`, 2026-10-13: his reject makes the photo sit out like the art
-    director's; the event and the people of a set-aside post are not "used", since nothing of it aired)."""
+    """(photo ids, event names, credited people) used by posts drafted inside the window, by any road (the daily
+    draft, a designed draft, Post this, the phone): every post not rejected, the ones the art director turned back,
+    and the photos of the ones set aside by the do-not-use list (`rule_report.rejected_by`; the event and the people
+    of a set-aside post are not "used", since nothing of it aired). A post Chris skipped is not counted at all
+    (2026-10-15: "Skip puts the photos back in rotation"): its photos come round again, after the others, since
+    their use stays on the rotation's record (library/report.photo_use)."""
     since = (datetime.now(timezone.utc) - timedelta(days=days)).replace(microsecond=0).isoformat()
     photos, events, people = set(), set(), set()
     for r in db.rows(conn, "SELECT status, photo_ids, rule_report FROM content_queue WHERE created_at >= ? AND "
                            "(status != 'rejected' OR rule_report LIKE '%\"verdict\": \"reject\"%' "
                            "OR rule_report LIKE '%\"rejected_by\"%')", (since,)):
+        if r["status"] == "rejected" and f'"rejected_by": "{SKIPPED}"' in (r["rule_report"] or ""):
+            continue
         photos.update(int(p) for p in json.loads(r["photo_ids"] or "[]"))
         if r["status"] == "rejected" and '"verdict": "reject"' not in (r["rule_report"] or ""):
             continue                       # set aside: the photo sits out; the event and the people were never shown
@@ -116,7 +129,7 @@ def recent_use(conn: sqlite3.Connection, days: int) -> tuple[set, set, set]:
 
 def candidates(conn: sqlite3.Connection, subject: str) -> list[dict]:
     cfg = config.get_config()
-    used_photos, _, _ = recent_use(conn, cfg.photo_repeat_days)
+    used_photos, _, _ = recent_use(conn, config.repeat_window(cfg))
     _, used_events, used_people = recent_use(conn, cfg.variety_days)
     rows = db.rows(conn, """SELECT p.*, c.subject, c.convention_name, c.event_kind, c.shot_type, c.quality, c.people_count, c.summary
                             FROM photos p JOIN classifications c ON c.photo_id = p.id
@@ -582,8 +595,10 @@ def make_draft(ctx: runner.Context, day: date, chosen: list[tuple[dict, bytes]],
     report.record_use(ctx.conn, "post", photo_ids, ref=f"post:{qid}", now=now_s)
     # the ping that opens the draft (Chris, 2026-10-11: "I haven't received any ntfy"); 2026-10-13: it carries the
     # card, and an Approve button when the art director passed the draft (core/approve_token: signed, single use)
+    what = "A single photo post" if design == "single" else f"A {design} on {len(photo_ids)} of your photos"
     title, message = ping or (f"{ctx.cfg.brand_name}: a post to approve",
-                              f"{design} with {len(photo_ids)} photo(s) for {day:%A}. Tap to see it.")
+                              f"{what} for {day:%A}. Post now, follow the pace or skip. "
+                              f"{'Tap to watch it with its sound.' if design == 'reel' else 'Tap to see it.'}")
     if not quiet:
         notify.push(title, message, dry_run=ctx.dry_run, priority="default", click=notify.link(f"/queue/{qid}"), conn=ctx.conn,
                     agent=ctx.agent, **ping_extras(ctx.conn, {"id": qid, "updated_at": now_s}, art))
@@ -598,10 +613,11 @@ def make_draft(ctx: runner.Context, day: date, chosen: list[tuple[dict, bytes]],
 
 def ping_extras(conn: sqlite3.Connection, row, art: Optional[dict]) -> dict:
     """What a draft's ping carries besides the words: the card (fetched by the phone from the dashboard with the
-    token, no login), and the Approve button when the art director passed it; Open alone otherwise."""
+    token, no login; a reel's own cover), and his three choices when the art director passed it (2026-10-15: Post
+    now, Follow the pace, Skip); Open and Skip otherwise, so he looks himself before anything can go out."""
     token = approve_token.issue(conn, row)
     passed = (art or {}).get("verdict") == "pass"
-    return {"actions": notify.approve_actions(row["id"], token) if passed else notify.open_action(row["id"]),
+    return {"actions": notify.choice_actions(row["id"], token) if passed else notify.look_actions(row["id"], token),
             "attach": notify.card_link(row["id"], token), "filename": f"post-{row['id']}.jpg"}
 
 

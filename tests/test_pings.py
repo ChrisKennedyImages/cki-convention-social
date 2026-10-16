@@ -85,7 +85,7 @@ class Draft(IsolatedCase):
         self.assertEqual(push.call_count, 1)
         args, kw = push.call_args
         self.assertEqual(args[0], "Event Caliber: a post to approve")
-        self.assertIn("scan with 1 photo(s) for Wednesday", args[1])          # the building day's slit scan (2026-10-15)
+        self.assertIn("A scan on 1 of your photos for Wednesday. Post now, follow the pace or skip.", args[1])   # the building day's slit scan (2026-10-15)
         self.assertEqual((kw["click"], kw["dry_run"]), (f"https://mac-mini.example:8443/queue/{qid}", True))
         self.assertIs(kw["conn"], conn, "a ping that fails is recorded as an error")
         # 2026-10-13: the ping carries the card; the Approve button only when the art director passed it
@@ -94,10 +94,12 @@ class Draft(IsolatedCase):
         self.assertTrue(kw["attach"].startswith(f"https://mac-mini.example:8443/media/card/{qid}/"), kw["attach"])
         self.assertTrue(kw["attach"].endswith(".jpg"))
         self.assertIn(f"view, Open, https://mac-mini.example:8443/queue/{qid}", kw["actions"])
-        self.assertNotIn("http, Approve", kw["actions"], "dry run: the art director did not look, so he looks himself")
+        self.assertNotIn("Post now", kw["actions"], "dry run: the art director did not look, so he looks himself")
+        self.assertNotIn("Follow the pace", kw["actions"])
         conn.close()
 
     def test_a_draft_the_art_director_passed_carries_the_approve_button(self):
+        """2026-10-15: the one Approve became his three choices, Post now, Follow the pace and Skip, one token for all."""
         conn = db.connect()
         library(conn)
         os.environ["DASHBOARD_PUBLIC_URL"] = "https://mac-mini.example:8443"
@@ -114,10 +116,11 @@ class Draft(IsolatedCase):
         qid = db.one(conn, "SELECT id FROM content_queue")["id"]
         kw = push.call_args[1]
         nonce = settings.get(conn, approve_token.nonce_key(qid))
-        self.assertIn(f"http, Approve, https://mac-mini.example:8443/queue/{qid}/approve-by-token, method=POST, "
-                      f"headers.Content-Type=application/x-www-form-urlencoded, body='token=", kw["actions"])
-        self.assertIn(f".{nonce}.", kw["actions"], "the token in the button is the one the nonce backs")
-        self.assertIn(f"clear=true; view, Open, https://mac-mini.example:8443/queue/{qid}", kw["actions"])
+        for how, label in (("now", "Post now"), ("pace", "Follow the pace"), ("skip", "Skip")):
+            self.assertIn(f"http, {label}, https://mac-mini.example:8443/queue/{qid}/choose-by-token/{how}, method=POST, "
+                          f"headers.Content-Type=application/x-www-form-urlencoded, body='token=", kw["actions"])
+        self.assertIn(f".{nonce}.", kw["actions"], "the token in the buttons is the one the nonce backs")
+        self.assertNotIn("view, Open", kw["actions"], "three choices are the most ntfy shows; a tap on the ping opens the draft")
         token = kw["actions"].split("body='token=", 1)[1].split("'", 1)[0]
         self.assertEqual(kw["attach"], f"https://mac-mini.example:8443/media/card/{qid}/{token}.jpg")
         conn.close()
@@ -235,12 +238,13 @@ class ApproveFromThePing(IsolatedCase):
         def ok(url, **kw):
             seen.update(url=url, **kw)
             return mock.Mock(status_code=200)
-        actions = notify.approve_actions(7, "1.2.3")
+        actions = notify.choice_actions(7, "1.2.3")
         self.assertEqual(notify.push_result("t", "m", dry_run=False, transport=ok, actions=actions,
                                             attach=notify.card_link(7, "1.2.3"), filename="post-7.jpg"), "sent")
-        self.assertEqual(seen["headers"]["Actions"], "http, Approve, https://mac-mini.example:8443/queue/7/approve-by-token, method=POST, "
-                                                     "headers.Content-Type=application/x-www-form-urlencoded, body='token=1.2.3', clear=true; "
-                                                     "view, Open, https://mac-mini.example:8443/queue/7")
+        self.assertEqual(seen["headers"]["Actions"], "; ".join(
+            f"http, {label}, https://mac-mini.example:8443/queue/7/choose-by-token/{how}, method=POST, "
+            "headers.Content-Type=application/x-www-form-urlencoded, body='token=1.2.3', clear=true"
+            for how, label in (("now", "Post now"), ("pace", "Follow the pace"), ("skip", "Skip"))))
         self.assertEqual(seen["headers"]["Attach"], "https://mac-mini.example:8443/media/card/7/1.2.3.jpg")
         self.assertEqual(seen["headers"]["Filename"], "post-7.jpg")
         seen.clear()

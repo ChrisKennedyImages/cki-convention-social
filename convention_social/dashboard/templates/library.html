@@ -10,7 +10,7 @@
 </div>
 <div class="card muted">
   {% if view == 'review' %}Only what you approve is ever used. These are the sorted photos you have not decided on yet, strongest first. Use approves one; Don't use keeps it out for good. Photos with a readable plate, house number or street sign never show here and are never used. A name badge or a name in the photo is fine.
-  {% elif view == 'approved' %}Everything you approved, one photo at a time or by its folder. Only these are ever used: in posts, on the website and in the design samples, and every one of them gets its turn, the least recently used first. Undo puts a photo back to review; Don't use keeps it out for good.
+  {% elif view == 'approved' %}Everything you approved, one photo at a time or by its folder. Only these are ever used: in posts, the designed drafts and on the website, and every one of them gets its turn, the least recently used first. Undo puts a photo back to review; Don't use keeps it out for good.
   {% else %}Photos you marked Don't use. Unblock puts one back where it was (to review, or approved by its folder). Never use adds it to the do-not-use list for good.{% endif %}
 </div>
 {% if view == 'approved' and subject == 'event' %}
@@ -135,52 +135,5 @@ document.querySelectorAll('form.tap').forEach(function (form) {
 </div>
 {% endfor %}
 
-{% else %}
-<h1>Design and music</h1>
-<div class="card">
-  <strong>Design samples</strong>
-  <div class="row" style="margin-top:8px">
-    {% if design %}<a class="btn primary" href="/library/design">Design samples</a>{% endif %}
-    <form method="post" action="/library/design" class="inline"><button class="small" type="submit">Make design samples</button></form>
-  </div>
-  {% set st = design_status %}
-  {% if st.state == 'running' %}<div class="msg">Being made now (started {{ st.at[11:16] }}). This card says when they are ready; it takes a few minutes.</div>
-  {% elif st.state == 'done' %}<div class="msg">Ready: {{ st.message }}, {{ st.at[:10] }} {{ st.at[11:16] }}.{% if st.failed %} {{ st.failed|join('; ') }}{% endif %}</div>
-  {% elif st.state == 'failed' %}<div class="msg bad">Not made: {{ st.message }}.</div>{% endif %}
-  <div class="muted">Every post design and both reels, made only from photos you approved: {{ readiness.ready }} ready for designs{% if readiness.waiting %}, {{ readiness.waiting }} still being sorted (approved photos are sorted first){% endif %}. They are made again by themselves whenever your approved photos change. For review: nothing is posted.</div>
-</div>
-<div class="card">
-  <strong>Music for reels</strong>
-  <div class="muted">Reels use the newest track you have switched on. Only a track you have the right to use in posts on Instagram and Facebook, with where it came from. With none, reels are silent.</div>
-  {% for t in tracks %}
-  <div class="row" style="margin-top:8px"><span>{{ t.title }} by {{ t.artist }}</span>
-    <span class="badge {{ 'ok' if t.active else 'blocked' }}">{{ 'on' if t.active else 'off' }}</span>
-    <span class="muted">{{ t.source }}</span>
-    <form method="post" action="/library/music/{{ t.id }}/active" class="inline"><input type="hidden" name="state" value="{{ 'off' if t.active else 'on' }}"><button class="small" type="submit">{{ 'Switch off' if t.active else 'Switch on' }}</button></form>
-  </div>
-  {% endfor %}
-  <form method="post" action="/library/music" enctype="multipart/form-data" style="margin-top:10px">
-    <label>Track (mp3, m4a, aac, wav or an audio mp4, up to 25 MB)</label><input type="file" name="file" accept=".mp3,.m4a,.aac,.wav,.mp4,audio/*" required>
-    <label>Title</label><input type="text" name="title" required>
-    <label>Artist</label><input type="text" name="artist" required>
-    <label>Where it came from (a link or the library's name)</label><input type="text" name="source" required>
-    <label>What that source allows</label><input type="text" name="terms" placeholder="for example: free for business posts on Instagram and Facebook" required>
-    <label class="row"><input type="checkbox" name="rights" value="yes" required> I have the right to use this track in posts on Instagram and Facebook</label>
-    <div class="row" style="margin-top:10px"><button class="primary" type="submit">Add track</button></div>
-  </form>
-</div>
-<div class="card">
-  <strong>Library report</strong>
-  {% if renders.report %}
-  <div class="row" style="margin-top:8px">
-    <a class="btn" href="/library/renders/{{ renders.report }}">Report</a>
-    {% if renders.sheet %}<a class="btn" href="/library/renders/{{ renders.sheet }}">Best 30 event photos</a>{% endif %}
-    {% if renders.buildings %}<a class="btn" href="/library/renders/{{ renders.buildings }}">Best 30 building photos</a>{% endif %}
-  </div>
-  <div class="muted">Made by the scanner to help you choose. Nothing on these sheets is approved or used until you approve it.</div>
-  {% else %}
-  <div class="muted">Not made yet. The scanner makes it after its next pass that finds or sorts photos.</div>
-  {% endif %}
-</div>
 {% endif %}
 {% endblock %}

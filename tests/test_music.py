@@ -189,7 +189,7 @@ class Page(IsolatedCase):
         self.assertIn("Track+not+added", r.headers["location"])
         r = self.client.post("/library/music", data=dict(RECORD, rights="yes"), files=files, follow_redirects=False)
         self.assertIn("Track+added", r.headers["location"])
-        page = self.client.get("/library?view=design").text
+        page = self.client.get("/music").text          # its own page under Photos since 2026-10-15
         self.assertIn("Night Shift by Sample Artist", page)
         self.assertIn("Music for reels", page)
 

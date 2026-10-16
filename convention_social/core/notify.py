@@ -4,9 +4,10 @@ Only fires when NTFY_TOPIC is set and the caller is live; dry runs and test
 processes never reach the network. Email remains the alert of record.
 
 What pings Chris (2026-10-11, "I haven't received any ntfy"): a post ready to
-approve (the content agent), a post that went out (the publisher), the
-watchdog's alerts, the morning brief, and the test button on the Keys page.
-Each one opens the right dashboard page when tapped.
+approve (the content agent, a designed draft, a photo from the phone), a post
+that went out (the publisher), the watchdog's alerts, the morning brief, and
+the test button on the Keys page. Each one opens the right dashboard page when
+tapped; a draft's ping carries Post now, Follow the pace and Skip (2026-10-15).
 """
 from __future__ import annotations
 
@@ -32,42 +33,57 @@ def link(path: str = "/") -> str:
 NOT_A_FAILURE = ("sent", "dry run: nothing sent", "no push from a test")
 
 
-def approve_actions(qid: int, token: str) -> str:
-    """The ntfy `Actions` header for a draft the art director passed (Chris, 2026-10-13: Approve on the ping).
-    Two buttons: Approve, an http POST carrying the signed single-use token in its body (a GET on that
-    address approves nothing), and Open, the draft page. The forms are the ones docs.ntfy.sh/publish
-    documents: `http, <label>, <url>, method=, headers.<h>=, body=, clear=true; view, <label>, <url>`.
-    Behind Cloudflare Access (2026-10-15) only a browser gets in: the ntfy app's own POST would meet the sign-in
-    and look done when nothing was approved, so Approve opens the approve page (one more tap there)."""
+CHOICES = (("now", "Post now"), ("pace", "Follow the pace"), ("skip", "Skip"))
+
+
+def _choice(qid: int, token: str, how: str, label: str) -> str:
+    """One of his choices as an ntfy action. On the Tailscale address, an `http` action: a POST carrying the signed
+    single-use token in its body (a GET on that address decides nothing), in the form docs.ntfy.sh/publish documents:
+    `http, <label>, <url>, method=, headers.<h>=, body=, clear=true`. Behind Cloudflare Access (2026-10-15) only a
+    browser gets in: the ntfy app's own POST would meet the sign-in and look done when nothing was decided, so the
+    button opens the choice page in the browser instead (one more tap there)."""
     if access.through_access(link("/")):
-        return (f"view, Approve, {link(f'/queue/{qid}/approve-by-token?token={token}')}, clear=true; "
-                f"view, Open, {link(f'/queue/{qid}')}")
-    return (f"http, Approve, {link(f'/queue/{qid}/approve-by-token')}, method=POST, "
-            f"headers.Content-Type=application/x-www-form-urlencoded, body='token={token}', clear=true; "
-            f"view, Open, {link(f'/queue/{qid}')}")
+        return f"view, {label}, {link(f'/queue/{qid}/choose-by-token/{how}?token={token}')}, clear=true"
+    return (f"http, {label}, {link(f'/queue/{qid}/choose-by-token/{how}')}, method=POST, "
+            f"headers.Content-Type=application/x-www-form-urlencoded, body='token={token}', clear=true")
+
+
+def choice_actions(qid: int, token: str) -> str:
+    """The ntfy `Actions` header for a draft the art director passed (Chris, 2026-10-15): his three choices, the most
+    ntfy shows. Post now (posted at once: Buffer's shareNow), Follow the pace (the next open Instagram slot, one post a
+    slot) and Skip (set aside, its photos back in the rotation). A tap on the notification itself opens the draft
+    (`Click`), where a reel plays with its sound. One token: the first choice made spends it."""
+    return "; ".join(_choice(qid, token, how, label) for how, label in CHOICES)
 
 
 def team_actions(qid: int, token: str) -> str:
-    """A photo from Chris's team (2026-10-15, "Ping me, one tap"): Approve and Skip, each an http POST with the same signed
-    single-use token in its body (one of them works, once), and Open."""
-    form = "headers.Content-Type=application/x-www-form-urlencoded"
-    return (f"http, Approve, {link(f'/queue/{qid}/team-approve-by-token')}, method=POST, {form}, body='token={token}', clear=true; "
-            f"http, Skip, {link(f'/queue/{qid}/skip-by-token')}, method=POST, {form}, body='token={token}', clear=true; "
-            f"view, Open, {link(f'/queue/{qid}')}")
+    """A photo from Chris's team (2026-10-15, "Ping me, one tap"): Approve (his Post now: a Story, right away) and Skip,
+    through the drafts' own choice route (one token; the first choice made spends it), and Open."""
+    return f"{_choice(qid, token, 'now', 'Approve')}; {_choice(qid, token, 'skip', 'Skip')}; {open_action(qid)}"
 
 
 def feed_actions(qid: int, token: str, live_link: str | None) -> str:
-    """An instant photo's Story is up: open it, Also post to the feed (an http POST with a signed single-use token), the
-    dashboard."""
-    form = "headers.Content-Type=application/x-www-form-urlencoded"
+    """An instant photo's Story is up: open it, Also post to the feed, the dashboard. On the Tailscale address Also post
+    to the feed is an http POST with a signed single-use token; behind Cloudflare Access only a browser gets in, so it
+    opens the draft page, where the same button is (the ntfy app's own POST would meet the sign-in, 2026-10-15)."""
     first = f"view, Instagram, {live_link}; " if live_link else ""
-    return (f"{first}http, Also post to the feed, {link(f'/queue/{qid}/feed-by-token')}, method=POST, {form}, body='token={token}', "
-            f"clear=true; view, Dashboard, {link(f'/queue/{qid}')}")
+    if access.through_access(link("/")):
+        feed = f"view, Also post to the feed, {link(f'/queue/{qid}')}"
+    else:
+        feed = (f"http, Also post to the feed, {link(f'/queue/{qid}/feed-by-token')}, method=POST, "
+                f"headers.Content-Type=application/x-www-form-urlencoded, body='token={token}', clear=true")
+    return f"{first}{feed}; view, Dashboard, {link(f'/queue/{qid}')}"
 
 
 def open_action(qid: int) -> str:
-    """Open only: the art director did not pass the draft (or did not look), so he looks himself."""
+    """Open only: the draft page (the doctor's ping after it remade a reel: he looks before he chooses)."""
     return f"view, Open, {link(f'/queue/{qid}')}"
+
+
+def look_actions(qid: int, token: str) -> str:
+    """The art director did not pass the draft (or did not look): Open, so he looks himself before anything can go
+    out, and Skip."""
+    return f"{open_action(qid)}; " + _choice(qid, token, "skip", "Skip")
 
 
 def card_link(qid: int, token: str) -> str | None:
@@ -82,7 +98,7 @@ def push_result(title: str, message: str, *, dry_run: bool = True, priority: str
                 click: str | None = None, conn=None, agent: str = "suite", actions: str | None = None,
                 attach: str | None = None, filename: str | None = None) -> str:
     """Sends, and says what happened: "sent", or why nothing was. `click` is the address the phone
-    opens when the notification is tapped; `actions` the ntfy Actions header (approve_actions); `attach`
+    opens when the notification is tapped; `actions` the ntfy Actions header (choice_actions); `attach`
     a picture's address the phone fetches itself (nothing is copied to ntfy). With `conn`, a push that did
     not go (live, and not from a test) is recorded once as an `ntfy` error for the Agents page and the
     watchdog's mail: a failed ping used to be a False nobody read (2026-10-13)."""

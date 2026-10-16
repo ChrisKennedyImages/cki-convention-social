@@ -1,0 +1,13 @@
+<div class="card alert">
+  <div class="row"><strong>{{ g.title }}</strong>{% if g.n > 1 %}<span class="badge failed">{{ g.n }} times</span>{% endif %}<span class="muted">{{ g.ts|local }}</span></div>
+  <div class="alert-msg">{{ g.message }}</div>
+  <div class="row">
+    {% if g.fix and g.fix.href %}<a class="btn primary" href="{{ g.fix.href }}">{{ g.fix.label }}</a>
+    {% elif g.fix and g.fix.action %}<form method="post" action="/errors/fix" class="inline"><input type="hidden" name="kind" value="{{ g.kind }}"><input type="hidden" name="back" value="{{ back }}"><button class="primary" type="submit">{{ g.fix.label }}</button></form>{% endif %}
+    <form method="post" action="/errors/ack-kind" class="inline"><input type="hidden" name="kind" value="{{ g.kind }}"><input type="hidden" name="back" value="{{ back }}"><button type="submit">{{ 'Dismiss all ' ~ g.n if g.n > 1 else 'Dismiss' }}</button></form>
+  </div>
+  {% if g['items']|length > 1 %}<details><summary>The {{ g['items']|length }} newest, one by one</summary>
+  {% for e in g['items'] %}<div class="row" style="margin-top:6px;align-items:flex-start"><span class="muted" style="flex:1">{{ e.ts|local }}, {{ e.agent }}: {{ e.message }}</span>
+    <form method="post" action="/errors/{{ e.id }}/ack" class="inline"><input type="hidden" name="back" value="{{ back }}"><button class="small" type="submit">Dismiss</button></form></div>{% endfor %}
+  </details>{% endif %}
+</div>
