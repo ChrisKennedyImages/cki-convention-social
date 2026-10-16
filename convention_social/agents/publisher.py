@@ -265,12 +265,55 @@ def door(ctx: runner.Context, row) -> Optional[tuple[str, str]]:
                 return "hold", f"The photo check could not run for photo {pid} ({type(e).__name__}: {e}). Nothing was sent."
             if not ok:
                 return "back", f"Photo {pid} can no longer be used: {why}. Pick another photo."
-    days = config.repeat_window(ctx.cfg)          # the longer of PHOTO_REPEAT_DAYS and VARIETY_DAYS (2026-10-15)
-    repeat = repeat_of(ctx.conn, row, ids, days, include_dry=ctx.dry_run)
-    if repeat:
-        pid, qid = repeat
-        return "back", f"Photo {pid} already went out as post #{qid} in the last {days} days. Pick another photo."
+    held = held_by(ctx, row, ids)
+    if held:
+        return "back", held_words(ctx, held)
     return None
+
+
+def held_by(ctx: runner.Context, row, ids: Optional[list[int]] = None) -> Optional[dict]:
+    """{photo, post, went_out} when a photo of this row is on another post that is set to go out or went out inside the
+    repeat window (the longer of PHOTO_REPEAT_DAYS and VARIETY_DAYS, 2026-10-15), else None."""
+    ids = photo_ids_of(row) if ids is None else ids
+    repeat = repeat_of(ctx.conn, row, ids or [], config.repeat_window(ctx.cfg), include_dry=ctx.dry_run)
+    if not repeat:
+        return None
+    pid, qid = repeat
+    other = db.one(ctx.conn, "SELECT status FROM content_queue WHERE id=?", (qid,))
+    went = bool(db.one(ctx.conn, "SELECT 1 FROM post_history WHERE queue_id=?", (qid,))) or (other is not None and other["status"] == "published")
+    return {"photo": pid, "post": qid, "went_out": went}
+
+
+def held_words(ctx: runner.Context, held: dict) -> str:
+    """What the door says (Chris, 2026-10-16: "Why why why is it giving me this error when nothing was posted with this
+    image!?"): "already went out ... on <date>" only when the other post did; else where the photo is, when that post goes
+    out, and the way out."""
+    from zoneinfo import ZoneInfo
+    tz = ZoneInfo(ctx.cfg.timezone)
+    pid, qid = held["photo"], held["post"]
+    other = db.one(ctx.conn, "SELECT * FROM content_queue WHERE id=?", (qid,))
+    if held["went_out"]:
+        sent = db.one(ctx.conn, "SELECT MIN(sent_at) AS s FROM post_history WHERE queue_id=?", (qid,))
+        when = (sent["s"] if sent and sent["s"] else None) or (other["published_at"] if other else None) or ""
+        try:
+            local = datetime.fromisoformat(when.replace("Z", "+00:00")).astimezone(tz)
+            on = f" on {local:%a} {local:%b} {local.day}"
+        except ValueError:
+            on = ""
+        return (f"Photo {pid} already went out as post #{qid}{on}. "
+                f"A photo goes out once inside {config.repeat_window(ctx.cfg)} days.")
+    due = due_at(other) if other is not None else None
+    if due is None and other is not None and other["scheduled_for"]:
+        try:
+            due = datetime.fromisoformat(other["scheduled_for"]).replace(tzinfo=tz)
+        except ValueError:
+            due = None
+    if due is not None:
+        local = due.astimezone(tz)
+        set_for = f", set to go out {local:%a} {local:%b} {local.day} at {pacing._clock(local.time())}"
+    else:
+        set_for = ", which is set to go out"
+    return f"Photo {pid} is already in post #{qid}{set_for}. Pull post #{qid} back to use it here, or Skip this one."
 
 
 def check_in(ctx: runner.Context, row) -> tuple[Optional[tuple[str, str]], object]:
@@ -512,8 +555,15 @@ def publish_ready(ctx: runner.Context, client: Optional[BufferClient] = None, up
         if stop:
             action, why = stop
             if action == "back":
-                ctx.conn.execute("UPDATE content_queue SET status='draft', last_error=?, updated_at=? WHERE id=?",
-                                 (why, db.utcnow(), row["id"]))
+                meta = _json(row["rule_report"], {})
+                meta = meta if isinstance(meta, dict) else {}
+                held = held_by(ctx, row)
+                if held:
+                    meta["held_by"] = held           # the draft page links the post that holds the photo (2026-10-16)
+                else:
+                    meta.pop("held_by", None)
+                ctx.conn.execute("UPDATE content_queue SET status='draft', last_error=?, rule_report=?, updated_at=? WHERE id=?",
+                                 (why, json.dumps(meta), db.utcnow(), row["id"]))
                 runner.record_error(ctx.conn, ctx.agent, "door", f"post {row['id']} went back to drafts: {why}")
                 stats["turned_back"] += 1
             else:
@@ -625,7 +675,7 @@ def due_at(row) -> Optional[datetime]:
     payload = _json(row["payload"], {}) or {}
     ids = _json(row["buffer_post_ids"], {}) or {}
     times = []
-    for net in ids if isinstance(ids, dict) else []:
+    for net in (ids if isinstance(ids, dict) and ids else payload if isinstance(payload, dict) else []):
         try:
             dt = datetime.fromisoformat(str((payload.get(net) or {}).get("dueAt") or "").replace("Z", "+00:00"))
         except (ValueError, AttributeError):
