@@ -983,6 +983,53 @@ right away.
   `scripts/go-live.sh` once on the Mini for the one-minute pickup (until then
   the inbox's ten-minute run picks the photos up).
 
+
+## 2026-10-15: his photographers send too; every instant photo is a Story
+
+Chris: "What if I have several photographers that I want to be able to share
+photos instantly?" His choices: a team member's photo comes to him as a ping
+with one tap ("Ping me, one tap"); every instant photo goes out as an
+Instagram Story, and he can promote the best to the feed ("Both"); "Up to 10
+Stories, 2 feed posts" a day across everyone. And: "Does every photographer
+need a shortcut on their phone": one Shortcut he shares as an iCloud link,
+and a private upload page for a phone without Shortcuts.
+
+- **A photo from his photographers is approved for use by his Approve.** It
+  is checked exactly like his own (Claude's final check, the art director,
+  the captions' rules, the publisher's door), then comes to him with the
+  card, Approve and Skip. Approved, it goes out as a Story right away. His
+  own sends keep posting right away, approved by his send, as Stories now.
+- Everything a photographer reads (the upload page, the Shortcut's answer,
+  the setup steps) says "Chris or Nic approves it before it goes out". Chris:
+  "It's always the both of us." Nic is not set up as an approver yet; that
+  comes when Chris sets him up.
+- **A photographer is never named in public, and never in a ping.** Their
+  first name is kept on the Mini only and shown to Chris only (the Team page,
+  the Send page); ntfy topics are not private, so a ping says "a photo from
+  your team". The site holds numbers and token hashes, never a name.
+- The Team page (Settings, beside Keys): add a photographer by first name;
+  each gets a send token of their own, shown once and kept only as its
+  SHA-256; each can be switched off, which the site honours at once; a new
+  token or a one-time phone link (7 days, works once) is shown once. The
+  team list reaches the site the moment it changes (`PUT /api/team`), with no
+  redeploy; until it does, a new token does not work there.
+- Every instant photo is an Instagram Story: a 1080 by 1920 card with the
+  photo whole, the mark and the address, no caption (`motion.story_card`,
+  Buffer's instagram type `story`). The ping and the draft page offer "Also
+  post to the feed", which makes a feed post of the same photo with its
+  captions and 4:5 card, approved by that press, posted right away.
+- The cap: at most 10 Stories and 2 feed posts a day from instant photos,
+  everyone together (`agents/team.py`). Past it a photo waits on the
+  dashboard with the plain line and the ping says so; the publisher holds
+  the cap too.
+- A phone without Shortcuts: the one-time link opens a page with one button
+  (a link preview uses nothing); the button sets an HttpOnly, Secure,
+  SameSite=Strict cookie of its own and opens the upload page
+  (eventcaliber.com/upload: one photo, a line, Send), which saves to the
+  home screen. The token never travels in an address; the page sends only
+  from the site's own origin.
+- Only Chris can do: add the photographers on the Team page; make the
+  shareable Shortcut once and share its iCloud link (docs/SETUP.md 10b).
 ## 2026-10-14: the website for three sizes
 
 Chris, on the site: About needs a real place in the navigation; the words over

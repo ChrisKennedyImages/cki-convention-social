@@ -110,8 +110,9 @@ SECTIONS = (
       ("Folders", "/library?view=folders"), ("Music", "/music"), ("Do not use", "/donotuse"), ("Drive", "/drive"))),
     ("Bookings", "/inquiries", ("/inquiries", "/bookings", "/calendar"),
      (("Requests", "/inquiries"), ("Bookings", "/bookings"), ("Calendar", "/calendar"))),
-    ("Settings", "/settings", ("/settings", "/more", "/outreach", "/scout", "/seo", "/learner", "/agents", "/buffer", "/keys", "/errors"),
-     (("Agents", "/agents"), ("Errors", "/errors"), ("Keys", "/keys"), ("Buffer", "/buffer"),
+    ("Settings", "/settings", ("/settings", "/more", "/outreach", "/scout", "/seo", "/learner", "/agents", "/buffer", "/keys", "/errors",
+                               "/team"),
+     (("Agents", "/agents"), ("Errors", "/errors"), ("Keys", "/keys"), ("Team", "/team"), ("Buffer", "/buffer"),
       ("Outreach", "/outreach"), ("Scout", "/scout"), ("Search", "/seo"), ("Learner", "/learner"))),
 )
 # the Settings page, its pages in two groups (2026-10-15: "System pages grouped")
@@ -119,6 +120,7 @@ SETTINGS_GROUPS = (
     ("System", (("/agents", "Agents", "Every agent: run now, live or practice run."),
                 ("/errors", "Errors", "What the agents could not do, each with its fix where there is one."),
                 ("/keys", "Keys", "Accounts, addresses, passwords and the numbers the suite uses."),
+                ("/team", "Team", "The photographers who send photos from the event, each with a token of their own."),
                 ("/buffer", "Buffer", "Link Instagram, pick the board, check the reel format."))),
     ("Finding work", (("/outreach", "Outreach", "Notes to event organizers, each sent only when you approve it."),
                       ("/scout", "Scout", "Upcoming conventions and conferences it found, with sources."),
@@ -215,6 +217,7 @@ def queue_view(conn, row) -> dict:
             "photo_checks": photo_checks, "ineligible": [c for c in photo_checks if not c[1]],
             "video": any(str(x).lower().endswith(".mp4") for x in renders.get("9:16") or []), "cover": bool(renders.get("cover")),
             "music": music.credit(conn, meta.get("music")),          # the track the reel was made with, named under its player
+            "instant_format": meta.get("format", "") if meta.get("instant") else "",   # an instant photo's Story or feed post (2026-10-15)
             "renders": {a: list(range(1, len(ps) + 1)) for a, ps in renders.items()
                         if a not in NOT_THUMBS and (a != "2:3" or "pinterest" in on)}}     # the pin card only while Pinterest is on
 
@@ -690,6 +693,10 @@ def create_app() -> FastAPI:
             return "ineligible"
         if not item["targets"]:
             return "notargets"
+        from ..agents import publisher, team
+        fmt = publisher.instant_format(row)
+        if fmt and not team.room_for(conn, fmt)[0]:
+            return f"cap_{fmt}"                  # the day's 10 Stories or 2 feed posts from instant photos are used (2026-10-15)
         try:
             meta = json.loads(row["rule_report"] or "{}")
         except ValueError:
@@ -771,11 +778,15 @@ def create_app() -> FastAPI:
     APPROVED_WORDS = {"blocked": "Not approved: a caption still breaks a rule after the suite rewrote it. It tries again on its next run.",
                       "mend_failed": "Not approved: a caption breaks a rule and the suite could not rewrite it just now. Its next run tries again.",
                       "ineligible": "Not approved: a photo in it can no longer be used. Open the draft.",
-                      "notargets": "Not approved: no network is picked for it. Open the draft."}
+                      "notargets": "Not approved: no network is picked for it. Open the draft.",
+                      "cap_story": "Not approved: today's 10 Stories from instant photos are used, everyone together. It waits; approve it again tomorrow.",
+                      "cap_feed": "Not approved: today's 2 feed posts from instant photos are used, everyone together. It waits; approve it again tomorrow."}
     TOKEN_REFUSALS = {"blocked": "A caption still breaks a rule after the suite rewrote it; it tries again on its next run. Open the draft to see it.",
                       "mend_failed": "A caption breaks a rule and the suite could not rewrite it just now. Open the draft to see it.",
                       "ineligible": "A photo in it can no longer be used. Open the draft.",
-                      "notargets": "No network is picked for it. Open the draft."}
+                      "notargets": "No network is picked for it. Open the draft.",
+                      "cap_story": "Today's 10 Stories from instant photos are used, everyone together. It waits; approve it again tomorrow.",
+                      "cap_feed": "Today's 2 feed posts from instant photos are used, everyone together. It waits; approve it again tomorrow."}
 
     def goes_out_words(conn, row) -> str:
         from ..agents import publisher
@@ -898,8 +909,9 @@ def create_app() -> FastAPI:
         if row is None or not approve_token.check(conn, row, name[:-4])[0]:
             raise HTTPException(404)
         renders = json.loads(row["render_paths"] or "{}")
-        # a reel's own cover first (2026-10-15: the ping showed the reel's Pinterest card), else the post's card
-        for aspect in (("cover", "4:5", "2:3") if renders.get("9:16") else ("4:5", "2:3", "cover")):
+        # a reel's own cover first (2026-10-15: the ping showed the reel's Pinterest card); an instant photo's Story (the
+        # card that goes out, 2026-10-15); else the post's card
+        for aspect in (("cover", "4:5", "2:3") if renders.get("9:16") else ("story", "4:5", "2:3", "cover")):
             paths = renders.get(aspect) or []
             if paths and inside_data_root(Path(paths[0])):
                 return FileResponse(paths[0], media_type=MEDIA_TYPES.get(Path(paths[0]).suffix.lower(), "image/jpeg"))
@@ -1785,9 +1797,10 @@ def create_app() -> FastAPI:
         config.write_env({"DASHBOARD_PASSWORD_HASH": auth.hash_password(password)})
         return RedirectResponse("/keys?msg=password+changed", status_code=303)
 
-    from . import learner_seo_routes, scout_outreach_routes
+    from . import learner_seo_routes, scout_outreach_routes, team_routes
     learner_seo_routes.register(app, require_user, conn_dep, render)
     scout_outreach_routes.register(app, require_user, conn_dep, render)
+    team_routes.register(app, require_user, conn_dep, render)
     return app
 
 

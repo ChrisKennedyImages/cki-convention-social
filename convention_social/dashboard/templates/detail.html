@@ -9,7 +9,13 @@
                 'mended': ('A caption broke a rule that came after it was written; the suite rewrote it. Nothing to fix.', ''),
                 'mend_failed': ('A caption breaks a rule, and the suite could not rewrite the caption just now (the API or the network). Its next run tries again. Nothing for you to do.', 'bad'),
                 'ineligible': ('Not approved: a photo in it can no longer be used.', 'bad'),
-                'notargets': ('Not approved: pick at least one place to post.', 'bad')} %}
+                'notargets': ('Not approved: pick at least one place to post.', 'bad'),
+                'cap_story': ("Not approved: today's 10 Stories from instant photos are used, everyone together. It waits; approve it again tomorrow.", 'bad'),
+                'cap_feed': ("Not approved: today's 2 feed posts from instant photos are used, everyone together. It waits; approve it again tomorrow.", 'bad'),
+                'feed': ('Also going to the feed now: a post of its own, approved by you.', ''),
+                'feed_full': ("Not posted to the feed: today's 2 feed posts from instant photos are used, everyone together.", 'bad'),
+                'feed_dup': ('This photo is already on its way to the feed.', 'bad'),
+                'feed_no': ('Only an approved Story of an instant photo can also go to the feed.', 'bad')} %}
 {% if msg == 'approved' %}<div class="msg">Approved. {{ goes_out }}</div>
 {% elif msg in notes %}<div class="msg {{ notes[msg][1] }}">{{ notes[msg][0] }}</div>{% endif %}
 <a class="back" href="/">Back to Today</a>
@@ -49,6 +55,11 @@
   {% else %}<span class="muted" style="flex:1 1 200px">A practice run: posting was off when it was approved. It goes out when the publisher is switched on.</span>
   <form method="post" action="/queue/{{ item.id }}/requeue" class="inline"><button type="submit">Back to drafts</button></form>
   {% endif %}
+</div>
+{% endif %}
+{% if item.instant_format == 'story' and item.status in ('approved', 'scheduled', 'published', 'would_publish') %}
+<div class="card row"><span class="muted" style="flex:1 1 200px">An instant photo, out as an Instagram Story. The best can also go to the feed: 2 a day from instant photos, everyone together.</span>
+  <form method="post" action="/queue/{{ item.id }}/feed" class="inline"><button class="primary" type="submit">Also post to the feed</button></form>
 </div>
 {% endif %}
 {% if item.mended %}<div class="card muted">Captions rewritten by the suite ({{ item.mended.by }}, {{ item.mended.at[:10] }} {{ item.mended.at[11:16] }}): {% for n, why in item.mended.fixed.items() %}{{ n }} {{ why|join('; ') }}{{ '. ' if not loop.last else '.' }}{% endfor %}{% if item.mended.card %} {{ item.mended.card|capitalize }}.{% endif %}</div>{% endif %}

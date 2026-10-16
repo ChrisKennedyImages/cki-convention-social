@@ -132,7 +132,7 @@ def ensure_thumb(row) -> Optional[Path]:
 
 
 def keep(conn: sqlite3.Connection, data: bytes, note: str = "", *, now: Optional[str] = None, via: str = VIA_PAGE,
-         remote_id: Optional[str] = None) -> int:
+         remote_id: Optional[str] = None, sender_id: Optional[int] = None) -> int:
     """The picture and the note, kept; the send's id. Refuses what is not a photo, or too small for a post. `via` and
     `remote_id`: a send from the share sheet, by its name at the site."""
     register_heif()
@@ -174,7 +174,7 @@ def keep(conn: sqlite3.Connection, data: bytes, note: str = "", *, now: Optional
     conn.execute("UPDATE drive_folders SET image_count = (SELECT COUNT(*) FROM photos WHERE folder_id=? AND trashed=0) WHERE drive_id=?",
                  (FOLDER_ID, FOLDER_ID))
     return db.insert(conn, "phone_sends", photo_id=pid, note=note, status="pending", via=via, remote_id=remote_id,
-                     created_at=now, updated_at=now)
+                     sender_id=sender_id, created_at=now, updated_at=now)
 
 
 SEND_SQL = ("SELECT s.*, p.drive_id, p.local_path, p.width, p.height FROM phone_sends s JOIN photos p ON p.id = s.photo_id ")
@@ -193,7 +193,8 @@ def waiting(conn: sqlite3.Connection) -> int:
 def recent(conn: sqlite3.Connection, n: int = 20) -> list[dict]:
     """For the page: the latest sends, newest first, each with a line that says where it stands."""
     out = []
-    for r in db.rows(conn, "SELECT s.*, p.drive_id, p.local_path, p.width, p.height, q.status AS queue_status FROM phone_sends s "
+    for r in db.rows(conn, "SELECT s.*, p.drive_id, p.local_path, p.width, p.height, q.status AS queue_status, "
+                           "q.last_error AS queue_error FROM phone_sends s "
                            "JOIN photos p ON p.id = s.photo_id LEFT JOIN content_queue q ON q.id = s.queue_id ORDER BY s.id DESC LIMIT ?", (n,)):
         d = dict(r)
         d["line"] = {"pending": "waiting its turn: sorted, checked and drafted in a few minutes; your phone gets a ping",
@@ -201,12 +202,16 @@ def recent(conn: sqlite3.Connection, n: int = 20) -> list[dict]:
                      "drafted": f"drafted as post #{d['queue_id']}; approve it there or on the ping",
                      "failed": f"not drafted: {plain(d['error'])}"}[d["status"]]
         if d.get("via") == VIA_SHARE:
-            d["line"] = {"pending": "from the share sheet, waiting its turn: checked in a few minutes; your phone gets a ping",
-                         "drafting": "from the share sheet, being checked now; your phone gets a ping",
-                         "failed": f"from the share sheet, not posted: {plain(d['error'])}"}.get(
-                d["status"], f"from the share sheet, approved by your send as post #{d['queue_id']}"
+            from . import team
+            source = f"from {team.name_of(conn, d['sender_id'])}" if d.get("sender_id") else "from the share sheet"   # for Chris only
+            approved = "approved by you" if d.get("sender_id") else "approved by your send"
+            d["line"] = {"pending": f"{source}, waiting its turn: checked in a few minutes; your phone gets a ping",
+                         "drafting": f"{source}, being checked now; your phone gets a ping",
+                         "failed": f"{source}, not posted: {plain(d['error'])}"}.get(
+                d["status"], f"{source}, {approved} as post #{d['queue_id']}"
                 if d.get("queue_status") not in (None, "draft", "rejected")
-                else f"from the share sheet, drafted as post #{d['queue_id']} and waiting for your Approve")
+                else f"{source}, waits as post #{d['queue_id']}: {plain(d['queue_error'])}" if d.get("queue_error")
+                else f"{source}, drafted as post #{d['queue_id']} and waiting for your Approve")
         out.append(d)
     return out
 
@@ -240,7 +245,12 @@ def plain(why: str) -> str:
     why = re.sub(r"shows personal details: ([a-z_, ]+)",
                  lambda m: "it shows " + " and ".join(DETAIL_WORDS.get(d.strip(), d.strip().replace("_", " ")) for d in m.group(1).split(",")), why)
     why = re.sub(r"\b(instagram|facebook|pinterest)\b", lambda m: m.group(1).capitalize(), why)
-    return why[0].lower() + why[1:] if why.startswith("The ") else why
+    return why[0].lower() + why[1:] if why.startswith(("The ", "Today's ")) else why
+
+
+def whose(send) -> str:
+    """How a ping speaks of a send: his own, or one from his team (never the photographer's name: ntfy is not private)."""
+    return "A photo from your team, sent at" if "sender_id" in send.keys() and send["sender_id"] else "The photo you sent at"
 
 
 def tell(ctx: runner.Context, title: str, message: str, **kw) -> bool:
@@ -254,8 +264,8 @@ def _failed(ctx: runner.Context, send, why: str, *, queue_id: Optional[int] = No
     _status(ctx.conn, send["id"], "failed", queue_id=queue_id, error=why)
     runner.record_error(ctx.conn, ctx.agent, "send", f"The photo you sent at {send['created_at'][11:16]} UTC was not drafted: {why}")
     if via_of(send) == VIA_SHARE:
-        tell(ctx, f"{ctx.cfg.brand_name}: your photo was not posted",
-             f"The photo you sent at {local_time(ctx, send['created_at'])} was not posted: {plain(why)}. Tap to see it.",
+        tell(ctx, f"{ctx.cfg.brand_name}: {'a photo from your team' if send['sender_id'] else 'your photo'} was not posted",
+             f"{whose(send)} {local_time(ctx, send['created_at'])} was not posted: {plain(why)}. Tap to see it.",
              click=notify.link(f"/queue/{queue_id}" if queue_id else "/send"))
     return f"send #{send['id']} not drafted: {why}"
 
@@ -318,16 +328,24 @@ def draft_send(ctx: runner.Context, send, *, check_client=None, drafter=None, ar
     row["last_use"] = None
     today = datetime.now(ZoneInfo(ctx.cfg.timezone)).date()
     shared = via_of(send) == VIA_SHARE
+    from_team = shared and bool(send["sender_id"])
+    instant = {"instant": True, "format": "story"} if shared else {}       # every instant photo goes out as a Story (2026-10-15)
     qid, art, line = content.make_draft(
         ctx, today, [(row, data)], "single", want="event", kind_used="event", asked="single", track=None, drafter=drafter,
-        art_client=art_client, why="sent from your share sheet" if shared else "sent from your phone", note=send["note"] or "",
-        extra_meta={"source": VIA_SHARE if shared else "phone", "asap": True, "note": send["note"] or "", "send_id": send["id"]},
+        art_client=art_client, why="sent from your team" if from_team else "sent from your share sheet" if shared else "sent from your phone",
+        note=send["note"] or "",
+        extra_meta={"source": "team" if from_team else VIA_SHARE if shared else "phone", "asap": True, "note": send["note"] or "",
+                    "send_id": send["id"], **instant},
         ping=(f"{ctx.cfg.brand_name}: your photo from the floor, a post to approve",
               "A single post for today from the photo you sent. Post now and it goes out at once, or follow the pace, or "
               "skip. Tap to see it."),
         quiet=shared)                         # a send from the share sheet is answered below, once it is approved or stopped
     if art.get("verdict") == "reject":
         return _failed(ctx, send, f"the art director turned it back: {art.get('notes', '')}", queue_id=qid)
+    if shared:
+        add_story(ctx, qid, row, data)
+    if from_team:
+        return ask_chris(ctx, send, qid, art, line)
     if shared:
         return approve_sent(ctx, send, qid, art, line)
     _status(conn, send["id"], "drafted", queue_id=qid)
@@ -344,6 +362,48 @@ def where_words(row) -> str:
         nets = []
     names = [n.capitalize() for n in nets] or ["Instagram"]
     return names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1]
+
+
+def add_story(ctx: runner.Context, qid: int, row: dict, data: bytes) -> str:
+    """The Story card for an instant photo (render_paths "story", 1080 by 1920): the photo whole, the mark, the address."""
+    from ..render import meta as image_meta
+    from ..render import motion
+    im = ImageOps.exif_transpose(Image.open(io.BytesIO(data))).convert("RGB")
+    day = datetime.now(ZoneInfo(ctx.cfg.timezone)).date().isoformat()
+    path = motion.story_card(motion.Shot(im, "", ""), out=ctx.cfg.data_root / "renders" / "posts" / day / f"{qid}-story.jpg",
+                             site=ctx.cfg.brand_domain or "eventcaliber.com", meta=image_meta.for_photo(ctx.conn, row))
+    renders = json.loads(db.one(ctx.conn, "SELECT render_paths FROM content_queue WHERE id=?", (qid,))["render_paths"] or "{}")
+    renders["story"] = [str(path)]
+    ctx.conn.execute("UPDATE content_queue SET render_paths=? WHERE id=?", (json.dumps(renders), qid))
+    return str(path)
+
+
+def ask_chris(ctx: runner.Context, send, qid: int, art: dict, line: str) -> str:
+    """A photo from Chris's team (2026-10-15, his choice "Ping me, one tap"): drafted and checked on the same road as his
+    own, then it comes to him with the card, Approve and Skip. Approved, it goes out as a Story right away. The ping never
+    names the photographer (ntfy topics are not private); the Send page and the draft say who, for him only."""
+    conn = ctx.conn
+    _status(conn, send["id"], "drafted", queue_id=qid)
+    at, brand, page = local_time(ctx, send["created_at"]), ctx.cfg.brand_name, notify.link(f"/queue/{qid}")
+    if ctx.dry_run:
+        tell(ctx, f"{brand}: dry run, a photo from your team",
+             f"Dry run: a photo from your team, sent at {at}, was drafted as post {qid} and not posted. The content lane is in dry "
+             "run, so Claude did not check it, and it cannot be approved without that check. Tap to see it.", click=page)
+        return f"{line}; from the team, dry run: the phone was told"
+    row = db.one(conn, "SELECT * FROM content_queue WHERE id=?", (qid,))
+    token = approve_token.issue(conn, row)
+    card = {"attach": notify.card_link(qid, token), "filename": f"post-{qid}.jpg"}
+    if art.get("verdict") == "pass":
+        tell(ctx, f"{brand}: a photo from your team to approve",
+             f"A photo from your team, sent at {at}, passed the checks. Approve and it goes out as an Instagram Story right away; "
+             "Skip and it does not. Tap to see it.", click=page, actions=notify.team_actions(qid, token), **card)
+    else:
+        why = ("the art director could not look at it this time" if art.get("verdict") == "not reviewed"
+               else f"the art director did not pass it: {plain(art.get('notes') or str(art.get('verdict')))}")
+        tell(ctx, f"{brand}: a photo from your team to look at",
+             f"A photo from your team, sent at {at}, is drafted as post {qid}: {why}. Open it to decide. Tap to see it.",
+             click=page, actions=notify.open_action(qid), **card)
+    return f"{line}; from the team: waiting for his Approve"
 
 
 def approve_sent(ctx: runner.Context, send, qid: int, art: dict, line: str) -> str:
@@ -377,6 +437,14 @@ def approve_sent(ctx: runner.Context, send, qid: int, art: dict, line: str) -> s
         why = stop[1]
         conn.execute("UPDATE content_queue SET last_error=?, updated_at=? WHERE id=?", (why, db.utcnow(), qid))
         return _failed(ctx, send, why, queue_id=qid)
+    from . import team
+    room, why = team.room_for(conn, "story")
+    if not room:
+        conn.execute("UPDATE content_queue SET last_error=?, updated_at=? WHERE id=?", (why, db.utcnow(), qid))
+        _status(conn, send["id"], "drafted", queue_id=qid)
+        tell(ctx, f"{brand}: your photo waits", f"The photo you sent at {at} passed the checks but waits as post {qid}: {why}. "
+             "Tap to see it.", click=notify.link(f"/queue/{qid}"))
+        return f"{line}; waits: {why}"
     meta = json.loads(row["rule_report"] or "{}")
     meta["approved_by"] = VIA_SHARE
     now = db.utcnow()
@@ -390,12 +458,12 @@ def approve_sent(ctx: runner.Context, send, qid: int, art: dict, line: str) -> s
     if settings.dry_run(conn, "publisher"):
         tell(ctx, f"{brand}: dry run, your photo was not posted",
              f"Dry run: the photo you sent at {at} passed the checks and is approved by your send as post {qid}, but the "
-             f"publisher is in dry run, so nothing was posted. Live, it would have gone out on {where} right away. "
+             f"publisher is in dry run, so nothing was posted. Live, it would have gone out as an Instagram Story right away. "
              "Tap to see it.", **card)
     else:
         tell(ctx, f"{brand}: your photo is going out now",
-             f"The photo you sent at {at} passed the checks and is going to {where} now. You get a ping when it is up, "
-             "with the link; to take it down, delete it there. Tap to see it.", **card)
+             f"The photo you sent at {at} passed the checks and is going to {where} now, as a Story. You get a ping when it is "
+             "up, with the link and Also post to the feed; to take it down, delete it there. Tap to see it.", **card)
     runner.start_agent("publisher", wait=True)        # handed to Buffer now (shareNow), not on the publisher's next ten minutes
     return f"{line}; approved by your send, going out now"
 
@@ -409,8 +477,10 @@ def content_ping(conn, row, art) -> dict:
 
 def say_refused(ctx: runner.Context, sent: dict, why: str) -> None:
     runner.record_error(ctx.conn, ctx.agent, "send", f"A photo from the share sheet was not kept: {why}")
-    tell(ctx, f"{ctx.cfg.brand_name}: your photo was not posted",
-         f"The photo you sent at {local_time(ctx, str(sent.get('received_at') or ''))} was not posted: {plain(why)}.",
+    own = str(sent.get("sender") or "chris") == "chris"
+    tell(ctx, f"{ctx.cfg.brand_name}: {'your photo' if own else 'a photo'} was not posted",
+         f"{'The photo you sent at' if own else 'A photo sent at'} {local_time(ctx, str(sent.get('received_at') or ''))} "
+         f"was not posted: {plain(why)}.",
          click=notify.link("/send"))
 
 
@@ -439,6 +509,15 @@ def pull(ctx: runner.Context, api) -> str:
         if db.one(conn, "SELECT 1 FROM phone_sends WHERE remote_id=?", (rid,)):
             done.append(rid)                              # kept on an earlier pull; the delete there did not go through
             continue
+        sender, member = str(sent.get("sender") or "chris"), None
+        if sender != "chris":
+            from . import team
+            member = team.member_for(conn, sender)
+            if member is None:                            # fail closed: nobody on the team, or switched off, sends
+                say_refused(ctx, sent, "it came from a sender who is not on your team, or who is switched off")
+                refused += 1
+                done.append(rid)
+                continue
         try:
             data = api.send_bytes(rid)
         except Exception as e:  # noqa: BLE001  left at the site for the next pull
@@ -446,7 +525,7 @@ def pull(ctx: runner.Context, api) -> str:
             left += 1
             continue
         try:
-            keep(conn, data, str(sent.get("note") or ""), via=VIA_SHARE, remote_id=rid)
+            keep(conn, data, str(sent.get("note") or ""), via=VIA_SHARE, remote_id=rid, sender_id=member["id"] if member else None)
             kept += 1
         except Refused as e:
             say_refused(ctx, sent, str(e))

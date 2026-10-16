@@ -66,6 +66,10 @@ class SiteAPI:
         r = self.transport("GET", f"{self.base}/api/sends/{send_id}", {"Authorization": f"Bearer {self.token}"}, None)
         return r.content
 
+    def put_team(self, body: dict) -> dict:
+        """The team at the site (2026-10-15): numbers, token hashes, on or off, one-time link hashes; never a name."""
+        return self._call("PUT", "/api/team", body)
+
     def ack_sends(self, ids: list[str]) -> int:
         """Kept on the Mini: deleted at the site."""
         return int(self._call("POST", "/api/sends/ack", {"ids": ids}).get("deleted") or 0) if ids else 0

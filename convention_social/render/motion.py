@@ -290,6 +290,42 @@ def single_post(shot: Shot, copy: MotionCopy, *, out: Path, aspect: str = "4:5",
     return save(grain_still(img), out, meta)
 
 
+STORY_SIZE = (1080, 1920)
+STORY_SAFE = 250              # Instagram lays its own bar over about this much at the top, and the reply box at the bottom
+
+
+def story_card(shot: Shot, *, out: Path, site: str = "eventcaliber.com", meta: Optional[ImageMeta] = None) -> Path:
+    """An Instagram Story from one instant photo (2026-10-15). Chris chose the Slit Scan look for it: the photo whole and
+    as large as the frame lets it be, its most colourful row drawn out into streaks above and below (#79's technique,
+    render/bold.py: picture, fit_box, slit, streaks, place, mark), the mark and the address on black tape, both inside
+    the part of the Story Instagram leaves clear (its own bar above, the reply box below). No caption and no room."""
+    from . import bold
+    check_copy(site)
+    w, h = STORY_SIZE
+    img = Image.new("RGB", (w, h), K)
+    im = bold.picture(shot)
+    top, bottom = STORY_SAFE + 110, h - STORY_SAFE - 110      # the mark's row above the photo, the address's below
+    pw, ph = bold.fit_box(im.width / im.height, w, bottom - top)
+    px, py = (w - pw) // 2, top + (bottom - top - ph) // 2
+    gap = 10
+    row = bold.slit(im, across=True)
+    line = im.crop((0, row, im.width, row + 1)).resize((pw, 1), Image.LANCZOS)
+    img.paste(bold.streaks(line, pw, py - gap, "up"), (px, 0))
+    img.paste(bold.streaks(line, pw, h - py - ph - gap, "down"), (px, py + ph + gap))
+    bold.place(img, im, px, py, pw, ph)
+    d = ImageDraw.Draw(img)
+    pad = 16
+    mw, mh = bold.mark(Image.new("RGB", (10, 10)), 0, 0, 40, True)[2:]
+    mx, my = (w - mw) // 2, STORY_SAFE + 24
+    d.rectangle([mx - pad, my - pad, mx + mw + pad, my + mh + pad], fill=K)
+    bold.mark(img, mx, my, 40, True)
+    sw = mono_w(d, site, 28, 0.16)
+    sy = h - STORY_SAFE - 70
+    d.rectangle([(w - sw) / 2 - pad, sy - pad, (w + sw) / 2 + pad, sy + 34 + pad], fill=K)
+    mono(d, ((w - sw) / 2, sy), site, 28, W, 0.16)
+    return save(img, out, meta)
+
+
 def spotlight_post(shots: Sequence[Shot], copy: MotionCopy, *, out: Path, index: int = 2, official: bool = False,
                    meta: Optional[ImageMeta] = None, counter: str = "") -> Path:
     _check(shots, copy, official)

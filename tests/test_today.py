@@ -510,12 +510,14 @@ class Tabs(Case):
             self.assertEqual(self.tabs(self.client.get(path).text), ["Today", "Photos", "Bookings", "Settings"], path)
         page = self.client.get("/settings").text
         system, work = page.index(">System<"), page.index(">Finding work<")
-        for href in ("/agents", "/errors", "/keys", "/buffer"):
+        for href in ("/agents", "/errors", "/keys", "/team", "/buffer"):      # Team (2026-10-15, his photographers): a system page
             self.assertTrue(system < page.index(f'href="{href}"', system) < work, href)
         for href in ("/outreach", "/scout", "/seo", "/learner"):
             self.assertGreater(page.index(f'href="{href}"', work), work, href)
         chips = re.search(r'<div class="chips">(.*?)</div>', self.client.get("/agents").text, re.S).group(1)
-        self.assertEqual(re.findall(r">([A-Za-z ]+)</a>", chips), ["Agents", "Errors", "Keys", "Buffer", "Outreach", "Scout", "Search", "Learner"])
+        # deliberate change, 2026-10-15: the Team page (his photographers) sits under Settings, after Keys
+        self.assertEqual(re.findall(r">([A-Za-z ]+)</a>", chips),
+                         ["Agents", "Errors", "Keys", "Team", "Buffer", "Outreach", "Scout", "Search", "Learner"])
 
     def test_every_alert_has_its_fix_where_one_exists(self):
         pid = self.photo(1)

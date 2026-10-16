@@ -583,6 +583,12 @@ def page_dates(out: Path, rels: dict[str, str], *, preview: bool, today: Optiona
     return dates
 
 
+def mark_file(mark_key: str, brand: str) -> str:
+    """The mark as its own file (/assets/mark.svg: the favicon, the logo search engines read, the upload page's icon). A
+    file needs the SVG namespace that an inline <svg> does without; without it a browser draws nothing (2026-10-15)."""
+    return marks.mark(mark_key, brand, light="#0A0A0B", size=64, word=False).replace("<svg ", '<svg xmlns="http://www.w3.org/2000/svg" ', 1)
+
+
 def build(conn: Optional[sqlite3.Connection], photos: SitePhotos, *, out: Path = DIST, preview: bool = False,
           head_extra: str = "") -> Path:
     o = offer.load()
@@ -608,7 +614,7 @@ def build(conn: Optional[sqlite3.Connection], photos: SitePhotos, *, out: Path =
     (assets / "site.css").write_text(theme.CSS)
     (assets / "site.js").write_text(theme.JS)
     mark_key = (config.getenv("BRAND_MARK") or "aperture").lower()       # Chris chose Aperture, 2026-10-10
-    (assets / "mark.svg").write_text(marks.mark(mark_key, brand, light="#0A0A0B", size=64, word=False))
+    (assets / "mark.svg").write_text(mark_file(mark_key, brand))
     mark_svg = marks.mark(mark_key, brand, size=40)
     e = html.escape
     hero, frames, stack, venues = "", [], [], []

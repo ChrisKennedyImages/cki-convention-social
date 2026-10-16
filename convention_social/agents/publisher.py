@@ -138,7 +138,16 @@ def posts_now(row) -> bool:
     meta = _json(row["rule_report"], {})
     if not isinstance(meta, dict) or row["scheduled_for"]:
         return False
-    return (meta.get("source") == "share" and meta.get("approved_by") == "share") or meta.get("approved_how") == "now"
+    # every instant photo (2026-10-15: his own, his team's once he taps Approve, and its feed post) posts right away, and so
+    # does every post he chose Post now on (#80)
+    return bool(meta.get("instant")) or (meta.get("source") == "share" and meta.get("approved_by") == "share") \
+        or meta.get("approved_how") == "now"
+
+
+def instant_format(row) -> str:
+    """"story" or "feed" for an instant photo (agents/team.py), "" for every other post."""
+    meta = _json(row["rule_report"], {})
+    return meta.get("format", "") if isinstance(meta, dict) and meta.get("instant") else ""
 
 
 def for_day_of(row) -> Optional[date]:
@@ -217,12 +226,14 @@ def repeat_of(conn, row, ids: list[int], days: int, *, include_dry: bool = False
     statuses = ("scheduled", "published") + (("would_publish",) if include_dry else ())
     marks = ",".join("?" for _ in statuses)
     wanted = set(ids)
+    meta = _json(row["rule_report"], {}) if "rule_report" in row.keys() else {}
+    story_of = meta.get("feed_of") if isinstance(meta, dict) else None     # a feed post's own Story is not a repeat (2026-10-15)
     for other in db.rows(conn, f"SELECT id, photo_ids FROM content_queue WHERE id != ? AND ("
                                f"(status IN ({marks}) AND COALESCE(published_at, updated_at) >= ?) "
                                "OR id IN (SELECT queue_id FROM post_history WHERE sent_at >= ?)) ORDER BY id DESC",
                          (row["id"], *statuses, cutoff, cutoff)):
         hit = wanted & set(photo_ids_of(other) or [])
-        if hit:
+        if hit and other["id"] != story_of:
             return min(hit), other["id"]
     return None
 
@@ -328,7 +339,8 @@ def photo_urls(ctx: runner.Context, row, *, live: bool, uploader=None) -> list[s
     return urls
 
 
-def media_urls(ctx: runner.Context, row, networks: list[str], *, live: bool, uploader=None) -> dict[str, list[str]]:
+def media_urls(ctx: runner.Context, row, networks: list[str], *, live: bool, uploader=None,
+               aspect_for: Optional[dict] = None) -> dict[str, list[str]]:
     """{network: [image url]}: the rendered design for the network's aspect when every file of it
     exists, else the photo's own copy. Each file is uploaded once per run, even when two networks share it."""
     rendered = render_paths_of(row)
@@ -336,7 +348,7 @@ def media_urls(ctx: runner.Context, row, networks: list[str], *, live: bool, upl
     raw: Optional[list[str]] = None
     out = {}
     for net in networks:
-        aspect = ASPECT_FOR.get(net, "4:5")
+        aspect = (aspect_for or ASPECT_FOR).get(net, "4:5")
         paths = [p for p in (rendered.get(aspect) or []) if isinstance(p, str)]
         if paths and all(Path(p).exists() for p in paths):
             if aspect not in by_aspect:
@@ -509,7 +521,21 @@ def publish_ready(ctx: runner.Context, client: Optional[BufferClient] = None, up
                 record_once(ctx.conn, ctx.agent, "door_check", why)
                 stats["held"] += 1
             continue
+        fmt = instant_format(row)
+        if fmt:
+            from . import team
+            room, why = team.room_for(ctx.conn, fmt, include_dry=not live, exclude=row["id"])
+            if not room:                               # the day's cap on instant photos, everyone together (2026-10-15)
+                ctx.conn.execute("UPDATE content_queue SET status='draft', last_error=?, updated_at=? WHERE id=?",
+                                 (why, db.utcnow(), row["id"]))
+                notify.push(f"{ctx.cfg.brand_name}: a photo waits", f"Post {row['id']} waits: {why}. Tap to see it.", dry_run=False,
+                            priority="default", click=notify.link(f"/queue/{row['id']}"), conn=ctx.conn, agent=ctx.agent)
+                stats["held"] += 1
+                continue
         channels, skipped = usable_networks(ctx, row)
+        if fmt == "story":
+            skipped.update({n: "a Story goes to Instagram only" for n in channels if n != "instagram"})
+            channels = {n: ch for n, ch in channels.items() if n == "instagram"}
         stats["skipped_networks"] += len(skipped)
         skip_note = ("Not sent to " + "; ".join(f"{n} ({why})" for n, why in skipped.items()) + ".") if skipped else None
         if not channels:
@@ -533,8 +559,18 @@ def publish_ready(ctx: runner.Context, client: Optional[BufferClient] = None, up
         post_ids: dict[str, str] = {}
         built: dict[str, dict] = {}
         try:
-            built = build_all(ctx, row, channels, when, live=live, uploader=uploader, video_fields=video_fields,
-                              alt_path=alt_path)
+            if fmt == "story":
+                urls = media_urls(ctx, row, ["instagram"], live=live, uploader=uploader, aspect_for={"instagram": "story"})
+                built = {"instagram": payloads.build("instagram", channels["instagram"]["buffer_channel_id"], "", urls["instagram"],
+                                                     scheduled_for=when.get("instagram"), story=True)}
+            else:
+                built = build_all(ctx, row, channels, when, live=live, uploader=uploader, video_fields=video_fields,
+                                  alt_path=alt_path)
+            if fmt:                                        # the day it was handed to Buffer counts toward that day's cap
+                from . import team
+                meta = _json(row["rule_report"], {})
+                meta["sent_on"] = team.today(ctx.cfg)
+                ctx.conn.execute("UPDATE content_queue SET rule_report=? WHERE id=?", (json.dumps(meta), row["id"]))
             if not live:
                 note = " ".join(x for x in (skip_note, DRY_REEL_NOTE if assumed and reel_files(row)
                                             and any(n in payloads.REEL_NETWORKS for n in built) else None) if x) or None
@@ -617,7 +653,17 @@ def posted(ctx: runner.Context, row, nets: list[str]) -> None:
                                                               (row["id"],)) if h["external_link"]}
     live = next((links[n] for n in ("instagram", "facebook", "pinterest") if links.get(n)), next(iter(links.values()), None))
     meta = _json(row["rule_report"], {})
-    if isinstance(meta, dict) and meta.get("source") == "share":
+    if instant_format(row) == "story":
+        # an instant photo's Story is up (2026-10-15): open it, Also post to the feed with one tap, the dashboard
+        from ..core import approve_token
+        fresh = db.one(ctx.conn, "SELECT * FROM content_queue WHERE id=?", (row["id"],))
+        notify.push(f"{ctx.cfg.brand_name}: your photo is up as a Story",
+                    f"Post {row['id']} is up as an Instagram Story. Tap to open it. Also post to the feed puts it on the grid "
+                    "too. To take it down, open it there, tap the three dots, then Delete.",
+                    dry_run=ctx.dry_run, priority="default", click=live or notify.link(f"/queue/{row['id']}"), conn=ctx.conn,
+                    agent=ctx.agent, actions=notify.feed_actions(row["id"], approve_token.issue(ctx.conn, fresh), live))
+        return
+    if isinstance(meta, dict) and meta.get("source") in ("share", "team"):
         # Post to Event Caliber (2026-10-15): his send was his approval, so the ping is where it lives and how it comes down
         page = notify.link(f"/queue/{row['id']}")
         where = " and ".join(n.capitalize() for n in nets)

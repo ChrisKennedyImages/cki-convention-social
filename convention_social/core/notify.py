@@ -56,6 +56,25 @@ def choice_actions(qid: int, token: str) -> str:
     return "; ".join(_choice(qid, token, how, label) for how, label in CHOICES)
 
 
+def team_actions(qid: int, token: str) -> str:
+    """A photo from Chris's team (2026-10-15, "Ping me, one tap"): Approve (his Post now: a Story, right away) and Skip,
+    through the drafts' own choice route (one token; the first choice made spends it), and Open."""
+    return f"{_choice(qid, token, 'now', 'Approve')}; {_choice(qid, token, 'skip', 'Skip')}; {open_action(qid)}"
+
+
+def feed_actions(qid: int, token: str, live_link: str | None) -> str:
+    """An instant photo's Story is up: open it, Also post to the feed, the dashboard. On the Tailscale address Also post
+    to the feed is an http POST with a signed single-use token; behind Cloudflare Access only a browser gets in, so it
+    opens the draft page, where the same button is (the ntfy app's own POST would meet the sign-in, 2026-10-15)."""
+    first = f"view, Instagram, {live_link}; " if live_link else ""
+    if access.through_access(link("/")):
+        feed = f"view, Also post to the feed, {link(f'/queue/{qid}')}"
+    else:
+        feed = (f"http, Also post to the feed, {link(f'/queue/{qid}/feed-by-token')}, method=POST, "
+                f"headers.Content-Type=application/x-www-form-urlencoded, body='token={token}', clear=true")
+    return f"{first}{feed}; view, Dashboard, {link(f'/queue/{qid}')}"
+
+
 def open_action(qid: int) -> str:
     """Open only: the draft page (the doctor's ping after it remade a reel: he looks before he chooses)."""
     return f"view, Open, {link(f'/queue/{qid}')}"
