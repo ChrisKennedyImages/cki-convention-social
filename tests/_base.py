@@ -34,6 +34,15 @@ class IsolatedCase(unittest.TestCase):
             patcher = mock.patch(target, return_value=value)
             patcher.start()
             self.addCleanup(patcher.stop)
+        # 2026-10-15: "can this machine publish the site?" read wrangler.live.jsonc from the real checkout, which
+        # go-live writes on the Mini; there a test saw a machine set up to publish and failed (go-live's own test step
+        # and the updater). Every test now sees a checkout without it unless it names a repo or patches deploy.ready.
+        from convention_social.site import deploy
+        real_live_config = deploy.live_config
+        patcher = mock.patch.object(deploy, "live_config",
+                                    side_effect=lambda repo=None: real_live_config(repo if repo is not None else self.root / "no-checkout"))
+        patcher.start()
+        self.addCleanup(patcher.stop)
 
     def tearDown(self):
         os.environ.clear()
