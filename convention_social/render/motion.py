@@ -526,11 +526,17 @@ def total_frames(kind: str, n: int = 6) -> int:
 REELS = {"rooms": rooms_reel}
 
 
+# The cover is a frame of the reel itself: Instagram shows the frame at thumbnailOffset (no network takes a
+# cover image, 2026-10-16), and the dashboard shows the same frame drawn as the cover still.
+COVER_FRAME = ROOMS_TIMING[0] + 20
+COVER_MS = COVER_FRAME * 1000 // FPS
+
+
 def still_frames(kind: str, n: int) -> tuple[int, ...]:
     """The cover first (the first room opened out), then the stills the art director looks at: the
     second room and the ring."""
     deal, room, morph, spin, _ = ROOMS_TIMING
-    return (deal + 20, deal + room + 20, deal + room * n + morph + spin - 10)
+    return (COVER_FRAME, deal + room + 20, deal + room * n + morph + spin - 10)
 
 
 def reel_stills(kind: str, shots: Sequence[Shot], copy: MotionCopy, *, out_dir: Path, official: bool = False,

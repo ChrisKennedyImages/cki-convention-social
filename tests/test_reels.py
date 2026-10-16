@@ -22,13 +22,21 @@ from convention_social.core import auth, config, db, runner
 from convention_social.dashboard.app import COOKIE, create_app, make_token
 from convention_social.render import meta, motion, reel
 from tests._base import IsolatedCase
-from tests._fakes import FakeBuffer, add_channels, add_photo, add_post, field, make_ctx, write_render
+from tests._fakes import (THUMBNAIL_URL_DOC, THUMBNAIL_URL_REFUSED, FakeBuffer, add_channels, add_photo, add_post, field,
+                          make_ctx, write_render)
 from tests._photos import jpeg_bytes
 from tests.test_music import RECORD, tone
 from tests.test_publisher import PublisherCase
 
 FRIDAY = datetime(2026, 10, 16, 10, 0, tzinfo=timezone.utc)          # tomorrow is Saturday, ISO week 42: face match reel
-FIELDS = [{"name": "url", "type": "String", "required": True}, {"name": "thumbnailUrl", "type": "String", "required": False}]
+# VideoAssetInput as the live schema gives it (2026-10-16): the cover image field is there, and Buffer's own
+# description says never to set it; the cover is a frame of the video, chosen in metadata.thumbnailOffset
+FIELDS = [{"name": "url", "type": "String", "required": True, "description": "URL to the file source"},
+          {"name": "thumbnailUrl", "type": "String", "required": False, "description": THUMBNAIL_URL_DOC},
+          {"name": "metadata", "type": "VideoMetadataInput", "required": False, "description": "Video specific metadata",
+           "fields": [{"name": "thumbnailOffset", "type": "Int", "required": False,
+                       "description": "Offset of the thumbnail chosen for the video, in ms"},
+                      {"name": "title", "type": "String", "required": False, "description": "Video title"}]}]
 
 
 def shots(n=4):
@@ -85,9 +93,8 @@ class Schema(IsolatedCase):
     def test_the_video_fields_come_from_the_live_schema(self):
         fake = FakeBuffer()
         got = BufferClient("test-key", conn=self.conn, transport=fake).video_asset_fields()
-        self.assertEqual([v["name"] for _, v in fake.calls], ["AssetInput", "VideoAssetInput"])
-        self.assertEqual(got[:2], FIELDS)
-        self.assertEqual(got[2], {"name": "metadata", "type": "VideoMetadataInput", "required": False})
+        self.assertEqual([v["name"] for _, v in fake.calls], ["AssetInput", "VideoAssetInput", "VideoMetadataInput"])
+        self.assertEqual(got, FIELDS, "the fields, their own descriptions, and what goes inside metadata: all read live")
 
     def test_no_video_member_or_no_type_is_an_error_not_a_guess(self):
         for schema in ({"AssetInput": [field("image", "ImageAssetInput")]}, {}):
@@ -95,28 +102,57 @@ class Schema(IsolatedCase):
                 BufferClient("test-key", conn=self.conn, transport=FakeBuffer(schema=schema)).video_asset_fields()
 
     def test_a_reel_payload_per_network(self):
-        ig = payloads.build_reel("instagram", "ch-ig", "Caption", "https://m/v.mp4", "https://m/c.jpg", FIELDS)
-        self.assertEqual(ig["assets"], [{"video": {"url": "https://m/v.mp4", "thumbnailUrl": "https://m/c.jpg"}}])
+        ig = payloads.build_reel("instagram", "ch-ig", "Caption", "https://m/v.mp4", 2000, FIELDS)
+        self.assertEqual(ig["assets"], [{"video": {"url": "https://m/v.mp4", "metadata": {"thumbnailOffset": 2000}}}])
         self.assertEqual(ig["metadata"], {"instagram": {"type": "reel", "shouldShareToFeed": True}})
         self.assertEqual((ig["channelId"], ig["text"], ig["mode"]), ("ch-ig", "Caption", "shareNow"))
-        fb = payloads.build_reel("facebook", "ch-fb", "Caption", "https://m/v.mp4", "", FIELDS, scheduled_for="2026-10-17T10:00")
+        fb = payloads.build_reel("facebook", "ch-fb", "Caption", "https://m/v.mp4", None, FIELDS, scheduled_for="2026-10-17T10:00")
         self.assertEqual(fb["assets"], [{"video": {"url": "https://m/v.mp4"}}])
         self.assertEqual(fb["metadata"], {"facebook": {"type": "reel"}})
         self.assertEqual((fb["mode"], fb["dueAt"]), ("customScheduled", "2026-10-17T14:00:00Z"))
         with self.assertRaises(payloads.PayloadError):
-            payloads.build_reel("pinterest", "ch-pin", "x", "https://m/v.mp4", "", FIELDS)
+            payloads.build_reel("pinterest", "ch-pin", "x", "https://m/v.mp4", None, FIELDS)
 
     def test_a_field_this_code_cannot_fill_stops_the_reel_only_when_required(self):
         extra = FIELDS + [{"name": "durationMs", "type": "Int", "required": False}]
-        self.assertNotIn("durationMs", payloads.video_asset(extra, "https://m/v.mp4", ""))
+        self.assertNotIn("durationMs", payloads.video_asset(extra, "https://m/v.mp4"))
         with self.assertRaises(payloads.PayloadError):
-            payloads.video_asset(FIELDS + [{"name": "durationMs", "type": "Int", "required": True}], "https://m/v.mp4", "")
+            payloads.video_asset(FIELDS + [{"name": "durationMs", "type": "Int", "required": True}], "https://m/v.mp4")
         with self.assertRaises(payloads.PayloadError):
-            payloads.video_asset([{"name": "source", "type": "String", "required": False}], "https://m/v.mp4", "")
+            payloads.video_asset([{"name": "source", "type": "String", "required": False}], "https://m/v.mp4")
         required_cover = [{"name": "url", "required": True}, {"name": "thumbnailUrl", "required": True}]
-        self.assertEqual(payloads.video_asset(required_cover, "v", "c"), {"url": "v", "thumbnailUrl": "c"})
-        with self.assertRaises(payloads.PayloadError):
-            payloads.video_asset(required_cover, "v", "")
+        with self.assertRaises(payloads.PayloadError, msg="no network takes a cover image: a schema that demands one stops the reel"):
+            payloads.video_asset(required_cover, "v", 2000)
+
+    def test_a_field_the_live_schema_says_not_to_use_is_never_filled(self):
+        """2026-10-16: Buffer refused post 7, a reel, because the cover went in thumbnailUrl, a field the schema lists
+        and its own description says never to set. Fields are read with their descriptions, and a "Do not use" is obeyed."""
+        asset = payloads.video_asset(FIELDS, "https://m/v.mp4", 2000)
+        self.assertEqual(asset, {"url": "https://m/v.mp4", "metadata": {"thumbnailOffset": 2000}})
+        self.assertNotIn("thumbnailUrl", asset)
+        told_off = [dict(FIELDS[0], description="Do not use: a newer field replaces this one")] + FIELDS[1:]
+        with self.assertRaises(payloads.PayloadError, msg="the video's own url said not to use: nothing to build a reel from"):
+            payloads.video_asset(told_off, "https://m/v.mp4", 2000)
+        no_offset = FIELDS[:2] + [dict(FIELDS[2], fields=[{"name": "title", "type": "String", "required": False}])]
+        self.assertEqual(payloads.video_asset(no_offset, "https://m/v.mp4", 2000), {"url": "https://m/v.mp4"},
+                         "no thumbnailOffset in the live schema: no cover frame is sent, the reel still goes")
+
+    def test_buffer_refuses_a_reel_that_names_a_cover_image_and_the_fake_does_too(self):
+        conn = db.connect()
+        self.addCleanup(conn.close)
+        inp = payloads.build_reel("instagram", "ch-ig", "x", "https://m/v.mp4", 2000, FIELDS)
+        self.assertTrue(BufferClient("test-key", conn=conn, transport=FakeBuffer()).create_post(inp))
+        inp["assets"][0]["video"]["thumbnailUrl"] = "https://m/c.jpg"
+        with self.assertRaises(BufferError) as e:
+            BufferClient("test-key", conn=conn, transport=FakeBuffer()).create_post(inp)
+        self.assertIn("thumbnailUrl is not supported", str(e.exception))
+        self.assertIn("thumbnailUrl is not supported", THUMBNAIL_URL_REFUSED)
+
+    def test_the_cover_frame_is_the_frame_the_dashboard_cover_is_drawn_from(self):
+        """Instagram shows the frame at thumbnailOffset; the dashboard shows the cover still. They are the same frame."""
+        for n in (4, 5, 6):
+            self.assertEqual(motion.still_frames("rooms", n)[0] * 1000 // reel.FPS, motion.COVER_MS)
+        self.assertEqual(motion.COVER_MS, 2000, "frame 60 at 30 frames a second: rooms-060.jpg, two seconds in")
 
 
 # ------------------------------------------------------------------ the publisher
@@ -150,12 +186,13 @@ class Publish(PublisherCase):
         sent = json.loads(row["payload"])
         self.assertEqual(list(sent), ["instagram", "facebook", "pinterest"])
         base = f"{media.PLACEHOLDER_BASE}/convention-social/reels/{qid}"
-        video = {"video": {"url": f"{base}-video.mp4", "thumbnailUrl": f"{base}-cover.jpg"}}
+        video = {"video": {"url": f"{base}-video.mp4", "metadata": {"thumbnailOffset": motion.COVER_MS}}}
         self.assertEqual((sent["instagram"]["assets"], sent["facebook"]["assets"]), ([video], [video]))
         self.assertEqual(sent["instagram"]["metadata"]["instagram"]["type"], "reel")
         self.assertEqual(sent["facebook"]["metadata"]["facebook"]["type"], "reel")
         self.assertEqual(sent["pinterest"]["assets"], [{"image": {"url": f"{media.PLACEHOLDER_BASE}/convention-social/cards/{qid}-23-1.jpg"}}])
-        self.assertIn("url and thumbnailUrl assumed", row["last_error"])
+        self.assertIn("assumed", row["last_error"])
+        self.assertNotIn("thumbnailUrl", row["last_error"])
 
     def test_live_reads_the_schema_once_uploads_the_reel_and_sends_video_posts(self):
         _, qid = self.reel_post()
@@ -168,13 +205,13 @@ class Publish(PublisherCase):
         self.assertIn("VideoAssetInput", asked)
         self.assertEqual(len(asked), len(set(asked)), "each schema type is read once a run, not once a post")
         self.assertIn(("r.mp4", f"convention-social/reels/{qid}-video.mp4"), self.uploads)
-        self.assertIn(("cover.jpg", f"convention-social/reels/{qid}-cover.jpg"), self.uploads)
+        self.assertNotIn("cover.jpg", [n for n, _ in self.uploads], "no network takes a cover image: none is put online")
         self.assertIn(("pin-23.jpg", f"convention-social/cards/{qid}-23-1.jpg"), self.uploads)
         self.assertNotIn("still.jpg", [n for n, _ in self.uploads])
         self.assertEqual(len(fake.created), 6)
         ig, fb, pin = fake.created[:3]
         url = f"https://media.example/m/convention-social/reels/{qid}"
-        self.assertEqual(ig["assets"], [{"video": {"url": f"{url}-video.mp4", "thumbnailUrl": f"{url}-cover.jpg"}}])
+        self.assertEqual(ig["assets"], [{"video": {"url": f"{url}-video.mp4", "metadata": {"thumbnailOffset": motion.COVER_MS}}}])
         self.assertEqual((ig["channelId"], ig["metadata"]["instagram"]["type"]), ("ch-ig", "reel"))
         self.assertEqual((fb["channelId"], fb["metadata"]["facebook"]["type"]), ("ch-fb", "reel"))
         self.assertEqual((pin["channelId"], list(pin["assets"][0])), ("ch-pin", ["image"]))

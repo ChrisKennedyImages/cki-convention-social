@@ -1607,7 +1607,7 @@ def create_app() -> FastAPI:
             alt = client.image_alt_path()
             settings.set(conn, "buffer.image_alt", json.dumps({"path": alt, "checked_at": db.utcnow()}))
             fields = client.video_asset_fields()
-            buffer_payloads.video_asset(fields, "https://check.invalid/v.mp4", "https://check.invalid/c.jpg")
+            buffer_payloads.video_asset(fields, "https://check.invalid/v.mp4", 2000)
         except buffer_payloads.PayloadError as e:
             settings.set(conn, "buffer.video_fields", json.dumps({"fields": fields, "checked_at": db.utcnow(), "problem": str(e)}))
             return back(f"Buffer's video format needs something this suite does not fill yet: {e}")
