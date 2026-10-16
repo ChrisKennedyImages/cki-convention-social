@@ -289,21 +289,24 @@ r = await worker.fetch(new Request(`${base}/api/sends`, { headers: { authorizati
 ok(r.status === 403, "the phone's token can send, never read");
 r = await worker.fetch(new Request(`${base}/api/sends`, { headers: { authorization: "Bearer tok" } }), env);
 const sends = (await r.json()).sends;
-ok(sends.length === 3 && sends[0].note === "the main hall, before the doors" && sends[0].type === "image/jpeg" && sends[0].size === JPEG.length,
+// found by type, not by place: a send's name starts with its millisecond, and two sends in the same millisecond
+// list in the order of their random part (2026-10-16: a CI run failed "the Mini fetches the photo itself" on it)
+const jpeg = sends.find((s) => s.type === "image/jpeg"), png = sends.find((s) => s.type === "image/png");
+ok(sends.length === 3 && jpeg?.note === "the main hall, before the doors" && jpeg?.size === JPEG.length,
    "the Mini lists each send with its line, type and size");
 ok(sends.every((s) => /^\d{13}-[0-9a-f]{16}$/.test(s.id) && s.received_at), "each by its name, with when it came");
-r = await worker.fetch(new Request(`${base}/api/sends/${sends[1].id}`), env);
+r = await worker.fetch(new Request(`${base}/api/sends/${png.id}`), env);
 ok(r.status === 403, "a photo needs the Mini's token too");
-r = await worker.fetch(new Request(`${base}/api/sends/${sends[1].id}`, { headers: { authorization: "Bearer tok" } }), env);
+r = await worker.fetch(new Request(`${base}/api/sends/${png.id}`, { headers: { authorization: "Bearer tok" } }), env);
 const got = new Uint8Array(await r.arrayBuffer());
 ok(r.status === 200 && r.headers.get("content-type") === "image/png" && got.length === PNG.length && got[1] === 0x50, "the Mini fetches the photo itself");
 r = await worker.fetch(new Request(`${base}/api/sends/..%2Fheartbeat.json`, { headers: { authorization: "Bearer tok" } }), env);
 ok(r.status === 400, "only a send's own name");
 r = await worker.fetch(new Request(`${base}/api/sends/ack`, { method: "POST", headers: { authorization: `Bearer ${sendToken}` },
-  body: JSON.stringify({ ids: [sends[0].id] }) }), env);
+  body: JSON.stringify({ ids: [jpeg.id] }) }), env);
 ok(r.status === 403 && waiting().length === 3, "the phone's token cannot delete");
 r = await worker.fetch(new Request(`${base}/api/sends/ack`, { method: "POST", headers: { authorization: "Bearer tok" },
-  body: JSON.stringify({ ids: [sends[0].id, sends[1].id, "../heartbeat.json"] }) }), env);
+  body: JSON.stringify({ ids: [jpeg.id, png.id, "../heartbeat.json"] }) }), env);
 ok((await r.json()).deleted === 2 && waiting().length === 1 && env.MEDIA.store.has("private/heartbeat.json"), "kept on the Mini: deleted here, nothing else");
 // rate limited, and a Mini that is not pulling cannot fill the bucket
 for (let i = 0; i < 30; i++) await send(sendForm(JPEG));
