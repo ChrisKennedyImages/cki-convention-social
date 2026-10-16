@@ -172,7 +172,7 @@ def use_line(use: Optional[dict]) -> str:
     """One line under an approved photo: "used 3 times, last on 2026-10-14 (post, site)" or "never used yet"."""
     if not use:
         return "never used yet"
-    where = {"post": "post", "site": "site", "sample": "samples"}
+    where = {"post": "post", "site": "site", "sample": "ideas"}       # the design samples are called ideas now (2026-10-15)
     return (f"used {use['n']} time{'s' if use['n'] != 1 else ''}, last on {use['last']} "
             f"({', '.join(where.get(s, s) for s in use['surfaces'])})")
 

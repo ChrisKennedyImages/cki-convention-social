@@ -300,6 +300,7 @@ class OutsideCheck(AccessCase):
         self.assertTrue(ok, why)
         self.assertEqual(calls, [f"https://{HOST}{p}" for p in access.OUTSIDE_PATHS])
         self.assertIn("/queue/0/approve-by-token", access.OUTSIDE_PATHS, "the token paths are behind Access too")
+        self.assertIn("/queue/0/choose-by-token/now", access.OUTSIDE_PATHS, "his three choices' path too (2026-10-15)")
 
     def test_anything_else_fails(self):
         for answer, word in ((mock.Mock(status_code=200, headers={}), "200"),
@@ -494,24 +495,26 @@ class Links(AccessCase):
     its picture fetch would land on Cloudflare's sign-in, and the Approve would look done when nothing was."""
 
     def test_through_access_approve_opens_the_page_and_no_picture_is_fetched(self):
+        """Since 2026-10-15 the one Approve is his three choices (Post now, Follow the pace, Skip): behind Access each opens
+        the choice page in the browser."""
         self.configure(DASHBOARD_PUBLIC_URL=f"https://{HOST}")
         self.assertTrue(access.through_access(notify.link("/")))
-        actions = notify.approve_actions(7, "1.2.3")
-        self.assertEqual(actions, f"view, Approve, https://{HOST}/queue/7/approve-by-token?token=1.2.3, clear=true; "
-                                  f"view, Open, https://{HOST}/queue/7")
+        actions = notify.choice_actions(7, "1.2.3")
+        self.assertEqual(actions, "; ".join(f"view, {label}, https://{HOST}/queue/7/choose-by-token/{how}?token=1.2.3, clear=true"
+                                            for how, label in (("now", "Post now"), ("pace", "Follow the pace"), ("skip", "Skip"))))
         self.assertNotIn("http, ", actions)
         self.assertIsNone(notify.card_link(7, "1.2.3"))
 
     def test_any_address_on_the_sites_domain_counts_as_behind_access(self):
         self.configure(TUNNEL_HOSTNAME=None, DASHBOARD_PUBLIC_URL="https://dashboard.eventcaliber.com")
         self.assertTrue(access.through_access(notify.link("/")))
-        self.assertTrue(notify.approve_actions(7, "1.2.3").startswith("view, Approve, "))
+        self.assertTrue(notify.choice_actions(7, "1.2.3").startswith("view, Post now, "))
 
     def test_the_tailscale_address_keeps_the_one_tap_approve_and_the_picture(self):
         self.configure(DASHBOARD_PUBLIC_URL="https://mac-mini.tail915d2c.ts.net:8443")
         self.assertFalse(access.through_access(notify.link("/")))
-        self.assertTrue(notify.approve_actions(7, "1.2.3").startswith(
-            "http, Approve, https://mac-mini.tail915d2c.ts.net:8443/queue/7/approve-by-token, method=POST"))
+        self.assertTrue(notify.choice_actions(7, "1.2.3").startswith(
+            "http, Post now, https://mac-mini.tail915d2c.ts.net:8443/queue/7/choose-by-token/now, method=POST"))
         self.assertEqual(notify.card_link(7, "1.2.3"), "https://mac-mini.tail915d2c.ts.net:8443/media/card/7/1.2.3.jpg")
 
     def test_no_picture_means_no_filename_either(self):

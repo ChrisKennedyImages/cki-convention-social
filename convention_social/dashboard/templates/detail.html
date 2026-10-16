@@ -1,51 +1,76 @@
 {% extends "base.html" %}
 {% block body %}
-{% set notes = {'saved': ('Saved.', ''), 'approved': ('Approved. It goes out at its time.', ''), 'requeued': ('Back in drafts.', ''),
-                'unapproved': ('Back in drafts. It will not go out until you approve it again.', ''),
-                'pulled_back': ('Pulled back from Buffer. It is a draft again and will not go out until you approve it.', ''),
+{% set notes = {'saved': ('Saved.', ''), 'requeued': ('Back in drafts. It waits for your choice again.', ''),
+                'unapproved': ('Back in drafts. It will not go out until you choose Post now or Follow the pace again.', ''),
+                'pulled_back': ('Pulled back from Buffer. It is a draft again and will not go out until you choose again.', ''),
                 'no_buffer': ('Buffer is not set up here (no API key), so nothing could be pulled back.', 'bad'),
-                'pullback_failed': ('Buffer kept it: the pull back did not go through. The Agents page has the reason.', 'bad'),
+                'pullback_failed': ('Buffer kept it: the pull back did not go through. The Errors page has the reason.', 'bad'),
                 'blocked': ('Not approved: a caption still breaks a rule after the suite rewrote it. It tries again on its next run. Nothing for you to do.', 'bad'),
                 'mended': ('A caption broke a rule that came after it was written; the suite rewrote it. Nothing to fix.', ''),
                 'mend_failed': ('A caption breaks a rule, and the suite could not rewrite the caption just now (the API or the network). Its next run tries again. Nothing for you to do.', 'bad'),
                 'ineligible': ('Not approved: a photo in it can no longer be used.', 'bad'),
                 'notargets': ('Not approved: pick at least one place to post.', 'bad')} %}
-{% if msg in notes %}<div class="msg {{ notes[msg][1] }}">{{ notes[msg][0] }}</div>{% endif %}
-<h1>{{ item.kind|capitalize }} post #{{ item.id }} <span class="badge {{ item.status }}">{{ item.status.replace('_',' ') }}</span></h1>
+{% if msg == 'approved' %}<div class="msg">Approved. {{ goes_out }}</div>
+{% elif msg in notes %}<div class="msg {{ notes[msg][1] }}">{{ notes[msg][0] }}</div>{% endif %}
+<a class="back" href="/">Back to Today</a>
+<h1>{{ origin }} <span class="badge {{ item.status }}">{{ status_words.get(item.status, item.status) }}</span></h1>
+<div class="muted" style="margin:-8px 0 12px">post {{ item.id }}{% if item.design_name %}, {{ item.design_name }}{% endif %}</div>
 {% if item.last_error %}<div class="msg bad">{{ item.last_error }}</div>{% endif %}
+{% if item.video %}<div class="card" style="display:flex;flex-direction:column;align-items:center"><video class="reel" src="/media/render/{{ item.id }}/9x16/1"{% if item.cover %} poster="/media/render/{{ item.id }}/cover/1"{% endif %} controls playsinline loop preload="metadata" style="height:min(620px,72vh)"></video>
+<div class="muted">{{ 'Tap to play it with its sound. Music: ' + item.music if item.music else 'No music' }}</div></div>
+{% endif %}{% if item.renders %}<div class="card"><div class="thumbs">{% for aspect, idx in item.renders.items() %}{% for i in idx %}<a href="/media/render/{{ item.id }}/{{ aspect.replace(':','x') }}/{{ i }}"><img src="/media/render/{{ item.id }}/{{ aspect.replace(':','x') }}/{{ i }}" alt="{{ aspect }}"></a>{% endfor %}{% endfor %}</div>
+<div class="muted" style="margin-top:6px">{{ 'Swipe to see every card. ' if item.renders|length > 1 or (item.renders.values()|list)[0]|length > 1 else '' }}Tap a card to open it full size.</div></div>{% endif %}
+{% if item.status == 'draft' %}
+<div class="card">
+  {% if can_approve %}
+  {% if item.art and item.art.verdict in ('redo', 'reject') %}<div class="msg bad" style="margin-bottom:8px">The art director was not happy with it ({{ item.art.notes or 'no note' }}). Look before you choose.</div>{% endif %}
+  <div class="choices" style="margin-top:0">
+    <button form="edit" class="primary" type="submit" name="do" value="now">Post now</button>
+    <button form="edit" class="ok" type="submit" name="do" value="pace">Follow the pace</button>
+    <form method="post" action="/queue/{{ item.id }}/skip" onsubmit="return confirm('Skip this post? Its photos go back into the rotation.')"><button class="skip" type="submit">Skip</button></form>
+  </div>
+  <div class="muted" style="margin-top:6px">Post now: it goes out now. Follow the pace: {{ pace_words or 'the next open slot' }}, one post a slot. Any edit below is saved with either.</div>
+  {% else %}
+  <div class="muted">Post now and Follow the pace come back once {{ 'the captions pass the rules (the suite rewrites them by itself)' if item.blocked_networks else ('every photo in it can be used' if item.ineligible else 'a network is ticked below') }}.</div>
+  <div class="choices"><span style="grid-column:span 2"></span>
+    <form method="post" action="/queue/{{ item.id }}/skip" onsubmit="return confirm('Skip this post? Its photos go back into the rotation.')"><button class="skip" type="submit">Skip</button></form>
+  </div>
+  {% endif %}
+</div>
+{% elif item.status in ('approved', 'scheduled', 'would_publish', 'failed') %}
+<div class="card row">
+  {% if item.status == 'approved' %}<span class="muted" style="flex:1 1 200px">{{ goes_out }}</span>
+  <form method="post" action="/queue/{{ item.id }}/unapprove" class="inline"><button type="submit">Take back the approval</button></form>
+  {% elif item.status == 'scheduled' %}<span class="muted" style="flex:1 1 200px">Buffer holds it and sends it at its time.</span>
+  <form method="post" action="/queue/{{ item.id }}/pullback" class="inline" onsubmit="return confirm('Pull this post back from Buffer? It comes back here as a draft and does not go out.')"><button class="danger" type="submit">Pull back from Buffer</button></form>
+  {% elif item.status == 'failed' %}<span class="muted" style="flex:1 1 200px">It did not go out. The reason is above.</span>
+  <form method="post" action="/queue/{{ item.id }}/retry" class="inline"><button class="primary" type="submit">Approve again</button></form>
+  <form method="post" action="/queue/{{ item.id }}/requeue" class="inline"><button type="submit">Back to drafts</button></form>
+  {% else %}<span class="muted" style="flex:1 1 200px">A practice run: posting was off when it was approved. It goes out when the publisher is switched on.</span>
+  <form method="post" action="/queue/{{ item.id }}/requeue" class="inline"><button type="submit">Back to drafts</button></form>
+  {% endif %}
+</div>
+{% endif %}
 {% if item.mended %}<div class="card muted">Captions rewritten by the suite ({{ item.mended.by }}, {{ item.mended.at[:10] }} {{ item.mended.at[11:16] }}): {% for n, why in item.mended.fixed.items() %}{{ n }} {{ why|join('; ') }}{{ '. ' if not loop.last else '.' }}{% endfor %}{% if item.mended.card %} {{ item.mended.card|capitalize }}.{% endif %}</div>{% endif %}
-{% if item.art and item.art.verdict %}<div class="card"><strong>Art director</strong> <span class="badge {{ 'ok' if item.art.verdict == 'pass' else 'draft' }}">{{ item.art.verdict }}</span>
+{% if item.art and item.art.verdict %}<div class="card"><strong>Art director</strong> <span class="badge {{ 'ok' if item.art.verdict == 'pass' else 'draft' }}">{{ {'pass': 'happy with it', 'redo': 'wants a look from you', 'reject': 'turned it back', 'not reviewed': 'did not look'}.get(item.art.verdict, item.art.verdict) }}</span>
 <div class="muted">{{ item.art.notes or '' }}{% if item.art.rounds %} ({{ item.art.rounds }} look{{ 's' if item.art.rounds != 1 else '' }}){% endif %}</div></div>{% endif %}
-{% if item.video %}<div class="card"><video class="reel" src="/media/render/{{ item.id }}/9x16/1"{% if item.cover %} poster="/media/render/{{ item.id }}/cover/1"{% endif %} controls playsinline loop preload="metadata"></video>
-<div class="muted">{{ 'Music: ' + item.music if item.music else 'No music' }}</div></div>
-{% endif %}{% if item.renders %}<div class="card"><div class="thumbs">{% for aspect, idx in item.renders.items() %}{% for i in idx %}<img src="/media/render/{{ item.id }}/{{ aspect.replace(':','x') }}/{{ i }}" alt="{{ aspect }}">{% endfor %}{% endfor %}</div></div>{% endif %}
-{% if item.photo_checks %}<div class="card"><h2>Photos</h2>{% for pid, ok, why, shot in item.photo_checks %}
+{% if item.photo_checks %}<details class="card"{{ ' open' if item.ineligible else '' }}><summary><strong style="font-size:18px">The {{ item.photo_checks|length }} photo{{ 's' if item.photo_checks|length != 1 else '' }}, and what each shows</strong></summary>{% for pid, ok, why, shot in item.photo_checks %}
   <div class="row"><img src="/media/thumb/{{ pid }}" style="height:70px;border-radius:6px" alt=""><span class="badge {{ 'ok' if ok else 'blocked' }}">{{ 'usable' if ok else why }}</span>
     <span class="muted">shows: {{ (shot or 'not sorted').replace('_', ' ') }}</span></div>
   {% if item.status == 'draft' %}<form method="post" action="/queue/{{ item.id }}/photo/{{ pid }}/shot" class="row" style="margin:4px 0 10px">
     <select name="shot_type" style="width:auto">{% for key, words in shot_choices %}<option value="{{ key }}" {{ 'selected' if key == shot else '' }}>{{ words }}</option>{% endfor %}</select>
-    <button class="small" type="submit">Wrong? Fix and draft again</button></form>{% endif %}{% endfor %}</div>{% endif %}
-<form method="post" action="/queue/{{ item.id }}/save" class="card">
+    <button class="small" type="submit">Wrong? Fix and draft again</button></form>{% endif %}{% endfor %}</details>{% endif %}
+<form method="post" action="/queue/{{ item.id }}/save" class="card" id="edit">
+  <h2>Captions and where it goes</h2>
   {% for n in networks %}
-  <label class="row"><input type="checkbox" name="target_{{ n }}" {{ 'checked' if n in item.targets else '' }}> {{ n|capitalize }}
-    {% if item.reports[n].ok %}<span class="rule ok">passes</span>{% else %}<span class="rule block">{{ item.reports[n].blocks[0].message }}</span>{% endif %}</label>
+  <label class="row" style="min-height:44px;margin:6px 0 2px"><input type="checkbox" name="target_{{ n }}" {{ 'checked' if n in item.targets else '' }} style="width:24px;height:24px"> {{ n|capitalize }}
+    {% if item.reports[n].ok %}<span class="rule ok">passes</span>{% else %}<span class="rule block">{{ item.reports[n].blocks[0].message }}</span>{% endif %}
+    {% if n not in networks_on %}<span class="muted">switched off: posts go to {{ networks_on|map('capitalize')|join(', ') }} only (Keys page, Posting)</span>{% endif %}</label>
   <textarea name="caption_{{ n }}">{{ item.captions.get(n, '') }}</textarea>
   {% endfor %}
-  <label>Post time (leave blank for the next open slot)</label>
+  <label>Post time (leave blank: Post now or the pace decides)</label>
   <input type="datetime-local" name="scheduled_for" value="{{ item.scheduled_for or '' }}">
-  <div class="row" style="margin-top:12px"><button type="submit" name="do" value="save">Save</button>
-    {% if item.status == 'draft' %}<button class="ok" type="submit" name="do" value="approve">Save and approve</button>{% endif %}</div>
+  <div class="row" style="margin-top:12px"><button type="submit" name="do" value="save">Save</button></div>
 </form>
-<div class="row">
-  {% if item.status == 'draft' %}
-  <form method="post" action="/queue/{{ item.id }}/reject" class="inline" onsubmit="return confirm('Set this post aside? A new one is drafted in its place.')"><button class="danger" type="submit">Reject</button></form>
-  {% elif item.status == 'approved' %}
-  <form method="post" action="/queue/{{ item.id }}/unapprove" class="inline"><button type="submit">Take back the approval</button></form>
-  {% elif item.status == 'scheduled' %}
-  <form method="post" action="/queue/{{ item.id }}/pullback" class="inline" onsubmit="return confirm('Pull this post back from Buffer? It comes back here as a draft and does not go out.')"><button class="danger" type="submit">Pull back from Buffer</button></form>
-  {% elif item.status in ('would_publish', 'failed') %}
-  <form method="post" action="/queue/{{ item.id }}/requeue" class="inline"><button type="submit">Back to drafts</button></form>
-  {% endif %}
-</div>
-{% if item.payload %}<details class="card"><summary>Exact payload {{ '(dry run, not sent)' if item.dry_run else '' }}</summary><pre style="white-space:pre-wrap;font-size:12px">{{ item.payload }}</pre></details>{% endif %}
+{% if item.payload %}<details class="card"><summary>Exact payload {{ '(practice run, not sent)' if item.dry_run else '' }}</summary><pre style="white-space:pre-wrap;font-size:12px">{{ item.payload }}</pre></details>{% endif %}
 {% endblock %}

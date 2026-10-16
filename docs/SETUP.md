@@ -107,13 +107,16 @@ change in the code).
 2. Connect: the Instagram professional account, the Facebook Page, the
    Pinterest business account. Create the Pinterest board posts land on.
 3. publish.buffer.com/settings/api: create an API key. Keys (Buffer).
-4. More, Buffer: tap Find channels, then Use on each of this company's own
+4. Settings, Buffer: tap Find channels, then Use on each of this company's own
    accounts (nothing links by itself). If the key sees more than one Buffer
    organization, choose this company's first. Find boards, Use the Pinterest
    board. Check the video format (for the Saturday reels).
 5. `bin/ccs run publisher --dry-run` (or Run now on the Agents page) lists
    what it would send. Nothing publishes until you switch the publisher to
-   live on the Agents page, and even then only posts you approved.
+   live on the Agents page (Settings, Agents), and even then only posts you
+   approved. While the publisher or the content lane is in practice run (dry
+   run), every dashboard page says so in an amber banner with the way to
+   switch it on.
 
 ## 6. Anthropic: your key
 
@@ -236,8 +239,8 @@ skips what is done and refreshes the rest. It needs Python 3.13 and Node
 (`brew install python@3.13 node`); it says so if either is missing.
 
 After this first run you should not need a terminal again. The **updater**
-agent checks GitHub every 10 minutes and, once you switch it from dry run to
-LIVE on the dashboard's Agents page, tests anything new with the full suite
+agent checks GitHub every 10 minutes and, once you switch it from practice
+run (dry run) to LIVE on the dashboard's Agents page (Settings, Agents), tests anything new with the full suite
 and only then updates the Mini and restarts the dashboard. Every agent also
 has a **Run now** button there. The only exception: when an update brings new
 service files, the Agents page says so, and `scripts/go-live.sh` has to run
@@ -357,14 +360,15 @@ the Mini reaches it. To stop the tunnel: delete `CLOUDFLARE_TUNNEL_TOKEN` from
 
 ## 10. A photo from your phone while you shoot
 
-Open the dashboard on your phone, Today, **Send a photo** (or the button on
-the Queue page). Pick the photo from the camera roll (the original, not a
+Open the dashboard on your phone, Today, **Send a photo** (a chip under the
+Today tab). Pick the photo from the camera roll (the original, not a
 preview) or take one, add one line about it if you like (what the room was;
 never a name or which event), and Send. Within a few minutes your phone gets
-the ping with the post and Approve; the Send page shows each send and where
+the ping with the post and its three choices (Post now, Follow the pace,
+Skip); the Send page shows each send and where
 it stands, and says why when one could not be drafted (a readable plate, a
-wedding, the monthly AI cap). Approved, the
-post goes out as soon as Buffer takes it. The photo stays on the Mini and is
+wedding, the monthly AI cap). Post now sends it out at once; Follow the pace
+takes the next open slot. The photo stays on the Mini and is
 never written to Drive.
 
 ### 10a. Post to Event Caliber: a photo straight from the iPhone's share sheet
@@ -424,3 +428,32 @@ phone is lost, Make a send token again and the old one stops working once the
 site has the new one. No signed `.shortcut` file is kept in the
 repo: signing one needs Apple's servers under your Apple ID, and it could not
 carry your token anyway, so the steps above are the way.
+
+## 11. The dashboard: four tabs (2026-10-15)
+
+- **Today** is the whole daily flow on one page. **Needs you**: every draft
+  waiting for you, newest first (the daily post, the designed drafts, a photo
+  from your phone), each with **Post now** (posted at once),
+  **Follow the pace** (the next open Instagram slot, one post a slot) and
+  **Skip** (set aside; its photos go back into the rotation, never Don't use).
+  A reel plays right there with its sound. Under the drafts, what else needs
+  you (quote requests, organizer notes, scout finds) and each alert with the
+  button that fixes it. **This week**: what is set to go out, by day. **Went
+  out**: the last posts, each with its link on Instagram. The chips: Send a
+  photo, and All posts (every post in every state, and the numbers by week).
+  The old Queue, Posts and Design addresses open Today.
+- **Designed drafts** replace the design samples page: from 8:00 to 20:00
+  the suite designs up to three posts a day by itself (Keys page, Designed
+  drafts; 0 stops them), one an hour, on your approved photos with Claude's
+  final check, and pings each to your phone with the card and the same three
+  choices. No more are made while three still wait for you. They follow the
+  content lane: in practice run none are made.
+- **Photos**: To review, Approved, Blocked, Folders, **Music** (the tracks
+  for reels, and the library report), Do not use, Drive.
+- **Bookings**: Requests, Bookings, Calendar.
+- **Settings** (it was More): the system pages first (Agents, Errors, Keys,
+  Buffer), then the pages that find work (Outreach, Scout, Search,
+  Learner). The Errors page shows one card per kind of alert, each with its
+  fix where there is one (Sign in to Drive, add a key, approve a failed post
+  again, run an agent again) and Dismiss. Alerts about a network that is
+  switched off never show.

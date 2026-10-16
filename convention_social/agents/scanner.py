@@ -40,6 +40,12 @@ def run(ctx: runner.Context, reader: DriveReader | None = None) -> str:
     if sample.pending(ctx.conn):
         # a Post this left behind the same way (2026-10-15): drafted within the hour
         runner.start_agent("sample", wait=True)
+    from . import designed
+    design_ok, design_note = designed.due(ctx.conn)
+    if design_ok:
+        # Chris, 2026-10-15: designed drafts in place of the samples page, up to DESIGNED_PER_DAY a day, one an hour
+        runner.start_agent("designed")
+        design_note = "a designed draft is being made"
     if reader is None:
         try:
             oauth.access_token(ctx.conn)   # fail the run now if the sign-in is dead, not photo by photo
@@ -64,14 +70,9 @@ def run(ctx: runner.Context, reader: DriveReader | None = None) -> str:
         credit_note = f"credits: {res.matched}/{res.rows} matched"
         if res.unmatched:
             settings.set(ctx.conn, "credits.unmatched", "; ".join(res.unmatched)[:2000])
-    try:
-        from ..render import design_samples
-        design_note = design_samples.auto(ctx.conn)
-    except Exception as e:  # noqa: BLE001  the samples never fail the scan
-        design_note = f"design samples: {type(e).__name__}: {e}"
     return (f"{'full' if full else 'changes'}: {stats.line()}; folder-sorted {sorted_free}; "
             f"vision {vision.done} done {vision.failed} failed{(' (' + vision.stopped + ')') if vision.stopped else ''}; "
-            f"{report_note}; {credit_note}; {design_note}")
+            f"{report_note}; {credit_note}; designed drafts: {design_note or 'none due'}")
 
 
 def refresh_report(conn, reader: DriveReader, *, changed: bool, log=None) -> str:

@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block body %}
+<h1>Music for reels</h1>
+{% if msg %}<div class="msg{{ ' bad' if msg.startswith('Track not') or msg.startswith('Tick') else '' }}">{{ msg }}</div>{% endif %}
+<div class="card">
+  <div class="muted">Reels use the newest track you have switched on. Only a track you have the right to use in posts on Instagram and Facebook, with where it came from. With none, no reel is made: a reel never goes out silent.</div>
+  {% for t in tracks %}
+  <div class="row" style="margin-top:8px"><span>{{ t.title }} by {{ t.artist }}</span>
+    <span class="badge {{ 'ok' if t.active else 'blocked' }}">{{ 'on' if t.active else 'off' }}</span>
+    <span class="muted">{{ t.source }}</span>
+    <form method="post" action="/library/music/{{ t.id }}/active" class="inline"><input type="hidden" name="state" value="{{ 'off' if t.active else 'on' }}"><button class="small" type="submit">{{ 'Switch off' if t.active else 'Switch on' }}</button></form>
+  </div>
+  {% endfor %}
+  <form method="post" action="/library/music" enctype="multipart/form-data" style="margin-top:10px">
+    <label>Track (mp3, m4a, aac, wav or an audio mp4, up to 25 MB)</label><input type="file" name="file" accept=".mp3,.m4a,.aac,.wav,.mp4,audio/*" required>
+    <label>Title</label><input type="text" name="title" required>
+    <label>Artist</label><input type="text" name="artist" required>
+    <label>Where it came from (a link or the library's name)</label><input type="text" name="source" required>
+    <label>What that source allows</label><input type="text" name="terms" placeholder="for example: free for business posts on Instagram and Facebook" required>
+    <label class="row"><input type="checkbox" name="rights" value="yes" required style="width:24px;height:24px"> I have the right to use this track in posts on Instagram and Facebook</label>
+    <div class="row" style="margin-top:10px"><button class="primary" type="submit">Add track</button></div>
+  </form>
+</div>
+<div class="card">
+  <strong>Library report</strong>
+  {% if renders.report %}
+  <div class="row" style="margin-top:8px">
+    <a class="btn" href="/library/renders/{{ renders.report }}">Report</a>
+    {% if renders.sheet %}<a class="btn" href="/library/renders/{{ renders.sheet }}">Best 30 event photos</a>{% endif %}
+    {% if renders.buildings %}<a class="btn" href="/library/renders/{{ renders.buildings }}">Best 30 building photos</a>{% endif %}
+  </div>
+  <div class="muted">Made by the scanner to help you choose. Nothing on these sheets is approved or used until you approve it.</div>
+  {% else %}
+  <div class="muted">Not made yet. The scanner makes it after its next pass that finds or sorts photos.</div>
+  {% endif %}
+</div>
+{% endblock %}

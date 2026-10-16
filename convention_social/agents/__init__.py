@@ -36,10 +36,12 @@ AGENTS: dict[str, dict] = {
     "updater":   {"schedule": "every 10 min",          "module": "convention_social.agents.updater",
                   "job": "keep the Mini on the latest main: test a new commit first, then switch and restart the dashboard"},
     "phone":     {"schedule": "when a photo is sent (Send a photo page); every minute for the share sheet", "module": "convention_social.agents.phone",
-                  "job": "a photo sent from Chris's phone while he shoots: sorted, checked, drafted as today's post, pinged for his Approve; "
-                         "from the share sheet (Post to Event Caliber), approved by his send and out as soon as Buffer takes it"},
-    "sample":    {"schedule": "when Post this is pressed on a design sample", "module": "convention_social.agents.sample",
-                  "job": "a design sample Chris chose: its photos checked again, drafted on the daily post's road as today's post, pinged for his Approve"},
+                  "job": "a photo sent from Chris's phone while he shoots: sorted, checked, drafted as today's post, pinged with Post now, "
+                         "Follow the pace and Skip; from the share sheet (Post to Event Caliber), approved by his send and posted at once"},
+    "sample":    {"schedule": "when Post this is pressed on an idea", "module": "convention_social.agents.sample",
+                  "job": "an idea Chris chose from the old design samples: its photos checked again, drafted on the daily post's road as today's post, pinged for his Approve"},
+    "designed":  {"schedule": "hourly 08:00 to 20:00, started by the scanner", "module": "convention_social.agents.designed",
+                  "job": "up to DESIGNED_PER_DAY designed drafts a day on the daily post's road, each pinged with Post now, Follow the pace and Skip"},
     "dashboard": {"schedule": "always on (KeepAlive)", "module": "convention_social.dashboard.app",
                   "job": "review UI on 127.0.0.1:DASHBOARD_PORT"},
 }

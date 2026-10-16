@@ -4,11 +4,12 @@ Server-rendered FastAPI + Jinja2, no JavaScript framework. Reached from
 Chris's phone over Tailscale. With no DASHBOARD_PASSWORD_HASH the app
 answers 503 to everything (fail closed).
 
-Pages: Queue (Approve / Reject, refused while a caption breaks a rule or a
-photo is no longer eligible), Library (clear or exclude folders, block single
-photos), Do not use, Calendar (events, attending, official only on Chris's
-word), Drive (sign-in state, last scan, the report), Agents (dry-run
-switches, errors, spend), Keys (writes .env).
+Four tabs (2026-10-15): Today (every draft waiting on Chris, each with Post now,
+Follow the pace and Skip, refused while a caption breaks a rule or a photo is no
+longer eligible; what is scheduled this week; what went out), Photos (clear or
+exclude folders, block single photos, music for reels, Do not use, Drive),
+Bookings (requests, bookings, the calendar), Settings (Agents, Errors, Keys,
+Buffer; Outreach, Scout, Search, Learner).
 """
 from __future__ import annotations
 
@@ -37,8 +38,11 @@ from ..buffer.client import BufferBudgetExceeded, BufferClient, BufferError, Buf
 from ..core import access, approve_token, auth, config, db, runner, secrets, settings, state_io
 from .. import music
 from ..library import eligibility, report
+from . import alerts
+from . import today as today_view
 
 TEMPLATES = Jinja2Templates(directory=str(Path(__file__).with_name("templates")))
+TEMPLATES.env.filters["local"] = today_view.local_words       # a stored UTC time in his own words and time zone
 COOKIE = "ccs_session"
 SESSION_DAYS = 30
 QUEUE_STATUSES = ("draft", "approved", "would_publish", "scheduled", "published", "failed", "rejected")
@@ -97,16 +101,29 @@ def conn_dep():
 
 # Chris, 2026-10-11: "The navigation is not intuitive or smart!" Thirteen tabs became four, each
 # with its own short row of pages, so every page is one tap from its section and two from anywhere.
+# Chris, 2026-10-15: "we really need to fix this dashboard ... everything is just very confusing". Today is one
+# page (the drafts, the week, what went out); More became Settings, its system pages first.
 SECTIONS = (
-    ("Today", "/", ("/queue", "/posts", "/send"), (("Queue", "/"), ("Posts", "/posts"), ("Send a photo", "/send"))),
-    ("Photos", "/library", ("/library", "/donotuse", "/drive"),
+    ("Today", "/", ("/queue", "/posts", "/send", "/history"), (("Today", "/"), ("Send a photo", "/send"), ("All posts", "/history"))),
+    ("Photos", "/library", ("/library", "/donotuse", "/drive", "/music"),
      (("To review", "/library"), ("Approved", "/library?view=approved"), ("Blocked", "/library?view=blocked"),
-      ("Folders", "/library?view=folders"), ("Design", "/library?view=design"), ("Do not use", "/donotuse"), ("Drive", "/drive"))),
+      ("Folders", "/library?view=folders"), ("Music", "/music"), ("Do not use", "/donotuse"), ("Drive", "/drive"))),
     ("Bookings", "/inquiries", ("/inquiries", "/bookings", "/calendar"),
      (("Requests", "/inquiries"), ("Bookings", "/bookings"), ("Calendar", "/calendar"))),
-    ("More", "/more", ("/more", "/outreach", "/scout", "/seo", "/learner", "/agents", "/buffer", "/keys", "/errors"),
-     (("Outreach", "/outreach"), ("Scout", "/scout"), ("Search", "/seo"), ("Learner", "/learner"),
-      ("Agents", "/agents"), ("Errors", "/errors"), ("Buffer", "/buffer"), ("Keys", "/keys"))),
+    ("Settings", "/settings", ("/settings", "/more", "/outreach", "/scout", "/seo", "/learner", "/agents", "/buffer", "/keys", "/errors"),
+     (("Agents", "/agents"), ("Errors", "/errors"), ("Keys", "/keys"), ("Buffer", "/buffer"),
+      ("Outreach", "/outreach"), ("Scout", "/scout"), ("Search", "/seo"), ("Learner", "/learner"))),
+)
+# the Settings page, its pages in two groups (2026-10-15: "System pages grouped")
+SETTINGS_GROUPS = (
+    ("System", (("/agents", "Agents", "Every agent: run now, live or practice run."),
+                ("/errors", "Errors", "What the agents could not do, each with its fix where there is one."),
+                ("/keys", "Keys", "Accounts, addresses, passwords and the numbers the suite uses."),
+                ("/buffer", "Buffer", "Link Instagram, pick the board, check the reel format."))),
+    ("Finding work", (("/outreach", "Outreach", "Notes to event organizers, each sent only when you approve it."),
+                      ("/scout", "Scout", "Upcoming conventions and conferences it found, with sources."),
+                      ("/seo", "Search", "How eventcaliber.com shows up in search, and the words on your photos."),
+                      ("/learner", "Learner", "What the post numbers say about times and kinds of photo."))),
 )
 
 
@@ -125,10 +142,38 @@ def nav_for(request: Request) -> dict:
             "chips": [{"label": label, "href": href, "on": on(href)} for label, href in here[3]] if len(here[3]) > 1 else []}
 
 
+def practice_lines() -> Optional[dict]:
+    """The banner on every page while the publisher or the content lane is in practice run (dry run): posts are not
+    going out, and where to switch it on (2026-10-15). Fail closed: a database that cannot be read shows it."""
+    try:
+        conn = db.connect()
+    except Exception:  # noqa: BLE001
+        return today_view.practice(None)
+    try:
+        return today_view.practice(conn)
+    finally:
+        conn.close()
+
+
 def render(request: Request, name: str, **ctx) -> HTMLResponse:
     ctx.setdefault("brand", config.get_config().brand_name)
     ctx.setdefault("nav", nav_for(request))
+    ctx.setdefault("practice", practice_lines() if name != "login.html" else None)     # said once signed in, not to the door
+    ctx.setdefault("status_words", today_view.STATUS_WORDS)
     return TEMPLATES.TemplateResponse(request, name, ctx)
+
+
+# what Today says after a choice made elsewhere, by its short word; any other message is shown as it is
+MSGS = {"redraft": "Fixed. That draft is set aside and a new one is being made with the right words; it shows here in a few "
+                   "minutes, and your phone gets a ping."}
+
+
+def designed_note(conn) -> str:
+    from ..agents import designed
+    try:
+        return designed.status_line(conn)
+    except Exception as e:  # noqa: BLE001  a line on the page, never a broken page
+        return f"Designed drafts: the state could not be read ({type(e).__name__})."
 
 
 def inside_data_root(p: Path) -> bool:
@@ -162,16 +207,20 @@ def queue_view(conn, row) -> dict:
         meta = {}
     art = meta.get("art") or {}
     mended = meta.get("mended") or []
+    on = alerts.networks_on()
     return {**dict(row), "art": art, "captions": captions, "targets": targets, "reports": reports, "official": official,
+            "design_name": DESIGN_WORDS.get(meta.get("design") or "", meta.get("design") or ""),
             "mended": mended[-1] if mended else None,
             "blocked_networks": [n for n in targets if not reports[n].ok],
             "photo_checks": photo_checks, "ineligible": [c for c in photo_checks if not c[1]],
             "video": any(str(x).lower().endswith(".mp4") for x in renders.get("9:16") or []), "cover": bool(renders.get("cover")),
             "music": music.credit(conn, meta.get("music")),          # the track the reel was made with, named under its player
-            "renders": {a: list(range(1, len(ps) + 1)) for a, ps in renders.items() if a not in NOT_THUMBS}}
+            "renders": {a: list(range(1, len(ps) + 1)) for a, ps in renders.items()
+                        if a not in NOT_THUMBS and (a != "2:3" or "pinterest" in on)}}     # the pin card only while Pinterest is on
 
 
 MEDIA_TYPES = {".mp4": "video/mp4", ".png": "image/png"}
+DESIGN_WORDS = {"single": "single photo"}       # every other design is called by its own name (fan, spotlight, carousel, reel)
 
 
 # what a photo shows, in plain words, for the draft page's correction (Chris, 2026-10-11: "it calls a
@@ -223,7 +272,7 @@ def release_dry_run_approvals(conn, name: str) -> int:
 def released_note(n: int) -> str:
     if not n:
         return ""
-    return f" {n} thing{'s' if n != 1 else ''} you approved in dry run go{'' if n != 1 else 'es'} out at {'their' if n != 1 else 'its'} time{'s' if n != 1 else ''}."
+    return f" {n} thing{'s' if n != 1 else ''} you approved in practice run go{'' if n != 1 else 'es'} out at {'their' if n != 1 else 'its'} time{'s' if n != 1 else ''}."
 
 
 def photo_ids_of_row(row) -> list[int]:
@@ -266,15 +315,6 @@ def latest_renders() -> dict:
 DESIGN_DIR = re.compile(r"design-\d{8}-\d{4}")
 DESIGN_FILE = re.compile(r"(index\.html|about\.json|[a-z]+-post\.jpg|slide-\d{2}\.jpg|[a-z]+-reel\.mp4|[a-z]+-reel-cover\.jpg)")
 DESIGN_TYPES = {".html": "text/html", ".json": "application/json", ".jpg": "image/jpeg", ".mp4": "video/mp4"}
-
-
-def latest_design() -> Optional[str]:
-    """The newest folder of design samples in DATA_ROOT/renders that has its page."""
-    renders = config.get_config().data_root / "renders"
-    if not renders.is_dir():
-        return None
-    names = sorted(p.name for p in renders.iterdir() if DESIGN_DIR.fullmatch(p.name) and (p / "index.html").is_file())
-    return names[-1] if names else None
 
 
 PAGE = 48
@@ -521,25 +561,45 @@ def create_app() -> FastAPI:
         resp.delete_cookie(COOKIE)
         return resp
 
-    # ------------------------------------------------------------------ queue
+    # ------------------------------------------------------------------ today
     @app.get("/", response_class=HTMLResponse)
-    def queue(request: Request, user: str = Depends(require_user), conn=Depends(conn_dep), show: str = "open"):
-        if show == "all":
-            where, params = "1=1", ()
-        elif show in QUEUE_STATUSES:
+    def today(request: Request, user: str = Depends(require_user), conn=Depends(conn_dep), show: str = "", msg: str = ""):
+        """Chris, 2026-10-15: one Today page. Needs you (every draft waiting on his approve, newest first, with Post now,
+        Follow the pace and Skip; what else needs him, each alert with its fix), This week, Went out."""
+        if show:
+            return RedirectResponse(f"/history?show={quote_plus(show)}", status_code=303)     # the old Queue's filters
+        from ..agents import chief
+        from ..buffer import metrics
+        drafts = []
+        for r in db.rows(conn, "SELECT * FROM content_queue WHERE kind='photo' AND status='draft' ORDER BY id DESC LIMIT 30"):
+            item = queue_view(conn, r)
+            item.update(origin=today_view.origin(r), choosable=today_view.choosable(item), card=today_view.card_path(r))
+            pace = today_view.pace_slot(conn, r) if item["choosable"] else None
+            item["pace_words"] = f"{today_view.day_words(pace)} {today_view.clock(pace)}" if pace else ""
+            drafts.append(item)
+        others = [(text, href) for text, href in chief.needs(conn) if href not in ("/", "/drive")]
+        return render(request, "today.html", drafts=drafts, others=others, alerts=alerts.open_alerts(conn),
+                      auth_state=settings.get(conn, "drive.auth_state") or "missing", msg=MSGS.get(msg, msg)[:400],
+                      week=today_view.week(conn), went=today_view.went_out(conn), summary=metrics.summary(conn, 30),
+                      designed_note=designed_note(conn), schedule=today_view.schedule(conn), sent_checked=today_view.sent_checked(conn))
+
+    @app.get("/history", response_class=HTMLResponse)
+    def history(request: Request, user: str = Depends(require_user), conn=Depends(conn_dep), show: str = "all"):
+        """Every post, in plain words, with the old Queue's filters and the numbers by week (the old Posts page)."""
+        from ..buffer import metrics
+        if show in QUEUE_STATUSES:
             where, params = "status = ?", (show,)
         else:
-            where, params = "status IN ('draft','approved','scheduled','would_publish','failed')", ()
-        rows = db.rows(conn, f"SELECT * FROM content_queue WHERE {where} ORDER BY id DESC LIMIT 100", params)
-        auth_state = settings.get(conn, "drive.auth_state") or "missing"
-        try:
-            brief = json.loads(settings.get(conn, "chief.brief") or "{}")
-        except ValueError:
-            brief = {}
-        from ..agents import chief
-        return render(request, "queue.html", items=[queue_view(conn, r) for r in rows], show=show,
-                      auth_state=auth_state, msg=request.query_params.get("msg", ""), brief=brief,
-                      needs=chief.needs(conn), open_n=db.one(conn, "SELECT COUNT(*) n FROM errors WHERE alerted=0")["n"])
+            show, where, params = "all", "1=1", ()
+        rows = db.rows(conn, f"SELECT * FROM content_queue WHERE {where} ORDER BY id DESC LIMIT 200", params)
+        items = [{**dict(r), "origin": today_view.origin(r), "card": today_view.card_path(r)} for r in rows]
+        return render(request, "history.html", items=items, show=show, trend=metrics.trend(conn, 12),
+                      filters=[("all", "All")] + [(k, today_view.STATUS_WORDS[k]) for k in
+                                                  ("draft", "approved", "scheduled", "published", "would_publish", "rejected", "failed")])
+
+    @app.get("/queue")
+    def queue_list():
+        return RedirectResponse("/", status_code=303)
 
     @app.get("/send", response_class=HTMLResponse)
     def send_page(request: Request, user: str = Depends(require_user), conn=Depends(conn_dep)):
@@ -562,25 +622,10 @@ def create_app() -> FastAPI:
         return RedirectResponse("/send?msg=" + quote_plus("Sent. It is being sorted, checked and drafted now; your phone gets a ping "
                                                           "with the post in a few minutes."), status_code=303)
 
-    @app.get("/posts", response_class=HTMLResponse)
-    def posts(request: Request, user: str = Depends(require_user), conn=Depends(conn_dep)):
-        """7.2 (2026-10-13): what went out, where it lives, and the numbers Buffer gives (buffer/metrics, written for
-        this and shown nowhere until now)."""
-        from ..buffer import metrics
-        rows = []
-        for h in db.rows(conn, "SELECT h.*, q.render_paths FROM post_history h LEFT JOIN content_queue q ON q.id = h.queue_id "
-                               "ORDER BY COALESCE(h.sent_at, '') DESC, h.id DESC LIMIT 200"):
-            try:
-                renders = json.loads(h["render_paths"] or "{}")
-            except ValueError:
-                renders = {}
-            try:
-                raw = json.loads(h["metrics"] or "{}")
-            except ValueError:
-                raw = {}
-            rows.append({**dict(h), "thumb": f"/media/render/{h['queue_id']}/4x5/1" if h["queue_id"] and renders.get("4:5") else "",
-                         "n": metrics.normalise(raw) if raw else None})
-        return render(request, "posts.html", rows=rows, summary=metrics.summary(conn, 30), trend=metrics.trend(conn, 12))
+    @app.get("/posts")
+    def posts():
+        """The old Posts page lives on Today now: Went out, with the numbers (2026-10-15)."""
+        return RedirectResponse("/#went-out", status_code=303)
 
     @app.post("/queue/{qid}/pullback")
     def queue_pullback(qid: int, user: str = Depends(require_user), conn=Depends(conn_dep)):
@@ -624,12 +669,19 @@ def create_app() -> FastAPI:
     @app.get("/queue/{qid}", response_class=HTMLResponse)
     def queue_detail(qid: int, request: Request, user: str = Depends(require_user), conn=Depends(conn_dep), msg: str = ""):
         row, mended = mended_row(conn, load_queue_row(conn, qid))
-        return render(request, "detail.html", item=queue_view(conn, row), networks=NETWORKS, msg=msg or mended,
-                      shot_choices=SHOT_CHOICES)
+        item = queue_view(conn, row)
+        pace = today_view.pace_slot(conn, row) if row["status"] == "draft" else None
+        return render(request, "detail.html", item=item, networks=NETWORKS, msg=msg or mended, shot_choices=SHOT_CHOICES,
+                      networks_on=alerts.networks_on(),
+                      origin=today_view.origin(row), can_approve=not item["blocked_networks"] and not item["ineligible"] and bool(item["targets"]),
+                      pace_words=f"{today_view.day_words(pace)} {today_view.clock(pace)}" if pace else "",
+                      goes_out=goes_out_words(conn, row) if row["status"] == "approved" else "")
 
-    def approve_gates(conn, row) -> str:
-        """The one Approve, wherever it is pressed (the draft page, the Queue list, Save and approve, the ping's
-        button): the suite's rewrite first, then the rules, the photos and the targets. The message word."""
+    def approve_gates(conn, row, how: str = "pace") -> str:
+        """The one Approve, wherever it is pressed (Today, the draft page, Save and approve, the ping's buttons): the
+        suite's rewrite first, then the rules, the photos and the targets. The message word. `how` is his choice
+        (Chris, 2026-10-15: "an option to post immediately or to follow the pace"): "now" goes out as soon as Buffer
+        takes it (`rule_report.asap`, as a photo from the phone), "pace" at the next open slot, one post a slot."""
         row, mended = mended_row(conn, row)
         item = queue_view(conn, row)
         if item["blocked_networks"]:
@@ -638,13 +690,44 @@ def create_app() -> FastAPI:
             return "ineligible"
         if not item["targets"]:
             return "notargets"
+        try:
+            meta = json.loads(row["rule_report"] or "{}")
+        except ValueError:
+            meta = {}
+        meta = meta if isinstance(meta, dict) else {}
+        meta.update(asap=how == "now", approved_how="now" if how == "now" else "pace")
         now = db.utcnow()
-        conn.execute("UPDATE content_queue SET status='approved', approved_at=?, last_error=NULL, updated_at=? WHERE id=?", (now, now, row["id"]))
+        conn.execute("UPDATE content_queue SET status='approved', approved_at=?, last_error=NULL, rule_report=?, "
+                     "scheduled_for=CASE WHEN ? THEN NULL ELSE scheduled_for END, updated_at=? WHERE id=?",
+                     (now, json.dumps(meta), how == "now", now, row["id"]))
+        if how == "now":
+            start_agent("publisher")         # "post immediately": not at the publisher's next ten-minute run
         return "approved"
+
+    def skip_post(conn, row) -> str:
+        """Skip (Chris, 2026-10-15): the draft is set aside and its photos go back into the rotation, never Don't use
+        (agents/content.recent_use leaves a skipped post out; its use stays on the rotation's record, so the photos
+        come round again after the others). A skipped daily post is drafted again at once. What happened, in words."""
+        from ..agents import content
+        set_aside(conn, row, by=content.SKIPPED, why="Skipped by you. Its photos go back into the rotation.")
+        said = f"Skipped post {row['id']}. Its photos go back into the rotation."
+        if today_view.meta_of(row).get("source") is None:
+            start_agent("content")
+            said += " A new daily post is being made in its place; your phone gets a ping."
+        return said
+
+    def back_to(conn, back: str, qid: int, word: str) -> RedirectResponse:
+        """Where a choice returns: Today (with the message) when it was made there, else the draft's own page."""
+        if back == "/":
+            text = (f"Approved post {qid}. {goes_out_words(conn, load_queue_row(conn, qid))}" if word == "approved"
+                    else APPROVED_WORDS.get(word, word))
+            return RedirectResponse(f"/?msg={quote_plus(text)}#needs", status_code=303)
+        return RedirectResponse(f"/queue/{qid}?msg={word}", status_code=303)
 
     @app.post("/queue/{qid}/save")
     async def queue_save(qid: int, request: Request, user: str = Depends(require_user), conn=Depends(conn_dep)):
-        """Save, or Save and approve (2026-10-13: one form, two buttons; an edit without Save used to be lost)."""
+        """Save, or save and choose (2026-10-13: one form; an edit without Save used to be lost; 2026-10-15: Post now
+        and Follow the pace are this form's buttons, so an edit is never lost on either)."""
         load_queue_row(conn, qid)
         form = await request.form()
         captions = {n: (form.get(f"caption_{n}") or "").strip() for n in NETWORKS}
@@ -652,61 +735,105 @@ def create_app() -> FastAPI:
         scheduled = (form.get("scheduled_for") or "").strip() or None
         conn.execute("UPDATE content_queue SET caption=?, targets=?, scheduled_for=?, updated_at=? WHERE id=?",
                      (json.dumps(captions), json.dumps(targets), scheduled, db.utcnow(), qid))
-        if form.get("do") == "approve":
+        do = form.get("do") or "save"
+        if do in ("approve", "now", "pace"):
             row = load_queue_row(conn, qid)
             if row["status"] == "draft":
-                return RedirectResponse(f"/queue/{qid}?msg={approve_gates(conn, row)}", status_code=303)
+                return RedirectResponse(f"/queue/{qid}?msg={approve_gates(conn, row, 'now' if do == 'now' else 'pace')}", status_code=303)
         return RedirectResponse(f"/queue/{qid}?msg=saved", status_code=303)
 
     @app.post("/queue/{qid}/approve")
-    def queue_approve(qid: int, user: str = Depends(require_user), conn=Depends(conn_dep)):
+    def queue_approve(qid: int, user: str = Depends(require_user), conn=Depends(conn_dep), how: str = Form("pace"),
+                      back: str = Form("")):
+        """Post now or Follow the pace, from Today or the draft page."""
         row = load_queue_row(conn, qid)
         if row["status"] != "draft":
-            return RedirectResponse(f"/queue/{qid}", status_code=303)
-        return RedirectResponse(f"/queue/{qid}?msg={approve_gates(conn, row)}", status_code=303)
+            return RedirectResponse("/" if back == "/" else f"/queue/{qid}", status_code=303)
+        return back_to(conn, back, qid, approve_gates(conn, row, "now" if how == "now" else "pace"))
 
+    @app.post("/queue/{qid}/retry")
+    def queue_retry(qid: int, user: str = Depends(require_user), conn=Depends(conn_dep), back: str = Form("")):
+        """A post that did not go out, approved again (2026-10-15: a fix on its alert): the same gates, the publisher
+        tries again on its next run, and the alerts about it are dismissed (said again if it fails again)."""
+        row = load_queue_row(conn, qid)
+        if row["status"] != "failed":
+            return RedirectResponse("/" if back == "/" else f"/queue/{qid}", status_code=303)
+        word = approve_gates(conn, row, "now" if today_view.meta_of(row).get("asap") else "pace")
+        if word == "approved":
+            dismiss_post_alerts(conn, qid)
+        return back_to(conn, back, qid, word)
+
+    def dismiss_post_alerts(conn, qid: int) -> None:
+        for e in db.rows(conn, "SELECT id, message FROM errors WHERE alerted=0"):
+            if alerts.post_of(e["message"]) == qid:
+                conn.execute("UPDATE errors SET alerted=1 WHERE id=?", (e["id"],))
+
+    APPROVED_WORDS = {"blocked": "Not approved: a caption still breaks a rule after the suite rewrote it. It tries again on its next run.",
+                      "mend_failed": "Not approved: a caption breaks a rule and the suite could not rewrite it just now. Its next run tries again.",
+                      "ineligible": "Not approved: a photo in it can no longer be used. Open the draft.",
+                      "notargets": "Not approved: no network is picked for it. Open the draft."}
     TOKEN_REFUSALS = {"blocked": "A caption still breaks a rule after the suite rewrote it; it tries again on its next run. Open the draft to see it.",
                       "mend_failed": "A caption breaks a rule and the suite could not rewrite it just now. Open the draft to see it.",
                       "ineligible": "A photo in it can no longer be used. Open the draft.",
                       "notargets": "No network is picked for it. Open the draft."}
 
     def goes_out_words(conn, row) -> str:
-        from ..agents import pacing, publisher
-        try:
-            when = pacing.plan(conn, json.loads(row["targets"] or "[]"), row["scheduled_for"], None, config.get_config(),
-                               include_dry=settings.dry_run(conn, "publisher"), not_before=publisher.for_day_of(row))
-            slots = sorted(v for v in when.values() if v)
-            if slots:
-                first = __import__("datetime").datetime.fromisoformat(slots[0])
-                return f"It goes out {first:%A} {first:%H:%M}."
-        except Exception:  # noqa: BLE001  the time is a courtesy; the approval stands
-            pass
-        return "It goes out at its time."
+        from ..agents import publisher
+        dry = settings.dry_run(conn, "publisher")
+        later = " Posting is off (practice run), so it waits as a practice run until the publisher is switched on." if dry else ""
+        if today_view.meta_of(row).get("approved_how") == "now" and not row["scheduled_for"]:
+            return f"It goes out now.{later}"
+        if today_view.meta_of(row).get("asap") and not row["scheduled_for"]:
+            return f"It goes out as soon as Buffer takes it.{later}"
+        when = today_view.goes_out_at(conn, row, publisher_dry=dry)
+        if when is not None:
+            return f"It goes out {when:%A} {when:%H:%M}, the next open slot.{later}"
+        return f"It goes out at its time.{later}"
+
+    CHOICE_WORDS = {"now": "Post now", "pace": "Follow the pace", "skip": "Skip"}
 
     @app.get("/queue/{qid}/approve-by-token", response_class=HTMLResponse)
-    def queue_approve_by_token_page(qid: int, request: Request, conn=Depends(conn_dep), token: str = ""):
-        """A GET never approves (a link preview, a browser prefetch): a page with the button, and nothing more."""
+    @app.get("/queue/{qid}/choose-by-token/{how}", response_class=HTMLResponse)
+    def queue_choose_by_token_page(qid: int, request: Request, conn=Depends(conn_dep), token: str = "", how: str = ""):
+        """A GET never decides anything (a link preview, a browser prefetch): a page with the buttons, and nothing more."""
         row = load_queue_row(conn, qid)
-        return render(request, "approve_token.html", qid=qid, token=token, status=row["status"])
+        return render(request, "approve_token.html", qid=qid, token=token, status=row["status"], choices=CHOICE_WORDS,
+                      how=how if how in CHOICE_WORDS else "")
 
-    @app.post("/queue/{qid}/approve-by-token")
-    async def queue_approve_by_token(qid: int, request: Request, conn=Depends(conn_dep)):
-        """Chris, 2026-10-13: Approve from the morning ping. The body carries the signed, single-use token
-        (core/approve_token); the gates are the page's own; the answer is a sentence for the phone."""
+    async def token_of(request: Request) -> str:
         from urllib.parse import parse_qs
-        row = load_queue_row(conn, qid)
         raw = (await request.body()).decode("utf-8", "replace")
-        token = (parse_qs(raw).get("token") or [raw.strip()])[0]
+        return (parse_qs(raw).get("token") or [raw.strip()])[0]
+
+    def choose_by_token(conn, qid: int, token: str, how: str) -> PlainTextResponse:
+        """Chris, 2026-10-15: Post now, Follow the pace or Skip from the ping. The body carries the signed, single-use
+        token (core/approve_token); the gates are the page's own; the answer is a sentence for the phone."""
+        row = load_queue_row(conn, qid)
         ok, why = approve_token.check(conn, row, token)
         if not ok:
             return PlainTextResponse(why, status_code=409)
         if row["status"] != "draft":
-            return PlainTextResponse(f"Post {qid} is {row['status'].replace('_', ' ')}; nothing to approve.", status_code=409)
-        word = approve_gates(conn, row)
+            return PlainTextResponse(f"Post {qid} is {today_view.STATUS_WORDS.get(row['status'], row['status']).lower()}; "
+                                     "nothing to choose.", status_code=409)
+        if how == "skip":
+            approve_token.spend(conn, qid)
+            return PlainTextResponse(skip_post(conn, row))
+        word = approve_gates(conn, row, how)
         if word != "approved":
             return PlainTextResponse(TOKEN_REFUSALS.get(word, word), status_code=409)
         approve_token.spend(conn, qid)
         return PlainTextResponse(f"Approved post {qid}. {goes_out_words(conn, load_queue_row(conn, qid))}")
+
+    @app.post("/queue/{qid}/choose-by-token/{how}")
+    async def queue_choose_by_token(qid: int, how: str, request: Request, conn=Depends(conn_dep)):
+        if how not in CHOICE_WORDS:
+            raise HTTPException(404)
+        return choose_by_token(conn, qid, await token_of(request), how)
+
+    @app.post("/queue/{qid}/approve-by-token")
+    async def queue_approve_by_token(qid: int, request: Request, conn=Depends(conn_dep)):
+        """The Approve button of a ping sent before 2026-10-15: Follow the pace."""
+        return choose_by_token(conn, qid, await token_of(request), "pace")
 
     @app.post("/queue/{qid}/requeue")
     def queue_requeue(qid: int, user: str = Depends(require_user), conn=Depends(conn_dep)):
@@ -732,16 +859,15 @@ def create_app() -> FastAPI:
             return RedirectResponse(f"/?msg=redraft", status_code=303)
         return RedirectResponse(f"/queue/{qid}?msg=saved", status_code=303)
 
+    @app.post("/queue/{qid}/skip")
     @app.post("/queue/{qid}/reject")
-    def queue_reject(qid: int, user: str = Depends(require_user), conn=Depends(conn_dep)):
-        """Chris, 2026-10-13: a reject sets the post aside with him on the record, its photo sits out
-        (agents/content.recent_use), and a new one is drafted at once instead of the day waiting for 08:00."""
+    def queue_skip(qid: int, user: str = Depends(require_user), conn=Depends(conn_dep), back: str = Form("")):
+        """Skip (Chris, 2026-10-15; Reject before): set aside with him on the record, its photos back in the rotation, and
+        a skipped daily post drafted again at once instead of the day waiting for 08:00."""
         row = load_queue_row(conn, qid)
         if row["status"] not in ("draft", "approved"):
             return RedirectResponse(f"/queue/{qid}", status_code=303)
-        set_aside(conn, row, by="chris", why="Set aside by you. A new one is being drafted.")
-        start_agent("content")
-        return RedirectResponse("/?msg=rejected", status_code=303)
+        return RedirectResponse(f"/?msg={quote_plus(skip_post(conn, row))}#needs", status_code=303)
 
     @app.post("/queue/{qid}/unapprove")
     def queue_unapprove(qid: int, user: str = Depends(require_user), conn=Depends(conn_dep)):
@@ -772,7 +898,8 @@ def create_app() -> FastAPI:
         if row is None or not approve_token.check(conn, row, name[:-4])[0]:
             raise HTTPException(404)
         renders = json.loads(row["render_paths"] or "{}")
-        for aspect in ("4:5", "2:3", "cover"):
+        # a reel's own cover first (2026-10-15: the ping showed the reel's Pinterest card), else the post's card
+        for aspect in (("cover", "4:5", "2:3") if renders.get("9:16") else ("4:5", "2:3", "cover")):
             paths = renders.get(aspect) or []
             if paths and inside_data_root(Path(paths[0])):
                 return FileResponse(paths[0], media_type=MEDIA_TYPES.get(Path(paths[0]).suffix.lower(), "image/jpeg"))
@@ -806,9 +933,10 @@ def create_app() -> FastAPI:
         each with Use and Don't use. Approved: everything cleared, by the photo or its folder.
         Folders: clear a whole shoot at once. Design and music: samples on approved photos only."""
         msg = request.query_params.get("msg", "")
+        if view == "design":
+            return RedirectResponse("/", status_code=303)       # 2026-10-15: the samples became designed drafts on Today
         prepare_photo_views(conn, eligibility.folder_decisions(conn))
-        common = dict(view=view, msg=msg, counts={"approved": count_photos(conn, "approved")} if view == "design" else {},
-                      drive_state=settings.get(conn, "drive.auth_state") or "missing")
+        common = dict(view=view, msg=msg, drive_state=settings.get(conn, "drive.auth_state") or "missing")
         if view == "folders":
             where = "conv > 0" if show == "events" else ("f.clearance='cleared'" if show == "cleared" else "1=1")
             rows = db.rows(conn, f"""
@@ -826,10 +954,6 @@ def create_app() -> FastAPI:
                 if rows:
                     note = "No folder has been recognised as event work yet, so every folder with photos is shown."
             return render(request, "library.html", folders=rows, show=show, note=note, **common)
-        if view == "design":
-            from ..render import design_samples
-            return render(request, "library.html", renders=latest_renders(), design=latest_design(), tracks=music.tracks(conn),
-                          design_status=design_samples.read_status(), readiness=design_samples.readiness(conn), **common)
         view = view if view in ("approved", "blocked") else "review"
         subject = subject if subject in SUBJECTS else "event"
         subject_counts = {s: count_photos(conn, view, s) for s, _ in SUBJECT_WORDS}
@@ -858,9 +982,19 @@ def create_app() -> FastAPI:
                       subject_counts=subject_counts, subject_words=SUBJECT_WORDS, site=site,
                       hero_id=int(hero) if hero and hero.isdigit() else None, hero_upload=hero_upload.status(conn), **common)
 
-    @app.get("/more", response_class=HTMLResponse)
-    def more(request: Request, user: str = Depends(require_user)):
-        return render(request, "more.html")
+    @app.get("/more")
+    def more():
+        return RedirectResponse("/settings", status_code=303)
+
+    @app.get("/settings", response_class=HTMLResponse)
+    def settings_page(request: Request, user: str = Depends(require_user), conn=Depends(conn_dep)):
+        """More became Settings (2026-10-15): the system pages first, then the pages that find work."""
+        return render(request, "settings.html", groups=SETTINGS_GROUPS, open_n=len(alerts.open_alerts(conn)))
+
+    @app.get("/music", response_class=HTMLResponse)
+    def music_page(request: Request, user: str = Depends(require_user), conn=Depends(conn_dep), msg: str = ""):
+        """Music for reels, and the library report the scanner makes (both lived on the Design card until 2026-10-15)."""
+        return render(request, "music.html", tracks=music.tracks(conn), renders=latest_renders(), msg=msg)
 
     @app.get("/library/report")
     def library_report(user: str = Depends(require_user)):
@@ -875,50 +1009,33 @@ def create_app() -> FastAPI:
                                 user: str = Depends(require_user), conn=Depends(conn_dep)):
         """A track for the reels, kept only with its record: where it came from and what that allows."""
         if rights != "yes":
-            return RedirectResponse("/library?msg=Tick+that+you+have+the+right+to+use+the+track+in+posts", status_code=303)
+            return RedirectResponse("/music?msg=Tick+that+you+have+the+right+to+use+the+track+in+posts", status_code=303)
         data = await file.read(music.MAX_BYTES + 1)
         try:
             music.add(conn, file.filename or "", data, title=title, artist=artist, source=source, terms=terms)
         except music.Refused as e:
-            return RedirectResponse(f"/library?msg=Track+not+added:+{str(e).replace(' ', '+')}", status_code=303)
-        return RedirectResponse("/library?msg=Track+added.+New+reels+use+the+newest+track.", status_code=303)
+            return RedirectResponse(f"/music?msg=Track+not+added:+{str(e).replace(' ', '+')}", status_code=303)
+        return RedirectResponse("/music?msg=Track+added.+New+reels+use+the+newest+track.", status_code=303)
 
     @app.post("/library/music/{tid}/active")
     def library_music_active(tid: int, state: str = Form(...), user: str = Depends(require_user), conn=Depends(conn_dep)):
         music.set_active(conn, tid, state == "on")
-        return RedirectResponse("/library", status_code=303)
-
-    @app.post("/library/design")
-    def library_design_make(user: str = Depends(require_user)):
-        """Start `ccs design` (its own lock; a second press while one runs does nothing). It reads
-        Drive's previews and writes only under DATA_ROOT/renders; nothing is posted."""
-        from ..render import design_samples
-        design_samples.write_status("running", "being made on your approved photos")
-        design_samples.start_in_background()
-        return RedirectResponse("/library?view=design&msg=Making+design+samples+on+your+approved+photos.+This+card+says+when+they+are+ready.",
-                                status_code=303)
+        return RedirectResponse("/music", status_code=303)
 
     @app.get("/library/design")
     def library_design(user: str = Depends(require_user)):
-        latest = latest_design()
-        if not latest:
-            return RedirectResponse("/library?msg=No+design+samples+yet:+press+Make+design+samples", status_code=303)
-        return RedirectResponse(f"/library/design/{latest}/index.html", status_code=303)
+        return RedirectResponse("/", status_code=303)       # 2026-10-15: the samples became designed drafts on Today
 
     @app.get("/library/design/{folder}/{name}")
-    def library_design_file(folder: str, name: str, user: str = Depends(require_user), conn=Depends(conn_dep), msg: str = ""):
+    def library_design_file(folder: str, name: str, user: str = Depends(require_user)):
         # only a design folder and only the files the designer writes, by exact name
         if not DESIGN_DIR.fullmatch(folder) or not DESIGN_FILE.fullmatch(name):
             raise HTTPException(404)
+        if name == "index.html":
+            return RedirectResponse("/", status_code=303)   # 2026-10-15: no samples page; the designed drafts are on Today
         path = config.get_config().data_root / "renders" / folder / name
         if not path.is_file():
             raise HTTPException(404)
-        if name == "index.html":
-            # the page as it stands now (2026-10-15): each sample's Post this, or why it can no longer be drafted
-            from ..render import design_samples
-            live = design_samples.live_page(conn, folder, msg=msg[:300])
-            if live is not None:
-                return HTMLResponse(live)
         return FileResponse(path, media_type=DESIGN_TYPES[Path(name).suffix])
 
     @app.post("/library/design/{folder}/post")
@@ -931,7 +1048,7 @@ def create_app() -> FastAPI:
         from ..render import design_samples
         if not DESIGN_DIR.fullmatch(folder) or design not in sample.DESIGNS:
             raise HTTPException(404)
-        back = f"/library/design/{folder}/index.html?msg="
+        back = "/?msg="
         rec = design_samples.sample_of(folder, design)
         why = design_samples.stale(conn, folder, rec)
         if why:
@@ -943,12 +1060,15 @@ def create_app() -> FastAPI:
         if ids != [int(p) for p in rec["photos"]]:
             return RedirectResponse(back + quote_plus("Not drafted: the photos asked for are not the photos this sample was made from."),
                                     status_code=303)
+        again = sample.used_lately(conn, ids)
+        if again:
+            return RedirectResponse(back + quote_plus(f"Not drafted: {again}."), status_code=303)
         if settings.dry_run(conn, "content"):
             return RedirectResponse(back + quote_plus(f"Not drafted: {sample.DRY_RUN}."), status_code=303)
         sample.ask(conn, folder, design, ids)
         start_agent("sample", wait=True)
-        return RedirectResponse(back + quote_plus(f"The {design} sample is being checked and drafted now, on the same road as the daily "
-                                                  "post. Your phone gets a ping with Approve in a few minutes."), status_code=303)
+        return RedirectResponse(back + quote_plus(f"The {design} idea is being checked and drafted now, on the same road as the daily "
+                                                  "post. Your phone gets a ping in a few minutes."), status_code=303)
 
     @app.get("/library/renders/{name}")
     def library_render(name: str, user: str = Depends(require_user)):
@@ -1300,9 +1420,8 @@ def create_app() -> FastAPI:
             rows.append({"name": name, "meta": meta, "built": is_built(name), "runnable": name in RUNNABLE,
                          "dry_run": settings.dry_run(conn, name) if name in settings.AGENTS_WITH_DRY_RUN else None,
                          "last": dict(last) if last else None})
-        errors, kinds = open_errors(conn)
         switches = [r for r in rows if r["dry_run"] is not None]
-        return render(request, "agents.html", agents=rows, errors=errors, kinds=kinds, back="/agents", msg=request.query_params.get("msg", ""),
+        return render(request, "agents.html", agents=rows, alerts=alerts.open_alerts(conn), back="/agents", msg=request.query_params.get("msg", ""),
                       live_n=sum(1 for r in switches if not r["dry_run"]), switch_n=len(switches),
                       ai_mtd=spend.month_to_date(conn), ai_cap=config.get_config().ai_monthly_cap_usd)
 
@@ -1324,7 +1443,7 @@ def create_app() -> FastAPI:
             settings.set_dry_run(conn, name, state != "off")
             if state == "off":
                 released += release_dry_run_approvals(conn, name)
-        word = "dry run" if state != "off" else "LIVE"
+        word = "in practice run" if state != "off" else "LIVE"
         return RedirectResponse(f"/agents?msg={quote_plus(f'Every agent is now {word}.' + released_note(released))}", status_code=303)
 
     @app.post("/agents/{name}/dry-run")
@@ -1333,29 +1452,47 @@ def create_app() -> FastAPI:
             raise HTTPException(404)
         settings.set_dry_run(conn, name, state != "off")
         released = release_dry_run_approvals(conn, name) if state == "off" else 0
-        word = "dry run" if state != "off" else "LIVE"
+        word = "in practice run" if state != "off" else "LIVE"
         return RedirectResponse(f"/agents?msg={quote_plus(f'{name} is now {word}.' + released_note(released))}", status_code=303)
 
-    def open_errors(conn) -> tuple[list[dict], list[dict]]:
-        errors = [dict(e) for e in db.rows(conn, "SELECT * FROM errors WHERE alerted=0 ORDER BY id DESC LIMIT 50")]
-        kinds = [dict(k) for k in db.rows(conn, "SELECT kind, COUNT(*) AS n FROM errors WHERE alerted=0 GROUP BY kind ORDER BY n DESC")]
-        return errors, kinds
+    ERROR_PAGES = ("/agents", "/errors", "/")
 
-    ERROR_PAGES = ("/agents", "/errors")
+    def error_back(back: str, msg: str) -> RedirectResponse:
+        page = back if back in ERROR_PAGES else "/errors"
+        return RedirectResponse(f"{page}?msg={quote_plus(msg)}" + ("#needs" if page == "/" else ""), status_code=303)
 
     @app.get("/errors", response_class=HTMLResponse)
     def errors_page(request: Request, user: str = Depends(require_user), conn=Depends(conn_dep)):
-        """The open errors on their own page (More listed it with nothing behind it, 2026-10-13)."""
-        errors, kinds = open_errors(conn)
-        return render(request, "errors.html", errors=errors, kinds=kinds, back="/errors", msg=request.query_params.get("msg", ""))
+        """Every open alert, one card per kind, each with its fix where there is one (2026-10-15)."""
+        return render(request, "errors.html", alerts=alerts.open_alerts(conn), back="/errors", msg=request.query_params.get("msg", ""))
+
+    @app.post("/errors/fix")
+    def fix_alert(kind: str = Form(...), back: str = Form(default="/errors"), user: str = Depends(require_user), conn=Depends(conn_dep)):
+        """The fix on an alert the suite can do itself: a failed post approved again, or an agent run again. The kind is
+        dismissed with it; if it happens again it is said again."""
+        group = next((g for g in alerts.open_alerts(conn) if g["kind"] == kind), None)
+        fix = (group or {}).get("fix") or {}
+        if fix.get("action") == "retry":
+            row = load_queue_row(conn, fix["qid"])
+            if row["status"] != "failed":
+                return error_back(back, f"Post {fix['qid']} is not waiting on a fix any more.")
+            word = approve_gates(conn, row, "now" if today_view.meta_of(row).get("asap") else "pace")
+            if word != "approved":
+                return error_back(back, APPROVED_WORDS.get(word, word))
+            dismiss_post_alerts(conn, fix["qid"])
+            return error_back(back, f"Approved post {fix['qid']} again. {goes_out_words(conn, load_queue_row(conn, fix['qid']))}")
+        if fix.get("action") == "run" and fix["agent"] in RUNNABLE and is_built(fix["agent"]):
+            start_agent(fix["agent"])
+            conn.execute("UPDATE errors SET alerted=1 WHERE alerted=0 AND kind=?", (kind,))
+            return error_back(back, f"Started the {fix['agent']} again. If it fails again, it is said again here.")
+        return error_back(back, "That alert has no fix the suite can do itself; its page or Dismiss is the way.")
 
     @app.post("/errors/ack-kind")
     def ack_kind(kind: str = Form(...), back: str = Form(default="/agents"), user: str = Depends(require_user), conn=Depends(conn_dep)):
         """Dismiss every open error of one kind (Chris, 2026-10-11: "the terminal command to dismiss
         all the drive errors"). A dismissed error stays in the table; it only leaves this list."""
         n = conn.execute("UPDATE errors SET alerted=1 WHERE alerted=0 AND kind=?", (kind,)).rowcount
-        page = back if back in ERROR_PAGES else "/agents"
-        return RedirectResponse(f"{page}?msg={n}+{kind.replace('_', '+')}+errors+dismissed", status_code=303)
+        return error_back(back, f"Dismissed {n}: {alerts.TITLES.get(kind, kind.replace('_', ' '))}.")
 
     @app.post("/errors/{eid}/ack")
     def ack_error(eid: int, back: str = Form(default="/agents"), user: str = Depends(require_user), conn=Depends(conn_dep)):
@@ -1527,6 +1664,11 @@ def create_app() -> FastAPI:
                                         "A fine-grained token for that one repository with one permission, Issues: Read and write. "
                                         "Without it the doctor pings you instead.",
              "fields": [f("GITHUB_TOKEN", "Fine-grained token (Issues only)", secret=True)]},
+            {"title": "Designed drafts", "note": "The suite designs posts by itself from 8:00 to 20:00, one an hour, each on your "
+                                                 "approved photos with Claude's final check, and sends each to your phone with Post now, "
+                                                 "Follow the pace and Skip. No more are made while that many still wait for you. A photo "
+                                                 "is never on two posts inside the longer of the two windows under Posting.",
+             "fields": [f("DESIGNED_PER_DAY", "Designed drafts a day (default 3; 0 stops them; 6 at most)")]},
             {"title": "Local sorting", "note": "Ollama on this Mini sorts the photo library for free. Leave blank to use the first vision model it has.",
              "fields": [f("OLLAMA_MODEL", "Ollama model"), f("CLASSIFY_BACKEND", "Sorter", choices=["auto", "ollama", "claude"])]},
             {"title": "This dashboard", "note": "The address you open this dashboard at from your phone.",

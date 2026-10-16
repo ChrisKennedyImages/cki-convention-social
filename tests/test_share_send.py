@@ -327,7 +327,7 @@ class Approved(ShareCase):
         row, meta = self.post()
         self.assertEqual(row["status"], "draft")
         self.assertNotIn("approved_by", meta)
-        self.assertIn("Approve", push.call_args[1]["actions"])
+        self.assertIn("Post now", push.call_args[1]["actions"])        # his three choices (PR #80, 2026-10-15)
 
 
 class DryRun(ShareCase):

@@ -243,8 +243,8 @@ class Draft(IsolatedCase):
         self.assertEqual(push.call_count, 1)
         title, message = push.call_args[0][:2]
         self.assertIn("your photo from the floor", title)
-        self.assertIn("as soon as Buffer takes it", message)
-        self.assertIn("Approve", push.call_args[1]["actions"])
+        self.assertIn("Post now and it goes out at once", message)     # Post now posts immediately (2026-10-15)
+        self.assertIn("Post now", push.call_args[1]["actions"])        # his three choices since 2026-10-15
         self.assertIn(f"/media/card/{row['id']}/", push.call_args[1]["attach"])
         self.assertEqual(db.one(self.conn, "SELECT status, queue_id FROM phone_sends WHERE id=?", (sid,))["queue_id"], row["id"])
 

@@ -1,8 +1,7 @@
 {% extends "base.html" %}
 {% block body %}
 <h1>Errors</h1>
-{% if msg %}<div class="card">{{ msg }}</div>{% endif %}
-<div class="card muted">What the agents could not do, each said once while it stands. The watchdog mails and pings each one when it appears;
-  Dismiss takes it off this list and the next time it happens it is said again.</div>
+{% if msg %}<div class="msg">{{ msg }}</div>{% endif %}
+<div class="card muted">What the agents could not do, one card for each kind, newest first. The button on a card fixes it where there is a fix: sign in, add a key, approve a post again, run an agent again. Dismiss takes it off this list; if it happens again it is said again. Alerts about a network that is switched off never show.</div>
 {% include "_errors.html" %}
 {% endblock %}

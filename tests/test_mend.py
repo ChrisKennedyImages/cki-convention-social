@@ -160,7 +160,7 @@ class OnTheDraftPage(Mend):
         self.assertTrue(all(copy_rules.check(t, social=True).ok for t in json.loads(self.row(qid)["caption"]).values()))
         page = self.client.get(f"/queue/{qid}").text
         self.assertNotIn("Nothing to fix.", page, "once mended it just passes")
-        self.assertIn("rules pass, rewritten by the suite", self.client.get("/").text)
+        self.assertIn("Rules pass, rewritten by the suite", self.client.get("/").text)
 
     def test_approve_mends_first_instead_of_refusing(self):
         qid = self.draft()
