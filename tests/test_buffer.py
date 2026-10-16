@@ -99,6 +99,28 @@ class Client(AgentCase):
             BufferClient("test-key", conn=conn, transport=refused).delete_post("post-8")
         self.assertEqual(refused.deleted, [])
 
+    def test_delete_post_reads_its_reply_from_the_live_schema(self):
+        """2026-10-16: the pull back asked for a reply Buffer's deletePost never gives (PostActionSuccess; the live
+        DeletePostPayload is DeletePostSuccess | VoidMutationError) and Buffer refused every pull back unread. The
+        success member of the reply is read from the live schema like the input, never recalled."""
+        from tests._fakes import member
+        conn = self.connect()
+        fake = FakeBuffer()
+        self.assertTrue(BufferClient("test-key", conn=conn, transport=fake).delete_post("post-7"))
+        self.assertEqual(fake.deleted, ["post-7"])
+        self.assertIn("DeletePostPayload", [v.get("name") for op, v in fake.calls if "UnionType" in op])
+        renamed = FakeBuffer(unions={"DeletePostPayload": [member("PostRemoved", ["id"]), member("VoidMutationError", ["message"], error=True)]})
+        self.assertTrue(BufferClient("test-key", conn=conn, transport=renamed).delete_post("post-7"))
+        self.assertEqual(renamed.deleted, ["post-7"], "whatever Buffer calls its success, it is read from the schema")
+        for unions, why in (({"DeletePostPayload": [member("VoidMutationError", ["message"], error=True)]}, "no success member"),
+                            ({"DeletePostPayload": [member("DeletePostSuccess", []), member("VoidMutationError", ["message"], error=True)]}, "success without the id"),
+                            ({"DeletePostPayload": [member("A", ["id"]), member("B", ["id"])]}, "two successes to choose from"),
+                            ({}, "no DeletePostPayload at all")):
+            odd = FakeBuffer(unions=unions)
+            with self.assertRaises(BufferError, msg=why):
+                BufferClient("test-key", conn=conn, transport=odd).delete_post("post-7")
+            self.assertEqual(odd.deleted, [], f"{why}: nothing is deleted blind")
+
 
 class Payloads(AgentCase):
     def test_instagram_and_facebook_shapes(self):
