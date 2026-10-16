@@ -648,7 +648,7 @@ def build(conn: Optional[sqlite3.Connection], photos: SitePhotos, *, out: Path =
     saved_logos = []
     for c in logos:
         file, lw, lh = save_logo(c, assets / "clients")
-        saved_logos.append((file, c["name"], c["tile"], lw, lh))
+        saved_logos.append((file, c["name"], lw, lh))
     strip = clients_body(heading, saved_logos)
     if left_out and conn is not None and not preview:
         from ..core import runner
