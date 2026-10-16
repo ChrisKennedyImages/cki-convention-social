@@ -1351,6 +1351,26 @@ Free; nothing opened on the Mini's network; one setup run on the Mini (docs/SETU
 
 Pinned by `tests/test_tunnel.py`.
 
+## 2026-10-15: one change at a time, shown first, and one voice
+
+Chris, the same day, as the number of sessions grew:
+
+- "show me all examples always for approval": every visible change, small
+  fixes included, reaches him as a rendered before and after; nothing merges
+  without his OK on it.
+- "no, you coordinate, i mistakenly thought i was in this session so message
+  the agent": one coordinating session talks to him; the others report to it.
+- "you can merge if you ask me so merge": on his yes, Claude merges, pinned to
+  the tested commit.
+- "Let's slow down on merges and let things catch up if they're still things
+  working?": one change at a time on the Mini, each deployed and checked live
+  before the next. That afternoon six or seven sessions ran full test suites
+  at once on the Mini; the updater's 30-minute test run timed out on every
+  update from 14:52 to 21:52, and a test that read the Mini's own
+  `wrangler.live.jsonc` stopped `scripts/go-live.sh` (both fixed the same
+  night: the updater gives the suite an hour; tests never see that file).
+- "Put that in law": `CLAUDE.md`, "How changes reach the Mini".
+
 ## Standing rules from the brief
 
 - CPAC, the ACU and their affiliates are never contacted, by code
