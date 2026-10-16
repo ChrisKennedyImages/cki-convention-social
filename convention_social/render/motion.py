@@ -290,6 +290,36 @@ def single_post(shot: Shot, copy: MotionCopy, *, out: Path, aspect: str = "4:5",
     return save(grain_still(img), out, meta)
 
 
+STORY_SIZE = (1080, 1920)
+STORY_SAFE = 250              # Instagram lays its own bar over about this much at the top, and the reply box at the bottom
+
+
+def story_card(shot: Shot, *, out: Path, site: str = "eventcaliber.com", meta: Optional[ImageMeta] = None) -> Path:
+    """An Instagram Story from one instant photo (Chris, 2026-10-15: every instant photo goes out as a Story): the photo
+    whole, as large as the Story's safe area lets it be, flat and facing you, on the backdrop; the mark above it and the
+    address under it. No caption and no room: a Story carries none."""
+    from .brand import draw_mark
+    from .edge import APERTURE
+    check_copy(site)
+    w, h = STORY_SIZE
+    img = backdrop(w, h)
+    top, bottom = STORY_SAFE + 70, h - STORY_SAFE - 70        # the mark's row above, the address's row below
+    src = open_photo(shot.photo)
+    scale = min((w - 120) / src.width, (bottom - top - 40) / src.height)
+    fw, fh = max(1, round(src.width * scale)), max(1, round(src.height * scale))
+    face_img = card_face(replace(shot, focus=(0.5, 0.5)), fw, fh, 0, label=False, radius=24)
+    x, y = (w - face_img.width) // 2, top + (bottom - top - face_img.height) // 2
+    img.paste(face_img, (x, y), face_img)
+    layer = Image.new("RGBA", (600, 160), (0, 0, 0, 0))
+    mw, mh = draw_mark(layer, APERTURE, 0, 0, 46)
+    mark = layer.crop((0, 0, mw + 4, mh + 4))
+    img.paste(mark, ((w - mark.width) // 2, STORY_SAFE), mark)
+    d = ImageDraw.Draw(img)
+    sw = mono_w(d, site, 30, 0.16)
+    mono(d, ((w - sw) / 2, h - STORY_SAFE - 52), site, 30, W, 0.16)
+    return save(grain_still(img), out, meta)
+
+
 def spotlight_post(shots: Sequence[Shot], copy: MotionCopy, *, out: Path, index: int = 2, official: bool = False,
                    meta: Optional[ImageMeta] = None, counter: str = "") -> Path:
     _check(shots, copy, official)

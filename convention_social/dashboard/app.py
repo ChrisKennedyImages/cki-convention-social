@@ -168,6 +168,7 @@ def queue_view(conn, row) -> dict:
             "photo_checks": photo_checks, "ineligible": [c for c in photo_checks if not c[1]],
             "video": any(str(x).lower().endswith(".mp4") for x in renders.get("9:16") or []), "cover": bool(renders.get("cover")),
             "music": music.credit(conn, meta.get("music")),          # the track the reel was made with, named under its player
+            "instant_format": meta.get("format", "") if meta.get("instant") else "",   # an instant photo's Story or feed post (2026-10-15)
             "renders": {a: list(range(1, len(ps) + 1)) for a, ps in renders.items() if a not in NOT_THUMBS}}
 
 
@@ -772,7 +773,7 @@ def create_app() -> FastAPI:
         if row is None or not approve_token.check(conn, row, name[:-4])[0]:
             raise HTTPException(404)
         renders = json.loads(row["render_paths"] or "{}")
-        for aspect in ("4:5", "2:3", "cover"):
+        for aspect in ("story", "4:5", "2:3", "cover"):          # an instant photo's ping shows the Story that goes out (2026-10-15)
             paths = renders.get(aspect) or []
             if paths and inside_data_root(Path(paths[0])):
                 return FileResponse(paths[0], media_type=MEDIA_TYPES.get(Path(paths[0]).suffix.lower(), "image/jpeg"))
@@ -1643,9 +1644,10 @@ def create_app() -> FastAPI:
         config.write_env({"DASHBOARD_PASSWORD_HASH": auth.hash_password(password)})
         return RedirectResponse("/keys?msg=password+changed", status_code=303)
 
-    from . import learner_seo_routes, scout_outreach_routes
+    from . import learner_seo_routes, scout_outreach_routes, team_routes
     learner_seo_routes.register(app, require_user, conn_dep, render)
     scout_outreach_routes.register(app, require_user, conn_dep, render)
+    team_routes.register(app, require_user, conn_dep, render)
     return app
 
 

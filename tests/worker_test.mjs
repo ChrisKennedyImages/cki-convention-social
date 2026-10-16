@@ -318,4 +318,83 @@ ok(waiting().length === 30, "never more than thirty waiting for the Mini");
 r = await send(sendForm(JPEG));
 ok(r.status === 503 && (await r.text()).includes("waiting"), "thirty waiting: refused, and it says the Mini has not picked them up");
 Date.now = realNow;
+
+// The team (2026-10-15): Chris's photographers send with tokens of their own. The Mini puts their hashes (never a name)
+// at private/team.json; a phone without Shortcuts opens a one-time link that sets a cookie for the upload page.
+for (const k of [...env.MEDIA.store.keys()]) if (k.startsWith("private/sends/") || k.startsWith("private/send-log")) env.MEDIA.store.delete(k);
+const hex = async (t) => [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(t)))].map((b) => b.toString(16).padStart(2, "0")).join("");
+const annaTok = "a".repeat(43), benTok = "b".repeat(43), joinCode = "j".repeat(32), oldCode = "o".repeat(32);
+const putTeam = (body, auth = "Bearer tok") => worker.fetch(new Request(`${base}/api/team`, { method: "PUT", body: JSON.stringify(body),
+  headers: { authorization: auth, "content-type": "application/json" } }), env);
+const teamBody = async (benActive = true) => ({
+  members: [{ id: 1, token_sha256: await hex(annaTok), active: true }, { id: 2, token_sha256: await hex(benTok), active: benActive }],
+  joins: [{ code_sha256: await hex(joinCode), member_id: 1, expires_at: new Date(Date.now() + 86400e3).toISOString() },
+          { code_sha256: await hex(oldCode), member_id: 1, expires_at: new Date(Date.now() - 1000).toISOString() }] });
+r = await putTeam(await teamBody(), `Bearer ${sendToken}`);
+ok(r.status === 403 && !env.MEDIA.store.has("private/team.json"), "the team list is the Mini's to write: the phone's token cannot");
+r = await putTeam(await teamBody());
+ok(r.status === 200 && env.MEDIA.store.has("private/team.json"), "the Mini writes the team list");
+ok(!/anna|ben/i.test(env.MEDIA.store.get("private/team.json")), "the list at the site carries no name");
+r = await putTeam({ members: [{ id: 3, token_sha256: "plain-token", active: true }] });
+ok(r.status === 400, "anything but a hash is refused");
+await putTeam(await teamBody());
+r = await send(sendForm(JPEG, { note: "the green room" }), { authorization: `Bearer ${annaTok}` });
+ok(r.status === 200 && waiting().length === 1, "a photographer's own token sends");
+ok(env.MEDIA.meta.get(waiting()[0]).customMetadata.sender === "m1", "and the send says who, by number only");
+r = await send(sendForm(JPEG), { authorization: `Bearer ${sendToken}` });
+ok(r.status === 200 && env.MEDIA.meta.get(waiting()[1]).customMetadata.sender === "chris", "Chris's own token is Chris");
+await putTeam(await teamBody(false));
+r = await send(sendForm(JPEG), { authorization: `Bearer ${benTok}` });
+ok(r.status === 403 && waiting().length === 2, "a photographer switched off: refused at once");
+r = await send(sendForm(JPEG), { authorization: `Bearer ${"c".repeat(43)}` });
+ok(r.status === 403, "a token nobody holds: refused");
+delete env.SEND_TOKEN;
+r = await send(sendForm(JPEG), { authorization: `Bearer ${annaTok}` });
+ok(r.status === 200, "the team sends without Chris's own token set");
+env.SEND_TOKEN = sendToken;
+r = await worker.fetch(new Request(`${base}/api/sends`, { headers: { authorization: "Bearer tok" } }), env);
+ok((await r.json()).sends.map((x) => x.sender).sort().join() === "chris,m1,m1", "the Mini lists who sent each, by number");
+for (let i = 0; i < 20; i++) await send(sendForm(JPEG), { authorization: `Bearer ${annaTok}` });
+r = await send(sendForm(JPEG), { authorization: `Bearer ${sendToken}` });
+ok(r.status === 200, "the hourly limit is each sender's own: Anna's twenty do not stop Chris");
+// a phone without Shortcuts: the one-time link, a button (a link preview fetches the page and uses nothing), a cookie
+for (const k of [...env.MEDIA.store.keys()]) if (k.startsWith("private/sends/") || k.startsWith("private/send-log")) env.MEDIA.store.delete(k);
+r = await worker.fetch(new Request(`${base}/join/${joinCode}`), env);
+page = await r.text();
+ok(r.status === 200 && page.includes('method="post"') && !r.headers.get("set-cookie"), "the link opens a page with a button; nothing is used yet");
+ok(!page.includes(annaTok) && r.headers.get("referrer-policy") === "no-referrer", "no token on it, and it sends no referrer");
+const join = (code, init = {}) => worker.fetch(new Request(`${base}/join`, { method: "POST", body: form({ code }),
+  headers: { origin: base, ...(init.headers || {}) } }), env);
+r = await join(oldCode);
+ok(r.status === 403 && !r.headers.get("set-cookie"), "an expired link: refused");
+r = await join(joinCode);
+const cookie = (r.headers.get("set-cookie") || "").split(";")[0];
+ok(r.status === 303 && r.headers.get("location") === "/upload", "the button opens the upload page");
+ok(/HttpOnly/.test(r.headers.get("set-cookie")) && /Secure/.test(r.headers.get("set-cookie")) && /SameSite=Strict/.test(r.headers.get("set-cookie")),
+   "the cookie is HttpOnly, Secure and SameSite=Strict");
+ok(cookie.startsWith("ec_send=") && !cookie.includes(annaTok), "the cookie is a session of its own, never the Shortcut's token");
+r = await join(joinCode);
+ok(r.status === 403 && !r.headers.get("set-cookie"), "the link works once");
+r = await worker.fetch(new Request(`${base}/upload`), env);
+ok(r.status === 200 && (await r.text()).includes("Open the link Chris sent you"), "the upload page, without the cookie, only says how to get in");
+r = await worker.fetch(new Request(`${base}/upload`, { headers: { cookie } }), env);
+page = await r.text();
+ok(r.status === 200 && page.includes('type="file"') && page.includes('accept="image/*"') && page.includes('name="note"'), "with it: one photo, a line, Send");
+ok(page.includes('rel="manifest"') && !page.includes(cookie.split("=")[1]), "it installs to the home screen; the session is not on the page");
+r = await worker.fetch(new Request(`${base}/upload/manifest.webmanifest`), env);
+ok(r.status === 200 && (await r.json()).start_url === "/upload", "the home screen icon opens the upload page");
+const cookieSend = (headers) => worker.fetch(new Request(`${base}/api/send`, { method: "POST", body: sendForm(JPEG, { note: "from the web" }),
+  headers: { cookie, ...headers } }), env);
+r = await cookieSend({ origin: base });
+ok(r.status === 200 && env.MEDIA.meta.get(waiting()[0]).customMetadata.sender === "m1", "the page sends as its photographer");
+r = await cookieSend({ origin: "https://elsewhere.example" });
+ok(r.status === 403 && waiting().length === 1, "a page elsewhere cannot send with the cookie");
+r = await cookieSend({});
+ok(r.status === 403, "nor a request that says nothing of where it came from");
+const teamOff = await teamBody(); teamOff.members[0].active = false;
+await putTeam(teamOff);
+r = await cookieSend({ origin: base });
+ok(r.status === 403 && waiting().length === 1, "switched off: the phone's page stops too");
+r = await worker.fetch(new Request(`${base}/upload`, { headers: { cookie } }), env);
+ok((await r.text()).includes("Open the link Chris sent you"), "and the page says how to get back in");
 console.log(`worker: ${checks} checks passed`);

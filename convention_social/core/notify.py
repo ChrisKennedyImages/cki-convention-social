@@ -47,6 +47,24 @@ def approve_actions(qid: int, token: str) -> str:
             f"view, Open, {link(f'/queue/{qid}')}")
 
 
+def team_actions(qid: int, token: str) -> str:
+    """A photo from Chris's team (2026-10-15, "Ping me, one tap"): Approve and Skip, each an http POST with the same signed
+    single-use token in its body (one of them works, once), and Open."""
+    form = "headers.Content-Type=application/x-www-form-urlencoded"
+    return (f"http, Approve, {link(f'/queue/{qid}/team-approve-by-token')}, method=POST, {form}, body='token={token}', clear=true; "
+            f"http, Skip, {link(f'/queue/{qid}/skip-by-token')}, method=POST, {form}, body='token={token}', clear=true; "
+            f"view, Open, {link(f'/queue/{qid}')}")
+
+
+def feed_actions(qid: int, token: str, live_link: str | None) -> str:
+    """An instant photo's Story is up: open it, Also post to the feed (an http POST with a signed single-use token), the
+    dashboard."""
+    form = "headers.Content-Type=application/x-www-form-urlencoded"
+    first = f"view, Instagram, {live_link}; " if live_link else ""
+    return (f"{first}http, Also post to the feed, {link(f'/queue/{qid}/feed-by-token')}, method=POST, {form}, body='token={token}', "
+            f"clear=true; view, Dashboard, {link(f'/queue/{qid}')}")
+
+
 def open_action(qid: int) -> str:
     """Open only: the art director did not pass the draft (or did not look), so he looks himself."""
     return f"view, Open, {link(f'/queue/{qid}')}"

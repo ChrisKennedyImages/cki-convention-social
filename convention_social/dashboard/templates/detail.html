@@ -9,7 +9,11 @@
                 'mended': ('A caption broke a rule that came after it was written; the suite rewrote it. Nothing to fix.', ''),
                 'mend_failed': ('A caption breaks a rule, and the suite could not rewrite the caption just now (the API or the network). Its next run tries again. Nothing for you to do.', 'bad'),
                 'ineligible': ('Not approved: a photo in it can no longer be used.', 'bad'),
-                'notargets': ('Not approved: pick at least one place to post.', 'bad')} %}
+                'notargets': ('Not approved: pick at least one place to post.', 'bad'),
+                'feed': ('Also going to the feed now: a post of its own, approved by you.', ''),
+                'feed_full': ("Not posted to the feed: today's 2 feed posts from instant photos are used, everyone together.", 'bad'),
+                'feed_dup': ('This photo is already on its way to the feed.', 'bad'),
+                'feed_no': ('Only an approved Story of an instant photo can also go to the feed.', 'bad')} %}
 {% if msg in notes %}<div class="msg {{ notes[msg][1] }}">{{ notes[msg][0] }}</div>{% endif %}
 <h1>{{ item.kind|capitalize }} post #{{ item.id }} <span class="badge {{ item.status }}">{{ item.status.replace('_',' ') }}</span></h1>
 {% if item.last_error %}<div class="msg bad">{{ item.last_error }}</div>{% endif %}
@@ -45,6 +49,9 @@
   <form method="post" action="/queue/{{ item.id }}/pullback" class="inline" onsubmit="return confirm('Pull this post back from Buffer? It comes back here as a draft and does not go out.')"><button class="danger" type="submit">Pull back from Buffer</button></form>
   {% elif item.status in ('would_publish', 'failed') %}
   <form method="post" action="/queue/{{ item.id }}/requeue" class="inline"><button type="submit">Back to drafts</button></form>
+  {% endif %}
+  {% if item.instant_format == 'story' and item.status in ('approved', 'scheduled', 'published', 'would_publish') %}
+  <form method="post" action="/queue/{{ item.id }}/feed" class="inline"><button class="ok" type="submit">Also post to the feed</button></form>
   {% endif %}
 </div>
 {% if item.payload %}<details class="card"><summary>Exact payload {{ '(dry run, not sent)' if item.dry_run else '' }}</summary><pre style="white-space:pre-wrap;font-size:12px">{{ item.payload }}</pre></details>{% endif %}

@@ -353,7 +353,8 @@ class DryRun(ShareCase):
         self.assertEqual(row["status"], "approved", "approved by his send; the publisher's dry run takes it no further")
         (title, message), _ = self.pings[0]
         self.assertIn("Dry run", title + message)
-        self.assertIn("would have gone out on Instagram right away", message)
+        # deliberate change, 2026-10-15 (the team): every instant photo goes out as an Instagram Story
+        self.assertIn("would have gone out as an Instagram Story right away", message)
 
 
 class PostedPing(ShareCase):
@@ -372,8 +373,11 @@ class PostedPing(ShareCase):
         kw = push.call_args[1]
         self.assertEqual(kw["click"], "https://www.instagram.com/p/abc123/")
         self.assertIn("view, Instagram, https://www.instagram.com/p/abc123/", kw["actions"])
+        self.assertIn(f"view, Dashboard, ", kw["actions"])
         self.assertIn(f"/queue/{row['id']}", kw["actions"])
-        self.assertIn("is on Instagram", title + message)
+        # deliberate change, 2026-10-15 (the team): his photo is up as a Story, with Also post to the feed beside it
+        self.assertIn("up as a Story", title + message)
+        self.assertIn("Also post to the feed", kw["actions"])
         self.assertIn("Delete", message)
 
     def test_an_ordinary_posted_ping_is_as_it_was(self):

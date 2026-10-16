@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block body %}
+<h1>Team</h1>
+{% if msg %}<div class="msg{{ ' bad' if msg.startswith('Not') else '' }}">{{ msg }}</div>{% endif %}
+{% if new_token %}<div class="card"><strong>{{ who }}'s send token</strong>
+  <div class="muted">On an iPhone: send them the link, then paste this when it asks. The token is shown once.{% if not shortcut_link %} (Save the Shortcut's iCloud link below and it shows here.){% endif %}</div>
+  {% if shortcut_link %}<label>The link</label>
+  <input id="shortcut" type="text" readonly value="{{ shortcut_link }}" onclick="this.select()" autocomplete="off">
+  <button type="button" style="margin-top:10px" onclick="navigator.clipboard.writeText(document.getElementById('shortcut').value).then(() => { this.textContent = 'Copied'; })">Copy the link</button>{% endif %}
+  <label>The token</label>
+  <input id="token" type="text" readonly value="{{ new_token }}" onclick="this.select()" autocomplete="off" style="font-family:ui-monospace,monospace">
+  <button type="button" style="margin-top:10px" onclick="navigator.clipboard.writeText(document.getElementById('token').value).then(() => { this.textContent = 'Copied'; })">Copy the token</button>
+</div>{% endif %}
+{% if new_link %}<div class="card"><strong>{{ who }}'s phone link</strong>
+  <div class="muted">For a phone without Shortcuts. Send them this; it works once, within 7 days, and sets up the upload page on the phone that opens it. They save that page to the home screen.</div>
+  <input id="link" type="text" readonly value="{{ new_link }}" onclick="this.select()" autocomplete="off" style="font-family:ui-monospace,monospace">
+  <button type="button" style="margin-top:10px" onclick="navigator.clipboard.writeText(document.getElementById('link').value).then(() => { this.textContent = 'Copied'; })">Copy</button>
+</div>{% endif %}
+<div class="card muted">Photographers you trust to send photos from the event while they shoot. Each photo is checked like yours, then comes to your phone with Approve or Skip. Approved, it goes out as an Instagram Story. At most 10 Stories and 2 feed posts a day from instant photos, everyone together. Their names stay here: nothing public, and no ping, ever names them.</div>
+<form method="post" action="/team/add" class="card">
+  <label>First name</label><input type="text" name="name" maxlength="24" autocomplete="off" required>
+  <button class="ok" type="submit" style="margin-top:10px">Add, and make their token</button>
+</form>
+{% for m in members %}
+<div class="card">
+  <div class="row"><strong>{{ m.name }}</strong><span class="badge {{ 'ok' if m.active else 'failed' }}">{{ 'on' if m.active else 'off' }}</span></div>
+  <div class="muted">{{ m.sends }} photo{{ '' if m.sends == 1 else 's' }} sent{% if m.last_send %}, the last {{ m.last_send[:10] }} {{ m.last_send[11:16] }} UTC{% endif %}</div>
+  <div class="row" style="margin-top:8px">
+    <form method="post" action="/team/{{ m.id }}/active" class="inline"><input type="hidden" name="active" value="{{ '0' if m.active else '1' }}"><button type="submit">{{ 'Switch off' if m.active else 'Switch on' }}</button></form>
+    <form method="post" action="/team/{{ m.id }}/token" class="inline" onsubmit="return confirm('Make a new token for {{ m.name }}? The old one stops working.')"><button type="submit">New token</button></form>
+    <form method="post" action="/team/{{ m.id }}/link" class="inline"><button type="submit">Phone link (no Shortcuts)</button></form>
+  </div>
+</div>
+{% endfor %}
+<form method="post" action="/team/shortcut-link" class="card">
+  <strong>The Shortcut's iCloud link</strong>
+  <div class="muted">Make the Post to Event Caliber Shortcut once with its token as an Import Question, share it from Shortcuts as an iCloud link (docs/SETUP.md, section 10b), and paste the link here. Each photographer adds it from the link and pastes their own token when it asks.</div>
+  <input type="text" name="link" value="{{ shortcut_link }}" placeholder="https://www.icloud.com/shortcuts/..." autocomplete="off">
+  <button type="submit" style="margin-top:10px">Save the link</button>
+</form>
+{% endblock %}

@@ -111,8 +111,9 @@ def image_asset(url: str, alt_text: str = "", alt_path: Optional[list[str]] = No
 def build(network: str, channel_id: str, text: str, image_urls: list[str], *,
           scheduled_for: Optional[str] = None, board_id: Optional[str] = None,
           title: Optional[str] = None, link: Optional[str] = None, alt_text: str = "",
-          alt_path: Optional[list[str]] = None) -> dict:
-    """One CreatePostInput. `scheduled_for` is local 'YYYY-MM-DDTHH:MM'; with none the post goes now."""
+          alt_path: Optional[list[str]] = None, story: bool = False) -> dict:
+    """One CreatePostInput. `scheduled_for` is local 'YYYY-MM-DDTHH:MM'; with none the post goes now. `story`: an Instagram
+    Story (2026-10-15, instant photos): type "story", the 9:16 card, no caption, not shared to the feed."""
     if network not in NETWORKS:
         raise PayloadError(f"unknown network {network!r}")
     due = due_at_utc(scheduled_for)
@@ -130,7 +131,12 @@ def build(network: str, channel_id: str, text: str, image_urls: list[str], *,
     }
     if due:
         inp["dueAt"] = due
-    if network == "instagram":
+    if story:
+        if network != "instagram":
+            raise PayloadError(f"a Story goes to Instagram only, not {network}")
+        inp["text"] = ""
+        inp["metadata"] = {"instagram": {"type": "story", "shouldShareToFeed": False}}
+    elif network == "instagram":
         # InstagramPostMetadataInput.type is required and is "post" however many images there are: a
         # carousel is a post with several assets (Buffer refused "carousel" for Instagram, 2026-10-14)
         inp["metadata"] = {"instagram": {"type": INSTAGRAM_IMAGE_TYPE, "shouldShareToFeed": True}}

@@ -373,7 +373,7 @@ In Photos, pick one photo, tap Share, then **Post to Event Caliber**, add a
 line if you like, and that is it: no dashboard, no Tailscale. Your send is
 your approval (2026-10-15): the suite still runs its checks, and a readable
 plate, a wedding, a caption that will not come right or the art director's no
-stops it and your phone says why. Otherwise it goes to Instagram right away
+stops it and your phone says why. Otherwise it goes to Instagram right away, as a Story
 (your choice, 2026-10-15: no window to pull it back), and your phone gets two
 pings: when it passed the checks and is going out, and when it is up (it
 opens the post on Instagram, where you can delete it; the dashboard is the
@@ -424,3 +424,41 @@ phone is lost, Make a send token again and the old one stops working once the
 site has the new one. No signed `.shortcut` file is kept in the
 repo: signing one needs Apple's servers under your Apple ID, and it could not
 carry your token anyway, so the steps above are the way.
+
+### 10b. Your photographers: the team
+
+Dashboard, Keys, **Team**. Add each photographer by first name; the page shows
+their send token once. Their photos are checked like yours and come to your
+phone with Approve or Skip; approved, a photo goes out as an Instagram Story
+right away, and the ping or the draft page offers **Also post to the feed**.
+At most 10 Stories and 2 feed posts a day from instant photos, everyone
+together. Their names stay on the Mini: no ping and nothing public names them.
+
+One Shortcut for everyone with an iPhone, shared as an iCloud link:
+
+1. Make a copy of your own Post to Event Caliber Shortcut (section 10a) and
+   call it the same.
+2. Add a **Text** action at the very top and leave the word `token` in it.
+   In Get Contents of URL, make the Authorization header's value the word
+   `Bearer`, a space, then that Text action's output (the variable). Never
+   your own token: the copy you share must not carry it.
+3. In the Shortcut's details, add an **Import Question** for that Text
+   action: `Paste the send token Chris gave you`. (Shortcuts asks it once,
+   when someone adds the Shortcut from your link.)
+4. Share the Shortcut, **Copy iCloud Link**, and paste the link on the Team
+   page (The Shortcut's iCloud link). It is then shown with every new token.
+5. For each photographer: send them the link, then the token the Team page
+   shows. They open the link, tap Set Up Shortcut, paste the token, and it
+   is in their share sheet. Their Shortcut shows "Received. Chris gets it to
+   approve; it goes out once he does."
+
+A phone without Shortcuts (Android): on the Team page press **Phone link (no
+Shortcuts)** for that photographer and send them the link. It works once,
+within 7 days. They open it on their phone and tap **Set up this phone**; the
+upload page opens (one photo, a line, Send). In Chrome's menu, **Add to Home
+screen** (on an iPhone in Safari: Share, Add to Home Screen) gives them an
+icon. If they change phones or clear the browser, press Phone link again.
+
+To stop someone: **Switch off** on the Team page. The site refuses their
+sends at once, from the Shortcut and from the page.
+
