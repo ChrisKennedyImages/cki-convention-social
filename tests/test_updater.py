@@ -47,6 +47,8 @@ class Repos(IsolatedCase):
         self.dash = self.head()          # the commit the running dashboard serves (None: not answering)
         self.deploy_ok = True
         settings.set(self.conn, site_deploy.DEPLOYED_KEY, self.head())     # the site is on the code (SiteFollows sets its own)
+        # the Mini's own suite passed this commit: the only kind the dashboard and the site are ever put on (2026-10-16)
+        settings.set(self.conn, getattr(updater, "TESTED_KEY", "updater.tested_commit"), self.head())
 
     def tearDown(self):
         self.conn.close()
@@ -522,3 +524,77 @@ class TestTimeLimit(IsolatedCase):
         self.assertGreaterEqual(updater.TEST_TIMEOUT, 60 * 60)
         wait = inspect.signature(updater.sync).parameters["wait_seconds"].default
         self.assertGreater(wait, updater.TEST_TIMEOUT)
+
+
+class OnlyTestedCode(Repos):
+    """2026-10-16 audit: the updater restarted the dashboard onto, and deployed eventcaliber.com from, whatever the
+    live checkout held: an unmerged branch three times on 10-14, and 1c97733 an hour after its own suite refused it
+    on 10-15. Only the commit the Mini's tests passed, on main with nothing changed, is ever served or deployed."""
+
+    def behind(self):
+        self.dash = "0" * 40                                                     # the dashboard wants a restart
+        settings.set(self.conn, site_deploy.DEPLOYED_KEY, "0" * 40)              # and the site a deploy
+
+    def untested_error(self):
+        return db.one(self.conn, "SELECT message FROM errors WHERE agent='updater' AND kind='untested_checkout'")
+
+    def test_a_branch_is_neither_served_nor_deployed(self):
+        self.behind()
+        git(self.repo, "checkout", "-q", "-b", "work-in-progress")
+        (self.repo / "w.txt").write_text("unreviewed")
+        git(self.repo, "add", "w.txt")
+        git(self.repo, "commit", "-q", "-m", "wip")
+        line = self.run_updater()
+        self.assertEqual((self.calls["restart"], self.calls["deploy"]), (0, []), line)
+        self.assertIn("left alone", line)
+        self.assertIn("work-in-progress", self.untested_error()["message"])
+
+    def test_local_changes_are_neither_served_nor_deployed(self):
+        self.behind()
+        (self.repo / "a.txt").write_text("edited on the Mini")
+        line = self.run_updater()
+        self.assertEqual((self.calls["restart"], self.calls["deploy"]), (0, []), line)
+        self.assertIsNotNone(self.untested_error())
+
+    def test_a_commit_brought_in_by_hand_after_the_suite_refused_it_is_not_served(self):
+        """The 1c97733 case: the updater holds a red commit back; someone pulls it into the live checkout anyway."""
+        refused = self.commit("b.txt", "broken")
+        self.assertIn("held back", self.run_updater(suite_ok=False))
+        git(self.repo, "pull", "-q", "--ff-only", "origin", "main")
+        self.assertEqual(self.head(), refused)
+        self.behind()
+        line = self.run_updater()
+        self.assertEqual((self.calls["restart"], self.calls["deploy"]), (0, []), line)
+        self.assertIn(refused[:7], self.untested_error()["message"])
+
+    def test_a_green_update_is_recorded_and_served(self):
+        self.behind()
+        target = self.commit("b.txt", "two")
+        self.run_updater()
+        self.assertEqual(settings.get(self.conn, updater.TESTED_KEY), target)
+        self.assertEqual(self.calls["restart"], 1, "served once its own suite passed it")
+        self.assertIsNone(self.untested_error())
+
+    def test_the_first_run_takes_only_the_commit_the_updater_merged_after_its_own_suite(self):
+        head = self.head()
+        settings.set(self.conn, updater.TESTED_KEY, "")
+        self.behind()
+        self.run_updater()
+        self.assertEqual(self.calls["restart"], 0, "nothing recorded and no merge of its own: nothing taken on trust")
+        self.conn.execute("INSERT INTO agent_runs (agent, started_at, finished_at, ok, summary) VALUES (?,?,?,?,?)",
+                          ("updater", db.utcnow(), db.utcnow(), 1, f"updated 1111111 -> {head[:7]} (3 file(s)); tests passed; dashboard: restarted"))
+        self.run_updater()
+        self.assertEqual(self.calls["restart"], 1)
+        self.assertEqual(settings.get(self.conn, updater.TESTED_KEY), head)
+
+    def test_publish_refuses_untested_code_too(self):
+        (self.repo / "wrangler.live.jsonc").write_text("{}")          # go-live ran here: the deploy is otherwise ready
+        self.assertTrue(mock.patch("convention_social.site.deploy.shutil.which", return_value="/opt/homebrew/bin/npx").start())
+        self.addCleanup(mock.patch.stopall)
+        self.assertEqual(site_deploy.ready(self.repo), (True, "ready"))
+        (self.repo / "a.txt").write_text("edited on the Mini")
+        said = []
+        code = site_deploy.run(repo=self.repo, conn=self.conn, say=said.append,
+                               build=lambda r: self.fail("built untested code"), deploy=lambda r: self.fail("deployed untested code"))
+        self.assertEqual(code, 2)
+        self.assertIn("not deployed", " ".join(said))

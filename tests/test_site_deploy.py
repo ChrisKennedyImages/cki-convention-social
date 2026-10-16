@@ -17,6 +17,7 @@ from unittest import mock
 from fastapi.testclient import TestClient
 
 from convention_social import cli
+from convention_social.agents import updater
 from convention_social.core import auth, config, db, runner, settings
 from convention_social.dashboard.app import COOKIE, create_app, make_token
 from convention_social.site import deploy
@@ -158,6 +159,7 @@ class Run(Repos):
         self.commit("wrangler.jsonc", self.COMMITTED)                     # the config in the code, with its placeholder
         subprocess.run(["git", "-C", str(self.repo), "pull", "-q", "--ff-only"], check=True)
         settings.set(self.conn, site_deploy.DEPLOYED_KEY, self.head())
+        settings.set(self.conn, updater.TESTED_KEY, self.head())             # the Mini's suite passed it: it may go live
         (self.repo / "wrangler.live.jsonc").write_text(self.LIVE)          # what go-live wrote once: the real database id
         patcher = mock.patch("convention_social.site.deploy.shutil.which", return_value="/opt/homebrew/bin/npx")
         patcher.start()
