@@ -57,3 +57,28 @@ FOUNDER_DECISIONS.md is the source of truth. Read it first.
   fast-forwards and restarts the dashboard. A merge to `main` is therefore a
   deploy: never merge red. New `launchd/` templates still need one
   `scripts/go-live.sh` on the Mini; the updater flags them.
+
+## How changes reach the Mini (Chris, 2026-10-15)
+
+- **One change at a time on the Mini.** Merge one pull request, let the
+  updater test and deploy it (`curl -s http://127.0.0.1:4610/healthz` shows the
+  commit the dashboard serves), check it live, then merge the next.
+- **At most one full test suite on the Mini at a time.** Sessions in this repo
+  run on the Mini itself. They run only the test files they touch while they
+  work, and one full run before their pull request; the updater's own run comes
+  first. On 2026-10-15 parallel suites starved the updater's run and every
+  deploy was held back for seven hours.
+- **Never stop a process you did not start.** Stop only your own, by the PID
+  you recorded or your own background task; never kill by name or pattern. The
+  updater, the publisher and the dashboard run on the same machine.
+- **Every visible change goes to Chris as a rendered before and after first**,
+  small fixes included, at the sizes it affects, looked at by you before it is
+  sent. Nothing merges without his OK on it.
+- **One session talks to Chris.** When several sessions work, they send their
+  files, questions and pull request links to the coordinating session, which
+  checks them, shows him, and passes his words back verbatim.
+- **Claude merges on Chris's yes**, pinned to the tested head commit
+  (`gh pr merge <n> --squash --match-head-commit <sha>`), never red.
+- **When the updater cannot land its own fix** (its limit is what the fix
+  changes), one manual run of the updater's own code, with Chris's yes: its
+  lock, its run record, its tests in a worktree, fast-forward only.

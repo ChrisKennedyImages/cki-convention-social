@@ -10,7 +10,9 @@ saved fresh from pixels at web size so no EXIF or GPS travels. With
 first look) and stamps every page PREVIEW so it can never be mistaken for live.
 
 Every word on every page passes ai.copy_rules: no price, no dash, no claim of
-an official role, a client list or past bookings.
+an official role. The one list of organizations is the logo strip under the hero
+(Chris, 2026-10-15: "should we add the companies we have worked for on the
+website? like their logos"), off until he turns it on in offer.json.
 """
 from __future__ import annotations
 
@@ -36,6 +38,7 @@ from ..library import eligibility
 from ..render import fonts
 from ..render.meta import ImageMeta, save_jpeg
 from . import marks, theme
+from .clients import client_logos, clients_body, optical, save_logo  # noqa: F401  the strip under the hero
 
 DIST = config.REPO_ROOT / "site" / "dist"
 PAGES = offer.public_pages()        # the public pages, in sitemap order (2026-10-14: the coverage pages and Contact too)
@@ -442,9 +445,11 @@ def coverage_rows(coverage: list[dict], skip: str = "") -> str:
         for i, c in enumerate(coverage) if c["key"] != skip)
 
 
-def home_body(t: dict, hero: str, frames: list[tuple[str, str, str, str]], stack: list[tuple[str, str]], venues: list[tuple[str, str]]) -> str:
+def home_body(t: dict, hero: str, frames: list[tuple[str, str, str, str]], stack: list[tuple[str, str]], venues: list[tuple[str, str]],
+              clients: str = "") -> str:
     """`frames`: (img tag, caption, the coverage page it opens, the photo's shape); `stack`: (img tag, shape); `venues`:
-    (img tag, label, shape). The shape (--ar) gives every frame the photo's own proportions, so nothing is cropped."""
+    (img tag, label, shape). The shape (--ar) gives every frame the photo's own proportions, so nothing is cropped.
+    `clients`: the logo strip under the hero (clients_body), or nothing."""
     e = html.escape
     coverage = offer.load()["coverage"]
     rows = coverage_rows(coverage)
@@ -466,7 +471,7 @@ def home_body(t: dict, hero: str, frames: list[tuple[str, str, str, str]], stack
 <h1 class="mega"><span><em>Two</em></span><span class="o"><em>brothers,</em></span><span><em>every room<b>.</b></em></span></h1>
 <p class="first">{e(t['first'])}</p>
 <div class="row"><p class="lede">{e(t['lede'])}</p><a class="btn fill" href="/book/">Request a quote <span class="arr">&#8599;</span></a></div></div></section>
-{_ticker(short)}
+{clients}{_ticker(short)}
 <section id="coverage" class="index"><div class="head rv"><div><div class="kick mono c">Coverage</div>
 <h2>From the green room<br><span class="o">to the last</span> reception.</h2></div><p>{e(t['coverage_p'])}</p></div>
 <div class="list rv">{rows}</div></section>
@@ -636,8 +641,20 @@ def build(conn: Optional[sqlite3.Connection], photos: SitePhotos, *, out: Path =
         files = save_web(im, assets, f"venue-{i}", m)
         shown.append((f"/assets/{files[max(files)]}", alt, m))
         venues.append((img_tag(files, alt, "(max-width:760px) 100vw, 50vw"), aspect(im)))
+    logos, left_out = client_logos(o)
+    heading = (o.get("clients") or {}).get("heading") or "We've photographed for"
+    if logos:
+        check_copy([heading])
+    saved_logos = []
+    for c in logos:
+        file, lw, lh = save_logo(c, assets / "clients")
+        saved_logos.append((file, c["name"], c["tile"], lw, lh))
+    strip = clients_body(heading, saved_logos)
+    if left_out and conn is not None and not preview:
+        from ..core import runner
+        runner.record_error_once(conn, "site", "client_logos", "Logos left off the home page: " + "; ".join(left_out) + ".")
     base = f"https://{cfg.brand_domain}"
-    pages = {"index.html": (t["title"], t["description"], home_body(t, hero, frames, stack, venues))}
+    pages = {"index.html": (t["title"], t["description"], home_body(t, hero, frames, stack, venues, strip))}
     page_shown: dict[str, list[tuple[str, str, ImageMeta]]] = {"/": list(shown)}     # per page, for the sitemap and the image blocks
     page_og: dict[str, str] = {}
     page_jsonld: dict[str, str] = {}
