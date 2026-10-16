@@ -7,6 +7,7 @@ able to pick one up and reach a real service.
 from __future__ import annotations
 
 import json
+import re
 import types
 from email import message_from_bytes, policy
 from pathlib import Path
@@ -36,6 +37,18 @@ SCHEMA = {
     "ImageMetadataInput": [field("altText", "String", False, "SCALAR")],
     "DeletePostInput": [field("id", "PostId", True, "SCALAR")],
 }
+
+
+def member(name, fields, error=False):
+    """One possibleType of a GraphQL union as introspection gives it."""
+    return {"name": name, "fields": [{"name": f} for f in fields], "interfaces": [{"name": "MutationError"}] if error else []}
+
+
+# The unions the tests read, as Buffer's live schema had them on 2026-10-16 (introspected): deletePost answers
+# DeletePostSuccess { id } or VoidMutationError, never PostActionSuccess.
+UNIONS = {
+    "DeletePostPayload": [member("DeletePostSuccess", ["id"]), member("VoidMutationError", ["message"], error=True)],
+}
 LIVE_LINK = "https://www.instagram.com/p/abc123/"
 
 
@@ -43,8 +56,10 @@ class FakeBuffer:
     """Canned GraphQL responses keyed by operation name; records every request."""
 
     def __init__(self, *, status_sequence=None, reject_at=(), http_status=200, retry_after=None,
-                 disconnected=(), error_message="Image could not be fetched", schema=None, orgs=None, channels=None):
+                 disconnected=(), error_message="Image could not be fetched", schema=None, orgs=None, channels=None,
+                 unions=None):
         self.schema = schema if schema is not None else SCHEMA
+        self.unions = unions if unions is not None else UNIONS
         self.orgs = orgs if orgs is not None else [{"id": "org-1", "name": "Event Caliber"}]
         self.channels = channels if channels is not None else [(svc, cid, f"Event Caliber {svc}") for svc, cid in CHANNEL_IDS.items()]
         self.calls = []
@@ -73,6 +88,10 @@ class FakeBuffer:
             name = payload["variables"]["name"]
             fields = self.schema.get(name)
             return Response(200, {}, {"data": {"__type": None if fields is None else {"name": name, "inputFields": fields}}})
+        if "UnionType" in op:
+            name = payload["variables"]["name"]
+            members = self.unions.get(name)
+            return Response(200, {}, {"data": {"__type": None if members is None else {"name": name, "possibleTypes": members}}})
         if "Organizations" in op:
             return Response(200, {}, {"data": {"account": {"organizations": self.orgs}}})
         if "PinterestBoards" in op:
@@ -99,11 +118,20 @@ class FakeBuffer:
                     "error": {"message": self.error_message} if status == "error" else None}
             return Response(200, {}, {"data": {"post": post}})
         if "DeletePost" in op:
+            # Buffer validates the reply fragments before it runs anything: a type that is not a DeletePostPayload
+            # member (or the MutationError interface its errors share) is refused whole, nothing deleted (2026-10-16)
+            members = self.unions.get("DeletePostPayload") or []
+            allowed = {m["name"] for m in members} | {i["name"] for m in members for i in m.get("interfaces") or []}
+            for spread in re.findall(r"\.\.\.\s*on\s+(\w+)", payload["query"]):
+                if spread not in allowed:
+                    return Response(200, {}, {"errors": [{"message": f'Fragment cannot be spread here as objects of type "DeletePostPayload" can never be of type "{spread}".',
+                                                          "extensions": {"code": "GRAPHQL_VALIDATION_FAILED"}}]})
             pid = payload["variables"]["input"]["id"]
             if pid in self.reject_at:
-                return Response(200, {}, {"data": {"deletePost": {"__typename": "MutationError", "message": "post already sent"}}})
+                return Response(200, {}, {"data": {"deletePost": {"__typename": "VoidMutationError", "message": "post already sent"}}})
             self.deleted.append(pid)
-            return Response(200, {}, {"data": {"deletePost": {"__typename": "PostActionSuccess", "post": {"id": pid}}}})
+            ok = next((m["name"] for m in members if not m.get("interfaces")), "DeletePostSuccess")
+            return Response(200, {}, {"data": {"deletePost": {"__typename": ok, "id": pid}}})
         if "Posts" in op:
             return Response(200, {}, {"data": {"posts": {"edges": [{"node": {
                 "id": "post-1", "channelId": "ch-ig", "channelService": "instagram", "status": "sent",

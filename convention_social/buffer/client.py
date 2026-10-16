@@ -4,7 +4,9 @@ Query shapes: organizations first, because account.currentOrganization is
 forbidden to personal keys; channels(input: {organizationId}); createPost
 returns a union (PostActionSuccess or one of the MutationError members) and
 only a positive PostActionSuccess with a post id counts; post(input: {id}) for
-status; posts(input, first, after) with metrics. These shapes ran against
+status; posts(input, first, after) with metrics; deletePost returns its own
+union (DeletePostSuccess or VoidMutationError on 2026-10-16), read live, not
+createPost's. These shapes ran against
 Buffer's live API in the suite this client was ported from, and every type and
 field used here was checked against Buffer's live schema by introspection on
 2026-10-09. They have not yet been run against this company's own account.
@@ -15,6 +17,7 @@ raise BufferError. The transport is injectable so tests never touch the network.
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -61,11 +64,13 @@ query PostStatus($input: PostInput!) {
   post(input: $input) { id status sentAt externalLink error { message } }
 }
 """
+# deletePost answers its own union, not createPost's: {success} is DeletePostPayload's success member as the live
+# schema names it (DeletePostSuccess { id } on 2026-10-16), read by delete_success_type, never written from memory.
 M_DELETE_POST = """
 mutation DeletePost($input: DeletePostInput!) {
   deletePost(input: $input) {
     __typename
-    ... on PostActionSuccess { post { id } }
+    ... on {success} { id }
     ... on MutationError { message }
   }
 }
@@ -90,6 +95,13 @@ query InputType($name: String!) {
   __type(name: $name) { name inputFields { name type { kind name ofType { kind name ofType { kind name } } } } }
 }
 """
+
+Q_UNION_TYPE = """
+query UnionType($name: String!) {
+  __type(name: $name) { name possibleTypes { name fields { name } interfaces { name } } }
+}
+"""
+_GRAPHQL_NAME = re.compile(r"^[_A-Za-z][_0-9A-Za-z]*$")
 
 
 def _named(t: dict) -> tuple[str, bool]:
@@ -287,15 +299,44 @@ class BufferClient:
                 "error": (post.get("error") or {}).get("message"),
                 "sent_at": post.get("sentAt"), "external_link": post.get("externalLink") or None}
 
+    def union_members(self, type_name: str) -> list[dict]:
+        """[{name, fields, error}] of one GraphQL union, from the live schema (read once per client). `error` is a
+        member that implements MutationError."""
+        cache = self.__dict__.setdefault("_types", {})
+        key = f"union {type_name}"
+        if key in cache:
+            return cache[key]
+        data = self._gql(Q_UNION_TYPE, {"name": type_name}, op=f"Schema {type_name}")
+        t = data.get("__type") or {}
+        if not t or not t.get("possibleTypes"):
+            raise BufferError(f"Buffer's schema has no union {type_name}")
+        out = [{"name": m.get("name"), "fields": {f.get("name") for f in m.get("fields") or []},
+                "error": any(i.get("name") == "MutationError" for i in m.get("interfaces") or [])}
+               for m in t["possibleTypes"]]
+        cache[key] = out
+        return out
+
+    def delete_success_type(self) -> str:
+        """The one member of DeletePostPayload that is not an error and carries the deleted id, by its live name."""
+        members = self.union_members("DeletePostPayload")
+        ok = [m["name"] for m in members if not m["error"] and "id" in m["fields"] and _GRAPHQL_NAME.match(m["name"] or "")]
+        if len(ok) != 1:
+            raise BufferError(f"Buffer's DeletePostPayload has no single success member with an id "
+                              f"(it has {sorted((m['name'] or '?') for m in members)}); not deleting blind")
+        return ok[0]
+
     def delete_post(self, post_id: str) -> bool:
-        """Pull a post back from Buffer (7.5, 2026-10-13). The mutation's input is read from the live schema
-        first (DeletePostInput must take an id), never recalled; a refusal is a BufferError with Buffer's words."""
+        """Pull a post back from Buffer (7.5, 2026-10-13). Both sides of the mutation are read from the live
+        schema first, never recalled: the input (DeletePostInput must take an id) and the reply (DeletePostPayload's
+        success member; on 2026-10-16 a recalled PostActionSuccess was refused by Buffer and no pull back got
+        through). Only a positive success counts; a refusal is a BufferError with Buffer's words."""
         fields = {f["name"] for f in self.input_fields("DeletePostInput")}
         if "id" not in fields:
             raise BufferError(f"Buffer's DeletePostInput has no id field (it has {sorted(fields)}); not deleting blind")
-        data = self._gql(M_DELETE_POST, {"input": {"id": post_id}}, op="DeletePost")
+        success = self.delete_success_type()
+        data = self._gql(M_DELETE_POST.replace("{success}", success), {"input": {"id": post_id}}, op="DeletePost")
         result = data.get("deletePost") or {}
-        if result.get("__typename") != "PostActionSuccess":
+        if result.get("__typename") != success:
             raise BufferError(f"deletePost refused ({result.get('__typename')}): {result.get('message') or json.dumps(result)[:200]}")
         return True
 
