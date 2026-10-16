@@ -92,7 +92,7 @@ query Posts($input: PostsInput!, $first: Int!, $after: String) {
 # never written from memory (the 2026-10-09 introspection named AssetInput's members, not their fields).
 Q_INPUT_TYPE = """
 query InputType($name: String!) {
-  __type(name: $name) { name inputFields { name type { kind name ofType { kind name ofType { kind name } } } } }
+  __type(name: $name) { name inputFields { name description type { kind name ofType { kind name ofType { kind name } } } } }
 }
 """
 
@@ -242,7 +242,7 @@ class BufferClient:
         out = []
         for f in t.get("inputFields") or []:
             name, required = _named(f.get("type") or {})
-            out.append({"name": f.get("name"), "type": name, "required": required})
+            out.append({"name": f.get("name"), "type": name, "required": required, "description": f.get("description") or ""})
         cache[type_name] = out
         return out
 
@@ -272,11 +272,16 @@ class BufferClient:
         return ["metadata", found] if found else None
 
     def video_asset_fields(self) -> list[dict]:
-        """The fields of the input type behind AssetInput.video, both read from the live schema."""
+        """The fields of the input type behind AssetInput.video, with their own descriptions, all read from the live
+        schema; the metadata field carries its own fields too (where the cover frame, thumbnailOffset, lives)."""
         member = next((f for f in self.input_fields("AssetInput") if f["name"] == "video"), None)
         if member is None or not member["type"]:
             raise BufferError("Buffer's AssetInput has no video member")
-        return self.input_fields(member["type"])
+        fields = [dict(f) for f in self.input_fields(member["type"])]
+        for f in fields:
+            if f["name"] == "metadata" and f["type"]:
+                f["fields"] = self.input_fields(f["type"])
+        return fields
 
     # ------------------------------------------------------------------ posting
     def create_post(self, post_input: dict) -> str:

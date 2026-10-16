@@ -136,7 +136,8 @@ class Page(IsolatedCase):
         with mock.patch.object(publisher, "_eligibility_module", return_value=all_eligible()):
             publisher.publish_ready(make_ctx(self.conn), now=datetime(2026, 10, 12, 12, tzinfo=timezone.utc))
         row = db.one(self.conn, "SELECT payload, last_error FROM content_queue WHERE id=?", (qid,))
-        self.assertEqual(sorted(json.loads(row["payload"])["instagram"]["assets"][0]["video"]), ["thumbnail", "url"])
+        self.assertEqual(sorted(json.loads(row["payload"])["instagram"]["assets"][0]["video"]), ["url"],
+                         "no network takes a cover image: a thumbnail field Buffer lists is left empty")
         self.assertIsNone(row["last_error"])
 
     def test_a_video_format_this_suite_cannot_fill_is_said_plainly(self):

@@ -21,17 +21,31 @@ from tests._photos import jpeg_bytes
 CHANNEL_IDS = {"instagram": "ch-ig", "facebook": "ch-fb", "pinterest": "ch-pin"}
 
 
-def field(name, type_name, required=False, kind="INPUT_OBJECT"):
+def field(name, type_name, required=False, kind="INPUT_OBJECT", description=None):
     """One inputField as GraphQL introspection gives it (a required field is wrapped in NON_NULL)."""
     named = {"kind": kind, "name": type_name, "ofType": None}
-    return {"name": name, "type": {"kind": "NON_NULL", "name": None, "ofType": named} if required else named}
+    return {"name": name, "description": description,
+            "type": {"kind": "NON_NULL", "name": None, "ofType": named} if required else named}
+
+
+# Buffer's own words on VideoAssetInput.thumbnailUrl, introspected 2026-10-16, and its refusal of a reel that set it
+THUMBNAIL_URL_DOC = ("Do not use: social networks do not accept custom video thumbnail images, and\nthe API rejects video "
+                     "assets that set this field. To choose the video\nthumbnail, set `metadata.thumbnailOffset` to select a "
+                     "frame from the video\n(supported for Instagram, TikTok, and Pinterest only).")
+THUMBNAIL_URL_REFUSED = ("Invalid post: Video thumbnailUrl is not supported: social networks do not accept custom video "
+                         "thumbnail images, so this value is never sent to the network. Remove thumbnailUrl from the video "
+                         "asset. To pick the video thumbnail, set metadata.thumbnailOffset on the video (offset into the "
+                         "video in milliseconds; supported for Instagram, TikTok, and Pinterest only).")
 
 
 # A stand-in for Buffer's schema, for the tests only: the live one is read by BufferClient.video_asset_fields.
 SCHEMA = {
     "AssetInput": [field("image", "ImageAssetInput"), field("video", "VideoAssetInput"), field("document", "DocumentAssetInput")],
-    "VideoAssetInput": [field("url", "String", True, "SCALAR"), field("thumbnailUrl", "String", False, "SCALAR"),
-                        field("metadata", "VideoMetadataInput")],
+    "VideoAssetInput": [field("url", "String", True, "SCALAR", "URL to the file source"),
+                        field("thumbnailUrl", "String", False, "SCALAR", THUMBNAIL_URL_DOC),
+                        field("metadata", "VideoMetadataInput", description="Video specific metadata")],
+    "VideoMetadataInput": [field("thumbnailOffset", "Int", False, "SCALAR", "Offset of the thumbnail chosen for the video, in ms"),
+                           field("title", "String", False, "SCALAR", "Video title")],
     "ImageAssetInput": [field("url", "String", True, "SCALAR"), field("thumbnailUrl", "String", False, "SCALAR"),
                         field("metadata", "ImageMetadataInput")],
     "ImageMetadataInput": [field("altText", "String", False, "SCALAR")],
@@ -107,6 +121,9 @@ class FakeBuffer:
             self.n_create += 1
             if self.n_create in self.reject_at:
                 return Response(200, {}, {"data": {"createPost": {"__typename": "InvalidInputError", "message": "board not found"}}})
+            if any("thumbnailUrl" in (a.get("video") or {}) for a in payload["variables"]["input"].get("assets") or []):
+                # live Buffer refuses a reel that names a cover image, whatever its schema lists (2026-10-16, post 7)
+                return Response(200, {}, {"data": {"createPost": {"__typename": "InvalidInputError", "message": THUMBNAIL_URL_REFUSED}}})
             self.created.append(payload["variables"]["input"])
             return Response(200, {}, {"data": {"createPost": {"__typename": "PostActionSuccess", "post": {"id": f"post-{len(self.created)}"}}}})
         if "PostStatus" in op:

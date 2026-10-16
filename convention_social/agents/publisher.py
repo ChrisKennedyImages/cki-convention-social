@@ -45,9 +45,10 @@ VIDEO_ASPECT = "9:16"
 VIDEO_FIELDS_KEY = "buffer.video_fields"
 IMAGE_ALT_KEY = "buffer.image_alt"
 ASSUMED_VIDEO_FIELDS = [{"name": "url", "type": "String", "required": True},
-                        {"name": "thumbnailUrl", "type": "String", "required": False}]
-DRY_REEL_NOTE = ("Dry run: the reel was built without asking Buffer for its video fields (url and thumbnailUrl "
-                 "assumed). A live run reads them from Buffer before anything is uploaded.")
+                        {"name": "metadata", "type": "VideoMetadataInput", "required": False,
+                         "fields": [{"name": "thumbnailOffset", "type": "Int", "required": False}]}]
+DRY_REEL_NOTE = ("Dry run: the reel was built without asking Buffer for its video fields (the video's url and its "
+                 "cover frame assumed). A live run reads them from Buffer before anything is uploaded.")
 ELIGIBILITY_MODULE = "convention_social.library.eligibility"
 
 NO_CHANNELS = "No connected Buffer channel for any network on this post. Connect them in Buffer, then this goes out on the next run."
@@ -377,21 +378,25 @@ def reel_files(row) -> Optional[tuple[Path, Optional[Path]]]:
     return Path(videos[0]), (Path(covers[0]) if covers else None)
 
 
-def reel_urls(row, fields: list[dict], *, live: bool, uploader=None) -> tuple[str, str]:
-    """(video url, cover url or ""): uploaded when live, else the URLs a live run would produce. The
-    asset is checked against `fields` with those URLs first, so a refusal uploads nothing."""
-    video, cover = reel_files(row)
+def reel_cover_ms() -> int:
+    """Where in the reel its cover frame is, in ms (render.motion.COVER_MS): Instagram shows that frame."""
+    from ..render import motion
+    return motion.COVER_MS
+
+
+def reel_urls(row, fields: list[dict], *, live: bool, uploader=None) -> str:
+    """The video's url: uploaded when live, else the URL a live run would produce. The asset is checked
+    against `fields` first, so a refusal uploads nothing. The cover still is never put online: no
+    network takes a cover image; the cover is a frame of the video (2026-10-16)."""
+    video, _cover = reel_files(row)
     if not video.exists():
         raise media.MediaError(f"the reel's video is missing ({video.name}); draft it again")
-    if cover is not None and not cover.exists():
-        cover = None
-    keys = (media.reel_key(row["id"], "video"), media.reel_key(row["id"], "cover"))
-    would = (media.public_url(keys[0]), media.public_url(keys[1]) if cover else "")
-    payloads.video_asset(fields, *would)
+    key = media.reel_key(row["id"], "video")
+    would = media.public_url(key)
+    payloads.video_asset(fields, would, reel_cover_ms())
     if not live:
         return would
-    up = uploader or media.upload
-    return up(video, keys[0]), (up(cover, keys[1]) if cover else "")
+    return (uploader or media.upload)(video, key)
 
 
 # ------------------------------------------------------------------ publishing
@@ -444,14 +449,14 @@ def build_all(ctx: runner.Context, row, channels: dict[str, dict], when: dict[st
     image_nets = {n: ch for n, ch in channels.items() if n not in reel_nets}
     if reel_nets:
         fields = video_fields()
-        video_url, cover_url = reel_urls(row, fields, live=live, uploader=uploader)
+        video_url = reel_urls(row, fields, live=live, uploader=uploader)
     built = build_payloads(ctx, row, image_nets, media_urls(ctx, row, list(image_nets), live=live, uploader=uploader),
                            when, alt_path() if alt_path else None) if image_nets else {}
     if reel_nets:
         captions = captions_of(row) or {}
         for net in reel_nets:
             built[net] = payloads.build_reel(net, channels[net]["buffer_channel_id"], captions.get(net, ""),
-                                             video_url, cover_url, fields, scheduled_for=when.get(net))
+                                             video_url, reel_cover_ms(), fields, scheduled_for=when.get(net))
     return {n: built[n] for n in channels}
 
 

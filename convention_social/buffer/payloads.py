@@ -23,6 +23,10 @@ REELS (2026-10-11): a reel is assets [{video: {...}}] with metadata type "reel" 
 Facebook. The video asset's fields are not written here from memory: the publisher asks the live
 schema (BufferClient.video_asset_fields) before building one, and build_reel refuses any required
 field it does not know how to fill. Pinterest gets the reel's cover as an image pin.
+No network takes a cover image for a video (2026-10-16: Buffer refused post 7 for setting
+VideoAssetInput.thumbnailUrl, which the schema lists and its own description says never to set): the
+cover is a frame of the reel, named by metadata.thumbnailOffset in milliseconds. A field the live
+schema's description says not to use is never filled; if one is required, the reel stops.
 
 BEFORE ARMING PINTEREST: the field NAMES above match the live schema, but no pin
 has been created through this code yet. Whether Buffer requires boardServiceId
@@ -154,35 +158,52 @@ def build(network: str, channel_id: str, text: str, image_urls: list[str], *,
 
 
 REEL_NETWORKS = ("instagram", "facebook")
-# what this code can fill in a video asset, by the field names the live schema uses
-VIDEO_FILLS = {"url": "video", "thumbnailUrl": "cover", "thumbnail": "cover", "coverUrl": "cover"}
+# what this code can fill in a video asset, by the field names the live schema uses: the video, and inside
+# metadata the cover frame. Never a cover image (no network accepts one).
+VIDEO_FILLS = {"url": "video"}
+COVER_OFFSET = "thumbnailOffset"
+DO_NOT_USE = re.compile(r"^\s*do not use\b", re.I)
 
 
-def video_asset(fields: list[dict], video_url: str, cover_url: str) -> dict:
-    """The video asset, filled by the field names the live schema gives ([{name, required}]). A
-    required field this code cannot fill, or no url field at all, stops the reel."""
+def _told_not_to_use(f: dict) -> bool:
+    return bool(DO_NOT_USE.match(f.get("description") or ""))
+
+
+def video_asset(fields: list[dict], video_url: str, cover_ms: Optional[int] = None) -> dict:
+    """The video asset, filled by the field names the live schema gives ([{name, required, description, fields}]):
+    the url, and the cover frame in metadata.thumbnailOffset when the schema has it. A required field this code
+    cannot fill, a field it would fill that the schema says not to use, or no url field at all, stops the reel."""
     names = {f["name"]: f for f in fields}
     if "url" not in names:
         raise PayloadError("Buffer's video asset has no url field; no reel can be built")
     asset = {}
     for name, f in names.items():
-        what = VIDEO_FILLS.get(name)
-        if what == "video":
+        if _told_not_to_use(f):
+            if f.get("required") or VIDEO_FILLS.get(name):
+                raise PayloadError(f"Buffer's schema says not to use the video's {name!r}, which a reel needs; the reel stays unposted")
+            continue
+        if VIDEO_FILLS.get(name) == "video":
             asset[name] = video_url
-        elif what == "cover" and cover_url:
-            asset[name] = cover_url
+        elif name == "metadata" and cover_ms is not None:
+            inner = {g["name"]: g for g in f.get("fields") or []}
+            offset = inner.get(COVER_OFFSET)
+            others_required = [g for n, g in inner.items() if n != COVER_OFFSET and g.get("required")]
+            if offset and not _told_not_to_use(offset) and not others_required:
+                asset[name] = {COVER_OFFSET: int(cover_ms)}
+            elif f.get("required"):
+                raise PayloadError("Buffer's video metadata needs fields this code does not fill; the reel stays unposted")
         elif f.get("required"):
             raise PayloadError(f"Buffer's video asset needs {name!r}, which this code does not fill; the reel stays unposted")
     return asset
 
 
-def build_reel(network: str, channel_id: str, text: str, video_url: str, cover_url: str, fields: list[dict], *,
+def build_reel(network: str, channel_id: str, text: str, video_url: str, cover_ms: Optional[int], fields: list[dict], *,
                scheduled_for: Optional[str] = None) -> dict:
     """One CreatePostInput for a reel. `fields` is the video asset's input type as the live schema
-    gives it (BufferClient.video_asset_fields)."""
+    gives it (BufferClient.video_asset_fields); `cover_ms` is the cover's frame, in ms into the video."""
     if network not in REEL_NETWORKS:
         raise PayloadError(f"{network} takes no reel here")
-    asset = video_asset(fields, video_url, cover_url)
+    asset = video_asset(fields, video_url, cover_ms)
     due = due_at_utc(scheduled_for)
     inp: dict = {"channelId": channel_id, "text": text, "assets": [{"video": asset}], "schedulingType": "automatic",
                  "mode": "customScheduled" if due else "shareNow", "tagIds": [], "needsApproval": False}
