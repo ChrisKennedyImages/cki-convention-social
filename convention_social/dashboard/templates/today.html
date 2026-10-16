@@ -79,8 +79,13 @@ section{margin-bottom:28px}
         {% else %}<span class="rule ok">Rules pass{{ ', rewritten by the suite' if it.mended else '' }}</span>{% endif %}
         {% if it.art and it.art.verdict %}<span class="muted">Art director: {{ {'pass': 'happy with it', 'redo': 'wants a look from you', 'reject': 'turned it back', 'not reviewed': 'did not look'}.get(it.art.verdict, it.art.verdict) }}</span>{% endif %}
       </div>
-      {% if it.last_error %}<div class="rule block" style="margin-top:6px">{{ it.last_error }}</div>{% endif %}
-      {% if it.choosable %}
+      {% if it.held_html %}<div class="rule block" style="margin-top:6px">{{ it.held_html }}</div>{% elif it.last_error %}<div class="rule block" style="margin-top:6px">{{ it.last_error }}</div>{% endif %}
+      {% if it.held_post %}
+      <div class="choices">
+        <a class="btn primary" href="/queue/{{ it.held_post }}" style="grid-column:span 2">Open post #{{ it.held_post }} to pull it back</a>
+        <form method="post" action="/queue/{{ it.id }}/skip" onsubmit="return confirm('Skip this post? Its photos go back into the rotation.')"><input type="hidden" name="back" value="/"><button class="skip" type="submit">Skip</button></form>
+      </div>
+      {% elif it.choosable %}
       <div class="choices">
         <form method="post" action="/queue/{{ it.id }}/approve"><input type="hidden" name="how" value="now"><input type="hidden" name="back" value="/"><button class="primary" type="submit">Post now</button></form>
         <form method="post" action="/queue/{{ it.id }}/approve"><input type="hidden" name="how" value="pace"><input type="hidden" name="back" value="/"><button class="ok" type="submit">Follow the pace</button></form>
