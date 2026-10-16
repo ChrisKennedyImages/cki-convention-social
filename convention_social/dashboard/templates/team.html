@@ -16,7 +16,7 @@
   <input id="link" type="text" readonly value="{{ new_link }}" onclick="this.select()" autocomplete="off" style="font-family:ui-monospace,monospace">
   <button type="button" style="margin-top:10px" onclick="navigator.clipboard.writeText(document.getElementById('link').value).then(() => { this.textContent = 'Copied'; })">Copy</button>
 </div>{% endif %}
-<div class="card muted">Photographers you trust to send photos from the event while they shoot. Each photo is checked like yours, then comes to your phone with Approve or Skip. Approved, it goes out as an Instagram Story. At most 10 Stories and 2 feed posts a day from instant photos, everyone together. Their names stay here: nothing public, and no ping, ever names them.</div>
+<div class="card muted">Photographers you trust to send photos from the event while they shoot. Each photo is checked like yours, then comes to your phone with Approve or Skip. Approved, it goes out as an Instagram Story. At most 10 Stories and 2 feed posts a day from instant photos, everyone together. Photographers are told Chris or Nic approves each photo before it goes out. Their names stay here: nothing public, and no ping, ever names them.</div>
 <form method="post" action="/team/add" class="card">
   <label>First name</label><input type="text" name="name" maxlength="24" autocomplete="off" required>
   <button class="ok" type="submit" style="margin-top:10px">Add, and make their token</button>
@@ -24,7 +24,7 @@
 {% for m in members %}
 <div class="card">
   <div class="row"><strong>{{ m.name }}</strong><span class="badge {{ 'ok' if m.active else 'failed' }}">{{ 'on' if m.active else 'off' }}</span></div>
-  <div class="muted">{{ m.sends }} photo{{ '' if m.sends == 1 else 's' }} sent{% if m.last_send %}, the last {{ m.last_send[:10] }} {{ m.last_send[11:16] }} UTC{% endif %}</div>
+  <div class="muted">{{ m.sends }} photo{{ '' if m.sends == 1 else 's' }} sent{% if m.last_send_at %}, the last {{ m.last_send_at }}{% endif %}</div>
   <div class="row" style="margin-top:8px">
     <form method="post" action="/team/{{ m.id }}/active" class="inline"><input type="hidden" name="active" value="{{ '0' if m.active else '1' }}"><button type="submit">{{ 'Switch off' if m.active else 'Switch on' }}</button></form>
     <form method="post" action="/team/{{ m.id }}/token" class="inline" onsubmit="return confirm('Make a new token for {{ m.name }}? The old one stops working.')"><button type="submit">New token</button></form>

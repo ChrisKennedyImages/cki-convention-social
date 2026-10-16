@@ -370,7 +370,7 @@ async function sendPhoto(request, env, url) {
     customMetadata: { note: line, type, sender: who, received_at: new Date(now).toISOString() } });
   await env.MEDIA.put(logKey, JSON.stringify([...log, now]), { httpMetadata: { contentType: "application/json" } });
   return said(200, who === "chris" ? "Received. In a few minutes your phone gets a ping saying whether it passed and when it goes out."
-                                   : "Received. Chris gets it to approve; it goes out once he does.");
+                                   : "Received. Chris or Nic approves it before it goes out.");
 }
 
 async function team(request, env) {
@@ -404,14 +404,15 @@ function teamPage(title, inner, status = 200, extra = {}) {
     "referrer-policy": "no-referrer", "x-frame-options": "DENY", ...extra } });
 }
 
-const GET_IN = "<p>Open the link Chris sent you on this phone, then tap the button on it. The link works once.</p>";
+const GET_IN = "<p>Open the link you were sent on this phone, then tap the button on it. The link works once.</p>";
 
 async function joinPage(request, env, url) {
   if (request.method === "GET" && url.pathname.startsWith("/join/")) {
     const code = url.pathname.slice("/join/".length);
     if (!TOKEN_SHAPE.test(code) && !/^[A-Za-z0-9_-]{24,64}$/.test(code)) return teamPage("Send photos to Event Caliber", GET_IN, 400);
-    return teamPage("Send photos to Event Caliber", `<p>This sets up this phone to send your photos to Chris. Tap once, then save the ` +
-      `page to your home screen.</p><form method="post" action="/join"><input type="hidden" name="code" value="${escapeHtml(code)}">` +
+    return teamPage("Send photos to Event Caliber", `<p>This sets up this phone to send your photos to Event Caliber. Chris or Nic ` +
+      `approves each one before it goes out. Tap once, then save the page to your home screen.</p>` +
+      `<form method="post" action="/join"><input type="hidden" name="code" value="${escapeHtml(code)}">` +
       `<button type="submit">Set up this phone</button></form>`);
   }
   if (request.method !== "POST" || url.pathname !== "/join") return new Response("method not allowed", { status: 405 });
@@ -424,7 +425,7 @@ async function joinPage(request, env, url) {
   const m = join && (await memberOf(env, (x) => x.id === join.member_id));
   const used = join && (await env.MEDIA.get(`${JOINS_USED_PREFIX}${hash}`));
   if (!join || !m || used || Date.parse(join.expires_at) < Date.now()) {
-    return teamPage("Send photos to Event Caliber", "<p>This link has been used or has expired. Ask Chris for a new one.</p>", 403);
+    return teamPage("Send photos to Event Caliber", "<p>This link has been used or has expired. Ask Chris or Nic for a new one.</p>", 403);
   }
   const at = new Date(Date.now()).toISOString();
   await env.MEDIA.put(`${JOINS_USED_PREFIX}${hash}`, JSON.stringify({ at }), { httpMetadata: { contentType: "application/json" } });
@@ -451,7 +452,7 @@ async function uploadPage(request, env, url) {
   }
   if (!(await sessionMember(request, env))) return teamPage("Send photos to Event Caliber", GET_IN);
   return teamPage("Send a photo", `<p>One photo from the event you are shooting, and a line about it if you like (what the room was; ` +
-    `never a name or which event). Chris approves it before it goes out.</p><form><label>The photo</label>` +
+    `never a name or which event). Chris or Nic approves it before it goes out.</p><form><label>The photo</label>` +
     `<input type="file" name="photo" accept="image/*" required><label>A line about it (optional)</label>` +
     `<input type="text" name="note" maxlength="140" autocomplete="off"><button type="submit">Send</button></form><div id="said"></div>` +
     UPLOAD_SCRIPT);

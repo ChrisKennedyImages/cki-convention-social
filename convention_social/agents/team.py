@@ -53,9 +53,24 @@ def clean_name(name: str) -> str:
 
 
 def members(conn: sqlite3.Connection) -> list[dict]:
-    """For the Team page: everyone, with how many photos they sent and when the last one came."""
-    return [dict(r) for r in db.rows(conn, """SELECT m.*, COUNT(s.id) AS sends, MAX(s.created_at) AS last_send FROM team_members m
-                                             LEFT JOIN phone_sends s ON s.sender_id = m.id GROUP BY m.id ORDER BY m.active DESC, m.name""")]
+    """For the Team page: everyone, with how many photos they sent and when the last one came, in his own time zone."""
+    out = []
+    for r in db.rows(conn, """SELECT m.*, COUNT(s.id) AS sends, MAX(s.created_at) AS last_send FROM team_members m
+                             LEFT JOIN phone_sends s ON s.sender_id = m.id GROUP BY m.id ORDER BY m.active DESC, m.name"""):
+        d = dict(r)
+        d["last_send_at"] = local_stamp(d["last_send"])
+        out.append(d)
+    return out
+
+
+def local_stamp(stamp: Optional[str]) -> str:
+    """'Oct 15, 15:02' where he is (TIMEZONE), from a UTC stamp; '' when there is none."""
+    try:
+        t = datetime.fromisoformat((stamp or "").replace("Z", "+00:00"))
+    except ValueError:
+        return ""
+    t = (t if t.tzinfo else t.replace(tzinfo=timezone.utc)).astimezone(ZoneInfo(config.get_config().timezone))
+    return f"{t:%b} {t.day}, {t:%H:%M}"
 
 
 def member_for(conn: sqlite3.Connection, sender: str):

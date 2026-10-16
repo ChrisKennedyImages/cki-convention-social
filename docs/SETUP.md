@@ -431,6 +431,8 @@ Dashboard, Keys, **Team**. Add each photographer by first name; the page shows
 their send token once. Their photos are checked like yours and come to your
 phone with Approve or Skip; approved, a photo goes out as an Instagram Story
 right away, and the ping or the draft page offers **Also post to the feed**.
+Everything a photographer reads says Chris or Nic approves each photo before
+it goes out (your words, 2026-10-15: "It's always the both of us").
 At most 10 Stories and 2 feed posts a day from instant photos, everyone
 together. Their names stay on the Mini: no ping and nothing public names them.
 
@@ -443,14 +445,14 @@ One Shortcut for everyone with an iPhone, shared as an iCloud link:
    `Bearer`, a space, then that Text action's output (the variable). Never
    your own token: the copy you share must not carry it.
 3. In the Shortcut's details, add an **Import Question** for that Text
-   action: `Paste the send token Chris gave you`. (Shortcuts asks it once,
+   action: `Paste the send token you were given`. (Shortcuts asks it once,
    when someone adds the Shortcut from your link.)
 4. Share the Shortcut, **Copy iCloud Link**, and paste the link on the Team
    page (The Shortcut's iCloud link). It is then shown with every new token.
 5. For each photographer: send them the link, then the token the Team page
    shows. They open the link, tap Set Up Shortcut, paste the token, and it
-   is in their share sheet. Their Shortcut shows "Received. Chris gets it to
-   approve; it goes out once he does."
+   is in their share sheet. Their Shortcut shows "Received. Chris or Nic
+   approves it before it goes out."
 
 A phone without Shortcuts (Android): on the Team page press **Phone link (no
 Shortcuts)** for that photographer and send them the link. It works once,

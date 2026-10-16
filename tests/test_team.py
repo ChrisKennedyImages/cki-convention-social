@@ -201,6 +201,12 @@ class TeamSends(TeamCase):
         self.assertTrue(all("not on your team" in t for t in self.ping_texts()))
         self.assertNotIn("Anna", " ".join(self.ping_texts()))
 
+    def test_the_team_page_says_when_in_new_york_time(self):
+        self.run_sends(self.site((ID1, f"m{self.mid}")))
+        self.conn.execute("UPDATE phone_sends SET created_at='2026-10-15T19:02:00+00:00'")
+        anna = [m for m in team.members(self.conn) if m["name"] == "Anna"][0]
+        self.assertEqual(anna["last_send_at"], "Oct 15, 15:02", "his own time zone (New York), like the rest of the dashboard")
+
     def test_the_send_page_says_who_sent_it_for_chris_only(self):
         self.run_sends(self.site((ID1, f"m{self.mid}")))
         self.assertIn("from Anna", phone.recent(self.conn)[0]["line"])
@@ -220,6 +226,18 @@ class Stories(TeamCase):
         self.assertEqual((ig["mode"], ig["metadata"]["instagram"]["type"], ig["text"]), ("shareNow", "story", ""))
         (title, message), _ = self.pings[0]
         self.assertIn("Story", title + message)
+
+    def test_the_story_card_is_a_slit_scan_with_the_photo_whole(self):
+        """Chris, 2026-10-15, on the Story look: "Slit Scan streaks": the photo whole, its own colour drawn out into streaks
+        above and below (#79's technique, render/bold.py), the mark and the address clear of Instagram's own bars."""
+        from convention_social.render import motion
+        out = self.root / "story.jpg"
+        motion.story_card(motion.Shot(Image.new("RGB", (2000, 1500), (200, 120, 40)), "", ""), out=out)
+        with Image.open(out) as im:
+            near, edge = im.getpixel((100, 520)), im.getpixel((100, 5))
+            self.assertEqual(im.size, (1080, 1920))
+        self.assertGreater(near[0], 120, "the streak next to the photo is the photo's own colour")
+        self.assertGreater(sum(near), sum(edge) + 150, "and it fades toward the frame's edge")
 
     def test_the_ping_shows_the_story_that_goes_out(self):
         import io

@@ -996,6 +996,10 @@ and a private upload page for a phone without Shortcuts.
   the captions' rules, the publisher's door), then comes to him with the
   card, Approve and Skip. Approved, it goes out as a Story right away. His
   own sends keep posting right away, approved by his send, as Stories now.
+- Everything a photographer reads (the upload page, the Shortcut's answer,
+  the setup steps) says "Chris or Nic approves it before it goes out". Chris:
+  "It's always the both of us." Nic is not set up as an approver yet; that
+  comes when Chris sets him up.
 - **A photographer is never named in public, and never in a ping.** Their
   first name is kept on the Mini only and shown to Chris only (the Team page,
   the Send page); ntfy topics are not private, so a ping says "a photo from

@@ -376,7 +376,7 @@ ok(cookie.startsWith("ec_send=") && !cookie.includes(annaTok), "the cookie is a 
 r = await join(joinCode);
 ok(r.status === 403 && !r.headers.get("set-cookie"), "the link works once");
 r = await worker.fetch(new Request(`${base}/upload`), env);
-ok(r.status === 200 && (await r.text()).includes("Open the link Chris sent you"), "the upload page, without the cookie, only says how to get in");
+ok(r.status === 200 && (await r.text()).includes("Open the link you were sent"), "the upload page, without the cookie, only says how to get in");
 r = await worker.fetch(new Request(`${base}/upload`, { headers: { cookie } }), env);
 page = await r.text();
 ok(r.status === 200 && page.includes('type="file"') && page.includes('accept="image/*"') && page.includes('name="note"'), "with it: one photo, a line, Send");
@@ -396,5 +396,7 @@ await putTeam(teamOff);
 r = await cookieSend({ origin: base });
 ok(r.status === 403 && waiting().length === 1, "switched off: the phone's page stops too");
 r = await worker.fetch(new Request(`${base}/upload`, { headers: { cookie } }), env);
-ok((await r.text()).includes("Open the link Chris sent you"), "and the page says how to get back in");
+ok((await r.text()).includes("Open the link you were sent"), "and the page says how to get back in");
+r = await worker.fetch(new Request(`${base}/join/${joinCode}`), env);
+ok((await r.text()).includes("Chris or Nic approves each one"), "outside, it is always Chris or Nic who approves (Chris, 2026-10-15)");
 console.log(`worker: ${checks} checks passed`);
