@@ -135,13 +135,16 @@ def draft_sample(ctx: runner.Context, rec, fetch: Callable[[dict], bytes], *, ch
         chosen.append((row, data))
     hero = chosen[0][0]
     today = datetime.now(ZoneInfo(ctx.cfg.timezone)).date()
-    qid, art, line = content.make_draft(
-        ctx, today, chosen, design, want=hero["subject"], kind_used=hero["subject"], asked=design, track=track,
-        drafter=drafter, art_client=art_client, why="from the design samples",
-        extra_meta={"source": "sample", "asap": True, "sample_folder": rec["folder"], "sample_id": rec["id"]},
-        ping=(f"{ctx.cfg.brand_name}: the sample you chose, a post to approve",
-              f"The {design} idea, made into a post for today. Post now and it goes out at once, or follow the pace, or "
-              "skip. Tap to see it."))
+    try:
+        qid, art, line = content.make_draft(
+            ctx, today, chosen, design, want=hero["subject"], kind_used=hero["subject"], asked=design, track=track,
+            drafter=drafter, art_client=art_client, why="from the design samples",
+            extra_meta={"source": "sample", "asap": True, "sample_folder": rec["folder"], "sample_id": rec["id"]},
+            ping=(f"{ctx.cfg.brand_name}: the sample you chose, a post to approve",
+                  f"The {design} idea, made into a post for today. Post now and it goes out at once, or follow the pace, or "
+                  "skip. Tap to see it."))
+    except content.PhotosTaken as e:
+        return _failed(ctx, rec, f"{e}, and a photo goes out once inside the repeat window")
     if art.get("verdict") == "reject":
         return _failed(ctx, rec, f"the art director turned it back: {art.get('notes', '')}", queue_id=qid)
     _status(conn, rec["id"], "drafted", queue_id=qid)
@@ -169,12 +172,18 @@ def run(ctx: runner.Context, fetch: Optional[Callable[[dict], bytes]] = None, **
 
         def fetch(row):
             return content.read_photo(ctx.cfg, row, reader.download)
+    lock = content.drafting_lock(content.DRAFTING_WAIT)     # one draft picked and saved at a time (2026-10-16)
+    if lock is None:
+        return "waiting: another post was being drafted for 15 minutes; the presses are drafted within the hour"
     lines = []
-    while True:
-        rows = pending(ctx.conn)
-        if not rows:
-            break
-        lines.append(draft_sample(ctx, rows[0], fetch or (lambda row: b""), **clients))
+    try:
+        while True:
+            rows = pending(ctx.conn)
+            if not rows:
+                break
+            lines.append(draft_sample(ctx, rows[0], fetch or (lambda row: b""), **clients))
+    finally:
+        lock.release()
     return "; ".join(lines)
 
 

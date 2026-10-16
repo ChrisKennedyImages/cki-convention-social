@@ -1529,6 +1529,29 @@ chose "Their own colors, no tiles" and "Same speed as the ticker".
   American Heart Association and CPAC read on the black as they are.
 - Pinned by `tests/test_client_logos.py`.
 
+## 2026-10-16: one photo, one post; the door says where the photo is
+
+Chris: "Why why why is it giving me this error when nothing was posted with this image!? Very frustrating because it's
+a good reel." Read from the live database: the 8:00 daily draft (post 7, the reel) picked its photos at 12:00 UTC and
+spent seven minutes checking and rendering; the designed draft started at 12:02, picked the same photo 894 (both draw
+the least used first) and saved post 6, the spotlight, at 12:03; the daily draft saved post 7 at 12:07 with 894 and
+47350 in it. Each picker left out every photo in an open post; the other's picks did not exist yet. When he approved
+the reel, the publisher's door turned it back with "Photo 894 already went out as post #6", though post 6 was only
+scheduled. He pulled post 6 back himself to post the reel.
+
+- **One draft picked at a time.** The roads that pick from the library hold one lock from the pick to the save
+  (`content.DRAFTING`): the daily draft and Post this wait for it (up to 15 minutes), a designed draft that finds it
+  held waits for the next hour.
+- **The save refuses a taken photo.** Saving a draft looks again, inside one write transaction, for each of its photos
+  on another post inside the repeat window (open, scheduled or sent; a skipped one is not), and refuses the draft when
+  one is there (`content.PhotosTaken`). The daily draft says so and its window tries the day again; a designed draft
+  waits for the next hour; Post this says why on the press.
+- **The door tells the truth.** "Photo 894 already went out as post #6 on Thu Oct 15" only when post 6 went out;
+  otherwise "Photo 894 is already in post #6, set to go out Sun Oct 18 at 10:00 am. Pull post #6 back to use it here,
+  or Skip this one.", with the post that holds the photo linked on the draft and on Today (`publisher.held_words`,
+  `rule_report.held_by`). A new approve clears it; the door says it again if the photo is still held.
+- Pinned by `tests/test_today.py` (`OnePhotoOnePost`), each seen failing first.
+
 ## Standing rules from the brief
 
 - CPAC, the ACU and their affiliates are never contacted, by code

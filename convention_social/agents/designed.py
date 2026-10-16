@@ -241,12 +241,26 @@ def todays_hero_rooms(conn: sqlite3.Connection, day: date) -> frozenset:
 
 def draft(ctx: runner.Context, fetch: Callable[[dict], bytes], *, now: Optional[datetime] = None, check_client=None,
           drafter=None, art_client=None) -> str:
-    """One designed draft, or the plain reason none was made."""
+    """One designed draft, or the plain reason none was made. It holds the drafting lock from its pick to its save
+    (content.DRAFTING, 2026-10-16): while the daily post or an idea is being drafted it waits for the next hour, so two
+    drafts never pick the same least-used photos at once."""
     from . import content
-    conn = ctx.conn
-    ok, why = due(conn, now)
+    ok, why = due(ctx.conn, now)
     if not ok:
         return f"no designed draft: {why}"
+    lock = content.drafting_lock(0)
+    if lock is None:
+        return "no designed draft: another post is being drafted now (the daily post or an idea); the next one comes within the hour"
+    try:
+        return _draft(ctx, fetch, now=now, check_client=check_client, drafter=drafter, art_client=art_client)
+    finally:
+        lock.release()
+
+
+def _draft(ctx: runner.Context, fetch: Callable[[dict], bytes], *, now: Optional[datetime], check_client, drafter,
+           art_client) -> str:
+    from . import content
+    conn = ctx.conn
     day = local_now(ctx.cfg, now).date()
     track = music.current(conn)
     design = next_design(conn, track is not None)
@@ -286,12 +300,15 @@ def draft(ctx: runner.Context, fetch: Callable[[dict], bytes], *, now: Optional[
         design, chosen = content.fallback_for(day), chosen[:1]      # too few passed: the day's one-photo design
     hero = chosen[0][0]
     words = {"reel": "Tap to watch it with its sound."}.get(design, "Tap to see it.")
-    qid, art, line = content.make_draft(
-        ctx, day, chosen, design, want="event", kind_used="event", asked=asked, track=track, drafter=drafter,
-        art_client=art_client, why=f"designed draft; {content.use_why(hero, len(rows_))}",
-        extra_meta={"source": SOURCE, "designed_day": day.isoformat(), "event": "", "designed_event": event_of(hero)},
-        ping=(f"{ctx.cfg.brand_name}: a designed post to approve",
-              f"A {design} on {len(chosen)} of your photos, made for today. Post now, follow the pace or skip. {words}"))
+    try:
+        qid, art, line = content.make_draft(
+            ctx, day, chosen, design, want="event", kind_used="event", asked=asked, track=track, drafter=drafter,
+            art_client=art_client, why=f"designed draft; {content.use_why(hero, len(rows_))}",
+            extra_meta={"source": SOURCE, "designed_day": day.isoformat(), "event": "", "designed_event": event_of(hero)},
+            ping=(f"{ctx.cfg.brand_name}: a designed post to approve",
+                  f"A {design} on {len(chosen)} of your photos, made for today. Post now, follow the pace or skip. {words}"))
+    except content.PhotosTaken as e:
+        return f"no designed draft: {e}; the next one comes within the hour"
     return line
 
 

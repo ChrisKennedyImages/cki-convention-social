@@ -28,6 +28,7 @@ from urllib.parse import quote_plus
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile, status
 from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
+from markupsafe import Markup, escape
 
 from ..agents import AGENTS, is_built
 from ..ai import copy_rules, spend
@@ -210,7 +211,19 @@ def queue_view(conn, row) -> dict:
     art = meta.get("art") or {}
     mended = meta.get("mended") or []
     on = alerts.networks_on()
+    held = meta.get("held_by") if row["status"] == "draft" and isinstance(meta.get("held_by"), dict) else None
+    holder = db.one(conn, "SELECT status FROM content_queue WHERE id=?", (int(held.get("post") or 0),)) if held else None
+    released = bool(held) and (holder is None or holder["status"] not in ("scheduled", "published", "would_publish"))
+    if released:
+        held = None                     # he pulled the other post back: the choices are his again, the old words go
+    held_html = None
+    if held and row["last_error"]:
+        # 2026-10-16: the photo is in another post; its "Pull post #N back" opens that post, where the pull back is
+        link = f"Pull post #{int(held.get('post') or 0)} back"
+        held_html = Markup(escape(row["last_error"])).replace(link, Markup(f'<a href="/queue/{int(held["post"])}">{link}</a>'))
     return {**dict(row), "art": art, "captions": captions, "targets": targets, "reports": reports, "official": official,
+            "held_html": held_html, "held_post": int(held["post"]) if held_html else None,
+            **({"last_error": None} if released else {}),
             "design_name": DESIGN_WORDS.get(meta.get("design") or "", meta.get("design") or ""),
             "mended": mended[-1] if mended else None,
             "blocked_networks": [n for n in targets if not reports[n].ok],
@@ -703,6 +716,7 @@ def create_app() -> FastAPI:
             meta = {}
         meta = meta if isinstance(meta, dict) else {}
         meta.update(asap=how == "now", approved_how="now" if how == "now" else "pace")
+        meta.pop("held_by", None)                 # the door says it again if the photo is still held
         now = db.utcnow()
         conn.execute("UPDATE content_queue SET status='approved', approved_at=?, last_error=NULL, rule_report=?, "
                      "scheduled_for=CASE WHEN ? THEN NULL ELSE scheduled_for END, updated_at=? WHERE id=?",
