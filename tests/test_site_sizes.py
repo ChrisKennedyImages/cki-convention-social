@@ -361,7 +361,8 @@ class SmallStuff(SizesCase):
         self.assertIn(".ticker .track{display:flex;width:max-content;translate:max(0px,calc(var(--pad) - 26px)) 0;"
                       "animation:tick 38s linear infinite}", css)
         home = self.page(self.built(), "index.html")
-        self.assertEqual(home.count('<div class="ticker'), 2)
+        self.assertEqual(home.count('aria-hidden="true"><div class="track"><span'), 2, "the two tickers of words")
+        self.assertEqual(home.count('<div class="ticker'), 3, "and, since 2026-10-16, the logo strip rolls on the ticker's own class")
         self.assertIn('<div class="ticker" aria-hidden="true"><div class="track"><span class="">Backstage</span>', home)
 
     def test_who_we_are_is_a_paragraph_and_the_contact_links_fit_their_boxes(self):

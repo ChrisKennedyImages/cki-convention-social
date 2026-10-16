@@ -83,7 +83,7 @@
   ],
   "call_to_action": "Request a quote",
   "clients": {
-    "_about": "The logos under the hero on the home page (Chris, 2026-10-15). On since he said so, 2026-10-15: \"On, rows centered\" (show). Each entry: name (the organization, as its logo's label), logo (its file, under site/clients/), spread (true for an organization that may be on the strip but never most of it and never first, his rule of 2026-10-15; left out it counts as true), tile (light, or dark for a logo drawn in white), and where its logo came from (source) and when (fetched). Waiting on Chris: Miner Feinstein Architects (his \"MF Architects\", Frederick MD), which has no website; it goes on when he sends the file.",
+    "_about": "The logos under the hero on the home page (Chris, 2026-10-15). On since he said so, 2026-10-15 (show); a scroller at the ticker's speed, each logo on the black with no tile, since 2026-10-16. Each entry: name (the organization, as its logo's label), logo (its file, under site/clients/), spread (true for an organization that may be on the strip but never most of it and never first, his rule of 2026-10-15; left out it counts as true), relit (true when its dark ink is shown in a light version on the site's black, site/clients.py; measured, not chosen), and where its logo came from (source) and when (fetched). Waiting on Chris: Miner Feinstein Architects (his \"MF Architects\", Frederick MD), which has no website; it goes on when he sends the file.",
     "show": true,
     "heading": "We've photographed for",
     "list": [
@@ -91,7 +91,7 @@
         "name": "Library of Congress",
         "logo": "site/clients/library-of-congress.png",
         "spread": false,
-        "tile": "light",
+        "relit": true,
         "source": "https://www.loc.gov/ (the <svg> in the page header's logo link), drawn to PNG",
         "fetched": "2026-10-15"
       },
@@ -99,7 +99,7 @@
         "name": "Hamel Builders",
         "logo": "site/clients/hamel-builders.png",
         "spread": false,
-        "tile": "light",
+        "relit": true,
         "source": "https://www.hamelbuilders.com/wp-content/themes/hamel/images/hamel_logo_color_v.svg, drawn to PNG",
         "fetched": "2026-10-15"
       },
@@ -107,7 +107,7 @@
         "name": "Center for Adoption Support and Education (C.A.S.E.)",
         "logo": "site/clients/case-adoption-support.png",
         "spread": false,
-        "tile": "light",
+        "relit": true,
         "source": "https://adoptionsupport.org/wp-content/uploads/2025/01/CASE-logo-color.svg, drawn to PNG",
         "fetched": "2026-10-15"
       },
@@ -115,7 +115,7 @@
         "name": "Washington Nationals",
         "logo": "site/clients/washington-nationals.png",
         "spread": false,
-        "tile": "light",
+        "relit": false,
         "source": "https://www.mlbstatic.com/team-logos/120.svg (MLB's logo host, linked from mlb.com/nationals), drawn to PNG",
         "fetched": "2026-10-15"
       },
@@ -123,7 +123,7 @@
         "name": "American Heart Association",
         "logo": "site/clients/american-heart-association.png",
         "spread": false,
-        "tile": "light",
+        "relit": false,
         "source": "sent by Chris, 2026-10-15 (AHA_icon.svg), drawn to PNG",
         "fetched": "2026-10-15"
       },
@@ -131,7 +131,7 @@
         "name": "Associated Press",
         "logo": "site/clients/associated-press.png",
         "spread": false,
-        "tile": "light",
+        "relit": true,
         "source": "https://www.ap.org/wp-content/uploads/2024/03/AP-Logo.png",
         "fetched": "2026-10-15"
       },
@@ -139,7 +139,7 @@
         "name": "American Conservative Union",
         "logo": "site/clients/american-conservative-union.png",
         "spread": true,
-        "tile": "light",
+        "relit": true,
         "source": "https://web.archive.org/web/20181222160032id_/https://conservative.org/assets/images/acu.svg (conservative.org's own logo, archived 2018-12-22), drawn to PNG",
         "fetched": "2026-10-15"
       },
@@ -147,7 +147,7 @@
         "name": "CPAC",
         "logo": "site/clients/cpac.png",
         "spread": true,
-        "tile": "dark",
+        "relit": false,
         "source": "https://static.wixstatic.com/media/1766bd_d16aa32305d648049ed0dfc1451d1072~mv2.png (the logo cpac.org's own pages load)",
         "fetched": "2026-10-15"
       },
@@ -155,7 +155,7 @@
         "name": "WC Smith",
         "logo": "site/clients/wc-smith.png",
         "spread": false,
-        "tile": "light",
+        "relit": true,
         "source": "https://wcsmith.com/wp-content/uploads/2024/02/wc-logo-header-1.png",
         "fetched": "2026-10-15"
       },
@@ -163,7 +163,7 @@
         "name": "Bozzuto",
         "logo": "site/clients/bozzuto.png",
         "spread": false,
-        "tile": "light",
+        "relit": true,
         "source": "https://www.bozzuto.com/_next/static/media/logo-dark.80ba3327.svg, drawn to PNG",
         "fetched": "2026-10-15"
       },
@@ -171,7 +171,7 @@
         "name": "APTA Pelvic Health",
         "logo": "site/clients/apta-pelvic-health.png",
         "spread": false,
-        "tile": "light",
+        "relit": true,
         "source": "https://assets-002.noviams.com/novi-file-uploads/apta/structure/apta_pelvic-health_full_color_rgb-pospng.png (the logo aptapelvichealth.org shows)",
         "fetched": "2026-10-15"
       },
@@ -179,7 +179,7 @@
         "name": "Grimm + Parker Architects",
         "logo": "site/clients/grimm-parker-architects.png",
         "spread": false,
-        "tile": "light",
+        "relit": true,
         "source": "https://www.grimmandparker.com/ (the <svg> in the page header, its dark version), drawn to PNG",
         "fetched": "2026-10-15"
       }

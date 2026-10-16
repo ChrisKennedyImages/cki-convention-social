@@ -1194,7 +1194,8 @@ some contracts forbid showing it; he was told).
   `tests/test_client_logos.py`).
 - On since his word on the renders at the three sizes: "On, rows centered
   (Recommended)". Every row of the strip is centred, the short last row under
-  the full ones, the heading over them.
+  the full ones, the heading over them. (The tiles and the rows gave way to a
+  scroller on 2026-10-16, below.)
 
 ## 2026-10-15: the ACU and CPAC on the logo strip, never in outreach
 
@@ -1370,6 +1371,33 @@ Chris, the same day, as the number of sessions grew:
   `wrangler.live.jsonc` stopped `scripts/go-live.sh` (both fixed the same
   night: the updater gives the suite an hour; tests never see that file).
 - "Put that in law": `CLAUDE.md`, "How changes reach the Mini".
+
+## 2026-10-16: the logos roll like the ticker, on the black, no tiles
+
+Chris, on the strip live: "The white background on the logos are intense!
+Could it be a scroller too without the white background?" Asked how, he
+chose "Their own colors, no tiles" and "Same speed as the ticker".
+
+- The strip is the ticker's own band (`.ticker.logos`, `site/clients.py`
+  `clients_body`): the same fade over the gutter at both ends, the same start
+  on the text column, the same keyframes, the run doubled for the loop and the
+  copy silent to readers. Its speed is the ticker's: `site.js` sets its
+  duration to the ticker's scaled by the two runs' widths. It holds under the
+  pointer and under a finger, stands still for visitors who ask for reduced
+  motion, and never scrolls the page sideways. The logos load at once (a lazy
+  copy would arrive late as it rolls in).
+- Each logo sits on the site's black as itself, at one optical height. Ink
+  that does not read there gets a light version (`site/clients.py`
+  `relight`): black and grey become the site's light; a dark colour (a navy, a
+  dark green) keeps its hue, lifted to 4.5 to 1; a brand colour (chroma 0.15
+  or more: the Nationals red, the AHA red, APTA's magenta, the ACU's stripes)
+  stays as it is. It is decided area by area: dark ink sitting on the black is
+  relit, dark ink inside the logo's own light ink (C.A.S.E.'s letters on its
+  tree) keeps its colour. A logo drawn on a white box (the AP's) loses the box.
+  offer.json records per logo whether it was relit (`relit`, measured by the
+  code, pinned against it): nine of the twelve; the Washington Nationals, the
+  American Heart Association and CPAC read on the black as they are.
+- Pinned by `tests/test_client_logos.py`.
 
 ## Standing rules from the brief
 

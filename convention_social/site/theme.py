@@ -78,13 +78,17 @@ a{color:inherit;text-decoration:none}img{display:block;max-width:100%}
 .ticker.rev .track{animation-direction:reverse;animation-duration:46s}
 .ticker span{font:400 clamp(26px,3.6vw,54px)/1 var(--display);text-transform:uppercase;padding:0 26px;white-space:nowrap}
 .ticker span.o{color:transparent;-webkit-text-stroke:1px var(--g4)}.ticker span.dot{color:var(--c);padding:0 6px}
-/* the logos under the hero (Chris, 2026-10-15): each in its own colours on a tile, one height, wrapping on a phone */
-.clients{--lh:46px;padding:clamp(26px,3.4vw,44px) var(--pad) clamp(30px,3.8vw,48px);background:var(--k);border-top:1px solid var(--g3)}
-.clients .kick{margin-bottom:20px;justify-content:center}
-.clients .logos{list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:center}
-.clients .tile{height:84px;padding:12px 20px;border-radius:10px;background:#fff;display:flex;align-items:center;justify-content:center}
-.clients .tile.dark{background:var(--g2);border:1px solid var(--g3)}
-.clients .tile img{height:calc(var(--lh) * var(--k, 1));width:auto;max-width:240px;object-fit:contain}
+/* the logos under the hero (Chris, 2026-10-15), a scroller since 2026-10-16 ("Their own colors, no tiles", "Same speed as the
+   ticker"): the ticker's own band, fade, start on the text column and keyframes; each logo on the black as itself (the dark
+   ones relit, site/clients.py), at one optical height; site.js gives the run the ticker's speed and holds it under a finger,
+   the pointer holds it here */
+.clients{--lh:46px;padding:clamp(26px,3.4vw,44px) 0 clamp(30px,3.8vw,48px);background:var(--k);border-top:1px solid var(--g3)}
+.clients .kick{margin:0 var(--pad) 22px}
+.ticker.logos{border-block:0;padding:4px 0}
+.ticker.logos .track{list-style:none;margin:0;padding:0;align-items:center}
+.ticker.logos li{flex:none;display:flex;align-items:center;height:calc(var(--lh) * 1.3);padding:0 26px}
+.ticker.logos img{display:block;height:calc(var(--lh) * var(--k, 1));width:auto;max-width:none}
+.ticker.logos:hover .track,.ticker.logos.held .track{animation-play-state:paused}
 @keyframes tick{to{transform:translateX(-50%)}}
 /* sections */
 section{position:relative;padding:clamp(80px,12vw,160px) var(--pad)}
@@ -199,7 +203,7 @@ form.book textarea{min-height:120px;resize:vertical}
 @media (min-width:761px) and (max-width:1100px){.top{gap:16px}.top .logo svg{height:40px}.top .tel{display:none}.top nav{gap:12px}.top .btn{padding:13px 14px}
 .hero .photo{height:54svh;min-height:380px}.mega{font-size:clamp(36px,7.4vw,84px)}
 .frame{--h:clamp(280px,40vh,480px)}.cover .grid{columns:2}footer .foot{grid-template-columns:1fr 1fr}
-.clients{--lh:40px}.clients .tile{height:74px;padding:11px 16px}.clients .tile img{max-width:200px}}
+.clients{--lh:40px}}
 /* the phone (2026-10-14): one column, the bar at the bottom, the hero words under the photo on the first screen */
 @media (max-width:760px){.top{gap:10px}.top nav{display:none}.top .logo svg{height:36px}.top .tel{margin-left:auto}.top .btn{padding:12px 14px}.top .btn .long{display:none}
 .tabbar{position:fixed;left:0;right:0;bottom:0;z-index:55;display:flex;justify-content:space-around;align-items:stretch;gap:4px;padding:8px 6px calc(8px + env(safe-area-inset-bottom));background:rgba(10,10,11,.94);backdrop-filter:blur(12px);border-top:1px solid var(--g3)}
@@ -214,7 +218,7 @@ body{padding-bottom:calc(74px + env(safe-area-inset-bottom))}.preview{bottom:cal
 .hero .first{font-size:17px;margin-top:18px}.hero .lede{font-size:16px}.hero .row{margin-top:16px;gap:18px}
 .vf i{width:28px;height:28px}.list a{grid-template-columns:44px 1fr auto}
 .cover .grid{columns:2;gap:10px}.cover figure{margin-bottom:10px}.contact .hand{grid-template-columns:1fr}footer .foot{grid-template-columns:1fr;gap:28px}
-.clients{--lh:34px}.clients .logos{gap:10px}.clients .tile{height:62px;padding:9px 13px;border-radius:8px}.clients .tile img{max-width:150px}}
+.clients{--lh:34px}}
 @media (max-width:360px){.top .tel span{display:none}}
 @media (prefers-reduced-motion:reduce){*,*:before,*:after{animation:none!important;transition:none!important}.mega span em{transform:none}.rv{opacity:1;transform:none}.hero canvas.web{display:none}}
 """
@@ -271,6 +275,12 @@ roll.addEventListener('focusin',()=>{focus=true});roll.addEventListener('focusou
 const width=()=>{const x=roll.scrollLeft;for(const f of roll.querySelectorAll('.frame')){if(f.offsetLeft+f.offsetWidth>x+1)return f.offsetWidth+18}return roll.clientWidth*.8};
 document.querySelectorAll('.reel .arrows button').forEach(b=>b.addEventListener('click',()=>{hold=performance.now()+900;roll.scrollBy({left:(b.dataset.dir==='prev'?-1:1)*width(),behavior:'smooth'})}));
 if(!reduce&&!fits)raf=requestAnimationFrame(step)}
+// the logo strip moves at the ticker's speed (Chris, 2026-10-16: "Same speed as the ticker"): its run is another length, so
+// its duration is the ticker's scaled by the two runs' widths; a finger on it holds it as the pointer does (theme.CSS)
+const tick=document.querySelector('.ticker:not(.logos):not(.rev) .track'),logos=document.querySelector('.ticker.logos .track');
+if(logos){const pace=()=>{if(tick&&tick.scrollWidth&&logos.scrollWidth)logos.style.animationDuration=(parseFloat(getComputedStyle(tick).animationDuration)*logos.scrollWidth/tick.scrollWidth)+'s'};
+pace();addEventListener('load',pace);addEventListener('resize',pace,{passive:true});const band=logos.parentElement;
+band.addEventListener('touchstart',()=>band.classList.add('held'),{passive:true});['touchend','touchcancel'].forEach(ev=>band.addEventListener(ev,()=>band.classList.remove('held'),{passive:true}))}
 // parallax
 const par=[...document.querySelectorAll('[data-speed]')];
 const move=()=>par.forEach(el=>{const r=el.parentElement.getBoundingClientRect();const d=(r.top+r.height/2-innerHeight/2)*parseFloat(el.dataset.speed);el.style.transform='translateY('+Math.max(-24,Math.min(24,d))+'px)'});
