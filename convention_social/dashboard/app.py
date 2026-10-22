@@ -19,6 +19,7 @@ import json
 import os
 import re
 import subprocess
+import sys
 import threading
 import time
 from pathlib import Path
@@ -430,6 +431,58 @@ def cached_thumb(drive_id: str, fetch) -> Optional[Path]:
         tmp.write_bytes(data)
         os.replace(tmp, path)                   # readers see the whole file or none of it
         return path
+
+
+# Chris, 2026-10-21: "They take awhile to load and it's 40+ pages". Opening a page of the Photos tab also gets
+# the next WARM_AHEAD pages' previews from Drive in the background, two at a time (what he is looking at keeps the
+# rest of THUMB_FETCHES), so the next page opens from the Mini's disk. A preview is never fetched twice at once.
+WARM_AHEAD = 2
+WARM_FETCHES = threading.BoundedSemaphore(2)
+_WARMING: set = set()
+_WARMING_LOCK = threading.Lock()
+
+
+def drive_thumb_fetch(conn, size: int = 400):
+    """fetch(drive_id) -> bytes: a preview from Drive (read only), with the link asked for fresh."""
+    def fetch(drive_id: str) -> bytes:
+        from ..drive import oauth
+        from ..drive.api import DriveReader
+        return DriveReader(oauth.access_token(conn), conn=conn, agent="dashboard").thumbnail_for(drive_id, size)
+    return fetch
+
+
+def warm_ahead(view: str, page: int, subject: Optional[str], *, size: int = PAGE, fetcher=None) -> Optional[threading.Thread]:
+    """Start getting the previews of the pages after `page` (a background thread, its own connection)."""
+    if fetcher is None and "unittest" in sys.modules:
+        return None                                 # a test never reaches Drive from a thread it did not ask for
+
+    def work():
+        conn = db.connect()
+        try:
+            prepare_photo_views(conn, eligibility.folder_decisions(conn))   # the per-connection view the pages read
+            rows = [r for p in range(page + 1, page + 1 + WARM_AHEAD) for r in photo_page(conn, view, p, size=size, subject=subject)]
+            fetch = fetcher or drive_thumb_fetch(conn)
+            for r in rows:
+                did = r.get("drive_id")
+                if not did or not r.get("thumbnail_link"):
+                    continue
+                with _WARMING_LOCK:
+                    if did in _WARMING:
+                        continue
+                    _WARMING.add(did)
+                try:
+                    with WARM_FETCHES:
+                        cached_thumb(did, fetch)
+                finally:
+                    with _WARMING_LOCK:
+                        _WARMING.discard(did)
+        except Exception:  # noqa: BLE001  ahead of him is a nicety: a failure here never reaches the page
+            pass
+        finally:
+            conn.close()
+    t = threading.Thread(target=work, daemon=True, name="previews-ahead")
+    t.start()
+    return t
 
 
 def running_commit() -> str:
@@ -924,11 +977,7 @@ def create_app() -> FastAPI:
         if not row:
             raise HTTPException(404)
 
-        def fetch(drive_id: str) -> bytes:
-            from ..drive import oauth
-            from ..drive.api import DriveReader
-            return DriveReader(oauth.access_token(conn), conn=conn, agent="dashboard").thumbnail_for(drive_id, 400)
-        path = cached_thumb(row["drive_id"], fetch if row["thumbnail_link"] else None)
+        path = cached_thumb(row["drive_id"], drive_thumb_fetch(conn) if row["thumbnail_link"] else None)
         if path is None and row["source"] == "phone":
             from ..agents import phone
             path = phone.ensure_thumb(row)              # from its own file, after the nightly sweep took the preview
@@ -973,6 +1022,7 @@ def create_app() -> FastAPI:
         pages = max(1, (total + PAGE - 1) // PAGE)
         page = max(1, min(page, pages))
         shown = photo_page(conn, view, page, subject=subject)
+        warm_ahead(view, page, subject)                 # the next pages open from the Mini's disk (2026-10-21)
         uses = report.use_of(conn, [p["id"] for p in shown]) if view == "approved" else {}
         for i, p in enumerate(shown):
             # after a tap the page comes back to the next photo, since the one tapped may leave this list
