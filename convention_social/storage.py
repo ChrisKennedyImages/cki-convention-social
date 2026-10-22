@@ -2,7 +2,7 @@
 
 Where pictures live:
   Google Drive          every original, read only; nothing here ever writes there
-  DATA_ROOT/thumbs      400 px previews of the photos the dashboard has shown (fetched again on demand)
+  DATA_ROOT/thumbs      400 px previews of the photos the dashboard has shown or is about to (fetched again on demand)
   DATA_ROOT/photos      a copy of each photo picked for a post, the site or a draft, no more than MAX_EDGE on its long
                         side (2026-10-15: Chris saw 31 MB originals; "make sure nothing is being stored that large on the
                         mini - it cant handle the memory"); the Drive download is shrunk before anything keeps or opens it
@@ -33,7 +33,7 @@ from PIL import Image, ImageOps
 from .core import config, db
 
 KEEP_DAYS = 7
-THUMBS_CAP_MB = 1500
+THUMBS_CAP_MB = 500           # Chris, 2026-10-21: previews made ahead of him, 500 MB at most
 RENDERS_KEEP_DAYS = 90
 DESIGN_SETS_KEPT = 3
 OPEN = ("draft", "approved", "would_publish", "scheduled")

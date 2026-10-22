@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 import os
 import random
+from unittest import mock
 import time
 from pathlib import Path
 
@@ -187,3 +188,48 @@ class Schedule(IsolatedCase):
         self.assertEqual(AGENTS["content"]["schedule"], "daily 08:00")
         plist = (Path(config.REPO_ROOT) / "launchd" / "com.chriskennedyimages.conventionsocial.content.plist.template").read_text()
         self.assertIn("<key>Hour</key><integer>8</integer>", plist)
+
+
+class ReadyAhead(IsolatedCase):
+    """Chris, 2026-10-21: "They take awhile to load and it's 40+ pages". Opening a page gets the next pages'
+    previews from Drive in the background, so the next page opens from the Mini's disk."""
+    def setUp(self):
+        super().setUp()
+        os.environ["DASHBOARD_PASSWORD_HASH"] = auth.hash_password("correct horse")
+        config.reset()
+        self.conn = db.connect()
+        self.addCleanup(self.conn.close)
+        build_library(self.conn, random.Random(3))
+        self.conn.execute("UPDATE photos SET thumbnail_link='https://drive.example/thumb'")
+        self.conn.commit()
+        dash.prepare_photo_views(self.conn, eligibility.folder_decisions(self.conn))
+        self.fetched = []
+
+    def fetch(self, drive_id):
+        self.fetched.append(drive_id)
+        return b"\xff\xd8 a preview"
+
+    def page_ids(self, page, size=5):
+        return [p["drive_id"] for p in dash.photo_page(self.conn, "review", page, size=size)]
+
+    def test_the_next_pages_are_fetched_not_the_one_on_screen(self):
+        t = dash.warm_ahead("review", 1, None, size=5, fetcher=self.fetch)
+        t.join(10)
+        self.assertEqual(sorted(self.fetched), sorted(self.page_ids(2) + self.page_ids(3)))
+        for did in self.fetched:
+            self.assertTrue((config.get_config().data_root / "thumbs" / f"{did}.jpg").is_file())
+        before = list(self.fetched)
+        dash.warm_ahead("review", 1, None, size=5, fetcher=self.fetch).join(10)
+        self.assertEqual(self.fetched, before, "a preview already on the Mini is never fetched again")
+
+    def test_opening_a_page_starts_it_for_that_page(self):
+        client = TestClient(create_app())
+        client.cookies.set(COOKIE, make_token("chris"))
+        with mock.patch.object(dash, "warm_ahead") as warm:
+            self.assertEqual(client.get("/library").status_code, 200)
+        warm.assert_called_once()
+        self.assertEqual(warm.call_args.args[:2], ("review", 1))
+
+    def test_the_previews_stay_under_500_mb(self):
+        from convention_social import storage
+        self.assertEqual(storage.THUMBS_CAP_MB, 500, "Chris was told 500 MB at most (2026-10-21)")
