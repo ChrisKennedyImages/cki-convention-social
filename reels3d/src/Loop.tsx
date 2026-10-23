@@ -148,10 +148,11 @@ export const Loop: React.FC<{cuts: number[]}> = ({cuts}) => {
             </mesh>
           ))}
           {!closing && (
-            <mesh position={[loop.x, loop.y, 1]} scale={[0.5, 0.62, 0.45]} rotation={[0, 0, 0.4]}>
+            <mesh position={[loop.x, loop.y, 1]} scale={[0.5, 0.62, 0.16]} rotation={[0, 0, 0.4]}>
+              {/* a thin pane with a slight bulge, not a drop (Chris: "too thick, like a raindrop magnified") */}
               <sphereGeometry args={[1, 64, 64]} />
-              <meshPhysicalMaterial transmission={1} thickness={0.9} roughness={0} ior={1.5} dispersion={3}
-                                    envMapIntensity={0.35} specularIntensity={0.4} color="#ffffff" />
+              <meshPhysicalMaterial transmission={1} thickness={0.35} roughness={0} ior={1.4} dispersion={1.5}
+                                    envMapIntensity={0.25} specularIntensity={0.3} color="#ffffff" />
             </mesh>
           )}
         </ThreeCanvas>
