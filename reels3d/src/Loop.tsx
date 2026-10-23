@@ -1,10 +1,12 @@
 // Loop, made to match Chris's reelfolio recording (2026-10-23: "look at what you already inspected AGAIN").
 // What the recording does, and this does:
 // - a regular GRID of same-size cards in straight rows and columns, wide even gaps of flat dark space between them
-// - HOLD: one card lifts, upright, and the grid falls back into the dark (dim slivers of its neighbours), its label
+// - HOLD: the camera settles onto one card and the rest of the grid falls back into the dark (dim slivers of its
+//   neighbours); the card itself never leaves the grid (Chris: "it should only magnify in the loop itself"); its label
 //   under it on the dark (name, then a smaller line) and a counter at the right
 // - MOVE (slow, about a second and a half): the camera rises, banks a little as it travels through the empty space
-//   to the next card, a liquid glass oval gliding across the grid, then levels and settles on the next card
+//   to the next card, a liquid glass oval gliding across the grid and magnifying the photos it passes over, then
+//   levels and settles on the next card
 // Four cards in fifteen seconds. Photos unlit and exact; the glass is there only while the camera travels.
 import React, {useLayoutEffect, useMemo} from 'react';
 import {AbsoluteFill, Audio, staticFile} from 'remotion';
@@ -18,13 +20,13 @@ import {Close, END, H, K, PAPER, TOTAL, W, coverTex, easeIO, roundedMask, useFon
 type Item = {src: string; w: number; h: number; room?: string};
 const ITEMS = wall as Item[];
 const FOV = 30, TAN = Math.tan((FOV * Math.PI) / 360), ASPECT = W / H;
+const VIEW_W = 2 * TAN * ASPECT;                              // the width in view per unit of camera distance
 const CARD_W = 1.5, CARD_H = 2;                               // every card the same shape: 3:4 portrait, as in the recording
 const GAP_X = 0.16, GAP_Y = 0.42;                             // a tight grid; the rows a little further apart for the label
-const LIFT = 1.28;                                            // on the hold the card rises out of the grid and grows
 const COLS = 9, ROWS = 11;
 const PITCH_X = CARD_W + GAP_X, PITCH_Y = CARD_H + GAP_Y;
-const Z_HOLD = (CARD_W * LIFT / 0.6) / (2 * TAN * ASPECT);    // on the hold the lifted card is 60% of the width
-const Z_MOVE = Z_HOLD * 1.45;                                 // travelling: about three columns in view
+const Z_HOLD = (CARD_W / 0.6) / VIEW_W;                       // on the hold the card is 60% of the width
+const Z_MOVE = (3 * PITCH_X) / VIEW_W;                        // travelling: three columns in view
 const BANK = -0.2;                                            // the turn while travelling; level on every hold
 const HOLD = 60, MOVE = 42, FIRST = 24;                       // in 30ths of a second: 2 s held, 1.4 s travelling
 // the cards visited, in grid cells (col, row), each a step or two from the last so the travel reads
@@ -37,11 +39,10 @@ const ROOM_WORDS: Record<string, [string, string]> = {         // the approved r
 const words = (it: Item): [string, string] => ROOM_WORDS[it.room || ''] || ['Event Photography', 'In the moment.'];
 
 const cellPos = (c: number, r: number) => new THREE.Vector2((c - (COLS - 1) / 2) * PITCH_X, ((ROWS - 1) / 2 - r) * PITCH_Y);
-// which photo sits in each cell: the visited cards get landscape photos; no photo beside itself
-const LANDSCAPE = ITEMS.map((_, k) => k);
+// which photo sits in each cell: the visited cards take every fifth photo, the rest spread so no photo sits beside itself
 const photoAt = (c: number, r: number) => {
   const v = VISIT.findIndex(([vc, vr]) => vc === c && vr === r);
-  return v >= 0 ? LANDSCAPE[(v * 5) % LANDSCAPE.length] : (c * 7 + r * 11) % ITEMS.length;
+  return v >= 0 ? (v * 5) % ITEMS.length : (c * 7 + r * 11) % ITEMS.length;
 };
 
 // Where the camera is and how it is turned at frame f: held over a card, or travelling to the next.
@@ -56,8 +57,8 @@ const cameraAt = (f: number) => {
   for (let j = 0; j < arrivals.length; j++) if (f >= arrivals[j] - (j ? MOVE : 0)) k = j;
   const travel = k > 0 ? (f - (arrivals[k] - MOVE)) / MOVE : 1;
   if (travel < 1) {
-    const t = easeIO(travel), lift = Math.sin(Math.PI * Math.min(1, travel));
-    return {xy: at[k - 1].clone().lerp(at[k], t), z: Z_HOLD + (Z_MOVE - Z_HOLD) * lift, roll: BANK * lift, travel, k};
+    const t = easeIO(travel), rise = Math.sin(Math.PI * Math.min(1, travel));
+    return {xy: at[k - 1].clone().lerp(at[k], t), z: Z_HOLD + (Z_MOVE - Z_HOLD) * rise, roll: BANK * rise, travel, k};
   }
   return {xy: at[k], z: Z_HOLD, roll: 0, travel: -1, k};
 };
@@ -87,21 +88,19 @@ export const Loop: React.FC<{cuts: number[]}> = ({cuts}) => {
     const k = photoAt(c, r); return coverTex(tex[k], ITEMS[k].w / ITEMS[k].h, CARD_W / CARD_H);
   }) : []), [tex]);
   const cam = cameraAt(f);
-  // the held card rises out of the grid as the camera settles, and sinks back before it rises again
-  const settle = f - arrivals[cam.k] + 14, leaveIn = (cam.k + 1 < VISIT.length ? arrivals[cam.k + 1] - MOVE : TOTAL - END) - f;
-  const liftAt = cam.travel < 0 && !closing ? easeIO(Math.min(1, settle / 18, (leaveIn + 4) / 14)) : 0;
+  // the hold: in as the camera settles, out before it rises again
+  const since = f - arrivals[cam.k], until = (cam.k + 1 < VISIT.length ? arrivals[cam.k + 1] - MOVE : TOTAL - END) - f;
+  const held = cam.travel < 0 && !closing ? easeIO(Math.min(1, (since + 14) / 18, (until + 4) / 14)) : 0;
   // the rest of the grid falls back into the dark while a card is held
-  const grey = Math.round(255 - (255 - 32) * liftAt);
+  const grey = Math.round(255 - (255 - 32) * held);
   const dimmed = `rgb(${grey},${grey},${grey})`;
   let z = cam.z;
   if (closing) z = Z_HOLD + (Z_MOVE * 1.2 - Z_HOLD) * easeIO((f - (TOTAL - END)) / 36);
-  // the label: in once the camera has settled, out before it rises again
   const [vc, vr] = VISIT[cam.k];
   const it = ITEMS[photoAt(vc, vr)];
   const [title, line] = words(it);
-  const since = f - arrivals[cam.k], until = (cam.k + 1 < VISIT.length ? arrivals[cam.k + 1] - MOVE : TOTAL - END) - f;
   const labelOn = cam.travel < 0 && !closing ? Math.min(1, since / 10, until / 8) : 0;
-  const px = W / (2 * Z_HOLD * TAN * ASPECT);                  // screen pixels per grid unit on the hold
+  const px = W / (Z_HOLD * VIEW_W);                           // screen pixels per grid unit on the hold
   const glass = cam.travel > 0.15 && cam.travel < 0.9 ? easeIO((cam.travel - 0.15) / 0.75) : -1;
   return (
     <AbsoluteFill style={{background: K}}>
@@ -112,13 +111,11 @@ export const Loop: React.FC<{cuts: number[]}> = ({cuts}) => {
           <Rig xy={cam.xy} z={z} roll={cam.roll} />
           {cells.map(([c, r], s) => {
             const p = cellPos(c, r);
-            const v = VISIT.findIndex(([vc, vr]) => vc === c && vr === r);
-            const lift = v >= 0 && v === cam.k ? liftAt : 0;
             return (
-              <mesh key={s} position={[p.x, p.y, 0.3 * lift]} scale={1 + (LIFT - 1) * lift} renderOrder={lift > 0 ? 1 : 0}>
+              <mesh key={s} position={[p.x, p.y, 0]}>
                 <planeGeometry args={[CARD_W, CARD_H]} />
                 <meshBasicMaterial map={cardTex[s]} alphaMap={roundedMask()} alphaTest={0.5} toneMapped={false}
-                                   color={lift > 0 ? '#ffffff' : dimmed} />
+                                   color={c === vc && r === vr ? '#ffffff' : dimmed} />
               </mesh>
             );
           })}
@@ -126,18 +123,18 @@ export const Loop: React.FC<{cuts: number[]}> = ({cuts}) => {
             const a = cellPos(...VISIT[cam.k - 1]), b = cellPos(...VISIT[cam.k]);
             const xy = a.clone().lerp(b, glass), swell = Math.sin(Math.PI * glass);
             return (
-              <mesh position={[xy.x + 0.6 * (1 - glass), xy.y - 0.3, 1.4]} scale={[0.9 + 0.3 * swell, 1.2 + 0.25 * swell, 0.17]}
+              <mesh position={[xy.x + 0.5 * (1 - glass), xy.y, 1.4]} scale={[0.7 + 0.25 * swell, 0.9 + 0.2 * swell, 0.4]}
                     rotation={[0, 0, 0.6 - 0.7 * glass]}>
                 <sphereGeometry args={[1, 64, 64]} />
-                <meshPhysicalMaterial transmission={1} thickness={1.6} roughness={0} ior={1.5} envMapIntensity={0.45}
-                                      specularIntensity={0.15} dispersion={4} color="#ffffff" />
+                <meshPhysicalMaterial transmission={1} thickness={0.5} roughness={0} ior={1.5} envMapIntensity={0.12}
+                                      specularIntensity={0.1} dispersion={1} color="#ffffff" />
               </mesh>
             );
           })()}
         </ThreeCanvas>
       )}
       {labelOn > 0 && (
-        <div style={{position: 'absolute', left: W / 2 - (CARD_W * LIFT / 2) * px, width: CARD_W * LIFT * px, top: H / 2 + (CARD_H * LIFT / 2) * px + 18,
+        <div style={{position: 'absolute', left: W / 2 - (CARD_W / 2) * px, width: CARD_W * px, top: H / 2 + (CARD_H / 2) * px + 18,
                      display: 'flex', justifyContent: 'space-between', color: PAPER, opacity: labelOn}}>
           <div style={{lineHeight: 1.3}}>
             <div style={{fontFamily: 'body', fontSize: 32}}>{title}</div>
