@@ -162,7 +162,7 @@ class TheSite(IsolatedCase):
             return classify.final_check(self.conn, row["id"], jpeg_bytes(), client=client, agent="site")
         photos = build.pick_photos(self.conn, self.fetch, recheck=recheck)
         self.assertEqual(sorted(client.calls), ["never", "old"])
-        self.assertEqual(self.fetched[0], "old", "fetched to be looked at")
+        self.assertIn(self.fetched[0], ("old", "never"), "fetched to be looked at; the two are equal, so which is first is chance")
         self.assertEqual(len(photos.hero), 1)
         self.assertEqual(len(photos.coverage), 1)                               # never (the hero) and known; old was a wedding
         old_id = db.one(self.conn, "SELECT id FROM photos WHERE drive_id='old'")["id"]

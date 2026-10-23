@@ -141,5 +141,6 @@ class Samples(IsolatedCase):
         pid = event_photo(conn, "k0", kind="fan", final="fan", quality=3, light=3, moment=3)
         conn.execute("UPDATE classifications SET shot_type='stage_panel', convention_name='Katsucon' WHERE photo_id=?", (pid,))
         conn.execute("UPDATE photos SET thumbnail_link='t' WHERE id=?", (pid,))
-        picked = design_samples.pick(conn, 3)
-        self.assertEqual([r["drive_id"] for r in picked][:2], ["c0", "k0"], "the second pick is the other event, not another CPAC frame")
+        picked = [r["drive_id"] for r in design_samples.pick(conn, 3)]
+        self.assertTrue(picked[0].startswith("c"), "a CPAC frame first (the strongest); which of the four equals is chance")
+        self.assertEqual(picked[1], "k0", "the second pick is the other event, not another CPAC frame")
