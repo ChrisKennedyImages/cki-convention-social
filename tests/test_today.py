@@ -209,6 +209,33 @@ class DesignedDrafts(Case):
             made.append(json.loads(self.designed_rows()[-1]["rule_report"])["design_wanted"])
         self.assertEqual(made, designed.designs(has_music=False)[:3], "never the same design twice before the others")
 
+    def test_mostly_reels_two_of_every_three_designed_drafts_are_reels(self):
+        """Chris, 2026-10-23: "Mostly reels". With music, two of every three designed drafts are reels; the third is the
+        still design used least lately. Without music, never a reel."""
+        made = []
+        for i in range(9):
+            d = designed.next_design(self.conn, has_music=True)
+            made.append(d)
+            self.row([self.photo(200 + i)], design=d, source=designed.SOURCE)
+        for k in range(0, 9, 3):
+            self.assertEqual(made[k:k + 3].count("reel"), 2, made)
+        stills = [d for d in made if d != "reel"]
+        self.assertEqual(len(set(stills)), len(stills), "the stills still take turns")
+        self.assertNotEqual(designed.next_design(self.conn, has_music=False), "reel")
+
+    def test_a_reels_ping_says_reel_and_opens_it_playing(self):
+        title, message = content.ping_words("Event Caliber", "reel", 6, "Saturday", designed=False)
+        self.assertTrue(title.startswith("Reel:"), title)
+        self.assertIn("sound", message)
+        self.assertFalse(content.ping_words("Event Caliber", "poster", 1, "Saturday", designed=False)[0].startswith("Reel"))
+        self.assertTrue(content.ping_words("Event Caliber", "reel", 6, "today", designed=True)[0].startswith("Reel:"))
+        self.assertTrue(content.ping_click(7, "reel").endswith("/queue/7?play=1"))
+        pid = self.photo(1)
+        qid = self.row([pid], design="reel", video=True)
+        page = self.client.get(f"/queue/{qid}?play=1").text
+        self.assertRegex(page, r'<video class="reel"[^>]* autoplay muted', "it opens playing (phones only allow it silent)")
+        self.assertNotIn("autoplay", self.client.get(f"/queue/{qid}").text)
+
     def test_a_reels_ping_carries_its_own_cover(self):
         pid = self.photo(1)
         qid = self.row([pid], design="reel", video=True)

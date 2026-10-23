@@ -1588,3 +1588,20 @@ five styles: wall, loop, ring, gallery, orbit.
   browser when reels3d/ changes or they are missing. No Node, no reel: the draft falls back to a carousel of the
   same photos and says why, as before.
 - Loop, after six rounds on 2026-10-23: "Fuck it, it's fine." It stays as it is.
+
+## 2026-10-23: mostly reels, and a reel's ping says so
+
+Chris: "Are the reels back? All I get are stills and we built the reels part which was my favorite part, but you
+somehow managed to bury them". Asked how often, he chose **"Mostly reels"**. Asked whether a reel's ping should say
+so and open straight to it playing, he said **yes**.
+
+- The daily 8:00 post is a reel every event day with a music track. The week's still designs (spotlight, poster,
+  scan, cascade, select) are for the days without music. A building day stays one photo, and a day with too few
+  photos falls back as before.
+- Two of every three designed drafts are reels, while there is music. The third is the still design used least
+  lately, so the stills still take turns.
+- A reel's ping title starts with "Reel:". Tapping it opens the draft with the reel already playing. It plays
+  silent, because phones only allow sound after a tap, so one more tap turns the sound on.
+- Why it was buried: only Saturday was a reel day; designed drafts rotated through all nine designs (1 reel in 9);
+  the lane paused while 3 drafts waited (Oct 18 to 22); and the ping showed only the reel's cover still.
+- Known limit: there is one reel style (rooms), so the reels will look alike until a second style is made.

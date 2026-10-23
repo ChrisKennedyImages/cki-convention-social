@@ -316,7 +316,10 @@ def fallback_for(day: date) -> str:
 
 def design_for(day: date, subject: str, has_music: bool = False) -> str:
     """A building day is always a one-photo design (2026-10-09: one building photo a week), and a reel never goes out
-    silent (2026-10-11)."""
+    silent (2026-10-11). Chris, 2026-10-23: "Mostly reels": every event day with a music track is a reel; the week's
+    still designs are the days without one (and a day with too few photos falls back as before)."""
+    if has_music and subject != "architecture":
+        return "reel"
     design = DESIGNS[WEEKDAYS[day.weekday()]]
     if (design == "reel" and not has_music) or (subject == "architecture" and NEEDS[design] > 1):
         return fallback_for(day)
@@ -600,12 +603,9 @@ def make_draft(ctx: runner.Context, day: date, chosen: list[tuple[dict, bytes]],
     report.record_use(ctx.conn, "post", photo_ids, ref=f"post:{qid}", now=now_s)
     # the ping that opens the draft (Chris, 2026-10-11: "I haven't received any ntfy"); 2026-10-13: it carries the
     # card, and an Approve button when the art director passed the draft (core/approve_token: signed, single use)
-    what = "A single photo post" if design == "single" else f"A {design} on {len(photo_ids)} of your photos"
-    title, message = ping or (f"{ctx.cfg.brand_name}: a post to approve",
-                              f"{what} for {day:%A}. Post now, follow the pace or skip. "
-                              f"{'Tap to watch it with its sound.' if design == 'reel' else 'Tap to see it.'}")
+    title, message = ping or ping_words(ctx.cfg.brand_name, design, len(photo_ids), f"{day:%A}", designed=False)
     if not quiet:
-        notify.push(title, message, dry_run=ctx.dry_run, priority="default", click=notify.link(f"/queue/{qid}"), conn=ctx.conn,
+        notify.push(title, message, dry_run=ctx.dry_run, priority="default", click=ping_click(qid, design), conn=ctx.conn,
                     agent=ctx.agent, **ping_extras(ctx.conn, {"id": qid, "updated_at": now_s}, art))
     fell = (f", the reel could not be made ({reel_failed[0]})" if reel_failed
             else f", {asked} wanted but too few photos passed" if asked != design else "")
@@ -614,6 +614,22 @@ def make_draft(ctx: runner.Context, day: date, chosen: list[tuple[dict, bytes]],
             f"photo {hero['id']} first{' (' + why + ')' if why else ''}, captions by {writer} for \"{plan.primary}\", "
             f"art director: {art.get('verdict')}")
     return qid, art, line
+
+
+def ping_words(brand: str, design: str, n: int, when: str, *, designed: bool) -> tuple[str, str]:
+    """The draft ping's title and line. Chris, 2026-10-23: a reel's ping says it is a reel (its picture is only the
+    cover, and it looked like a still)."""
+    what = "A single photo post" if design == "single" else f"A {design} on {n} of your photos"
+    made = f"{what}, made for today" if designed else f"{what} for {when}"
+    if design == "reel":
+        return (f"Reel: {brand}, {'a designed reel' if designed else 'a reel'} to approve",
+                f"{made}. Post now, follow the pace or skip. Tap to watch it; one more tap for the sound.")
+    return (f"{brand}: {'a designed post' if designed else 'a post'} to approve", f"{made}. Post now, follow the pace or skip. Tap to see it.")
+
+
+def ping_click(qid: int, design: str) -> str:
+    """Where the ping opens: a reel opens on its draft already playing (silent; phones allow sound only after a tap)."""
+    return notify.link(f"/queue/{qid}?play=1" if design == "reel" else f"/queue/{qid}")
 
 
 def ping_extras(conn: sqlite3.Connection, row, art: Optional[dict]) -> dict:
