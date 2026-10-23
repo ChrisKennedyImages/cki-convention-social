@@ -4,15 +4,17 @@
 // - HOLD: the camera settles onto one card and the rest of the grid falls back into the dark (dim slivers of its
 //   neighbours); the card never leaves the grid (Chris: "it should only magnify in the loop itself"); its label
 //   under it on the dark (name, then a smaller line) and a counter at the right
-// - MOVE (slow, about a second and a half): the camera rises and travels, level, through the grid to the next card,
-//   a small clear lens gliding along the way and bending only the picture under it, then settles on the next card
-// Four cards in fifteen seconds. Photos unlit and exact; the glass is there only while the camera travels and is
-// smaller than any card, so it never rings a photo (Chris: "always avoid the single red line circle or drawing
-// around a photo").
+// - THE LOOP: a card-sized oval of liquid glass that glides onto the held photo, magnifies it as it crosses, and
+//   carries on ahead of the camera to the next card; the photo itself never moves (Chris, 2026-10-23: "it should only
+//   magnify in the loop itself when it goes over the image"). Glass, not light: nothing is painted on the photo.
+// - MOVE (slow, about a second and a half): the camera rises and travels, level, through the grid after the loop,
+//   then settles on the next card
+// Four cards in fifteen seconds. Photos unlit and exact.
 import React, {useLayoutEffect, useMemo} from 'react';
 import {AbsoluteFill, Audio, staticFile} from 'remotion';
 import {ThreeCanvas} from '@remotion/three';
 import {useThree} from '@react-three/fiber';
+import {RoomEnvironment} from 'three/examples/jsm/environments/RoomEnvironment.js';
 import * as THREE from 'three';
 import wall from './wall.json';
 import {Close, END, H, K, PAPER, TOTAL, W, coverTex, easeIO, roundedMask, useFonts, useFrameInfo, useTextures} from './lib';
@@ -79,8 +81,26 @@ const cameraAt = (f: number) => {
   return {x: c.x, y: c.y, z: zFor(c), travel: -1, k};
 };
 
+// Where the loop is at frame f: it reaches each held card's centre LOOP_AT into the hold, easing to a stop there
+// (the photo magnified under it), then moves on to the next card ahead of the camera; it comes in from beyond the
+// first card and leaves beyond the last.
+const LOOP_AT = 0.6 * HOLD;
+const loopAt = (f: number) => {
+  const stops = VISIT.map((c) => new THREE.Vector2(c.x, c.y));
+  const T = [0, ...VISIT.map((_, k) => arrivals[k] + LOOP_AT), TOTAL];
+  const P = [stops[0].clone().add(new THREE.Vector2(-2.6, -0.4)), ...stops, stops[stops.length - 1].clone().add(new THREE.Vector2(2.6, 0.4))];
+  let i = 0;
+  while (i < T.length - 2 && f >= T[i + 1]) i++;
+  return P[i].clone().lerp(P[i + 1], easeIO((f - T[i]) / (T[i + 1] - T[i])));
+};
+
 const Rig: React.FC<{x: number; y: number; z: number}> = ({x, y, z}) => {
-  const {camera} = useThree();
+  const {camera, gl, scene} = useThree();
+  useLayoutEffect(() => {                                     // light for the glass only: the photos are unlit
+    const pmrem = new THREE.PMREMGenerator(gl);
+    scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+    return () => pmrem.dispose();
+  }, [gl, scene]);
   useLayoutEffect(() => {
     camera.position.set(x, y, z);
     camera.up.set(0, 1, 0);
@@ -108,7 +128,7 @@ export const Loop: React.FC<{cuts: number[]}> = ({cuts}) => {
   const [title, line] = words(ITEMS[card.k]);
   const labelOn = cam.travel < 0 && !closing ? Math.min(1, since / 10, until / 8) : 0;
   const px = W / (zFor(card) * VIEW_W);                        // screen pixels per grid unit on the hold
-  const glass = cam.travel > 0.15 && cam.travel < 0.9 ? easeIO((cam.travel - 0.15) / 0.75) : -1;
+  const loop = loopAt(f);
   return (
     <AbsoluteFill style={{background: K}}>
       <Audio src={staticFile('music.mp4')} />
@@ -127,17 +147,13 @@ export const Loop: React.FC<{cuts: number[]}> = ({cuts}) => {
                                  color={c === card ? '#ffffff' : dimmed} />
             </mesh>
           ))}
-          {glass >= 0 && (() => {
-            const a = VISIT[cam.k - 1], b = VISIT[cam.k], swell = Math.sin(Math.PI * glass);
-            return (
-              <mesh position={[a.x + (b.x - a.x) * glass, a.y + (b.y - a.y) * glass, 1.2]}
-                    scale={[0.42 + 0.08 * swell, 0.55 + 0.08 * swell, 0.3]} rotation={[0, 0, 0.5 - 0.6 * glass]}>
-                <sphereGeometry args={[1, 64, 64]} />
-                <meshPhysicalMaterial transmission={1} thickness={0.35} roughness={0} ior={1.2} envMapIntensity={0}
-                                      specularIntensity={0} color="#ffffff" />
-              </mesh>
-            );
-          })()}
+          {!closing && (
+            <mesh position={[loop.x, loop.y, 1]} scale={[0.5, 0.62, 0.45]} rotation={[0, 0, 0.4]}>
+              <sphereGeometry args={[1, 64, 64]} />
+              <meshPhysicalMaterial transmission={1} thickness={0.9} roughness={0} ior={1.5} dispersion={3}
+                                    envMapIntensity={0.35} specularIntensity={0.4} color="#ffffff" />
+            </mesh>
+          )}
         </ThreeCanvas>
       )}
       {labelOn > 0 && (
