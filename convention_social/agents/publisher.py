@@ -378,10 +378,12 @@ def reel_files(row) -> Optional[tuple[Path, Optional[Path]]]:
     return Path(videos[0]), (Path(covers[0]) if covers else None)
 
 
-def reel_cover_ms() -> int:
-    """Where in the reel its cover frame is, in ms (render.motion.COVER_MS): Instagram shows that frame."""
-    from ..render import motion
-    return motion.COVER_MS
+def reel_cover_ms(row) -> int:
+    """Where in the reel its cover frame is, in ms: Instagram shows that frame. The row's 3D style has its own
+    (render.reels3d.COVER_MS, by `rule_report.reel`); a rooms reel from before has render.motion.COVER_MS."""
+    from ..render import motion, reels3d
+    style = (_json(row["rule_report"], {}) or {}).get("reel")
+    return reels3d.COVER_MS[style] if style in reels3d.STYLES else motion.COVER_MS
 
 
 def reel_urls(row, fields: list[dict], *, live: bool, uploader=None) -> str:
@@ -393,7 +395,7 @@ def reel_urls(row, fields: list[dict], *, live: bool, uploader=None) -> str:
         raise media.MediaError(f"the reel's video is missing ({video.name}); draft it again")
     key = media.reel_key(row["id"], "video")
     would = media.public_url(key)
-    payloads.video_asset(fields, would, reel_cover_ms())
+    payloads.video_asset(fields, would, reel_cover_ms(row))
     if not live:
         return would
     return (uploader or media.upload)(video, key)
@@ -456,7 +458,7 @@ def build_all(ctx: runner.Context, row, channels: dict[str, dict], when: dict[st
         captions = captions_of(row) or {}
         for net in reel_nets:
             built[net] = payloads.build_reel(net, channels[net]["buffer_channel_id"], captions.get(net, ""),
-                                             video_url, reel_cover_ms(), fields, scheduled_for=when.get(net))
+                                             video_url, reel_cover_ms(row), fields, scheduled_for=when.get(net))
     return {n: built[n] for n in channels}
 
 

@@ -323,9 +323,12 @@ def design_for(day: date, subject: str, has_music: bool = False) -> str:
     return design
 
 
-def reel_kind(day: date) -> str:
-    """The rooms reel, every time: the face match reel is retired (2026-10-11, it explained a service)."""
-    return "rooms"
+def reel_style(conn: sqlite3.Connection, rng=None) -> str:
+    """One of the five 3D styles at random, never the one the last reel had (Chris, 2026-10-23: "there should be 5
+    different style reels (all very different)", used randomly). The rooms reel of before is out of the rotation."""
+    from ..render import reels3d
+    last = db.one(conn, "SELECT rule_report FROM content_queue WHERE json_extract(rule_report, '$.reel') IS NOT NULL ORDER BY id DESC LIMIT 1")
+    return reels3d.next_style(json.loads(last["rule_report"])["reel"] if last else None, rng)
 
 
 def order_pool(pool: list, design: str) -> list:
@@ -367,11 +370,11 @@ def middle_first(items: list, hero) -> list:
 
 
 def make_renderer(conn: sqlite3.Connection, agent: str, *, design: str, rows: list, hero: dict, images: dict, day: date,
-                  track, out_dir: Path, seo) -> tuple[Callable[[tuple], dict], list]:
+                  track, out_dir: Path, seo, reel_style: Optional[str] = None) -> tuple[Callable[[tuple], dict], list]:
     """The day's design on its photos, as `render(focus) -> {aspect: [paths]}` for the art director, and the
     list a failed reel is written to (the same photos then go out as a carousel). Shared by the fresh draft
     and the mend, so a redrawn card is the same card the day would have made."""
-    from ..render import bold, design_samples, motion
+    from ..render import bold, design_samples, motion, reels3d
     words = confirmed_rooms(conn, [r["id"] for r in rows])
     kicker = kicker_for(hero).upper()
     if kicker == words[hero["id"]][0] or words[hero["id"]] == design_samples.UNCONFIRMED:
@@ -398,13 +401,13 @@ def make_renderer(conn: sqlite3.Connection, agent: str, *, design: str, rows: li
         if design == "reel" and not reel_failed:
             # Instagram and Facebook get the reel (render_paths "9:16"), with its cover; Pinterest the
             # hero as a 2:3 card; the art director looks at the cover and the stills, never the mp4
-            kind = reel_kind(day)
             try:
-                video = motion.REELS[kind](shots, copy, out=out_dir / f"{tag}-{kind}.mp4", audio=track)
-                stills = motion.reel_stills(kind, shots, copy, out_dir=out_dir / f"{tag}-stills", meta=seo)
+                grid = reels3d.fillers(conn, exclude=[r["id"] for r in rows])
+                video = reels3d.render(reel_style, shots, out=out_dir / f"{tag}-{reel_style}.mp4", audio=track, grid=grid)
+                stills = reels3d.stills(reel_style, video, out_dir=out_dir / f"{tag}-stills", meta=seo)
             except Exception as e:  # noqa: BLE001  a reel that cannot be made leaves a carousel of the same photos, said why
                 reel_failed.append(f"{type(e).__name__}: {e}")
-                runner.record_error(conn, agent, "reel", f"the {kind} reel for {day} was not made: {e}")
+                runner.record_error(conn, agent, "reel", f"the {reel_style} reel for {day} was not made: {e}")
             else:
                 return {"9:16": [str(video)], "cover": [str(stills[0])], **single(focus, ("2:3",)),
                         "stills": [str(p) for p in stills[1:]]}
@@ -447,15 +450,18 @@ def redraw(conn: sqlite3.Connection, row, meta: dict, *, agent: str = "content")
     design = meta.get("design") or "single"
     hero = rows[0]
     track = music.current(conn) if design == "reel" else None
+    from ..render import reels3d
+    style = meta["reel"] if meta.get("reel") in reels3d.STYLES else (reel_style(conn) if design == "reel" else None)
     out_dir = cfg.data_root / "renders" / "posts" / day.isoformat()
     out_dir.mkdir(parents=True, exist_ok=True)
     render, reel_failed = make_renderer(conn, agent, design=design, rows=rows, hero=hero, images=images, day=day, track=track,
-                                        out_dir=out_dir, seo=image_meta.for_photo(conn, hero))
+                                        out_dir=out_dir, seo=image_meta.for_photo(conn, hero), reel_style=style)
     art = meta.get("art") or {}
     focus = tuple(art["focus"]) if isinstance(art.get("focus"), list) and len(art["focus"]) == 2 else (0.5, 0.42)
     paths = render(focus)
     if design == "reel":
         meta["music"] = track.name if track else None       # the track this reel carries, named under its player
+        meta["reel"] = style
     if reel_failed:
         meta["design"], meta["reel_failed"] = "carousel", reel_failed[0]
     return paths, "card drawn again with today's words"
@@ -558,8 +564,9 @@ def make_draft(ctx: runner.Context, day: date, chosen: list[tuple[dict, bytes]],
     images = {r["id"]: Image.open(io.BytesIO(d)) for r, d in chosen}
     out_dir = ctx.cfg.data_root / "renders" / "posts" / day.isoformat()
     seo = image_meta.for_photo(ctx.conn, hero)
+    style = reel_style(ctx.conn) if design == "reel" else None
     render, reel_failed = make_renderer(ctx.conn, ctx.agent, design=design, rows=[r for r, _ in chosen], hero=hero, images=images,
-                                        day=day, track=track, out_dir=out_dir, seo=seo)
+                                        day=day, track=track, out_dir=out_dir, seo=seo, reel_style=style)
     render_paths, art = art_director.direct(ctx.conn, render, dry_run=ctx.dry_run, client=art_client, agent=ctx.agent,
                                             allow_redo=design == "single", max_files=4)
     if reel_failed:
@@ -581,7 +588,7 @@ def make_draft(ctx: runner.Context, day: date, chosen: list[tuple[dict, bytes]],
             "people": people, "model": writer, "rules": reports, "wanted": want, "art": art, "design": design,
             "design_wanted": asked, "seo": seo_record, "alt_text": alt, **(extra_meta or {})}
     if design == "reel":
-        meta.update(reel=reel_kind(day), music=track.name)
+        meta.update(reel=style, music=track.name)
     if reel_failed:
         meta["reel_failed"] = reel_failed[0]
     now_s = db.utcnow()
