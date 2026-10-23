@@ -129,12 +129,24 @@ def last_uses(conn: sqlite3.Connection) -> dict[int, str]:
     return {r["photo_id"]: r["last"] for r in db.rows(conn, "SELECT photo_id, MAX(used_at) AS last FROM photo_use GROUP BY photo_id")}
 
 
-def rotate(conn: sqlite3.Connection, rows: list, *, last: Optional[dict[int, str]] = None) -> list:
+def rotate(conn: sqlite3.Connection, rows: list, *, last: Optional[dict[int, str]] = None, rng=None,
+           alike: Optional[Callable] = None) -> list:
     """The same rows, the least recently used first: never used before the oldest use, the oldest use before a
-    newer one. The sort is stable, so the order the rows came in (the caller's quality order) breaks ties and
-    never decides on its own."""
+    newer one. Among photos used alike the caller's order stands, except that rows the caller holds equal (the same
+    `alike` key: the key it sorted by) are put in a chance order: Chris, 2026-10-23: "I seem to always get the same
+    style and pic" (equal photos fell back to file order, so the next frame of one big folder came second on every
+    draft). Without `alike` the caller's order stands throughout."""
+    import random
     last = last_uses(conn) if last is None else last
-    return sorted(rows, key=lambda r: last.get(r["id"]) or "")
+    rng = rng or random.Random()
+    rank, prev, keyed = 0, object(), []
+    for k, r in enumerate(rows):
+        key = alike(r) if alike else k
+        if k and key != prev:
+            rank += 1
+        prev = key
+        keyed.append((last.get(r["id"]) or "", rank, rng.random(), k))
+    return [rows[i] for *_, i in sorted(keyed)]
 
 
 def record_use(conn: sqlite3.Connection, surface: str, photo_ids, *, ref: str = "", now: Optional[str] = None) -> int:
@@ -177,6 +189,11 @@ def use_line(use: Optional[dict]) -> str:
             f"({', '.join(where.get(s, s) for s in use['surfaces'])})")
 
 
+def ranking(r) -> tuple:
+    """The order the strongest frames come in: strength, then a few people in the frame, then size."""
+    return (-strength(r), -(min(r["people_count"] or 0, 3)), -(r["width"] or 0))
+
+
 def best(conn: sqlite3.Connection, n: int = 30, *, subject: str = "event", cap: int | None = PER_EVENT_CAP) -> list[sqlite3.Row]:
     """The strongest frames, at most PER_EVENT_CAP per event.
 
@@ -190,7 +207,7 @@ def best(conn: sqlite3.Connection, n: int = 30, *, subject: str = "event", cap: 
             if r["method"] in ("vision", "ollama") and r["thumbnail_link"]
             and not eligibility.blocking_details(json.loads(r["personal_details"] or "[]"), subject)
             and not (subject == "architecture" and eligibility.building_blocked(r))]
-    rows.sort(key=lambda r: (-strength(r), -(min(r["people_count"] or 0, 3)), -(r["width"] or 0)))
+    rows.sort(key=ranking)
     picked, per = [], Counter()
     for r in rows:
         key = (r["convention_name"] if subject != "architecture" else None) or r["folder_id"]

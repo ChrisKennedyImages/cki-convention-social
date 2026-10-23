@@ -176,7 +176,7 @@ def pool(conn: sqlite3.Connection) -> list[dict]:
     last = report.last_uses(conn)
     for r in out:
         r["last_use"] = last.get(r["id"])
-    return report.rotate(conn, out, last=last)
+    return report.rotate(conn, out, last=last, alike=lambda r: (r["quality"], r["people_count"]))   # PHOTO_SQL's order
 
 
 def room_of(row: dict) -> str:
@@ -186,6 +186,13 @@ def room_of(row: dict) -> str:
 
 def event_of(row: dict) -> str:
     return (row.get("convention_name") or "").strip().lower() or str(row.get("folder_id") or "")
+
+
+def shoot_of(row: dict) -> str:
+    """The shoot a photo came from: its Drive folder, else its event. A post takes one photo per shoot before any
+    repeats (2026-10-23: four frames of one folder on one reel). A client is not a shoot: Chris, 2026-10-23, "You can
+    use more than one from CPAC or ACU", so two CPAC shoots may share a post."""
+    return str(row.get("folder_id") or "") or event_of(row)
 
 
 def spread(pool_rows: list[dict], n: int, *, fresh_events: Callable[[str], bool] = lambda e: True,
@@ -199,16 +206,22 @@ def spread(pool_rows: list[dict], n: int, *, fresh_events: Callable[[str], bool]
         return []
     hero = (next((r for r in pool_rows if fresh_events(event_of(r)) and room_of(r) not in taken_rooms), None)
             or next((r for r in pool_rows if fresh_events(event_of(r))), None) or pool_rows[0])
-    picked, rooms, events = [hero], {room_of(hero)}, {event_of(hero)}
-    for want_room, want_event in ((True, True), (True, False), (False, True), (False, False)):
+    picked, rooms, events, shoots = [hero], {room_of(hero)}, {event_of(hero)}, {shoot_of(hero)}
+    # a new shoot (Drive folder) before any shoot repeats (2026-10-23: four frames of one folder on one reel; two
+    # CPAC shoots may share a post), and inside that a new event first (a fresh one, then a new room, before the
+    # rest); the same preferences again among the repeats, so a library kept in one folder still spreads
+    passes = [(room, event, fresh, shoot) for shoot in (True, False)
+              for room, event, fresh in ((True, True, True), (True, True, False), (False, True, False), (True, False, False),
+                                         (False, False, False))]
+    for want_room, want_event, want_fresh, want_shoot in passes:
         for r in pool_rows:
             if len(picked) >= n:
                 return picked
-            if any(r is p for p in picked) or (want_room and room_of(r) in rooms) or (want_event and event_of(r) in events):
+            if (any(r is p for p in picked) or (want_room and room_of(r) in rooms) or (want_event and event_of(r) in events)
+                    or (want_shoot and shoot_of(r) in shoots) or (want_fresh and not fresh_events(event_of(r)))):
                 continue
             picked.append(r)
-            rooms.add(room_of(r))
-            events.add(event_of(r))
+            rooms.add(room_of(r)); events.add(event_of(r)); shoots.add(shoot_of(r))
     return picked
 
 

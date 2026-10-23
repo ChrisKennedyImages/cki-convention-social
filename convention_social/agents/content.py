@@ -145,14 +145,16 @@ def candidates(conn: sqlite3.Connection, subject: str) -> list[dict]:
         if any(c.lower() in used_people for c in credit.split()):
             continue
         out.append({**dict(r), "credit": credit})
-    # what the learner found works, inside the founder's bounds; a stable sort, so ties keep quality order
-    out.sort(key=lambda r: (r.get("quality") or 0) * learner.weight_for(conn, r.get("shot_type"), r.get("event_kind")), reverse=True)
+    # what the learner found works, inside the founder's bounds
+    def score(r):
+        return -(r.get("quality") or 0) * learner.weight_for(conn, r.get("shot_type"), r.get("event_kind"))
+    out.sort(key=score)
     # then the rotation (2026-10-14, "the same photos for everything"): the least recently used photo first, on any
-    # surface, so every approved photo gets its turn; the quality order above only breaks ties (library/report.rotate)
+    # surface, so every approved photo gets its turn; the score above only breaks ties, and equal photos come by chance
     last = report.last_uses(conn)
     for r in out:
         r["last_use"] = last.get(r["id"])
-    return report.rotate(conn, out, last=last)
+    return report.rotate(conn, out, last=last, alike=score)
 
 
 def use_why(hero: dict, ready: int) -> str:
@@ -326,16 +328,13 @@ def reel_kind(day: date) -> str:
     return "rooms"
 
 
-def rooms_first(pool: list) -> list:
-    """Best first, but one photo per room before any room repeats, so a post of several photos
-    shows the range of the coverage (the rooms reel names a room per photo)."""
-    from ..render import design_samples
-    seen, first, rest = set(), [], []
-    for r in pool:
-        room = design_samples.ROOMS.get(r.get("shot_type") or "", design_samples.OTHER)[0]
-        (rest if room in seen else first).append(r)
-        seen.add(room)
-    return first + rest
+def order_pool(pool: list, design: str) -> list:
+    """The order to try the photos in: for a post of several, one per shoot (Drive folder) and per room before any
+    repeats (2026-10-23: post 27 took four frames of one folder), else as the rotation gave them."""
+    if TAKES[design] <= 1:
+        return pool
+    from . import designed
+    return designed.spread(pool, len(pool))
 
 
 def confirmed_rooms(conn: sqlite3.Connection, photo_ids: list) -> dict:
@@ -481,8 +480,7 @@ def draft_one(ctx: runner.Context, fetch: Callable[[dict], bytes], *, now: Optio
         return f"no photo ready for {day}: clear folders on the Library page (nothing drafted)"
     track = music.current(ctx.conn)
     design = design_for(day, kind_used, track is not None)
-    if TAKES[design] > 1:
-        pool = rooms_first(pool)
+    pool = order_pool(pool, design)
     chosen: list[tuple[dict, bytes]] = []
     check_errors: list[str] = []
     for row in pool[:TAKES[design] + MAX_TRIES - 1]:

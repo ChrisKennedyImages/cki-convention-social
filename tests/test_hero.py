@@ -92,10 +92,12 @@ class Hero(IsolatedCase):
         self.add("katsu", (90, 90, 90), quality=4, light=4, moment=4, event="Katsucon 2025", kind="fan")
         self.add("summit", (80, 80, 80), quality=3, light=3, moment=3, event="Liberty Summit")
         photos = build.pick_photos(self.conn, self.fetch)
-        self.assertEqual(photos.hero[0][0].getpixel((0, 0)), (100, 100, 100), "the strongest frame is the hero")
+        hero = photos.hero[0][0].getpixel((0, 0))[0]
+        self.assertIn(hero, range(100, 105), "one of the strongest frames is the hero; which of the equals is chance")
         shades = [im.getpixel((0, 0))[0] for im, _ in photos.coverage]
-        self.assertEqual(shades[:3], [101, 90, 80], "the grid: one of each event first, strongest first inside a round")
-        self.assertEqual(shades[3:], [102, 103, 104])
+        self.assertIn(shades[0], range(100, 105), "the grid: one of each event first, strongest first inside a round")
+        self.assertEqual(shades[1:3], [90, 80])
+        self.assertEqual(sorted([hero, shades[0], *shades[3:]]), [100, 101, 102, 103, 104], "then the other CPAC frames")
 
 
 class ThePick(IsolatedCase):

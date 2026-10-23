@@ -173,15 +173,16 @@ def pick_photos(conn: sqlite3.Connection, fetch: Callable[[dict], Image.Image],
         SELECT p.*, c.subject, c.quality, c.sharp, c.light, c.moment, c.event_kind, c.shot_type, c.convention_name, c.summary
         FROM photos p JOIN classifications c ON c.photo_id=p.id WHERE p.trashed=0 AND c.subject IN ('event','architecture')
         ORDER BY COALESCE(c.quality,0) DESC, p.width DESC LIMIT 600""")
-    rows = sorted((dict(r) for r in rows), key=lambda r: (0 if r["event_kind"] in ("fan", "business") else 1,
-                                                          -report.strength(r), -(r["width"] or 0)))
+    def order(r):
+        return (0 if r["event_kind"] in ("fan", "business") else 1, -report.strength(r), -(r["width"] or 0))
+    rows = sorted((dict(r) for r in rows), key=order)
     chosen = settings.get(conn, HERO_KEY)
     chosen_id = int(chosen) if chosen and str(chosen).isdigit() else None
     # the same picture under two ids is one photo, and its use under any id counts (2026-10-14: "same picked twice")
     rows, last = one_per_picture(rows, report.last_uses(conn), keep={chosen_id} if chosen_id is not None else None)
     # the rotation (2026-10-14): the least recently used first, on any surface, so each publish shows photos the posts
-    # and the last build did not; the strength order above only breaks ties (library/report.rotate)
-    rows = report.rotate(conn, rows, last=last)
+    # and the last build did not; the strength order above only breaks ties, and equal frames come by chance
+    rows = report.rotate(conn, rows, last=last, alike=order)
     out, images, rechecks = SitePhotos(), {}, 0
     events: list[dict] = []
     venues: list[dict] = []

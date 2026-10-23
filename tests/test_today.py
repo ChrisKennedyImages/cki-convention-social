@@ -379,14 +379,16 @@ class Variety(Case):
         rooms = {pid: r["shot_type"] for pid, r in ((p, db.one(self.conn, "SELECT shot_type FROM classifications WHERE photo_id=?", (p,)))
                                                        for p in ids)}
         events = {p: db.one(self.conn, "SELECT convention_name FROM classifications WHERE photo_id=?", (p,))["convention_name"] for p in ids}
-        heroes = []
+        heroes, taken = [], set()
         for r in rows:
             photos = json.loads(r["photo_ids"])
+            left = [p for p in ids if p not in taken]                          # the pool this draft drew from
             n_rooms = len({rooms[p] for p in photos})
             n_events = len({events[p] for p in photos})
-            self.assertGreaterEqual(n_rooms, min(len(photos), 4), f"one room before any repeats: {photos}")
-            self.assertEqual(n_events, min(len(photos), 4), f"one event before any repeats: {photos}")
+            self.assertGreaterEqual(n_rooms, min(len(photos), 4, len({rooms[p] for p in left})), f"one room before any repeats: {photos}")
+            self.assertEqual(n_events, min(len(photos), 4, len({events[p] for p in left})), f"one event before any repeats: {photos}")
             heroes.append(photos[0])
+            taken |= set(photos)
         self.assertEqual(len({events[h] for h in heroes}), 3, "each designed draft of the day leads with a different event")
         vendor = ids[3]
         self.assertLessEqual(sum(vendor in json.loads(r["photo_ids"]) for r in rows), 1,
