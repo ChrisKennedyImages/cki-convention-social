@@ -3,8 +3,8 @@ import {Composition, registerRoot} from 'remotion';
 import {Gallery} from './Gallery';
 import {Orbit} from './Orbit';
 import {Ring} from './Ring';
+import {Loop} from './Loop';
 import {Wall} from './Wall';
-import {WallLift} from './WallLift';
 import {FPS, H, Props, TOTAL, W} from './lib';
 
 // The sample set: six of Chris's approved photos, one per room, and cuts on the track's beats (reel_styles.beats).
@@ -26,8 +26,8 @@ const SAMPLE5: Props = {photos: SAMPLE.photos.slice(0, 5), cuts: [8, 74, 146, 21
 const Root: React.FC = () => (
   <>
     {/* 60 fps: the timeline counts 30ths of a second (lib.useFrameInfo), so each frame is drawn twice as often */}
-    <Composition id="Wall" component={WallLift} width={W} height={H} fps={60} durationInFrames={TOTAL * 2} defaultProps={{cuts: SAMPLE.cuts}} />
-    <Composition id="Loop" component={Wall} width={W} height={H} fps={60} durationInFrames={TOTAL * 2} defaultProps={{cuts: SAMPLE.cuts}} />
+    <Composition id="Wall" component={Wall} width={W} height={H} fps={60} durationInFrames={TOTAL * 2} defaultProps={{cuts: SAMPLE.cuts}} />
+    <Composition id="Loop" component={Loop} width={W} height={H} fps={60} durationInFrames={TOTAL * 2} defaultProps={{cuts: SAMPLE.cuts}} />
     <Composition id="Ring" component={Ring} width={W} height={H} fps={60} durationInFrames={TOTAL * 2} defaultProps={{cuts: SAMPLE.cuts}} />
     <Composition id="Gallery" component={Gallery} width={W} height={H} fps={60} durationInFrames={TOTAL * 2} defaultProps={SAMPLE5} />
     <Composition id="Orbit" component={Orbit} width={W} height={H} fps={60} durationInFrames={TOTAL * 2} defaultProps={SAMPLE5} />
