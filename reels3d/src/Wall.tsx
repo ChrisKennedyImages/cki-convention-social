@@ -1,20 +1,16 @@
-// Wall: a tilted wall of Chris's photos drifts past the camera; on every beat one photo lifts out of the wall, turns
-// to face the camera at its full shape (never cropped), holds, and settles back as the next one rises. One continuous
-// move, no cuts, no words until the close. Chris, 2026-10-23: "I do still like the wall one you created", kept beside
-// Loop (Loop.tsx). Photos unlit, exact.
+// Wall: a tilted wall of Chris's photos drifts past the camera; on every beat one of the post's photos lifts out of
+// the wall, turns to face the camera at its full shape (never cropped), holds, and settles back as the next one
+// rises. One continuous move, no cuts, no words until the close. Chris, 2026-10-23: "I do still like the wall one
+// you created", kept beside Loop (Loop.tsx). The wall's other tiles are the grid photos. Photos unlit, exact.
 import React, {useLayoutEffect, useMemo} from 'react';
 import {AbsoluteFill, Audio, staticFile} from 'remotion';
 import {ThreeCanvas} from '@remotion/three';
 import {useThree} from '@react-three/fiber';
 import * as THREE from 'three';
-import wall from './wall.json';
-import {Close, END, H, K, TOTAL, W, coverTex, easeIO, roundedMask, useFonts, useFrameInfo, useTextures} from './lib';
+import {Close, END, H, K, Props, TOTAL, W, coverTex, easeIO, roundedMask, useFonts, useFrameInfo, useTextures} from './lib';
 
-type Item = {src: string; w: number; h: number};
-const ITEMS = wall as Item[];
 const COLS = 9, ROWS = 11, TW = 0.9, TH = 0.62, GAP = 0.08, VFOV = 40, CAM_Z = 8, HERO_Z = 3.4;
 const TILE_ASPECT = TW / TH;
-const photoOf = (slot: number) => (slot * 7 + Math.floor(slot / COLS) * 3) % ITEMS.length;
 const HEROES = [4 * COLS + 4, 5 * COLS + 3, 4 * COLS + 5, 6 * COLS + 4, 5 * COLS + 5, 6 * COLS + 3];
 const WALL_ROT = new THREE.Euler(-0.38, 0.24, 0.14);
 
@@ -32,12 +28,19 @@ const Cam: React.FC<{f: number}> = ({f}) => {
   return null;
 };
 
-export const Wall: React.FC<{cuts: number[]}> = ({cuts}) => {
+export const Wall: React.FC<Props> = ({photos, cuts, grid, music}) => {
   useFonts();
-  const tex = useTextures(ITEMS.map((p) => p.src));
+  const items = useMemo(() => [...photos, ...grid], [photos, grid]);
+  const tex = useTextures(items.map((p) => p.src));
   const {f, closing} = useFrameInfo(cuts);
+  // the hero slots hold the post's photos, in order; every other tile cycles through the grid photos
+  const fill = grid.length ? grid.length : photos.length, fillFrom = grid.length ? photos.length : 0;
+  const photoOf = (slot: number) => {
+    const k = HEROES.indexOf(slot);
+    return k >= 0 && k < photos.length ? k : fillFrom + (slot * 7 + Math.floor(slot / COLS) * 3) % fill;
+  };
   const tiles = useMemo(() => (tex ? Array.from({length: COLS * ROWS}, (_, s) => {
-    const it = ITEMS[photoOf(s)];
+    const it = items[photoOf(s)];
     return coverTex(tex[photoOf(s)], it.w / it.h, TILE_ASPECT);
   }) : []), [tex]);
   const drift = f / TOTAL;
@@ -50,7 +53,7 @@ export const Wall: React.FC<{cuts: number[]}> = ({cuts}) => {
   const viewH = 2 * (CAM_Z - HERO_Z) * Math.tan((VFOV * Math.PI) / 360), viewW = viewH * (W / H);
   return (
     <AbsoluteFill style={{background: K}}>
-      <Audio src={staticFile('music.mp4')} />
+      <Audio src={staticFile(music)} />
       {tex && (
         <ThreeCanvas width={W} height={H} camera={{fov: VFOV, position: [0, 0, CAM_Z], near: 0.1, far: 50}} gl={{antialias: true}}>
           <color attach="background" args={[K]} />
@@ -58,7 +61,7 @@ export const Wall: React.FC<{cuts: number[]}> = ({cuts}) => {
           <group position={wallPos} quaternion={wallQ}>
             {tiles.map((t, s) => {
               const k = HEROES.indexOf(s);
-              if (k >= 0 && out(k) > 0) return null;
+              if (k >= 0 && k < cuts.length && out(k) > 0) return null;
               return (
                 <mesh key={s} position={slotLocal(s)}>
                   <planeGeometry args={[TW, TH]} />
@@ -70,7 +73,7 @@ export const Wall: React.FC<{cuts: number[]}> = ({cuts}) => {
           {HEROES.slice(0, cuts.length).map((slot, k) => {
             const o = out(k);
             if (o <= 0) return null;
-            const it = ITEMS[photoOf(slot)], aspect = it.w / it.h;
+            const it = items[photoOf(slot)], aspect = it.w / it.h;
             const from = slotLocal(slot).applyQuaternion(wallQ).add(wallPos);
             const pos = from.clone().lerp(new THREE.Vector3(0, 0.25, HERO_Z), o);
             const q = wallQ.clone().slerp(new THREE.Quaternion(), o);

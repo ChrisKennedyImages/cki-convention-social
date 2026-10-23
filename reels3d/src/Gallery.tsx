@@ -93,7 +93,7 @@ export const Gallery: React.FC<Props> = (props) => {
   const p = props.photos[i];
   return (
     <AbsoluteFill style={{background: K}}>
-      <Audio src={staticFile('music.mp4')} />
+      <Audio src={staticFile(props.music)} />
       {tex && (
         <ThreeCanvas width={W} height={H} camera={{fov: VFOV, near: 0.1, far: 120, position: [0, 2.6, 9]}}
                      gl={{antialias: true, toneMapping: THREE.ACESFilmicToneMapping}}>

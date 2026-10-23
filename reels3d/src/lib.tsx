@@ -8,7 +8,10 @@ export const W = 1080, H = 1920, FPS = 30, TOTAL = 450, END = 72;
 export const K = '#0a0a0b', PAPER = '#f3f3f1', CYAN = '#00e1ff';
 
 export type Photo = {src: string; room: string; line: string; w: number; h: number};
-export type Props = {photos: Photo[]; cuts: number[]};
+export type Tile = {src: string; w: number; h: number};                 // a photo that only fills a wall or a grid
+// What a reel is made of: the post's photos (named), the beats they turn on, other approved photos to fill a wall or a
+// grid around them (Wall, Loop, Ring), and the track; every path is under the public dir the render is given.
+export type Props = {photos: Photo[]; cuts: number[]; grid: Tile[]; music: string};
 
 export const FONTS: Record<string, string> = {
   display: 'Unbounded-ExtraBold.ttf', mono: 'JetBrainsMono-Medium.ttf', condensed: 'Archivo-XCondBlack.ttf',

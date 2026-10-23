@@ -7,14 +7,11 @@ import {AbsoluteFill, Audio, staticFile} from 'remotion';
 import {ThreeCanvas} from '@remotion/three';
 import {useThree} from '@react-three/fiber';
 import * as THREE from 'three';
-import wall from './wall.json';
-import {Close, END, H, K, PAPER, TOTAL, W, coverTex, easeIO, roundedMask, useFonts, useFrameInfo, useTextures} from './lib';
+import {Close, END, H, K, PAPER, Props, TOTAL, W, coverTex, easeIO, roundedMask, useFonts, useFrameInfo, useTextures} from './lib';
 
-type Item = {src: string; w: number; h: number};
-const ITEMS = wall as Item[];
-const N = ITEMS.length, VFOV = 40, CAM_Z = 9, R = 1.5, CARD = 0.34;
+const VFOV = 40, CAM_Z = 9, R = 1.5, CARD = 0.34, CARDS = 30;      // at most this many cards on the ring
 const UNSPOOL = 120, OPEN_AT = 230, HERO_AT = 330;   // frames (at 30 a second): the ring is whole by 4 s, opens at 7.7 s
-const HERO = 4;                                      // which photo the cascade rests on
+const HERO = 0;                                      // the cascade rests on the post's first photo
 
 const shadowTex = (() => {
   let t: THREE.CanvasTexture | null = null;
@@ -33,23 +30,26 @@ const Cam: React.FC = () => {
   return null;
 };
 
-export const Ring: React.FC<{cuts: number[]}> = ({cuts}) => {
+export const Ring: React.FC<Props> = ({photos, cuts, grid, music}) => {
   useFonts();
-  const tex = useTextures(ITEMS.map((p) => p.src));
+  // the post's photos first, then grid photos until the ring is full
+  const items = useMemo(() => [...photos, ...grid].slice(0, CARDS), [photos, grid]);
+  const N = items.length;
+  const tex = useTextures(items.map((p) => p.src));
   const {f, closing} = useFrameInfo(cuts);
-  const squares = useMemo(() => (tex ? ITEMS.map((it, k) => coverTex(tex[k], it.w / it.h, 1)) : []), [tex]);
+  const squares = useMemo(() => (tex ? items.map((it, k) => coverTex(tex[k], it.w / it.h, 1)) : []), [tex]);
   const spin = f * 0.004;
   const open = easeIO((f - OPEN_AT) / 50);
   const hero = easeIO((f - HERO_AT) / 40);
   const viewH = 2 * CAM_Z * Math.tan((VFOV * Math.PI) / 360), viewW = viewH * (W / H);
   return (
     <AbsoluteFill style={{background: PAPER}}>
-      <Audio src={staticFile('music.mp4')} />
+      <Audio src={staticFile(music)} />
       {tex && (
         <ThreeCanvas width={W} height={H} camera={{fov: VFOV, position: [0, 0, CAM_Z], near: 0.1, far: 60}} gl={{antialias: true}}>
           <color attach="background" args={[PAPER]} />
           <Cam />
-          {ITEMS.map((it, k) => {
+          {items.map((it, k) => {
             // ring: each card travels in along the ring's path from the right, in turn
             const born = easeIO((f - (k * UNSPOOL) / N) / 26);
             if (born <= 0) return null;

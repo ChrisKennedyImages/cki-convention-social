@@ -41,7 +41,7 @@ export const Orbit: React.FC<Props> = (props) => {
   const p = props.photos[i];
   return (
     <AbsoluteFill style={{background: K}}>
-      <Audio src={staticFile('music.mp4')} />
+      <Audio src={staticFile(props.music)} />
       {tex && (
         <ThreeCanvas width={W} height={H} camera={{fov: VFOV, position: [0, 0.6, CAM_Z], near: 0.1, far: 80}}
                      gl={{antialias: true, toneMapping: THREE.ACESFilmicToneMapping}}>
