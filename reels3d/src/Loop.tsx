@@ -22,11 +22,13 @@ import {Close, END, H, K, PAPER, TOTAL, W, coverTex, easeIO, roundedMask, useFon
 type Item = {src: string; w: number; h: number; room?: string};
 const ITEMS = wall as Item[];
 const FOV = 30, TAN = Math.tan((FOV * Math.PI) / 360), ASPECT = W / H;
-const VIEW_W = 2 * TAN * ASPECT, VIEW_H = 2 * TAN;             // the width and height in view per unit of camera distance
+const VIEW_W = 2 * TAN * ASPECT;                               // the width in view per unit of camera distance
 const ROW_H = 1.5, GAP_X = 0.16, GAP_Y = 0.42;                 // rows of one height; a little more room under for the label
 const ROW_W = 15, ROWS = 11;                                   // each row filled to about this width, centred
 const PITCH_Y = ROW_H + GAP_Y;
-const Z_MOVE = 5 / VIEW_W;                                     // travelling: about three cards across the view
+// one camera distance, about two and a half cards across, for the whole reel: the camera stops over a card and moves
+// on, it never comes in, so a photo never comes forward (Chris, 2026-10-23: "the photos should not punch out")
+const Z = 4.3 / VIEW_W;
 const HOLD = 60, MOVE = 42, FIRST = 24;                        // in 30ths of a second: 2 s held, 1.4 s travelling
 const ROOM_WORDS: Record<string, [string, string]> = {         // the approved room lines (design_samples.ROOM_WORDS)
   main_stage: ['Main Stage', 'The keynote, from the room.'], the_crowd: ['The Crowd', 'In the moment.'],
@@ -59,32 +61,26 @@ const CARDS: Card[] = (() => {
 const nearest = (r: number, x: number) => CARDS.filter((c) => c.y === ((ROWS - 1) / 2 - r) * PITCH_Y)
   .reduce((a, c) => (Math.abs(c.x - x) < Math.abs(a.x - x) ? c : a));
 const VISIT: Card[] = [nearest(5, 0), nearest(4, 1.6), nearest(3, -1.4), nearest(6, 0.8)];
-// held, a card is about 60% of the width, or 46% of the height when it is tall
-const zFor = (c: Card) => Math.max(c.w / (0.6 * VIEW_W), c.h / (0.46 * VIEW_H));
 
-// Where the camera is at frame f: held over a card, or travelling, level, to the next.
+// Where the camera is at frame f: stopped over a card, or travelling, level, to the next.
 const arrivals = VISIT.map((_, k) => FIRST + k * (HOLD + MOVE));
 const cameraAt = (f: number) => {
-  if (f < FIRST) {                                            // the opening: settling down onto the first card
-    const t = easeIO(f / FIRST), c = VISIT[0];
-    return {x: c.x, y: c.y, z: Z_MOVE + (zFor(c) - Z_MOVE) * t, travel: -1, k: 0};
-  }
   let k = 0;
   for (let j = 0; j < arrivals.length; j++) if (f >= arrivals[j] - (j ? MOVE : 0)) k = j;
   const travel = k > 0 ? (f - (arrivals[k] - MOVE)) / MOVE : 1;
   const c = VISIT[k];
   if (travel < 1) {
-    const a = VISIT[k - 1], t = easeIO(travel), rise = Math.sin(Math.PI * travel);
-    const zHeld = zFor(a) + (zFor(c) - zFor(a)) * t;
-    return {x: a.x + (c.x - a.x) * t, y: a.y + (c.y - a.y) * t, z: zHeld + (Z_MOVE - zHeld) * rise, travel, k};
+    const a = VISIT[k - 1], t = easeIO(travel);
+    return {x: a.x + (c.x - a.x) * t, y: a.y + (c.y - a.y) * t, travel, k};
   }
-  return {x: c.x, y: c.y, z: zFor(c), travel: -1, k};
+  return {x: c.x, y: c.y, travel: -1, k};
 };
 
 // Where the loop is at frame f: it reaches each held card's centre LOOP_AT into the hold, easing to a stop there
 // (the photo magnified under it), then moves on to the next card ahead of the camera; it comes in from beyond the
 // first card and leaves beyond the last.
 const LOOP_AT = 0.6 * HOLD;
+const GLASS_DEPTH = 0.3, GLASS_THICKNESS = 0.6;              // deep enough to bend; flatter than a drop
 const loopAt = (f: number) => {
   const stops = VISIT.map((c) => new THREE.Vector2(c.x, c.y));
   const T = [0, ...VISIT.map((_, k) => arrivals[k] + LOOP_AT), TOTAL];
@@ -123,17 +119,16 @@ export const Loop: React.FC<{cuts: number[]}> = ({cuts}) => {
   // the rest of the grid falls back into the dark while a card is held
   const grey = Math.round(255 - (255 - 32) * held);
   const dimmed = `rgb(${grey},${grey},${grey})`;
-  let z = cam.z;
-  if (closing) z = zFor(card) + (Z_MOVE * 1.2 - zFor(card)) * easeIO((f - (TOTAL - END)) / 36);
+  const z = closing ? Z * (1 + 0.2 * easeIO((f - (TOTAL - END)) / 36)) : Z;   // the close: a slow pull back
   const [title, line] = words(ITEMS[card.k]);
   const labelOn = cam.travel < 0 && !closing ? Math.min(1, since / 10, until / 8) : 0;
-  const px = W / (zFor(card) * VIEW_W);                        // screen pixels per grid unit on the hold
+  const px = W / (Z * VIEW_W);                                 // screen pixels per grid unit
   const loop = loopAt(f);
   return (
     <AbsoluteFill style={{background: K}}>
       <Audio src={staticFile('music.mp4')} />
       {tex && (
-        <ThreeCanvas width={W} height={H} camera={{fov: FOV, position: [0, 0, Z_MOVE], near: 0.1, far: 100}} gl={{antialias: true}}>
+        <ThreeCanvas width={W} height={H} camera={{fov: FOV, position: [0, 0, Z], near: 0.1, far: 100}} gl={{antialias: true}}>
           <color attach="background" args={[K]} />
           <Rig x={cam.x} y={cam.y} z={z} />
           <mesh position={[0, 0, -0.02]}>                       {/* the field: a real surface, so the glass sees it */}
@@ -148,11 +143,13 @@ export const Loop: React.FC<{cuts: number[]}> = ({cuts}) => {
             </mesh>
           ))}
           {!closing && (
-            <mesh position={[loop.x, loop.y, 1]} scale={[0.5, 0.62, 0.16]} rotation={[0, 0, 0.4]}>
-              {/* a thin pane with a slight bulge, not a drop (Chris: "too thick, like a raindrop magnified") */}
+            <mesh position={[loop.x, loop.y, 1]} scale={[0.5 + 0.03 * Math.sin(f / 7), 0.62 - 0.03 * Math.sin(f / 7), GLASS_DEPTH]}
+                  rotation={[0, 0, 0.4 + 0.08 * Math.sin(f / 11)]}>
+              {/* liquid glass: deep enough to bend and catch light, flatter than a drop (Chris: "too thick, like a
+                  raindrop magnified"; then, flat, "a disc over the faces"); it breathes a little, as liquid does */}
               <sphereGeometry args={[1, 64, 64]} />
-              <meshPhysicalMaterial transmission={1} thickness={0.35} roughness={0} ior={1.4} dispersion={1.5}
-                                    envMapIntensity={0.25} specularIntensity={0.3} color="#ffffff" />
+              <meshPhysicalMaterial transmission={1} thickness={GLASS_THICKNESS} roughness={0} ior={1.5} dispersion={2.5}
+                                    envMapIntensity={0.08} specularIntensity={0.2} color="#ffffff" />
             </mesh>
           )}
         </ThreeCanvas>
