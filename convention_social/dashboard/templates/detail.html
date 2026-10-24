@@ -21,12 +21,19 @@
 <a class="back" href="/">Back to Today</a>
 <h1>{{ origin }} <span class="badge {{ item.status }}">{{ status_words.get(item.status, item.status) }}</span></h1>
 <div class="muted" style="margin:-8px 0 12px">post {{ item.id }}{% if item.design_name %}, {{ item.design_name }}{% endif %}</div>
-{% if item.last_error %}<div class="msg bad">{{ item.last_error }}</div>{% endif %}
+{% if item.held_html %}<div class="msg bad">{{ item.held_html }}</div>
+<div class="choices" style="margin:-4px 0 14px">
+  <a class="btn primary" href="/queue/{{ item.held_post }}" style="grid-column:span 2">Open post #{{ item.held_post }} to pull it back</a>
+  <form method="post" action="/queue/{{ item.id }}/skip" onsubmit="return confirm('Skip this post? Its photos go back into the rotation.')"><button class="skip" type="submit">Skip</button></form>
+</div>
+{% elif item.last_error %}<div class="msg bad">{{ item.last_error }}</div>{% endif %}
 {% if item.video %}<div class="card" style="display:flex;flex-direction:column;align-items:center"><video class="reel" src="/media/render/{{ item.id }}/9x16/1"{% if item.cover %} poster="/media/render/{{ item.id }}/cover/1"{% endif %} controls playsinline loop preload="metadata" style="height:min(620px,72vh)"></video>
 <div class="muted">{{ 'Tap to play it with its sound. Music: ' + item.music if item.music else 'No music' }}</div></div>
 {% endif %}{% if item.renders %}<div class="card"><div class="thumbs">{% for aspect, idx in item.renders.items() %}{% for i in idx %}<a href="/media/render/{{ item.id }}/{{ aspect.replace(':','x') }}/{{ i }}"><img src="/media/render/{{ item.id }}/{{ aspect.replace(':','x') }}/{{ i }}" alt="{{ aspect }}"></a>{% endfor %}{% endfor %}</div>
 <div class="muted" style="margin-top:6px">{{ 'Swipe to see every card. ' if item.renders|length > 1 or (item.renders.values()|list)[0]|length > 1 else '' }}Tap a card to open it full size.</div></div>{% endif %}
-{% if item.status == 'draft' %}
+{% if item.status == 'draft' and item.held_post %}
+<div class="card muted">Once post #{{ item.held_post }} is pulled back, Post now and Follow the pace come back here.</div>
+{% elif item.status == 'draft' %}
 <div class="card">
   {% if can_approve %}
   {% if item.art and item.art.verdict in ('redo', 'reject') %}<div class="msg bad" style="margin-bottom:8px">The art director was not happy with it ({{ item.art.notes or 'no note' }}). Look before you choose.</div>{% endif %}
