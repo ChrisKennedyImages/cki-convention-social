@@ -94,6 +94,23 @@ def reels(repo: Path) -> None:
                    capture_output=True, text=True, timeout=15 * 60, check=True)
 
 
+def reels_missing(repo: Path) -> bool:
+    """reels3d/ is in the checkout but its Node packages are not: a fresh Mini, or a checkout updated by a run from
+    before the installer existed (2026-10-24: the run that brought reels3d/ was still the old updater)."""
+    return (repo / "reels3d" / "package.json").is_file() and not (repo / "reels3d" / "node_modules").is_dir()
+
+
+def ensure_reels(ctx: runner.Context, repo: Path, reels: Callable[[Path], None], *, why: str) -> str:
+    """The 3D reels' Node packages installed, and the line says so; a failure is recorded, since a reel then falls
+    back to a carousel (content.make_renderer)."""
+    try:
+        reels(repo)
+    except Exception as e:  # noqa: BLE001
+        runner.record_error(ctx.conn, ctx.agent, "update_reels", f"The 3D reels' Node packages could not be installed ({why}): {e}")
+        return f"reels3d packages NOT installed: {e}"
+    return f"reels3d packages installed ({why})"
+
+
 def migrate(repo: Path) -> None:
     subprocess.run([str(repo / "bin" / "ccs"), "init-db"], cwd=str(repo), capture_output=True, text=True,
                    timeout=300, check=True)
@@ -284,6 +301,8 @@ def run(ctx: runner.Context, *, repo: Optional[Path] = None,
                                  f"restarted and the site is not deployed until the checkout is back on the commit the Mini's "
                                  f"tests passed. A Claude session must never work in {repo}; it uses a worktree.")
         return f"{summary}; dashboard and site left alone: {why}"
+    if reels_missing(repo):              # every run, not only after a merge: the packages are part of a servable checkout
+        summary = f"{summary}; {ensure_reels(ctx, repo, reels, why='they were missing')}"
     summary = f"{summary}; {ensure_dashboard(ctx, why, probe=probe, restart=restart)}"
     if site:                 # go-live's sync step leaves the site to go-live's own deploy step
         summary = f"{summary}; {ensure_site(ctx, repo, deploy=deploy)}"
@@ -349,19 +368,15 @@ def update(ctx: runner.Context, repo: Path, *, suite: Callable[[Path], tuple[boo
     _out(repo, "merge", "--ff-only", "--quiet", target)
     settings.set(ctx.conn, TESTED_KEY, target)
     migrations(repo)
-    if (repo / "reels3d" / "package.json").is_file() and (any(p.startswith("reels3d/") for p in changed)
-                                                             or not (repo / "reels3d" / "node_modules").is_dir()):
-        try:
-            reels(repo)
-        except Exception as e:  # noqa: BLE001  a reel then falls back to a carousel (content.make_renderer), said why here
-            runner.record_error(ctx.conn, ctx.agent, "update_reels",
-                                f"The 3D reels' Node packages could not be installed for {target[:7]}: {e}")
+    reels_note = ""
+    if any(p.startswith("reels3d/") for p in changed) and (repo / "reels3d" / "package.json").is_file():
+        reels_note = "; " + ensure_reels(ctx, repo, reels, why=f"reels3d changed in {target[:7]}")
     if install:
         settings.set(ctx.conn, NEEDS_INSTALL_KEY, target)
         runner.record_error_once(ctx.conn, ctx.agent, "needs_install",
                                  "New service files arrived. Run scripts/go-live.sh once on the Mini "
                                  "(it asks for your Mac password) to install them.")
-    return f"updated {head[:7]} -> {target[:7]} ({len(changed)} file(s)); tests passed" + (
+    return f"updated {head[:7]} -> {target[:7]} ({len(changed)} file(s)); tests passed" + reels_note + (
         "; new service files need scripts/go-live.sh" if install else "")
 
 

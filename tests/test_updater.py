@@ -43,7 +43,8 @@ class Repos(IsolatedCase):
         self.repo = base / "checkout"
         subprocess.run(["git", "clone", "-q", str(self.origin), str(self.repo)], check=True)
         self.conn = db.connect()
-        self.calls = {"suite": [], "migrate": 0, "restart": 0, "requirements": 0, "deploy": []}
+        self.calls = {"suite": [], "migrate": 0, "restart": 0, "requirements": 0, "deploy": [], "reels": 0}
+        self.reels_fail = False
         self.dash = self.head()          # the commit the running dashboard serves (None: not answering)
         self.deploy_ok = True
         settings.set(self.conn, site_deploy.DEPLOYED_KEY, self.head())     # the site is on the code (SiteFollows sets its own)
@@ -78,6 +79,12 @@ class Repos(IsolatedCase):
         def migrations(repo):
             self.calls["migrate"] += 1
 
+        def reels(repo):
+            self.calls["reels"] += 1
+            if self.reels_fail:
+                raise OSError("npm: no network")
+            (repo / "reels3d" / "node_modules").mkdir(parents=True, exist_ok=True)
+
         def restart():
             self.calls["restart"] += 1
             return "dashboard: restarted"
@@ -89,11 +96,51 @@ class Repos(IsolatedCase):
             return self.deploy_ok, "LIVE on it" if self.deploy_ok else "not live: Cloudflare did not take the deploy"
 
         ctx = runner.Context("updater", self.conn, None, config.get_config(), dry, 0)
-        return updater.run(ctx, repo=self.repo, suite=suite, requirements=requirements, migrations=migrations, restart=restart,
-                           probe=lambda: self.dash, deploy=deploy)
+        return updater.run(ctx, repo=self.repo, suite=suite, requirements=requirements, migrations=migrations, reels=reels,
+                           restart=restart, probe=lambda: self.dash, deploy=deploy)
 
     def head(self):
         return git(self.repo, "rev-parse", "HEAD")
+
+
+class ReelsPackages(Repos):
+    """reels3d/ (2026-10-23) needs its Node packages on the Mini. The updater installs them when they are missing on
+    any run, not only after a merge (2026-10-24: the run that brought reels3d/ was still the old updater, so the
+    checkout had reels3d/ and no packages, and nothing would have installed them until the next merge)."""
+    def test_missing_packages_are_installed_on_an_up_to_date_run_once(self):
+        (self.repo / "reels3d").mkdir()
+        (self.repo / "reels3d" / "package.json").write_text("{}")
+        line = self.run_updater()
+        self.assertIn("up to date", line)
+        self.assertIn("reels3d packages installed (they were missing)", line)
+        self.assertEqual(self.calls["reels"], 1)
+        line = self.run_updater()
+        self.assertEqual(self.calls["reels"], 1, "present now: not installed again")
+        self.assertNotIn("reels3d", line)
+
+    def test_a_checkout_without_reels3d_installs_nothing(self):
+        self.run_updater()
+        self.assertEqual(self.calls["reels"], 0)
+
+    def test_a_failed_install_is_recorded_and_said_and_tried_again_next_run(self):
+        (self.repo / "reels3d").mkdir()
+        (self.repo / "reels3d" / "package.json").write_text("{}")
+        self.reels_fail = True
+        line = self.run_updater()
+        self.assertIn("reels3d packages NOT installed: npm: no network", line)
+        err = db.one(self.conn, "SELECT kind, message FROM errors ORDER BY id DESC LIMIT 1")
+        self.assertEqual(err["kind"], "update_reels")
+        self.assertIn("they were missing", err["message"])
+        self.reels_fail = False
+        self.run_updater()
+        self.assertEqual(self.calls["reels"], 2)
+
+    def test_a_change_under_reels3d_installs_again_after_the_merge(self):
+        (self.repo / "reels3d" / "node_modules").mkdir(parents=True)
+        self.commit("reels3d/package.json", '{"name": "cki-reels3d"}')
+        line = self.run_updater()
+        self.assertIn("tests passed; reels3d packages installed (reels3d changed in", line)
+        self.assertEqual(self.calls["reels"], 1)
 
 
 class Updater(Repos):
