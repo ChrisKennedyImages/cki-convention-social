@@ -218,6 +218,16 @@ ok(r.status === 301 && r.headers.get("location") === "https://eventcaliber.com/a
 r = await worker.fetch(new Request(`${base}/about/`), env);
 ok(r.status === 200 && (await r.text()) === "site", "the apex serves the site");
 
+// https only (2026-10-16 audit: the quote form went over plain http, name, email and phone in the clear)
+r = await worker.fetch(new Request("http://eventcaliber.com/book/?x=1"), env);
+ok(r.status === 301 && r.headers.get("location") === "https://eventcaliber.com/book/?x=1", "plain http answers 301 to https, path and query kept");
+r = await worker.fetch(new Request("http://www.eventcaliber.com/about/"), env);
+ok(r.status === 301 && r.headers.get("location") === "https://eventcaliber.com/about/", "http and www. reach the https apex in one hop");
+r = await worker.fetch(new Request("http://eventcaliber.com/api/quote", { method: "POST", body: "name=x" }), env);
+ok(r.status === 301, "a form posted over http is not read; it is sent to https first");
+r = await worker.fetch(new Request("http://localhost:8787/api/availability"), env);
+ok(r.status === 200, "wrangler dev on localhost keeps plain http");
+
 // Post to Event Caliber (2026-10-15): the iPhone's share sheet sends one photo and a line with SEND_TOKEN in a header;
 // the photo waits under private/sends/ (never served) until the Mini pulls it with its own token and deletes it
 const JPEG = Uint8Array.from([0xff, 0xd8, 0xff, 0xe0, 0, 16, 74, 70, 73, 70, 0, 1, 1, 1, 2, 3, 4, 5, 6, 7]);
