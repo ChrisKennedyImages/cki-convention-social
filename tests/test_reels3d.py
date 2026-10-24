@@ -154,8 +154,10 @@ class Fillers(IsolatedCase):
             if k != 7:                                                          # one has no copy on this machine
                 Image.new("RGB", (30, 20), (k, k, k)).save(cache / f"f{k}.img", "JPEG")
             ids.append(pid)
+        self.conn.execute("UPDATE classifications SET possible_minor=1 WHERE photo_id=?", (ids[1],))     # no age gate (2026-10-15)
         got = reels3d.fillers(self.conn, exclude=[ids[0]])
         self.assertEqual(len(got), 2, "one folder, two rooms: two fillers")
+        self.assertIn(cache / "f1.img", got, "an age flag written before the ruling keeps no photo off a reel's wall")
         self.assertTrue(all(p.is_file() for p in got))
         self.assertNotIn(cache / "f0.img", got, "the post's own photo is not a filler")
         self.assertNotIn(cache / "f7.img", got, "a photo without a copy here cannot be rendered")

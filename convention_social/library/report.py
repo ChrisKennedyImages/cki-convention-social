@@ -38,7 +38,7 @@ def _year(row) -> str:
 ROW_FIELDS = """
         SELECT p.*, c.method, c.is_convention, c.subject, c.view, c.convention_name, c.event_kind, c.shot_type, c.quality,
                c.space, c.residential, c.empty_room, c.sharp, c.light, c.moment,
-               c.people_count, c.possible_minor, c.personal_details, c.summary, f.path AS folder_path, f.clearance AS folder_clearance
+               c.people_count, c.personal_details, c.summary, f.path AS folder_path, f.clearance AS folder_clearance
         FROM photos p JOIN classifications c ON c.photo_id = p.id LEFT JOIN drive_folders f ON f.drive_id = p.folder_id
         WHERE p.trashed = 0 AND """
 

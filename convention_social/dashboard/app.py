@@ -389,7 +389,7 @@ def photo_page(conn, view: str, page: int, size: int = PAGE, subject: Optional[s
     whole library (Chris, 2026-10-11: "Photos tab is dead")."""
     where, order = _where(view, subject), VIEWS[view][1]
     return [dict(r) for r in db.rows(conn, f"""SELECT p.*, c.method, c.subject, c.shot_type, c.quality, c.sharp, c.light, c.moment,
-                                                      c.possible_minor, c.personal_details, f.name AS folder_name
+                                                      c.personal_details, f.name AS folder_name
                                                {PAGE_FROM} WHERE {where} ORDER BY {order} LIMIT ? OFFSET ?""",
                                      (size, (page - 1) * size))]
 
@@ -1157,7 +1157,7 @@ def create_app() -> FastAPI:
         f = db.one(conn, "SELECT * FROM drive_folders WHERE drive_id=?", (fid,))
         if f is None:
             raise HTTPException(404)
-        photos = db.rows(conn, "SELECT p.*, c.shot_type, c.quality, c.possible_minor, c.summary, c.method FROM photos p "
+        photos = db.rows(conn, "SELECT p.*, c.shot_type, c.quality, c.summary, c.method FROM photos p "
                                "LEFT JOIN classifications c ON c.photo_id=p.id WHERE p.folder_id=? AND p.trashed=0 "
                                "ORDER BY COALESCE(c.quality,0) DESC, p.taken_at LIMIT 300", (fid,))
         items = [{**dict(p), "eligible": eligibility.is_candidate(conn, p["id"])} for p in photos]

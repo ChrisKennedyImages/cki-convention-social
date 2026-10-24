@@ -147,7 +147,7 @@ def fillers(conn: sqlite3.Connection, *, exclude: Sequence[int] = (), n: int = G
     for r in report.best(conn, 600, cap=None):
         key = (r["folder_id"], r["shot_type"])
         path = Path(r["local_path"]) if r["local_path"] else cache / f"{r['drive_id']}.img"
-        if (r["id"] in seen or key in seen or r["possible_minor"] or not path.is_file()
+        if (r["id"] in seen or key in seen or not path.is_file()
                 or eligibility.clearance_of(conn, r) != "cleared" or not design_samples.usable(conn, r)):
             continue
         seen.add(key)
