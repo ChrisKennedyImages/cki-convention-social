@@ -38,6 +38,8 @@ COVER_MS = {s: int(round(COVER_S[s] * 1000)) for s in STYLES}
 STILLS_S = (6.0, 10.5)                                        # with the cover: what the art director looks at
 TEXTURE_PX = 1400                                             # a photo's long edge in the render
 RENDER_TIMEOUT = 20 * 60
+ASSET_WAIT_MS = 120_000                                      # Remotion's wait for fonts and textures (default 30 s): thirty photos
+#                                                              on a busy Mini took longer on the first render (2026-10-24)
 GRID_PHOTOS = 28                                              # approved photos around the post's, one per room per shoot
 
 
@@ -102,7 +104,7 @@ def render(style: str, shots: Sequence[Shot], *, out: Path, audio: Optional[Path
         p = props(shots, music=Path(audio), grid=grid, public=public)
         (public / "props.json").write_text(json.dumps(p))
         cmd = [node_tool("npx"), "remotion", "render", "src/Root.tsx", COMPOSITION[style], str(out),
-               f"--props={public / 'props.json'}", f"--public-dir={public}", "--gl=angle", "--log=error"]
+               f"--props={public / 'props.json'}", f"--public-dir={public}", "--gl=angle", f"--timeout={ASSET_WAIT_MS}", "--log=error"]
         r = run(cmd, cwd=str(REELS3D), capture_output=True, text=True, timeout=RENDER_TIMEOUT)
         if r.returncode != 0:
             said = (r.stderr or r.stdout or "").strip().splitlines()
