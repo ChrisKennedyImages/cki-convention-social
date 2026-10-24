@@ -34,15 +34,27 @@ class Rotate(IsolatedCase):
         self.addCleanup(self.conn.close)
         self.ids = [event_photo(self.conn, f"p{i}", kind="business", final="business", quality=5 - i) for i in range(4)]
 
-    def test_never_used_first_then_the_oldest_use_then_the_quality_order(self):
-        rows = [{"id": i} for i in self.ids]                                     # the caller's quality order
-        self.assertEqual(report.rotate(self.conn, rows), rows, "nothing used yet: the quality order stands")
+    def test_never_used_first_then_the_oldest_use_on_any_surface(self):
+        rows = [{"id": i} for i in self.ids]
         report.record_use(self.conn, "post", [self.ids[0]], ref="post:1", now="2026-10-01T08:00:00+00:00")
         report.record_use(self.conn, "site", [self.ids[2]], ref="site:x", now="2026-10-10T08:00:00+00:00")
         report.record_use(self.conn, "sample", [self.ids[0]], ref="sample:y", now="2026-10-12T08:00:00+00:00")
         order = [r["id"] for r in report.rotate(self.conn, rows)]
-        self.assertEqual(order, [self.ids[1], self.ids[3], self.ids[2], self.ids[0]],
-                         "never used first (in quality order), then the oldest use on any surface, the newest last")
+        self.assertEqual(sorted(order[:2]), sorted([self.ids[1], self.ids[3]]), "the never used first")
+        self.assertEqual(order[2:], [self.ids[2], self.ids[0]], "then the oldest use on any surface, the newest last")
+
+    def test_among_equal_photos_used_alike_chance_not_file_order(self):
+        """Chris, 2026-10-23: "I seem to always get the same style and pic in my drafts". Equal photos fell back to
+        file order, so the next frame of one big folder led every draft's second slot. Quality still leads."""
+        import random
+        rows = [{"id": 100 + k, "quality": 5} for k in range(6)] + [{"id": 200 + k, "quality": 2} for k in range(6)]
+        orders = set()
+        for seed in range(8):
+            got = report.rotate(self.conn, rows, last={}, rng=random.Random(seed), alike=lambda r: r["quality"])
+            self.assertEqual({r["quality"] for r in got[:6]}, {5}, "the better photos lead")
+            orders.add(tuple(r["id"] for r in got))
+        self.assertGreater(len(orders), 4, "and among equals the order is not fixed")
+
 
     def test_a_use_is_one_row_per_photo_on_a_known_surface(self):
         self.assertEqual(report.record_use(self.conn, "post", [self.ids[0], self.ids[0], self.ids[1]], ref="post:7"), 2)
@@ -104,7 +116,10 @@ class Drafts(IsolatedCase):
         heroes = [self.draft()[1][0] for _ in range(40)]
         self.assertEqual(len(set(heroes)), 40, "every approved photo had its turn before any came round again")
         self.assertEqual(sorted(heroes), sorted(pool))
-        self.assertEqual(self.draft()[1][0], heroes[0], "the forty-first draft: the one used longest ago")
+        # the use clock is in seconds, so drafts made inside one second are used alike and which leads is chance
+        first = db.one(self.conn, "SELECT MIN(used_at) AS t FROM photo_use")["t"]
+        oldest = {r["photo_id"] for r in db.rows(self.conn, "SELECT photo_id FROM photo_use WHERE used_at=?", (first,))}
+        self.assertIn(self.draft()[1][0], oldest, "the forty-first draft: one used longest ago")
 
     def test_quality_only_breaks_ties_among_the_never_used(self):
         strong = event_photo(self.conn, "strong", kind="business", quality=5)
@@ -155,7 +170,8 @@ class Drafts(IsolatedCase):
         for i in range(3):
             event_photo(self.conn, f"p{i}", kind="business", quality=5)
         pool = [r["id"] for r in db.rows(self.conn, "SELECT id FROM photos ORDER BY id")]
-        report.record_use(self.conn, "site", pool[1:], ref="site:x", now="2026-10-01T08:00:00+00:00")   # two were on the site
+        report.record_use(self.conn, "site", [pool[1]], ref="site:x", now="2026-10-01T08:00:00+00:00")  # two were on the site,
+        report.record_use(self.conn, "site", [pool[2]], ref="site:y", now="2026-10-02T08:00:00+00:00")  # one a day later
         line, ids = self.draft()
         self.assertEqual(ids, [pool[0]])
         self.assertIn(f"photo {pool[0]} first (never used before; 3 ready, least recently used first)", line)
@@ -204,7 +220,8 @@ class OnTheSite(IsolatedCase):
         self.assertEqual(len(shown), 3 * (1 + build.COVERAGE_ROWS))
         fourth = self.shown()
         self.assertEqual(set(fourth) - shown, set(self.ids) - shown, "the four never shown, then the ones used longest ago")
-        self.assertEqual(set(fourth) & shown, set(first[:len(fourth) - 4]), "the oldest, in the order the first build showed them")
+        self.assertTrue(set(fourth) & shown <= set(first), "then the ones used longest ago: the first build's, used alike")
+        self.assertEqual(len(set(fourth) & shown), len(fourth) - 4)
 
     def test_a_preview_records_nothing(self):
         self.shown(preview=True)
@@ -298,3 +315,14 @@ class OnThePage(IsolatedCase):
         self.assertEqual(r.status_code, 303)
         self.assertEqual([r["ref"] for r in db.rows(self.conn, "SELECT ref FROM photo_use")], ["post:other"])
         self.assertEqual([r["id"] for r in report.rotate(self.conn, [{"id": self.b}, {"id": self.a}])], [self.a, self.b])
+
+
+class OneShootAPost(IsolatedCase):
+    """2026-10-23: post 27 took four frames of one folder ("Texas Sunday"). A post takes one photo per shoot before any
+    repeats; CPAC and the ACU may still fill several places, from different shoots ("You can use more than one")."""
+    def test_the_daily_post_takes_one_photo_per_shoot_before_any_repeat(self):
+        from convention_social.agents import content
+        big = [{"id": k, "folder_id": "texas-sunday", "convention_name": "", "shot_type": "stage_panel"} for k in range(8)]
+        other = [{"id": 50 + k, "folder_id": f"f{k}", "convention_name": "", "shot_type": "stage_panel"} for k in range(5)]
+        got = content.order_pool(big + other, "reel")[:6]
+        self.assertEqual(len({r["folder_id"] for r in got}), 6, [r["folder_id"] for r in got])

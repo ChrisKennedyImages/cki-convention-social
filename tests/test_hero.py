@@ -92,10 +92,12 @@ class Hero(IsolatedCase):
         self.add("katsu", (90, 90, 90), quality=4, light=4, moment=4, event="Katsucon 2025", kind="fan")
         self.add("summit", (80, 80, 80), quality=3, light=3, moment=3, event="Liberty Summit")
         photos = build.pick_photos(self.conn, self.fetch)
-        self.assertEqual(photos.hero[0][0].getpixel((0, 0)), (100, 100, 100), "the strongest frame is the hero")
+        hero = photos.hero[0][0].getpixel((0, 0))[0]
+        self.assertIn(hero, range(100, 105), "one of the strongest frames is the hero; which of the equals is chance")
         shades = [im.getpixel((0, 0))[0] for im, _ in photos.coverage]
-        self.assertEqual(shades[:3], [101, 90, 80], "the grid: one of each event first, strongest first inside a round")
-        self.assertEqual(shades[3:], [102, 103, 104])
+        self.assertIn(shades[0], range(100, 105), "the grid: one of each event first, strongest first inside a round")
+        self.assertEqual(shades[1:3], [90, 80])
+        self.assertEqual(sorted([hero, shades[0], *shades[3:]]), [100, 101, 102, 103, 104], "then the other CPAC frames")
 
 
 class ThePick(IsolatedCase):
@@ -139,5 +141,6 @@ class Samples(IsolatedCase):
         pid = event_photo(conn, "k0", kind="fan", final="fan", quality=3, light=3, moment=3)
         conn.execute("UPDATE classifications SET shot_type='stage_panel', convention_name='Katsucon' WHERE photo_id=?", (pid,))
         conn.execute("UPDATE photos SET thumbnail_link='t' WHERE id=?", (pid,))
-        picked = design_samples.pick(conn, 3)
-        self.assertEqual([r["drive_id"] for r in picked][:2], ["c0", "k0"], "the second pick is the other event, not another CPAC frame")
+        picked = [r["drive_id"] for r in design_samples.pick(conn, 3)]
+        self.assertTrue(picked[0].startswith("c"), "a CPAC frame first (the strongest); which of the four equals is chance")
+        self.assertEqual(picked[1], "k0", "the second pick is the other event, not another CPAC frame")

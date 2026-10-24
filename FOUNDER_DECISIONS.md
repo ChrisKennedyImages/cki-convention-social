@@ -1550,3 +1550,23 @@ chose "Their own colors, no tiles" and "Same speed as the ticker".
   the system does not do today.
 - The dashboard is never public without Cloudflare Access in front: no
   Access, no page (2026-10-15, above).
+
+## 2026-10-23: different photos every draft; CPAC and the ACU welcome; clean code
+
+Chris: "I seem to always get the same style and pic in my drafts." Measured: the second photo of every
+designed draft came from one folder (CPAC Texas 2022, "All Final edited High-Res images": 5081, 5087,
+5088, 5089, 5090, 5093, 5094). Today's daily reel took four consecutive frames of one folder ("Texas
+Sunday missing Panel"). The cause: among photos used alike and rated alike, the rotation fell back to
+file order, so one big folder's next frame always won. The daily post also spread its photos by room
+but not by event.
+
+- Least used first, still. Then the caller's quality order. Only photos equal on both are put in a
+  chance order (library/report.rotate).
+- In a post: a new event first, then a new shoot (Drive folder) of an event already in, and a shoot
+  repeated only when nothing else is left (designed.spread). The daily post uses the same rule
+  (content.order_pool).
+- Chris: "You can use more than one from CPAC or ACU. They were an enormous client for 10yrs and we
+  worked through the year on this one conference." No cap on CPAC or ACU photos. Two CPAC shoots may
+  share a post; variety comes from the shoots, not from leaving the client out.
+- Chris: "I want this code very clean! Workarounds just leave breadcrumbs for a mess up in the future."
+  Causes are fixed, not patched. Code nothing uses is deleted in the same change.
