@@ -215,6 +215,16 @@ class Plan(IsolatedCase):
         self.assertEqual(content.design_for(saturday, "event", has_music=True), "reel")
         self.assertEqual(content.design_for(saturday, "event", has_music=False), content.fallback_for(saturday))
 
+    def test_mostly_reels_every_day_with_music_is_a_reel(self):
+        """Chris, 2026-10-23: "Mostly reels". Every day with a music track is a reel; a day without music, or a building
+        day, keeps the week's still design (a reel never goes out silent)."""
+        monday = date(2026, 10, 19)
+        for i in range(7):
+            day = date.fromordinal(monday.toordinal() + i)
+            self.assertEqual(content.design_for(day, "event", has_music=True), "reel", day)
+            self.assertNotEqual(content.design_for(day, "event", has_music=False), "reel", day)
+            self.assertNotEqual(content.design_for(day, "architecture", has_music=True), "reel", day)
+
 
 class Rooms(Drafting):
     """A room is printed only when Claude's final check of the full photo confirms it; otherwise EVENT PHOTOGRAPHY."""

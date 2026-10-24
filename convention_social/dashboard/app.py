@@ -728,6 +728,7 @@ def create_app() -> FastAPI:
         item = queue_view(conn, row)
         pace = today_view.pace_slot(conn, row) if row["status"] == "draft" else None
         return render(request, "detail.html", item=item, networks=NETWORKS, msg=msg or mended, shot_choices=SHOT_CHOICES,
+                      play=request.query_params.get("play") == "1",            # opened from a reel's ping: it starts playing
                       networks_on=alerts.networks_on(),
                       origin=today_view.origin(row), can_approve=not item["blocked_networks"] and not item["ineligible"] and bool(item["targets"]),
                       pace_words=f"{today_view.day_words(pace)} {today_view.clock(pace)}" if pace else "",

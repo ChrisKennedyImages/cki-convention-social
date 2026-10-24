@@ -146,9 +146,17 @@ def status_line(conn: sqlite3.Connection, now: Optional[datetime] = None) -> str
     return f"{shown} of {n} designed drafts made today: {why}."
 
 
+REELS_OF_THREE = 2              # Chris, 2026-10-23: "Mostly reels": two of every three designed drafts, when there is music
+
+
 def next_design(conn: sqlite3.Connection, has_music: bool) -> str:
-    """The design the designed drafts used least lately (never used first), in the list's order on a tie."""
-    choices = designs(has_music)
+    """A reel while fewer than REELS_OF_THREE of the last three designed drafts were reels (music only); otherwise the
+    still design used least lately (never used first), in the list's order on a tie."""
+    if has_music:
+        recent = [(_meta(r).get("design_wanted") or _meta(r).get("design")) for r in rows(conn)[:2]]
+        if recent.count("reel") < REELS_OF_THREE:          # a reel unless both of the last two were
+            return "reel"
+    choices = [d for d in designs(has_music) if d != "reel"]
     last: dict[str, int] = {}
     for r in rows(conn):                       # newest first: the first sighting of a design is its last use
         d = _meta(r).get("design_wanted") or _meta(r).get("design")
@@ -298,13 +306,11 @@ def draft(ctx: runner.Context, fetch: Callable[[dict], bytes], *, now: Optional[
     if len(chosen) < content.NEEDS[design]:
         design, chosen = content.fallback_for(day), chosen[:1]      # too few passed: the day's one-photo design
     hero = chosen[0][0]
-    words = {"reel": "Tap to watch it with its sound."}.get(design, "Tap to see it.")
     qid, art, line = content.make_draft(
         ctx, day, chosen, design, want="event", kind_used="event", asked=asked, track=track, drafter=drafter,
         art_client=art_client, why=f"designed draft; {content.use_why(hero, len(rows_))}",
         extra_meta={"source": SOURCE, "designed_day": day.isoformat(), "event": "", "designed_event": event_of(hero)},
-        ping=(f"{ctx.cfg.brand_name}: a designed post to approve",
-              f"A {design} on {len(chosen)} of your photos, made for today. Post now, follow the pace or skip. {words}"))
+        ping=content.ping_words(ctx.cfg.brand_name, design, len(chosen), "today", designed=True))
     return line
 
 
