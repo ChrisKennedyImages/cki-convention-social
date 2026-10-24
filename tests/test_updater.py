@@ -563,14 +563,18 @@ class SyncLeavesTheSite(Repos):
 
 class TestTimeLimit(IsolatedCase):
     """2026-10-15: every update from 14:52 to 21:12 was held back with "the test run took too long": the suite grew to
-    about 990 tests, 21 minutes on a quiet Mini, and the limit was 30. go-live's sync waits longer than one test run."""
+    about 990 tests, 21 minutes on a quiet Mini, and the limit was 30. 2026-10-24: 1060 tests took 46 to 58 minutes per
+    update while other suites ran, against a limit of 60. go-live's sync waits longer than one test run, and the
+    watchdog never calls a run inside its own limits stuck."""
 
-    def test_the_updater_gives_the_suite_an_hour_and_sync_waits_past_it(self):
+    def test_the_updater_gives_the_suite_ninety_minutes_and_the_watchdog_waits_for_a_deploy_too(self):
         import inspect
-        from convention_social.agents import updater
-        self.assertGreaterEqual(updater.TEST_TIMEOUT, 60 * 60)
+        from convention_social.agents import updater, watchdog
+        self.assertGreaterEqual(updater.TEST_TIMEOUT, 90 * 60)
         wait = inspect.signature(updater.sync).parameters["wait_seconds"].default
         self.assertGreater(wait, updater.TEST_TIMEOUT)
+        self.assertGreaterEqual(watchdog.MAX_GAP["updater"].total_seconds(), updater.TEST_TIMEOUT + updater.DEPLOY_TIMEOUT,
+                                "a run inside its own limits is never called stuck")
 
 
 class OnlyTestedCode(Repos):
