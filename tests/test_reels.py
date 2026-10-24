@@ -25,6 +25,7 @@ from tests._base import IsolatedCase
 from tests._fakes import (THUMBNAIL_URL_DOC, THUMBNAIL_URL_REFUSED, FakeBuffer, add_channels, add_photo, add_post, field,
                           make_ctx, write_render)
 from tests._photos import jpeg_bytes
+from tests.test_content import ArtClientAny, FinalClient, say
 from tests.test_music import RECORD, tone
 from tests.test_publisher import PublisherCase
 
@@ -259,6 +260,18 @@ class Publish(PublisherCase):
 
 # ------------------------------------------------------------------ Saturday's draft
 
+class Eye(ArtClientAny):
+    """The art director's eye, keeping every look it was given: the images and the words that came with them."""
+    def __init__(self, answers):
+        super().__init__(answers)
+        self.looks = []
+
+    def create(self, **kw):
+        blocks = kw["messages"][0]["content"]
+        self.looks.append(([b for b in blocks if b["type"] == "image"], blocks[-1]["text"]))
+        return super().create(**kw)
+
+
 class Saturday(IsolatedCase):
     def setUp(self):
         super().setUp()
@@ -304,6 +317,13 @@ class Saturday(IsolatedCase):
     def ctx(self):
         config.get_config().ensure_dirs()
         return runner.Context("content", self.conn, __import__("logging").getLogger("t"), config.get_config(), True, 0)
+
+    def live(self):
+        os.environ["AI_MONTHLY_CAP_USD"] = "5"
+        os.environ["AI_MODEL"] = "template"
+        config.reset()
+        config.get_config().ensure_dirs()
+        return runner.Context("content", self.conn, __import__("logging").getLogger("t"), config.get_config(), False, 0)
 
     def fetch(self, row):
         self.fetched.append(row["drive_id"])
@@ -377,8 +397,48 @@ class Saturday(IsolatedCase):
         with mock.patch.object(art_director, "look", lambda conn, files, **kw: seen.extend(files) or {"verdict": "pass", "notes": "ok"}):
             art_director.direct(self.conn, lambda f: {"9:16": [str(self.root / "r.mp4")], "cover": [str(self.root / "c.jpg")],
                                                       "2:3": [str(self.root / "p.jpg")], "stills": [str(self.root / "s.jpg")]},
-                                dry_run=False, allow_redo=False, max_files=4)
+                                brief=lambda paths: "a reel", dry_run=False, allow_redo=False, max_files=4)
         self.assertEqual([p.name for p in seen], ["c.jpg", "p.jpg", "s.jpg"])
+
+    def test_the_art_director_is_told_it_is_a_loop_reel_and_that_the_glass_is_the_design(self):
+        """Post 33 (2026-10-24, the designed lane): a Loop reel turned back for "a large dark circular artifact over the
+        faces", the loop's own glass, which Chris approved as the style; each turn-back burns one of the lane's three
+        retries a day. The director is told the style and what it puts on the frame on purpose, with the frames."""
+        self.with_music()
+        eye = Eye([say("pass", notes="Sharp and well lit; the glass is the design.")])
+        with mock.patch.object(content, "reel_style", lambda conn, rng=None: "loop"):
+            content.draft_one(self.live(), self.fetch, now=FRIDAY, check_client=FinalClient({}), art_client=eye)
+        row, meta_, _, _ = self.last()
+        self.assertEqual((row["status"], meta_["design"], meta_["reel"], meta_["art"]["verdict"]), ("draft", "reel", "loop", "pass"))
+        [(images, told)] = eye.looks
+        self.assertEqual(len(images), 4, "the cover, the 2:3 card and the two stills; never the mp4")
+        self.assertEqual(told, reels3d.brief("loop") + "\n\nReview this post.")
+        for words in ("reel in the loop style", "oval of liquid glass", "not a defect", "soft or dark in the photo itself"):
+            self.assertIn(words, told)
+
+    def test_told_what_the_glass_is_the_art_director_still_turns_back_a_bad_photo(self):
+        self.with_music()
+        eye = Eye([say("reject", notes="The second still is soft on the faces and underexposed."), say("pass")])
+        with mock.patch.object(content, "reel_style", lambda conn, rng=None: "loop"):
+            line = content.draft_one(self.live(), self.fetch, now=FRIDAY, check_client=FinalClient({}), art_client=eye)
+        self.assertIn("turned back photo", line)
+        rows = self.queue()
+        self.assertEqual(rows[0]["status"], "rejected")
+        self.assertIn("soft on the faces", rows[0]["last_error"])
+        self.assertEqual(json.loads(rows[0]["rule_report"])["art"]["verdict"], "reject")
+        self.assertIn("reel in the loop style", eye.looks[0][1], "it was told, and said no to the photo, not the glass")
+
+    def test_a_reel_that_fell_back_to_a_carousel_is_briefed_as_a_carousel(self):
+        self.with_music()
+        eye = Eye([say("pass")])
+        with mock.patch.object(reels3d, "render", self.fake_reel(fail=True)):
+            content.draft_one(self.live(), self.fetch, now=FRIDAY, check_client=FinalClient({}), art_client=eye)
+        _, meta_, _, _ = self.last()
+        self.assertEqual(meta_["design"], "carousel")
+        [(images, told)] = eye.looks
+        self.assertEqual(len(images), 4, "the carousel's first slides")
+        self.assertTrue(told.startswith("The first slides of a carousel"), told)
+        self.assertNotIn("glass", told)
 
 
 # ------------------------------------------------------------------ the dashboard plays it

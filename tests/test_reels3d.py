@@ -51,6 +51,25 @@ class Styles(IsolatedCase):
             self.assertEqual(reels3d.COVER_MS[style], round(reels3d.COVER_S[style] * 1000))
             self.assertLess(reels3d.COVER_S[style], reels3d.TOTAL / 30, "inside the fifteen seconds")
 
+    def test_every_style_tells_the_art_director_what_it_puts_on_the_frame_on_purpose(self):
+        """Post 33 (2026-10-24): a Loop reel turned back for "a large dark circular artifact over the faces", the loop's
+        own glass, which Chris approved as the style. The director is told the style and what is there on purpose, and
+        is still asked to judge the photos."""
+        self.assertEqual(set(reels3d.ON_PURPOSE), set(reels3d.STYLES))
+        for style in reels3d.STYLES:
+            told = reels3d.brief(style)
+            self.assertIn(f"reel in the {style} style", told)
+            self.assertIn(reels3d.ON_PURPOSE[style], told)
+            self.assertIn("no motion blur, no fade and no transition", told)
+            self.assertIn("soft or dark in the photo itself, and that is a fault", told)
+            self.assertTrue(told.startswith(f"{2 + len(reels3d.STILLS_S)} pictures of"), "told how many pictures, cover first")
+        loop = reels3d.brief("loop")
+        for words in ("oval of liquid glass", "magnifies what is under it, faces included", "not a defect",
+                      "the held photo at full brightness while the rest of the grid dims"):
+            self.assertIn(words, loop)
+        with self.assertRaises(KeyError):
+            reels3d.brief("rooms")
+
 
 class Render(IsolatedCase):
     def setUp(self):

@@ -429,6 +429,29 @@ def make_renderer(conn: sqlite3.Connection, agent: str, *, design: str, rows: li
     return render, reel_failed
 
 
+# what the art director is told the still designs are; the bold four say it themselves (bold.DESIGNS[...].what)
+BRIEFS = {
+    "single": "One photo as one card in depth, turned a little toward you over a glossy floor, at 4:5 and at 2:3.",
+    "carousel": "The first slides of a carousel: a fanned cover of its photos, then a rail slide per room, the next room "
+                "waiting at the right.",
+    "spotlight": "The spotlight: the hero photo at the centre of a rail of the post's photos, and the hero on a 2:3 card.",
+    "fan": "The fan: the post's photos as cards fanned on a stage, and the hero on a 2:3 card.",
+}
+
+
+def brief_for(design: str, style: Optional[str], paths: dict) -> str:
+    """What the art director is told it is looking at, from what `render` made. A reel says its style and what the
+    style puts on the frame on purpose (reels3d.brief); a reel that could not be made is the carousel it fell back to."""
+    from ..render import bold, reels3d
+    if design == "reel":
+        if "9:16" in paths:
+            return reels3d.brief(style)
+        design = "carousel"
+    if design in bold.DESIGNS:
+        return f"The {design} design, {bold.DESIGNS[design].what}, at 4:5 and at 2:3."
+    return BRIEFS[design]
+
+
 def redraw(conn: sqlite3.Connection, row, meta: dict, *, agent: str = "content") -> tuple[Optional[dict], str]:
     """The card of a queued draft drawn again with today's design copy, from the copies of its photos on
     this machine (the cards from before 2026-10-11 said "coverage", a word a card no longer carries).
@@ -570,7 +593,8 @@ def make_draft(ctx: runner.Context, day: date, chosen: list[tuple[dict, bytes]],
     style = reel_style(ctx.conn) if design == "reel" else None
     render, reel_failed = make_renderer(ctx.conn, ctx.agent, design=design, rows=[r for r, _ in chosen], hero=hero, images=images,
                                         day=day, track=track, out_dir=out_dir, seo=seo, reel_style=style)
-    render_paths, art = art_director.direct(ctx.conn, render, dry_run=ctx.dry_run, client=art_client, agent=ctx.agent,
+    render_paths, art = art_director.direct(ctx.conn, render, brief=lambda paths: brief_for(design, style, paths),
+                                            dry_run=ctx.dry_run, client=art_client, agent=ctx.agent,
                                             allow_redo=design == "single", max_files=4)
     if reel_failed:
         design = "carousel"
