@@ -1,0 +1,179 @@
+// Loop, made to match Chris's reelfolio recording (2026-10-23, compared frame by frame against it).
+// What the recording does, and this does:
+// - a GRID of cards in level rows, every card its own shape (nothing cropped), tight even gaps of flat dark space;
+//   the post's photos are the cards visited, the grid photos fill the rest
+// - HOLD: the camera stops over one card and the rest of the grid falls back into the dark (dim slivers of its
+//   neighbours); the card never leaves the grid and the camera never comes in (Chris: "the photos should not punch
+//   out"); its label under it on the dark (the room, then its line) and a counter at the right
+// - THE LOOP: a card-sized oval of liquid glass that glides onto the held photo, magnifies it as it crosses, and
+//   carries on ahead of the camera to the next card (Chris: "it should only magnify in the loop itself when it goes
+//   over the image"). Glass, not light: nothing is painted on the photo.
+// - MOVE (slow, about a second and a half): the camera travels, level, through the grid after the loop
+// Four cards in fifteen seconds. Photos unlit and exact.
+import React, {useLayoutEffect, useMemo} from 'react';
+import {AbsoluteFill, Audio, staticFile} from 'remotion';
+import {ThreeCanvas} from '@remotion/three';
+import {useThree} from '@react-three/fiber';
+import {RoomEnvironment} from 'three/examples/jsm/environments/RoomEnvironment.js';
+import * as THREE from 'three';
+import {Close, END, H, K, PAPER, Photo, Props, TOTAL, Tile, W, coverTex, easeIO, roundedMask, useFonts, useFrameInfo, useTextures} from './lib';
+
+const FOV = 30, TAN = Math.tan((FOV * Math.PI) / 360), ASPECT = W / H;
+const VIEW_W = 2 * TAN * ASPECT;                               // the width in view per unit of camera distance
+const ROW_H = 1.5, GAP_X = 0.16, GAP_Y = 0.42;                 // rows of one height; a little more room under for the label
+const ROW_W = 15, ROWS = 11;                                   // each row filled to about this width, centred
+const PITCH_Y = ROW_H + GAP_Y;
+// one camera distance, about two and a half cards across, for the whole reel: the camera stops over a card and moves
+// on, it never comes in, so a photo never comes forward (Chris, 2026-10-23: "the photos should not punch out")
+const Z = 4.3 / VIEW_W;
+const HOLD = 60, MOVE = 42, FIRST = 24;                        // in 30ths of a second: 2 s held, 1.4 s travelling
+// where the visited cards sit: (row, x) in the middle rows, each a step or two from the last so the travel reads
+const VISITS: [number, number][] = [[5, 0], [4, 1.6], [3, -1.4], [6, 0.8]];
+const LOOP_AT = 0.6 * HOLD;                                    // the loop reaches a held card's centre this far into the hold
+const GLASS_DEPTH = 0.3, GLASS_THICKNESS = 0.6;              // deep enough to bend; flatter than a drop
+
+// The grid: photos laid row by row in their own shape (aspect kept between 2:3 and 16:9), each row centred, so
+// columns fall where they fall, as in the recording; the grid photos cycle, so none repeats within view, and the
+// post's photos take the visited cells.
+type Card = {x: number; y: number; w: number; h: number; p: Tile};
+const shape = (p: Tile) => Math.min(16 / 9, Math.max(2 / 3, p.w / p.h));
+const rowY = (r: number) => ((ROWS - 1) / 2 - r) * PITCH_Y;
+const layout = (photos: Photo[], grid: Tile[]) => {
+  const visited = photos.slice(0, VISITS.length);
+  const rest = [...photos.slice(VISITS.length), ...grid];   // a fifth or sixth photo is in the grid, not lost
+  const fill = rest.length ? rest : photos;
+  const cards: Card[] = [], visit: Card[] = [];
+  let k = 0;
+  for (let r = 0; r < ROWS; r++) {
+    const row: Tile[] = [];
+    for (let x = 0; x < ROW_W; k++) {
+      const p = fill[k % fill.length];
+      row.push(p);
+      x += ROW_H * shape(p) + GAP_X;
+    }
+    const place = (tiles: Tile[]) => {               // the row's cards, centred
+      let x = 0;
+      const placed = tiles.map((p) => { const w = ROW_H * shape(p); const c = {x: x + w / 2, y: rowY(r), w, h: ROW_H, p}; x += w + GAP_X; return c; });
+      return placed.map((c) => ({...c, x: c.x - (x - GAP_X) / 2}));
+    };
+    const v = VISITS.findIndex(([vr]) => vr === r);
+    let placed = place(row);
+    if (v >= 0 && v < visited.length) {              // the visited photo takes the cell nearest its spot
+      const at = VISITS[v][1];
+      const n = placed.reduce((best, c, i) => (Math.abs(c.x - at) < Math.abs(placed[best].x - at) ? i : best), 0);
+      row[n] = visited[v];
+      placed = place(row);
+      visit[v] = placed[n];
+    }
+    cards.push(...placed);
+  }
+  return {cards, visit};
+};
+
+// Where the camera is at frame f: stopped over a card, or travelling, level, to the next.
+const cameraAt = (visit: Card[], arrivals: number[], f: number) => {
+  let k = 0;
+  for (let j = 0; j < arrivals.length; j++) if (f >= arrivals[j] - (j ? MOVE : 0)) k = j;
+  const travel = k > 0 ? (f - (arrivals[k] - MOVE)) / MOVE : 1;
+  const c = visit[k];
+  if (travel < 1) {
+    const a = visit[k - 1], t = easeIO(travel);
+    return {x: a.x + (c.x - a.x) * t, y: a.y + (c.y - a.y) * t, travel, k};
+  }
+  return {x: c.x, y: c.y, travel: -1, k};
+};
+
+// Where the loop is at frame f: it reaches each held card's centre LOOP_AT into the hold, easing to a stop there
+// (the photo magnified under it), then moves on to the next card ahead of the camera; it comes in from beyond the
+// first card and leaves beyond the last.
+const loopAt = (visit: Card[], arrivals: number[], f: number) => {
+  const stops = visit.map((c) => new THREE.Vector2(c.x, c.y));
+  const T = [0, ...arrivals.map((a) => a + LOOP_AT), TOTAL];
+  const P = [stops[0].clone().add(new THREE.Vector2(-2.6, -0.4)), ...stops, stops[stops.length - 1].clone().add(new THREE.Vector2(2.6, 0.4))];
+  let i = 0;
+  while (i < T.length - 2 && f >= T[i + 1]) i++;
+  return P[i].clone().lerp(P[i + 1], easeIO((f - T[i]) / (T[i + 1] - T[i])));
+};
+
+const Rig: React.FC<{x: number; y: number; z: number}> = ({x, y, z}) => {
+  const {camera, gl, scene} = useThree();
+  useLayoutEffect(() => {                                     // light for the glass only: the photos are unlit
+    const pmrem = new THREE.PMREMGenerator(gl);
+    scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+    return () => pmrem.dispose();
+  }, [gl, scene]);
+  useLayoutEffect(() => {
+    camera.position.set(x, y, z);
+    camera.up.set(0, 1, 0);
+    camera.lookAt(x, y, 0);
+    camera.updateProjectionMatrix();
+  }, [x, y, z]);
+  return null;
+};
+
+export const Loop: React.FC<Props> = ({photos, cuts, grid, music}) => {
+  useFonts();
+  const items = useMemo(() => [...photos, ...grid], [photos, grid]);
+  const tex = useTextures(items.map((p) => p.src));
+  const {f, closing} = useFrameInfo(cuts);
+  const {cards, visit} = useMemo(() => layout(photos, grid), [photos, grid]);
+  const arrivals = visit.map((_, k) => FIRST + k * (HOLD + MOVE));
+  const cardTex = useMemo(() => (tex ? cards.map((c) => coverTex(tex[items.indexOf(c.p)], c.p.w / c.p.h, c.w / c.h)) : []), [tex, cards]);
+  const cam = cameraAt(visit, arrivals, f);
+  const card = visit[cam.k], photo = card.p as Photo;
+  // the hold: in as the camera stops, out before it moves on
+  const since = f - arrivals[cam.k], until = (cam.k + 1 < visit.length ? arrivals[cam.k + 1] - MOVE : TOTAL - END) - f;
+  const held = cam.travel < 0 && !closing ? easeIO(Math.min(1, (since + 14) / 18, (until + 4) / 14)) : 0;
+  // the rest of the grid falls back into the dark while a card is held
+  const grey = Math.round(255 - (255 - 32) * held);
+  const dimmed = `rgb(${grey},${grey},${grey})`;
+  const z = closing ? Z * (1 + 0.2 * easeIO((f - (TOTAL - END)) / 36)) : Z;   // the close: a slow pull back
+  const labelOn = cam.travel < 0 && !closing ? Math.min(1, since / 10, until / 8) : 0;
+  const px = W / (Z * VIEW_W);                                 // screen pixels per grid unit
+  const loop = loopAt(visit, arrivals, f);
+  return (
+    <AbsoluteFill style={{background: K}}>
+      <Audio src={staticFile(music)} />
+      {tex && (
+        <ThreeCanvas width={W} height={H} camera={{fov: FOV, position: [0, 0, Z], near: 0.1, far: 100}} gl={{antialias: true}}>
+          <color attach="background" args={[K]} />
+          <Rig x={cam.x} y={cam.y} z={z} />
+          <mesh position={[0, 0, -0.02]}>                       {/* the field: a real surface, so the glass sees it */}
+            <planeGeometry args={[100, 100]} />
+            <meshBasicMaterial color={K} toneMapped={false} />
+          </mesh>
+          {cards.map((c, s) => (
+            <mesh key={s} position={[c.x, c.y, 0]}>
+              <planeGeometry args={[c.w, c.h]} />
+              <meshBasicMaterial map={cardTex[s]} alphaMap={roundedMask()} alphaTest={0.5} toneMapped={false}
+                                 color={c === card ? '#ffffff' : dimmed} />
+            </mesh>
+          ))}
+          {!closing && (
+            <mesh position={[loop.x, loop.y, 1]} scale={[0.5 + 0.03 * Math.sin(f / 7), 0.62 - 0.03 * Math.sin(f / 7), GLASS_DEPTH]}
+                  rotation={[0, 0, 0.4 + 0.08 * Math.sin(f / 11)]}>
+              {/* liquid glass: deep enough to bend and catch light, flatter than a drop (Chris: "too thick, like a
+                  raindrop magnified"; then, flat, "a disc over the faces"); it breathes a little, as liquid does */}
+              <sphereGeometry args={[1, 64, 64]} />
+              <meshPhysicalMaterial transmission={1} thickness={GLASS_THICKNESS} roughness={0} ior={1.5} dispersion={2.5}
+                                    envMapIntensity={0.08} specularIntensity={0.2} color="#ffffff" />
+            </mesh>
+          )}
+        </ThreeCanvas>
+      )}
+      {labelOn > 0 && (
+        <div style={{position: 'absolute', left: W / 2 - (card.w / 2) * px, width: card.w * px, top: H / 2 + (card.h / 2) * px + 18,
+                     display: 'flex', justifyContent: 'space-between', color: PAPER, opacity: labelOn}}>
+          <div style={{lineHeight: 1.3}}>
+            <div style={{fontFamily: 'body', fontSize: 32}}>{photo.room}</div>
+            <div style={{fontFamily: 'body', fontSize: 25, color: '#8c8c93'}}>{photo.line}</div>
+          </div>
+          <div style={{fontFamily: 'mono', fontSize: 22, color: '#8c8c93', paddingTop: 8}}>
+            {String(cam.k + 1).padStart(2, '0')} / {String(visit.length).padStart(2, '0')}
+          </div>
+        </div>
+      )}
+      {closing && <Close f={f} field="rgba(10,10,11,0.82)" />}
+    </AbsoluteFill>
+  );
+};

@@ -559,9 +559,8 @@ def treat_reel(ctx: runner.Context, p: Problem, now: datetime, h: Hands) -> Opti
     if remade.get("reel_failed") or not video or not video[0].is_file() or video[0].stat().st_size == 0:
         why = remade.get("reel_failed") or "no video file came out"
         return finish(ctx, p, did(p), "not_fixed", f"The reel failed again ({why}). The carousel stands.", now, h)
-    from . import content
     day = date.fromisoformat(meta["for_day"])
-    remade.update(reel=content.reel_kind(day), reel_remade={"by": AGENT, "at": iso(now), "was": was})
+    remade["reel_remade"] = {"by": AGENT, "at": iso(now), "was": was}      # the style is the redraw's (remade["reel"])
     ctx.conn.execute("UPDATE content_queue SET render_paths=?, rule_report=?, updated_at=? WHERE id=? AND status='draft'",
                      (json.dumps(paths), json.dumps(remade), iso(now), row["id"]))
     h.push(f"{ctx.cfg.brand_name}: the reel is made", f"The reel for {day:%A} (post {row['id']}) did not render the first time; "

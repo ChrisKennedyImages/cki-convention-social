@@ -1,0 +1,22 @@
+{
+  "name": "cki-reels3d",
+  "private": true,
+  "description": "Event Caliber reels in real 3D: Chris's photos as surfaces in space, a moving camera, light (2026-10-23).",
+  "scripts": {
+    "still": "remotion still",
+    "render": "remotion render"
+  },
+  "dependencies": {
+    "@react-three/drei": "10.7.9",
+    "@react-three/fiber": "9.8.1",
+    "@remotion/bundler": "4.0.534",
+    "@remotion/cli": "4.0.534",
+    "@remotion/motion-blur": "^4.0.534",
+    "@remotion/renderer": "4.0.534",
+    "@remotion/three": "4.0.534",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "remotion": "4.0.534",
+    "three": "0.186.1"
+  }
+}

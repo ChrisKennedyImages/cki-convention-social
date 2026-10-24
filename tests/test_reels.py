@@ -20,7 +20,7 @@ from convention_social.buffer import media, payloads
 from convention_social.buffer.client import BufferClient, BufferError
 from convention_social.core import auth, config, db, runner
 from convention_social.dashboard.app import COOKIE, create_app, make_token
-from convention_social.render import meta, motion, reel
+from convention_social.render import meta, motion, reel, reels3d
 from tests._base import IsolatedCase
 from tests._fakes import (THUMBNAIL_URL_DOC, THUMBNAIL_URL_REFUSED, FakeBuffer, add_channels, add_photo, add_post, field,
                           make_ctx, write_render)
@@ -280,21 +280,26 @@ class Saturday(IsolatedCase):
                           model="t", checked_at=now, shot_type=room, event_kind="business", room=confirmed)
             self.ids[did] = pid
         self.reels = []
-        fake = mock.patch.dict(motion.REELS, {"rooms": self.fake_reel("rooms")})
-        fake.start()
-        self.addCleanup(fake.stop)
+        for fake in (mock.patch.object(reels3d, "render", self.fake_reel()), mock.patch.object(reels3d, "stills", self.fake_stills)):
+            fake.start()
+            self.addCleanup(fake.stop)
 
-    def fake_reel(self, kind, fail=False):
-        def job(shots_, copy, *, out, audio=None, only=None, encoder=None, official=False):
-            if encoder:                                              # the stills: drawn frames, not the mp4
-                return encoder((Image.new("RGB", (1080, 1920), (20, 20, 20)) for _ in only), out)
-            self.reels.append((kind, [s.room for s in shots_], audio))
+    def fake_reel(self, fail=False):
+        def job(style, shots_, *, out, audio=None, grid=()):
+            self.reels.append((style, [s.room for s in shots_], audio))
             if fail:
-                raise RuntimeError("ffmpeg stopped with code 1; no reel made")
+                raise RuntimeError("remotion stopped with code 1: no reel made")
             out.parent.mkdir(parents=True, exist_ok=True)
             out.write_bytes(b"mp4")
             return out
         return job
+
+    def fake_stills(self, style, video, *, out_dir, meta=None):      # the cover first, named by its offset, as the real one
+        out_dir.mkdir(parents=True, exist_ok=True)
+        paths = [out_dir / f"{style}-{reels3d.COVER_MS[style]:05d}.jpg", out_dir / f"{style}-06000.jpg", out_dir / f"{style}-10500.jpg"]
+        for p in paths:
+            Image.new("RGB", (1080, 1920), (20, 20, 20)).save(p)
+        return paths
 
     def ctx(self):
         config.get_config().ensure_dirs()
@@ -320,18 +325,19 @@ class Saturday(IsolatedCase):
         line = content.draft_one(self.ctx(), self.fetch, now=FRIDAY)
         self.assertIn("reel with", line)
         _, meta_, renders, ids = self.last()
-        self.assertEqual((meta_["design"], meta_["reel"], meta_["music"]), ("reel", "rooms", track.name))
+        self.assertEqual((meta_["design"], meta_["music"]), ("reel", track.name))
+        self.assertIn(meta_["reel"], reels3d.STYLES, "one of the five 3D styles")
         self.assertEqual(len(self.reels), 1)
         kind, rooms, audio = self.reels[0]
-        self.assertEqual((kind, audio), ("rooms", track))
+        self.assertEqual((kind, audio), (meta_["reel"], track))
         self.assertEqual(sorted(rooms[:4]), ["BACKSTAGE", "EVENT PHOTOGRAPHY", "MAIN STAGE", "PORTRAITS"],
                          "one photo per room first; a room repeats only after every room has had one; a room is named "
                          "only when the final check confirmed it (2026-10-15), the rest say EVENT PHOTOGRAPHY")
         self.assertIn(ids[0], (self.ids["e1"],) if rooms[0] == "EVENT PHOTOGRAPHY" else (self.ids["s1"], self.ids["s2"]),
                       "the hero is a strongest frame; s1 and s2 are equal, so which leads is chance (2026-10-23)")
         self.assertEqual(sorted(renders), ["2:3", "9:16", "cover", "stills"])
-        self.assertTrue(renders["9:16"][0].endswith("-rooms.mp4"))
-        self.assertTrue(Path(renders["cover"][0]).name.startswith("rooms-060"))
+        self.assertTrue(renders["9:16"][0].endswith(f"-{kind}.mp4"))
+        self.assertEqual(Path(renders["cover"][0]).name, f"{kind}-{reels3d.COVER_MS[kind]:05d}.jpg", "the cover is the frame Instagram shows")
         self.assertEqual(len(ids), len(rooms))
         self.assertTrue(4 <= len(ids) <= 6)
 
@@ -344,21 +350,27 @@ class Saturday(IsolatedCase):
 
     def test_a_reel_that_cannot_be_made_is_a_carousel_of_the_same_photos_and_says_why(self):
         self.with_music()
-        motion.REELS["rooms"] = self.fake_reel("rooms", fail=True)
-        line = content.draft_one(self.ctx(), self.fetch, now=FRIDAY)
+        with mock.patch.object(reels3d, "render", self.fake_reel(fail=True)):
+            line = content.draft_one(self.ctx(), self.fetch, now=FRIDAY)
         self.assertIn("the reel could not be made", line)
         _, meta_, renders, ids = self.last()
         self.assertEqual(meta_["design"], "carousel")
-        self.assertIn("ffmpeg stopped", meta_["reel_failed"])
+        self.assertIn("remotion stopped", meta_["reel_failed"])
         self.assertEqual(len(renders["4:5"]), len(ids) + 2)
         self.assertEqual(db.one(self.conn, "SELECT kind FROM errors")["kind"], "reel")
 
-    def test_the_reel_is_always_the_rooms_reel(self):
-        """The face match reel is retired (Chris, 2026-10-11: a post never talks about a service)."""
-        for day in (datetime(2026, 10, 17).date(), datetime(2026, 10, 24).date()):
-            self.assertEqual(content.reel_kind(day), "rooms")
-        self.assertEqual(list(motion.REELS), ["rooms"])
-        self.assertFalse(hasattr(motion, "facematch_reel") or hasattr(motion, "facematch_post"))
+    def test_the_reel_is_one_of_the_five_styles_never_the_same_twice_in_a_row(self):
+        """Chris, 2026-10-23: five very different styles, used randomly; the rooms reel and the face match reel (retired
+        2026-10-11) are out of the rotation."""
+        import random
+        self.assertEqual(reels3d.STYLES, ("wall", "loop", "ring", "gallery", "orbit"))
+        first = {content.reel_style(self.conn, random.Random(seed)) for seed in range(40)}
+        self.assertEqual(first, set(reels3d.STYLES), "with no reel yet, any style")
+        for pid, meta_ in ((self.ids["e1"], {"design": "reel", "reel": "wall"}), (self.ids["e2"], {"design": "carousel"})):
+            self.conn.execute("UPDATE content_queue SET rule_report=? WHERE id=?", (json.dumps(meta_), add_post(self.conn, [pid])))
+        nxt = {content.reel_style(self.conn, random.Random(seed)) for seed in range(40)}
+        self.assertEqual(nxt, set(reels3d.STYLES) - {"wall"}, "never the last reel's style; the carousel between does not count")
+        self.assertFalse(hasattr(content, "reel_kind") or hasattr(motion, "facematch_reel"))
 
     def test_the_art_director_never_gets_the_mp4(self):
         seen = []

@@ -10,8 +10,10 @@ import re
 from unittest import mock
 
 from fastapi.testclient import TestClient
+from PIL import Image
 
 from convention_social.agents import content, sample
+from convention_social.render import reels3d
 from convention_social.core import auth, config, db, runner, settings
 from convention_social.dashboard.app import COOKIE, create_app, make_token
 from convention_social.render import design_samples, motion
@@ -163,17 +165,20 @@ class ThePress(Case):
         self.assertEqual(self.queued(), [])
         track = self.root / "track.mp3"
         track.write_bytes(b"ID3")
-        real = motion.rooms_reel
-
-        def reel(shots, copy, *, out, audio=None, **kw):    # the reel's frames are pinned in test_reels; here the track it gets
-            if kw.get("encoder"):
-                return real(shots, copy, out=out, audio=audio, **kw)     # the cover and stills, drawn by the reel's own code
+        def reel(style, shots, *, out, audio=None, grid=()):    # the reel itself is pinned in test_reels3d; here the track it gets
             heard.append(audio)
             out.parent.mkdir(parents=True, exist_ok=True)
             out.write_bytes(b"mp4")
             return out
+
+        def stills(style, video, *, out_dir, meta=None):
+            out_dir.mkdir(parents=True, exist_ok=True)
+            paths = [out_dir / f"{style}-{reels3d.COVER_MS[style]:05d}.jpg", out_dir / f"{style}-06000.jpg"]
+            for p in paths:
+                Image.new("RGB", (1080, 1920), (20, 20, 20)).save(p)
+            return paths
         with mock.patch("convention_social.music.current", return_value=track), \
-             mock.patch.dict(motion.REELS, {"rooms": reel}):
+             mock.patch.object(reels3d, "render", reel), mock.patch.object(reels3d, "stills", stills):
             self.assertIn('value="reel"', self.page(), "with music the reel has its Post this")
             sample.ask(self.conn, self.folder, "reel", design_samples.sample_of(self.folder, "reel")["photos"])
             line = sample.run(self.ctx(), fetch=self.fetch, check_client=LookClient(), art_client=ArtClientAny([say("pass")] * 6))

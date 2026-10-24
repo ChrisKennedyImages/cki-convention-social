@@ -1570,3 +1570,21 @@ but not by event.
   share a post; variety comes from the shoots, not from leaving the client out.
 - Chris: "I want this code very clean! Workarounds just leave breadcrumbs for a mess up in the future."
   Causes are fixed, not patched. Code nothing uses is deleted in the same change.
+
+## 2026-10-23: the five 3D reels, in rotation
+
+Chris: "There should be 5 different style reels (all very different)"; "add all the new reels approved and
+created to the rotation"; the reels are 3D, cinematic, the photos exact, no light over a photo, never a ring
+drawn around one, a photo never pushes forward. After a day of samples (reels3d/, Remotion + three.js), the
+five styles: wall, loop, ring, gallery, orbit.
+
+- A reel is one of the five at random, never the same style twice in a row (content.reel_style).
+- The post's photos are the reel's photos: Loop's visited cards, Wall's lifting heroes, Ring's lead cards,
+  Gallery's prints, Orbit's cards. Around them, where a style has a wall or a grid, approved photos from the
+  library's local copies, one per room per shoot (reels3d.fillers): varied, never the post's own.
+- The rooms reel (PIL, 2026-10-11) is out of the rotation; the Design page's sample still shows it.
+- The cover is a frame of the reel, per style (reels3d.COVER_S); the publisher sends that offset to Buffer.
+- Rendering needs Node on the Mini (reels3d/node_modules): the updater installs the packages and Remotion's
+  browser when reels3d/ changes or they are missing. No Node, no reel: the draft falls back to a carousel of the
+  same photos and says why, as before.
+- Loop, after six rounds on 2026-10-23: "Fuck it, it's fine." It stays as it is.

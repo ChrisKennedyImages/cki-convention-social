@@ -15,7 +15,9 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
 SKIP_DIRS = {".git", ".venv", "venv", "__pycache__", "node_modules", ".wrangler"}
+SKIP_FILES = {"package-lock.json"}        # npm's own text, never ours
 BINARY_SUFFIXES = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico", ".pdf", ".woff", ".woff2", ".ttf", ".otf", ".sqlite3"}
+MEDIA_SUFFIXES = {".mp4", ".mov", ".m4a", ".mp3", ".wav"}   # compressed sound and video: any four letters occur by chance
 
 ENCODED = (
     "cG9zdG1hcmtldGVk", "Y29udHJhY3Rvcg==", "bWhpYw==", "bGljZW4=", "cHJlc2VudGNhcmU=",
@@ -31,7 +33,8 @@ def repo_files():
     for dirpath, dirnames, filenames in os.walk(REPO):
         dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
         for name in filenames:
-            yield Path(dirpath) / name
+            if name not in SKIP_FILES and Path(name).suffix.lower() not in MEDIA_SUFFIXES:
+                yield Path(dirpath) / name
 
 
 def hits_in(text: str) -> list[str]:

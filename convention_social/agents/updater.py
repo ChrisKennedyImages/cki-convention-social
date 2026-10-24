@@ -85,6 +85,15 @@ def install_requirements(repo: Path, worktree: Path) -> None:
                        capture_output=True, text=True, timeout=15 * 60, check=True)
 
 
+def reels(repo: Path) -> None:
+    """The 3D reels' Node packages and Remotion's browser (reels3d/), so a reel can be rendered on this machine."""
+    from ..render import reels3d
+    subprocess.run([reels3d.node_tool("npm"), "ci", "--no-audit", "--no-fund"], cwd=str(repo / "reels3d"),
+                   capture_output=True, text=True, timeout=15 * 60, check=True)
+    subprocess.run([reels3d.node_tool("npx"), "remotion", "browser", "ensure"], cwd=str(repo / "reels3d"),
+                   capture_output=True, text=True, timeout=15 * 60, check=True)
+
+
 def migrate(repo: Path) -> None:
     subprocess.run([str(repo / "bin" / "ccs"), "init-db"], cwd=str(repo), capture_output=True, text=True,
                    timeout=300, check=True)
@@ -260,12 +269,12 @@ def servable(conn, repo: Optional[Path] = None) -> tuple[bool, str]:
 def run(ctx: runner.Context, *, repo: Optional[Path] = None,
         suite: Callable[[Path], tuple[bool, str]] = run_suite,
         requirements: Callable[[Path, Path], None] = install_requirements,
-        migrations: Callable[[Path], None] = migrate,
+        migrations: Callable[[Path], None] = migrate, reels: Callable[[Path], None] = reels,
         restart: Callable[[], str] = restart_dashboard,
         probe: Callable[[], Optional[str]] = dashboard_commit,
         deploy: Callable[[Path], tuple[bool, str]] = deploy_site, site: bool = True) -> str:
     repo = Path(repo or config.REPO_ROOT)
-    summary = update(ctx, repo, suite=suite, requirements=requirements, migrations=migrations)
+    summary = update(ctx, repo, suite=suite, requirements=requirements, migrations=migrations, reels=reels)
     if summary == "fetch failed":
         return summary
     ok, why = servable(ctx.conn, repo)
@@ -282,7 +291,8 @@ def run(ctx: runner.Context, *, repo: Optional[Path] = None,
 
 
 def update(ctx: runner.Context, repo: Path, *, suite: Callable[[Path], tuple[bool, str]],
-           requirements: Callable[[Path, Path], None], migrations: Callable[[Path], None]) -> str:
+           requirements: Callable[[Path, Path], None], migrations: Callable[[Path], None],
+           reels: Callable[[Path], None] = reels) -> str:
     fetch = _git(repo, "fetch", "--quiet", "origin", "main", timeout=FETCH_TIMEOUT)
     if fetch.returncode != 0:
         runner.record_error_once(ctx.conn, ctx.agent, "update_fetch",
@@ -339,6 +349,13 @@ def update(ctx: runner.Context, repo: Path, *, suite: Callable[[Path], tuple[boo
     _out(repo, "merge", "--ff-only", "--quiet", target)
     settings.set(ctx.conn, TESTED_KEY, target)
     migrations(repo)
+    if (repo / "reels3d" / "package.json").is_file() and (any(p.startswith("reels3d/") for p in changed)
+                                                             or not (repo / "reels3d" / "node_modules").is_dir()):
+        try:
+            reels(repo)
+        except Exception as e:  # noqa: BLE001  a reel then falls back to a carousel (content.make_renderer), said why here
+            runner.record_error(ctx.conn, ctx.agent, "update_reels",
+                                f"The 3D reels' Node packages could not be installed for {target[:7]}: {e}")
     if install:
         settings.set(ctx.conn, NEEDS_INSTALL_KEY, target)
         runner.record_error_once(ctx.conn, ctx.agent, "needs_install",
