@@ -81,6 +81,7 @@ class Render(IsolatedCase):
         cmd, kw = self.runs[0]
         self.assertEqual(cmd[1:6], ["remotion", "render", "src/Root.tsx", "Loop", str(out)])
         self.assertIn("--gl=angle", cmd)
+        self.assertIn(f"--timeout={reels3d.ASSET_WAIT_MS}", cmd, "two minutes for the fonts and textures, not Remotion's thirty seconds")
         self.assertEqual(kw["cwd"], str(reels3d.REELS3D))
         props = self.seen["props"]
         self.assertEqual([p["room"] for p in props["photos"]], ["MAIN STAGE", "THE CROWD", "AFTER DARK", "PORTRAITS", "EXPO FLOOR"])
