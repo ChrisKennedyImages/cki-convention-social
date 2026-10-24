@@ -24,7 +24,7 @@ import threading
 import time
 from pathlib import Path
 from typing import Optional
-from urllib.parse import quote_plus
+from urllib.parse import quote_plus, urlsplit
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile, status
 from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse, RedirectResponse
@@ -52,21 +52,52 @@ ID_IN_LINK = re.compile(r"(?:/d/|/folders/|[?&]id=)([A-Za-z0-9_-]{2,})")
 
 # ---------------------------------------------------------------------- session
 _session_secret = approve_token.secret      # one secret file signs the session cookie and the pings' approve tokens
+GENERATION_KEY = "dashboard.session_generation"     # a settings row signed into every cookie: raise it and every cookie is dead
+SAFE_METHODS = ("GET", "HEAD", "OPTIONS")
 
 
-def make_token(user: str, now: Optional[float] = None) -> str:
-    exp = int((now or time.time()) + SESSION_DAYS * 86400)
-    body = f"{user}|{exp}"
-    sig = hmac.new(_session_secret(), body.encode(), hashlib.sha256).hexdigest()
-    return f"{body}|{sig}"
+def conn_dep():
+    conn = db.connect()
+    try:
+        yield conn
+    finally:
+        conn.close()
 
 
-def read_token(token: Optional[str]) -> Optional[str]:
+def session_generation(conn) -> str:
+    return settings.get(conn, GENERATION_KEY) or "0"
+
+
+def end_every_session(conn) -> None:
+    """Sign out everywhere (2026-10-24 audit: a cookie outlived a sign-out and a password change). One password is one
+    session for every phone and computer, so the generation goes up and no cookie minted before it opens a page."""
+    settings.set(conn, GENERATION_KEY, str(int(session_generation(conn)) + 1))
+
+
+def _sign(user: str, exp: str, generation: str) -> str:
+    return hmac.new(_session_secret(), f"{user}|{exp}|{generation}".encode(), hashlib.sha256).hexdigest()
+
+
+def make_token(user: str, now: Optional[float] = None, conn=None) -> str:
+    """The cookie's value: who, when it expires, and a signature over both and the session generation of the moment,
+    read on `conn` (or, as the tests mint them, on a connection of its own)."""
+    own = conn is None
+    if own:
+        conn = db.connect()
+    try:
+        exp = str(int((now or time.time()) + SESSION_DAYS * 86400))
+        return f"{user}|{exp}|{_sign(user, exp, session_generation(conn))}"
+    finally:
+        if own:
+            conn.close()
+
+
+def read_token(conn, token: Optional[str]) -> Optional[str]:
+    """The user a cookie names, when it is signed for the current generation and not past SESSION_DAYS; else None."""
     if not token or token.count("|") != 2:
         return None
     user, exp, sig = token.split("|")
-    good = hmac.new(_session_secret(), f"{user}|{exp}".encode(), hashlib.sha256).hexdigest()
-    if not hmac.compare_digest(good, sig):
+    if not hmac.compare_digest(_sign(user, exp, session_generation(conn)), sig):
         return None
     try:
         if int(exp) < time.time():
@@ -80,11 +111,11 @@ def password_configured() -> bool:
     return bool(secrets.get_secret("DASHBOARD_PASSWORD_HASH"))
 
 
-def require_user(request: Request) -> str:
+def require_user(request: Request, conn=Depends(conn_dep)) -> str:
     if not password_configured():
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE,
                             "Dashboard password not set. Run `bin/ccs hash-password` and put the line in .env.")
-    user = read_token(request.cookies.get(COOKIE))
+    user = read_token(conn, request.cookies.get(COOKIE))
     if user is None:
         if request.method == "GET":
             raise HTTPException(status.HTTP_307_TEMPORARY_REDIRECT, headers={"Location": f"/login?next={request.url.path}"})
@@ -92,12 +123,17 @@ def require_user(request: Request) -> str:
     return user
 
 
-def conn_dep():
-    conn = db.connect()
-    try:
-        yield conn
-    finally:
-        conn.close()
+def cross_site(headers) -> str:
+    """Why a POST is refused: the page that sent it (Origin, else Referer) is not on this dashboard's own host, the
+    one the request came to. "" lets it through: the same host, or neither header (the ntfy app's one-tap buttons send
+    none; the ping's single-use token is their guard). 2026-10-24 audit: SameSite=lax alone let a same-site page post."""
+    sent_from = headers.get("origin") or headers.get("referer") or ""
+    if not sent_from:
+        return ""
+    sender = (urlsplit(sent_from).hostname or "").lower()
+    if sender and sender == (urlsplit(f"//{headers.get('host', '')}").hostname or "").lower():
+        return ""
+    return f"Refused: this request came from {sender or 'another page'}, not from this dashboard."
 
 
 # Chris, 2026-10-11: "The navigation is not intuitive or smart!" Thirteen tabs became four, each
@@ -579,9 +615,22 @@ def create_app() -> FastAPI:
     async def crashed(request: Request, exc: Exception):
         import html as html_mod
         eid = record_crash(request.url.path, exc)
+        # made outside the middlewares below (Starlette's server-error layer wraps them): hardened here, and private as
+        # every answer through Cloudflare is, since through_access_only never sees it
         return harden(HTMLResponse(CRASH_PAGE.format(path=html_mod.escape(request.url.path),
                                                      what=html_mod.escape(f"{type(exc).__name__}: {exc}"[:300]),
-                                                     eid=eid if eid is not None else "not saved"), status_code=500))
+                                                     eid=eid if eid is not None else "not saved"), status_code=500,
+                                   headers={"Cache-Control": access.PRIVATE}))
+
+    @app.middleware("http")
+    async def same_site_posts_only(request: Request, call_next):
+        """A POST from another page is refused before any route sees it (cross_site); `hardened`, registered after
+        this and so around it, puts the security headers on the refusal too."""
+        if request.method not in SAFE_METHODS:
+            why = cross_site(request.headers)
+            if why:
+                return PlainTextResponse(why, status_code=403, headers={"Cache-Control": "no-store"})
+        return await call_next(request)
 
     @app.middleware("http")
     async def hardened(request: Request, call_next):
@@ -605,24 +654,32 @@ def create_app() -> FastAPI:
         return response
 
     # ------------------------------------------------------------------ login
+    def signed_in(resp: RedirectResponse, request: Request, conn) -> RedirectResponse:
+        resp.set_cookie(COOKIE, make_token("chris", conn=conn), max_age=SESSION_DAYS * 86400, httponly=True, samesite="lax",
+                        secure=access.secure_request(request.url.scheme, request.headers))     # https: never sent in the clear
+        return resp
+
+    def signed_out(to: str) -> RedirectResponse:
+        resp = RedirectResponse(to, status_code=303)
+        resp.delete_cookie(COOKIE)
+        return resp
+
     @app.get("/login", response_class=HTMLResponse)
-    def login_form(request: Request, next: str = "/", bad: str = ""):
+    def login_form(request: Request, next: str = "/", bad: str = "", bye: str = ""):
         if not password_configured():
             raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Dashboard password not set. Run `bin/ccs hash-password`.")
-        return render(request, "login.html", next=next, bad=bad)
+        return render(request, "login.html", next=next, bad=bad, bye=bye)
 
     @app.post("/login")
-    def login(request: Request, password: str = Form(...), next: str = Form(default="/")):
+    def login(request: Request, password: str = Form(...), next: str = Form(default="/"), conn=Depends(conn_dep)):
         stored = secrets.get_secret("DASHBOARD_PASSWORD_HASH")
         if not stored:
             raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Dashboard password not set.")
         if not auth.verify_password(password, stored):
             time.sleep(0.5)
             return RedirectResponse(f"/login?bad=1&next={next}", status_code=303)
-        resp = RedirectResponse(next if next.startswith("/") and not next.startswith("//") else "/", status_code=303)
-        resp.set_cookie(COOKIE, make_token("chris"), max_age=SESSION_DAYS * 86400, httponly=True, samesite="lax",
-                        secure=access.secure_request(request.url.scheme, request.headers))     # https: never sent in the clear
-        return resp
+        return signed_in(RedirectResponse(next if next.startswith("/") and not next.startswith("//") else "/", status_code=303),
+                         request, conn)
 
     @app.get("/healthz")
     def healthz():
@@ -630,10 +687,13 @@ def create_app() -> FastAPI:
         return {"ok": True, "commit": RUNNING_COMMIT}
 
     @app.post("/logout")
-    def logout(user: str = Depends(require_user)):
-        resp = RedirectResponse("/login", status_code=303)
-        resp.delete_cookie(COOKIE)
-        return resp
+    def logout(user: str = Depends(require_user), conn=Depends(conn_dep)):
+        """Sign out, the signed-in user's own choice (2026-10-24 audit: it was an unauthenticated POST). The cookie is
+        cleared and the session generation goes up, so it is dead on this side too (the audit's other finding: it opened
+        the dashboard for 30 days after a sign-out). One password is one session for every phone and computer: a
+        sign-out on one is a sign-out on all, and the login page says so."""
+        end_every_session(conn)
+        return signed_out("/login?bye=1")
 
     # ------------------------------------------------------------------ today
     @app.get("/", response_class=HTMLResponse)
@@ -1464,11 +1524,12 @@ def create_app() -> FastAPI:
                       pending=oauth.pending_login(conn) is not None, client_set=oauth.client_config() is not None,
                       unmatched=settings.get(conn, "credits.unmatched") or "")
 
-    @app.get("/drive/login")
+    @app.post("/drive/login")
     def drive_login(user: str = Depends(require_user), conn=Depends(conn_dep)):
         """Chris, 2026-10-13: the Drive sign-in from the phone, no terminal and no Google console change. Google
         sends the browser to the loopback return page, which does not load on the phone; he pastes its address
-        below (drive/oauth.start_login, finish_login). Scope: drive.readonly, as ever."""
+        below (drive/oauth.start_login, finish_login). Scope: drive.readonly, as ever. A POST from the page's button,
+        since it writes the pending sign-in (2026-10-24 audit: a GET never writes)."""
         from ..drive import oauth
         try:
             url, _pending = oauth.start_login(conn)
@@ -1875,13 +1936,27 @@ def create_app() -> FastAPI:
         return RedirectResponse("/keys?msg=" + quote_plus(msg), status_code=303)
 
     @app.post("/keys/password")
-    def keys_password(user: str = Depends(require_user), password: str = Form(...), confirm: str = Form(default="")):
+    def keys_password(request: Request, user: str = Depends(require_user), conn=Depends(conn_dep), current: str = Form(default=""),
+                      password: str = Form(...), confirm: str = Form(default="")):
+        """The current password first (2026-10-24 audit: the form took the new one twice and nothing else), then the new
+        one twice. Every cookie minted so far dies with the change; this browser gets a fresh one and stays in."""
+        if not auth.verify_password(current, secrets.get_secret("DASHBOARD_PASSWORD_HASH")):
+            time.sleep(0.5)
+            return RedirectResponse("/keys?msg=" + quote_plus("The current password did not match. Nothing changed."), status_code=303)
         if len(password) < 8:
             return RedirectResponse("/keys?msg=password+needs+8+characters", status_code=303)
         if password != confirm:
             return RedirectResponse("/keys?msg=passwords+did+not+match", status_code=303)
         config.write_env({"DASHBOARD_PASSWORD_HASH": auth.hash_password(password)})
-        return RedirectResponse("/keys?msg=password+changed", status_code=303)
+        end_every_session(conn)
+        return signed_in(RedirectResponse("/keys?msg=" + quote_plus("Password changed. Every other phone and computer is signed out; "
+                                                                    "this one stays in."), status_code=303), request, conn)
+
+    @app.post("/keys/sign-out-everywhere")
+    def keys_sign_out_everywhere(user: str = Depends(require_user), conn=Depends(conn_dep)):
+        """For a phone that is lost or in someone else's hands: every cookie, this browser's too, stops opening the dashboard."""
+        end_every_session(conn)
+        return signed_out("/login?bye=1")
 
     from . import learner_seo_routes, scout_outreach_routes, team_routes
     learner_seo_routes.register(app, require_user, conn_dep, render)

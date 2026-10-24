@@ -2,6 +2,7 @@
 {% block body %}
 <h1>Sign in</h1>
 {% if bad %}<div class="msg bad">That password did not match.</div>{% endif %}
+{% if bye %}<div class="msg">Signed out everywhere. Every phone and computer needs the password again.</div>{% endif %}
 <form method="post" action="/login" class="card">
   <input type="hidden" name="next" value="{{ next }}">
   <label>Password</label><input type="password" name="password" autofocus autocomplete="current-password">

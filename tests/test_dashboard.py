@@ -4,13 +4,15 @@ from __future__ import annotations
 import json
 import os
 import re
+import time
+from unittest import mock
 
 from fastapi.testclient import TestClient
 
 from convention_social.ai import copy_rules
-from convention_social.core import auth, config, db
+from convention_social.core import approve_token, auth, config, db
 from convention_social.core.settings import get as settings_get
-from convention_social.dashboard.app import COOKIE, create_app, make_token
+from convention_social.dashboard.app import COOKIE, SESSION_DAYS, create_app, make_token
 from convention_social.drive import scan
 from convention_social.drive.api import DriveReader
 from convention_social.library import classify
@@ -102,13 +104,14 @@ class Dashboard(IsolatedCase):
         with mock.patch.object(dash, "photo_page", boom):
             crash = crashing.get("/library")
         self.assertEqual(crash.status_code, 500)
-        self.assertEqual((crash.headers["cache-control"], crash.headers["x-frame-options"]), ("no-store", "DENY"))
+        self.assertEqual((crash.headers["cache-control"], crash.headers["x-frame-options"]), ("private, no-store", "DENY"),
+                         "made outside the middlewares: hardened and private all the same")
 
     def test_signing_out_is_the_signed_in_users_own_choice(self):
         """2026-10-24 audit: /logout was an unauthenticated POST."""
         self.assertEqual(TestClient(create_app()).post("/logout", follow_redirects=False).status_code, 401)
         r = self.signed_in().post("/logout", follow_redirects=False)
-        self.assertEqual((r.status_code, r.headers["location"]), (303, "/login"))
+        self.assertEqual((r.status_code, r.headers["location"]), (303, "/login?bye=1"))
         self.assertIn("Max-Age=0", r.headers["set-cookie"], "the cookie is dropped")
 
     def test_a_convention_saved_with_a_bad_id_is_refused_not_a_crash(self):
@@ -116,6 +119,7 @@ class Dashboard(IsolatedCase):
         r = self.signed_in().post("/calendar/save", data={"id": "abc", "name": "Big Con", "kind": "fan"}, follow_redirects=False)
         self.assertEqual(r.status_code, 400)
         self.assertIsNone(db.one(self.conn, "SELECT 1 FROM conventions"))
+        self.assertIsNone(db.one(self.conn, "SELECT 1 FROM errors WHERE agent='dashboard'"), "no crash recorded")
 
     def test_every_page_renders(self):
         c = self.signed_in()
@@ -897,3 +901,143 @@ class Dashboard(IsolatedCase):
         self.assertTrue(head)
         r = self.client.get("/healthz")
         self.assertEqual((r.status_code, r.json()), (200, {"ok": True, "commit": head}))
+
+    # ------------------------------------------------------------------ sign-in hardening (the 2026-10-24 audit)
+    def test_sign_out_is_a_sign_out_on_this_side_too(self):
+        """The cookie opened the dashboard for 30 days after a sign-out. One password is one session for every phone and
+        computer: a sign-out raises the session generation, so every cookie minted before it is dead, and the login page
+        says so. A sign-out without a live cookie (anyone on the tailnet) is refused and changes nothing for whoever is
+        signed in."""
+        c = self.signed_in()
+        old = c.cookies.get(COOKIE)
+        self.assertEqual(c.get("/", follow_redirects=False).status_code, 200)
+        r = c.post("/logout", follow_redirects=False)
+        self.assertEqual((r.status_code, r.headers["location"]), (303, "/login?bye=1"))
+        self.assertEqual(settings_get(self.conn, "dashboard.session_generation"), "1")
+        self.assertIn("Signed out everywhere", c.get("/login?bye=1").text)
+        c.cookies.set(COOKIE, old)
+        self.assertEqual(c.get("/", follow_redirects=False).status_code, 307, "the old cookie is dead")
+        self.assertEqual(c.post("/calendar/save", data={"name": "Con"}).status_code, 401)
+        c.cookies.set(COOKIE, make_token("chris"))
+        self.assertEqual(TestClient(create_app()).post("/logout", follow_redirects=False).status_code, 401)
+        self.assertEqual(settings_get(self.conn, "dashboard.session_generation"), "1")
+        self.assertEqual(c.get("/", follow_redirects=False).status_code, 200, "a sign-out without a live cookie ends no session")
+
+    def test_a_cookie_past_thirty_days_is_dead_as_before(self):
+        self.client.cookies.set(COOKIE, make_token("chris", now=time.time() - (SESSION_DAYS + 1) * 86400))
+        self.assertEqual(self.client.get("/", follow_redirects=False).status_code, 307)
+        self.client.cookies.set(COOKIE, make_token("chris", now=time.time() - (SESSION_DAYS - 1) * 86400))
+        self.assertEqual(self.client.get("/", follow_redirects=False).status_code, 200)
+
+    def hash_in_env_file(self, password):
+        """The hash where the Mini keeps it, in .env, not the process environment (which would win over a change)."""
+        config.write_env({"DASHBOARD_PASSWORD_HASH": auth.hash_password(password)})
+        os.environ.pop("DASHBOARD_PASSWORD_HASH", None)
+        config.reset()
+
+    def test_the_password_changes_only_with_the_current_one_and_signs_the_other_devices_out(self):
+        """The form took the new password twice and nothing else, and the old cookie opened the dashboard after the change."""
+        self.hash_in_env_file("correct horse")
+        c = self.signed_in()
+        here, phone = c.cookies.get(COOKIE), make_token("chris", now=time.time() - 60)       # the phone signed in a minute ago
+        page = c.get("/keys").text
+        self.assertIn('name="current" autocomplete="current-password"', page)
+        self.assertLess(page.index('name="current"'), page.index('name="password"'), "the current one first")
+        new = {"password": "a new password", "confirm": "a new password"}
+        for wrong in ({"current": "nope", **new}, new):
+            r = c.post("/keys/password", data=wrong, follow_redirects=False)
+            self.assertIn("current+password+did+not+match", r.headers["location"])
+            self.assertNotIn(COOKIE, r.cookies)
+        config.reset()
+        self.assertTrue(auth.verify_password("correct horse", config.getenv("DASHBOARD_PASSWORD_HASH")), "nothing changed")
+        for cookie in (here, phone):
+            c.cookies.clear()           # one cookie at a time: a Set-Cookie leaves its own in the jar beside a set() one
+            c.cookies.set(COOKIE, cookie)
+            self.assertEqual(c.get("/keys", follow_redirects=False).status_code, 200, "both still signed in")
+        c.cookies.clear()
+        c.cookies.set(COOKIE, here)
+        r = c.post("/keys/password", data={"current": "correct horse", **new}, follow_redirects=False)
+        self.assertIn("Password+changed", r.headers["location"])
+        self.assertIn(COOKIE, r.cookies, "this browser gets a fresh cookie")
+        self.assertNotEqual(r.cookies[COOKIE], here)
+        self.assertEqual(c.get("/keys", follow_redirects=False).status_code, 200, "and stays in")
+        for dead in (here, phone):
+            c.cookies.clear()
+            c.cookies.set(COOKIE, dead)
+            self.assertEqual(c.get("/keys", follow_redirects=False).status_code, 307, "every other device is signed out")
+        anon = TestClient(create_app())
+        self.assertIn("bad=1", anon.post("/login", data={"password": "correct horse"}, follow_redirects=False).headers["location"])
+        self.assertEqual(anon.post("/login", data={"password": "a new password"}, follow_redirects=False).headers["location"], "/")
+
+    def test_sign_out_everywhere_ends_every_session_and_asks_first(self):
+        c = self.signed_in()
+        here, laptop = c.cookies.get(COOKIE), make_token("chris", now=time.time() - 3600)
+        form = re.search(r'<form[^>]*action="/keys/sign-out-everywhere"[^>]*>', c.get("/keys").text).group(0)
+        self.assertIn("confirm(", form, "destructive: it asks first")
+        r = c.post("/keys/sign-out-everywhere", follow_redirects=False)
+        self.assertEqual((r.status_code, r.headers["location"]), (303, "/login?bye=1"))
+        for dead in (here, laptop):
+            c.cookies.clear()
+            c.cookies.set(COOKIE, dead)
+            self.assertEqual(c.get("/keys", follow_redirects=False).status_code, 307)
+        self.assertEqual(TestClient(create_app()).post("/keys/sign-out-everywhere").status_code, 401, "signed in only")
+        self.assertEqual(c.post("/login", data={"password": "correct horse"}, follow_redirects=False).headers["location"], "/")
+        self.assertEqual(c.get("/keys", follow_redirects=False).status_code, 200, "signing in again works")
+
+    def test_a_post_from_another_page_is_refused_before_any_route(self):
+        """SameSite=lax alone let a page beside the dashboard post to it. The page that sent the form (Origin, else
+        Referer) must be on this dashboard's own host, the one the request came to; a client that sends neither (curl,
+        the ntfy app) is not a browser and goes on to the route's own guard."""
+        c = self.signed_in()
+        q = self.draft()
+        for headers in ({"Origin": "https://evil.example"}, {"Referer": "https://evil.example/a"}, {"Origin": "null"},
+                        {"Origin": "https://evil.example", "Referer": "http://testserver/"}):
+            r = c.post(f"/queue/{q}/skip", headers=headers, follow_redirects=False)
+            self.assertEqual(r.status_code, 403, headers)
+            self.assertIn("not from this dashboard", r.text)
+            self.assertEqual(r.headers["cache-control"], "no-store")
+        self.assertEqual(db.one(self.conn, "SELECT status FROM content_queue WHERE id=?", (q,))["status"], "draft")
+        for headers in ({"Origin": "http://testserver"}, {"Referer": "http://testserver/calendar"}, {}):
+            self.assertEqual(c.post("/calendar/save", data={"name": "Con"}, headers=headers, follow_redirects=False).status_code, 303, headers)
+        tail = "mac-mini.tail915d2c.ts.net:8443"      # the phone's address: the same rule by that name, case apart
+        self.assertEqual(c.post("/calendar/save", data={"name": "Con"}, follow_redirects=False,
+                                headers={"Host": tail, "Origin": "https://MAC-MINI.tail915d2c.ts.net:8443"}).status_code, 303)
+        self.assertEqual(c.post("/calendar/save", data={"name": "Con"}, follow_redirects=False,
+                                headers={"Host": tail, "Origin": "http://testserver"}).status_code, 403)
+        self.assertEqual(db.one(self.conn, "SELECT COUNT(*) AS n FROM conventions")["n"], 4)
+        self.assertEqual(c.get("/", headers={"Origin": "https://evil.example"}).status_code, 200, "a GET is never refused for it")
+        anon = TestClient(create_app())
+        self.assertEqual(anon.post("/login", data={"password": "correct horse"}, headers={"Origin": "https://evil.example"}).status_code, 403,
+                         "the sign-in form too, before the password is looked at")
+
+    def test_the_pings_one_tap_buttons_pass_the_same_site_rule(self):
+        """The ntfy app's Post now, Follow the pace and Skip are POSTs with the ping's single-use token and no Origin or
+        Referer (a native app, not a browser): they reach the route, whose guard is the token. The approve page's own
+        buttons come from the dashboard's address. From another site's page they are refused like every other POST."""
+        popen = self.popen()
+        anon = TestClient(create_app())
+
+        def token_for(qid):
+            return approve_token.issue(self.conn, db.one(self.conn, "SELECT * FROM content_queue WHERE id=?", (qid,)))
+
+        def status(qid):
+            return db.one(self.conn, "SELECT status FROM content_queue WHERE id=?", (qid,))["status"]
+        q = self.draft()
+        token = token_for(q)
+        r = anon.post(f"/queue/{q}/choose-by-token/skip", data={"token": token}, headers={"Origin": "https://evil.example"})
+        self.assertEqual((r.status_code, status(q)), (403, "draft"))
+        self.assertEqual(anon.post(f"/queue/{q}/choose-by-token/skip", data={"token": "nonsense"}).status_code, 409, "reached the route")
+        r = anon.post(f"/queue/{q}/choose-by-token/skip", content=f"token={token}",
+                      headers={"Content-Type": "application/x-www-form-urlencoded"})         # as the ntfy app sends it
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertIn(f"Skipped post {q}", r.text)
+        self.assertEqual(status(q), "rejected")
+        self.assertEqual(popen.call_args[0][0][-2:], ["run", "content"])
+        other = self.draft()
+        r = anon.post(f"/queue/{other}/choose-by-token/skip", data={"token": token_for(other)}, headers={"Origin": "http://testserver"})
+        self.assertEqual((r.status_code, status(other)), (200, "rejected"))
+
+    def test_the_drive_sign_in_starts_on_a_post_only(self):
+        c = self.signed_in()
+        self.assertEqual(c.get("/drive/login", follow_redirects=False).status_code, 405, "a GET starts nothing")
+        self.assertIn('<form method="post" action="/drive/login"', c.get("/").text, "Today's card: one tap, a POST")
