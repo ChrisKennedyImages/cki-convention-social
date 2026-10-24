@@ -14,7 +14,9 @@ from __future__ import annotations
 
 import hashlib
 import mimetypes
+import time
 from pathlib import Path
+from typing import Callable, Optional
 
 from ..core import config, secrets
 
@@ -24,6 +26,14 @@ KEY_PREFIX = "convention-social"
 
 class MediaError(RuntimeError):
     pass
+
+
+class NotReadable(MediaError):
+    """The upload answered well, but a read of the file's address does not give the whole file back yet."""
+
+
+READ_TRIES = 3          # looks at the address before a file is called not readable this run
+READ_WAIT = 3           # seconds between looks, times the look's number
 
 
 def settings() -> dict:
@@ -98,3 +108,52 @@ def upload(path: Path, key: str, *, client=None, put=None) -> str:
     client = client or _client()
     client.upload_file(str(path), s["bucket"], key, ExtraArgs={"ContentType": content_type})
     return public_url(key)
+
+
+def _ranged_get(url: str):
+    import requests
+    return requests.get(url, headers={"Range": "bytes=0-0"}, timeout=30, stream=True)
+
+
+def verify_readable(url: str, path: Path, *, get: Optional[Callable] = None, sleep: Callable[[float], None] = time.sleep,
+                    tries: int = READ_TRIES) -> None:
+    """The file is really at its address before Buffer is told about it. Buffer refused post 28 on 2026-10-24 with
+    "Video could not be read from its URL" and took the same address eight hours later: an upload's 200 is not a read.
+    A one-byte range GET must answer 200 or 206 with the file's kind of type and its whole size (Content-Range's total,
+    or Content-Length when the host ignores the range). READ_TRIES looks a few seconds apart, then NotReadable."""
+    size = path.stat().st_size
+    want = (mimetypes.guess_type(str(path))[0] or "image/jpeg").split("/")[0] + "/"
+    get = get or _ranged_get
+    why = ""
+    for n in range(max(1, tries)):
+        if n:
+            sleep(READ_WAIT * n)
+        try:
+            r = get(url)
+            try:
+                code = int(getattr(r, "status_code", 0) or 0)
+                headers = {str(k).lower(): str(v) for k, v in dict(getattr(r, "headers", None) or {}).items()}
+            finally:
+                close = getattr(r, "close", None)
+                if callable(close):
+                    close()
+        except Exception as e:  # noqa: BLE001  the network: not readable this look
+            why = f"{type(e).__name__}: {e}"
+            continue
+        ctype = headers.get("content-type", "").split(";")[0].strip()
+        length = headers.get("content-range") or headers.get("content-length") or ""
+        try:
+            total = int(length.rsplit("/", 1)[-1]) if length else None
+        except ValueError:
+            total = None
+        if code in (200, 206) and ctype.startswith(want) and total == size:
+            return
+        why = f"HTTP {code}, {ctype or 'no type'}, {'no' if total is None else total} bytes where the file is {size}"
+    raise NotReadable(f"{url} is not readable yet ({why}); nothing is sent to Buffer for it this run")
+
+
+def upload_checked(path: Path, key: str, **kw) -> str:
+    """upload, then verify_readable: the publisher's own uploader (a test's uploader stands in for both)."""
+    url = upload(path, key, **kw)
+    verify_readable(url, path)
+    return url

@@ -71,7 +71,11 @@ class FakeBuffer:
 
     def __init__(self, *, status_sequence=None, reject_at=(), http_status=200, retry_after=None,
                  disconnected=(), error_message="Image could not be fetched", schema=None, orgs=None, channels=None,
-                 unions=None):
+                 unions=None, raise_on_create=(), create_http=None, posts_nodes=None, raise_on_posts=False,
+                 reject_message="board not found"):
+        """`raise_on_create`: 1-based createPost calls on which the transport raises (Buffer did not answer);
+        `create_http`: {call: HTTP status} answered instead; `posts_nodes`: what the Posts query lists when set;
+        `raise_on_posts`: the transport raises on the Posts query; `reject_message`: Buffer's words on a refusal."""
         self.schema = schema if schema is not None else SCHEMA
         self.unions = unions if unions is not None else UNIONS
         self.orgs = orgs if orgs is not None else [{"id": "org-1", "name": "Event Caliber"}]
@@ -87,6 +91,11 @@ class FakeBuffer:
         self.error_message = error_message
         self.n_status = 0
         self.n_create = 0
+        self.raise_on_create = set(raise_on_create)
+        self.create_http = dict(create_http or {})
+        self.posts_nodes = posts_nodes
+        self.raise_on_posts = raise_on_posts
+        self.reject_message = reject_message
 
     def __call__(self, url, payload, headers):
         op = payload["query"].strip().split("\n")[0]
@@ -119,8 +128,12 @@ class FakeBuffer:
                 for svc, cid, name in self.channels]}})
         if "CreatePost" in op:
             self.n_create += 1
+            if self.n_create in self.raise_on_create:
+                raise ConnectionError("read timed out")            # the transport: Buffer did not answer at all
+            if self.n_create in self.create_http:
+                return Response(self.create_http[self.n_create], {}, {"message": "bad gateway"})
             if self.n_create in self.reject_at:
-                return Response(200, {}, {"data": {"createPost": {"__typename": "InvalidInputError", "message": "board not found"}}})
+                return Response(200, {}, {"data": {"createPost": {"__typename": "InvalidInputError", "message": self.reject_message}}})
             if any("thumbnailUrl" in (a.get("video") or {}) for a in payload["variables"]["input"].get("assets") or []):
                 # live Buffer refuses a reel that names a cover image, whatever its schema lists (2026-10-16, post 7)
                 return Response(200, {}, {"data": {"createPost": {"__typename": "InvalidInputError", "message": THUMBNAIL_URL_REFUSED}}})
@@ -150,6 +163,11 @@ class FakeBuffer:
             ok = next((m["name"] for m in members if not m.get("interfaces")), "DeletePostSuccess")
             return Response(200, {}, {"data": {"deletePost": {"__typename": ok, "id": pid}}})
         if "Posts" in op:
+            if self.raise_on_posts:
+                raise ConnectionError("read timed out")
+            if self.posts_nodes is not None:
+                return Response(200, {}, {"data": {"posts": {"edges": [{"node": n} for n in self.posts_nodes],
+                                                             "pageInfo": {"hasNextPage": False, "endCursor": None}}}})
             return Response(200, {}, {"data": {"posts": {"edges": [{"node": {
                 "id": "post-1", "channelId": "ch-ig", "channelService": "instagram", "status": "sent",
                 "sentAt": "2026-10-01T15:30:00Z", "dueAt": None, "text": "hi", "metricsUpdatedAt": "2026-10-02T00:00:00Z",
