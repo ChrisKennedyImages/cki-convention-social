@@ -2,11 +2,39 @@
 from __future__ import annotations
 
 import os
+import ssl
 from datetime import datetime, timezone
+from unittest import mock
 
 from convention_social.ai import spend
 from convention_social.core import auth, config, db, mail, notify, runner, secrets, settings, state_io
 from tests._base import IsolatedCase
+
+
+class FakeSMTP:
+    """smtplib.SMTP's part that send() uses, recording each step; `refuse` is raised by starttls, as a bad certificate is."""
+    def __init__(self, refuse=None):
+        self.steps, self.refuse = [], refuse
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def ehlo(self):
+        self.steps.append(("ehlo", None))
+
+    def starttls(self, context=None):
+        self.steps.append(("starttls", context))
+        if self.refuse:
+            raise self.refuse
+
+    def login(self, user, password):
+        self.steps.append(("login", user))
+
+    def send_message(self, msg):
+        self.steps.append(("send_message", msg["To"]))
 
 
 class Config(IsolatedCase):
@@ -107,6 +135,31 @@ class Mail(IsolatedCase):
         self.assertTrue(res.dry_run)
         self.assertTrue(res.path.exists())
         self.assertIn(mail.SELF_HEADER, res.path.read_text())
+
+    def live(self, server):
+        """send() with live mail allowed and smtplib.SMTP replaced by `server`: nothing leaves the machine."""
+        env = {"CCS_ALLOW_LIVE_MAIL_IN_TESTS": "1", "SMTP_HOST": "smtp.gmail.com", "SMTP_USER": "chris@example.org",
+               "SMTP_PASSWORD": "not-a-real-password", "BRAND_FROM_EMAIL": "chris@example.org"}
+        with mock.patch.dict(os.environ, env), mock.patch.object(mail.smtplib, "SMTP", lambda *a, **kw: server):
+            config.reset()
+            return mail.send("Hi there", "<p>x</p>", to="a@example.org", dry_run=False)
+
+    def test_the_mail_servers_certificate_and_name_are_checked_before_the_login(self):
+        server = FakeSMTP()
+        res = self.live(server)
+        self.assertTrue(res.sent)
+        self.assertEqual([s for s, _ in server.steps], ["ehlo", "starttls", "ehlo", "login", "send_message"])
+        context = server.steps[1][1]
+        self.assertIsInstance(context, ssl.SSLContext, "starttls is given a context; without one smtplib checks nothing")
+        self.assertEqual(context.verify_mode, ssl.CERT_REQUIRED)
+        self.assertTrue(context.check_hostname)
+
+    def test_a_certificate_that_does_not_check_stops_before_the_password_is_sent(self):
+        server = FakeSMTP(refuse=ssl.SSLCertVerificationError("certificate verify failed: unable to get local issuer"))
+        res = self.live(server)
+        self.assertFalse(res.sent)
+        self.assertIn("SSLCertVerificationError", res.error)
+        self.assertNotIn("login", [s for s, _ in server.steps], "the app password never goes to a server that did not check out")
 
     def test_notify_silent_in_tests(self):
         os.environ["NTFY_TOPIC"] = "x"
