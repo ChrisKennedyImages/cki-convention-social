@@ -271,6 +271,7 @@ class Writer(SeoCase):
         self.assertEqual(kw["model"], "claude-haiku-4-5")
         self.assertNotIn("thinking", kw)
         self.assertEqual(kw["output_config"]["format"]["type"], "json_schema")
+        self.assertNotIn("effort", kw["output_config"], "Haiku 4.5 refuses effort: every weekly run failed on it until 2026-10-24")
         self.assertIn("Kind of event: convention", kw["messages"][0]["content"])
         self.assertNotIn("fan convention", kw["messages"][0]["content"], "never 'fan convention', 2026-10-12")
         self.assertNotIn("Katsucon", kw["messages"][0]["content"], "the writer is never told which event")
@@ -289,6 +290,7 @@ class Writer(SeoCase):
         path, kw = fake.calls[0]
         self.assertEqual(path, "beta")
         self.assertEqual((kw["fallbacks"], kw["betas"], kw["thinking"]), ("default", ["server-side-fallback-2026-07-01"], {"type": "adaptive"}))
+        self.assertEqual(kw["output_config"]["effort"], "low", "Opus takes effort; only the Haiku call leaves it out")
 
     def test_answers_that_break_a_rule_are_replaced_by_the_template(self):
         bad = {
