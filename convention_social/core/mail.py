@@ -12,6 +12,7 @@ from __future__ import annotations
 import os
 import re
 import smtplib
+import ssl
 import sys
 from dataclasses import dataclass
 from datetime import datetime
@@ -72,6 +73,13 @@ def build(subject: str, html: str, *, to: str, plain: Optional[str] = None,
     return msg
 
 
+def tls_context() -> ssl.SSLContext:
+    """The mail server's certificate checked against the system's trusted roots and its name matched to SMTP_HOST.
+    Without a context, smtplib's starttls() checks neither, so anyone between the Mini and the server could pose as
+    it and read the app password (red-team audit, 2026-10-16)."""
+    return ssl.create_default_context()
+
+
 def in_test_process() -> bool:
     return "unittest" in sys.modules and not os.environ.get("CCS_ALLOW_LIVE_MAIL_IN_TESTS")
 
@@ -99,7 +107,7 @@ def send(subject: str, html: str, *, to: str, plain: Optional[str] = None,
     try:
         with smtplib.SMTP(cfg.smtp_host, port, timeout=30) as server:
             server.ehlo()
-            server.starttls()
+            server.starttls(context=tls_context())     # a certificate that does not check stops here, before the login
             server.ehlo()
             server.login(cfg.smtp_user, password)
             server.send_message(msg)
