@@ -47,7 +47,9 @@ from ..core import config, db, runner, settings
 
 FETCH_TIMEOUT = 120
 DEPLOY_TIMEOUT = 40 * 60        # build (Claude looks at up to 12 photos), wrangler, the check from outside
-TEST_TIMEOUT = 60 * 60          # 2026-10-15: the suite reached ~990 tests (~21 min alone); at 30 min every busy hour was held back
+TEST_TIMEOUT = 90 * 60          # 2026-10-15: ~990 tests, ~21 min alone, held back at 30. 2026-10-24: 1060 tests took 46 to 58 min
+#                                 per update while other suites ran (agent_runs 6716 to 6812): minutes from the 60 that held two
+#                                 updates back that night. The watchdog's gap for the updater covers this and a deploy.
 NEEDS_INSTALL_KEY = "updater.needs_install"
 TESTED_KEY = "updater.tested_commit"   # the last commit this updater's own suite passed: the only one ever served
 RESTARTED_KEY = "updater.dashboard_restarted_for"

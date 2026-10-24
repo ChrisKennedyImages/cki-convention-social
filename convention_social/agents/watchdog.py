@@ -40,7 +40,8 @@ MAX_GAP = {"scanner": timedelta(hours=3), "content": timedelta(hours=30), "publi
            "inbox": timedelta(hours=1), "chief": timedelta(hours=2),
            "watchdog": timedelta(hours=2), "backup": timedelta(hours=36),
            "learner": timedelta(hours=30), "seo": timedelta(days=8),
-           "scout": timedelta(days=8), "outreach": timedelta(hours=30), "updater": timedelta(hours=1),
+           "scout": timedelta(days=8), "outreach": timedelta(hours=30),
+           "updater": timedelta(hours=2, minutes=30),      # the suite (updater.TEST_TIMEOUT) and a deploy (DEPLOY_TIMEOUT), then some
            "doctor": timedelta(minutes=30)}
 STUCK_AFTER = timedelta(hours=6)       # a scheduled post this long past its time without being sent
 CONTENT_WINDOW = (8, 20)              # local hours: the 08:00 draft gets its turn first; past 20:00 a missing post is said loudly
