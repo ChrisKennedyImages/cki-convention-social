@@ -10,6 +10,7 @@ renames the company everywhere the suite writes it.
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
@@ -49,6 +50,9 @@ def env_values() -> dict[str, str]:
     return _ENV_FILE_CACHE
 
 
+ENV_KEY = re.compile(r"^[A-Z][A-Z0-9_]*$")
+
+
 def _quote(value: str) -> str:
     """A value the .env parser reads back exactly; quoted when it has to be."""
     if value == "" or any(ch in value for ch in ' \t#"\'\\'):
@@ -59,7 +63,12 @@ def _quote(value: str) -> str:
 def write_env(updates: dict[str, str]) -> Path:
     """Set KEY=value lines in the .env file (create it if missing), keep every
     other line as it is, keep the file private, and forget the cached values so
-    this process sees the change on its next read. Values are never logged."""
+    this process sees the change on its next read. Values are never logged. A key that is not a KEY name, or a
+    value with a line break in it, is refused before anything is written: 2026-10-24 audit, one Keys field holding
+    "Fine\nINJECTED=1" went into the file as two lines."""
+    for key, value in updates.items():
+        if not ENV_KEY.match(key) or any(ch in value for ch in "\r\n\0"):
+            raise ValueError(f"{key}: not a setting one .env line can hold (a line break in it, or not a KEY name)")
     path = env_file_path()
     lines = path.read_text().splitlines() if path.exists() else []
     pending = dict(updates)
