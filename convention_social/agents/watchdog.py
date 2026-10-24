@@ -272,9 +272,13 @@ def check_disk_and_backups(ctx: runner.Context, f: Findings, now: datetime) -> N
     free = shutil.disk_usage(ctx.cfg.data_root).free
     if free < DISK_MIN_FREE:
         f.alert("disk_low", f"Only {free / 1024**3:.1f} GB free on the drive holding {ctx.cfg.data_root}.")
-    backups = sorted((ctx.cfg.data_root / "backups").glob("*.sqlite3"))
+    backups = list((ctx.cfg.data_root / "backups").glob("*.sqlite3"))
     if backups:
-        age = now - datetime.fromtimestamp(backups[-1].stat().st_mtime, tz=timezone.utc)
+        # the newest by its time, never by its name: a hand-made pre-... file sorts after every nightly
+        # convention_social-... one, and from 2026-10-14 to 10-24 "the newest backup is 13d old" rang every six
+        # hours about a file from 10-10 while the backup had run every night (2026-10-16 audit)
+        newest = max(backups, key=lambda p: p.stat().st_mtime)
+        age = now - datetime.fromtimestamp(newest.stat().st_mtime, tz=timezone.utc)
         if age > BACKUP_MAX_AGE:
             f.alert("backup_stale", f"The newest database backup is {age.days}d {age.seconds // 3600}h old.")
     elif is_built("backup"):

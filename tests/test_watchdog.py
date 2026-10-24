@@ -61,6 +61,30 @@ class WatchCase(AgentCase):
             return watchdog.run(self.ctx, now=now, **kw)
 
 
+class Backups(WatchCase):
+    def backup(self, name, when):
+        folder = self.ctx.cfg.data_root / "backups"
+        folder.mkdir(parents=True, exist_ok=True)
+        f = folder / name
+        f.write_bytes(b"db")
+        os.utime(f, (when.timestamp(), when.timestamp()))
+
+    def test_the_newest_backup_is_the_newest_file_not_the_last_name(self):
+        """2026-10-16 audit: "The newest database backup is 5d old" was false. The check sorted the files by name and
+        read a hand-made pre-... file ('p' sorts after 'c') while the nightly backup had run every night; the alarm
+        rang every six hours until 2026-10-24."""
+        self.backup("convention_social-20261009-0230.sqlite3", NOON_UTC - timedelta(hours=10))
+        self.backup("pre-reschema-20260925-205747.sqlite3", NOON_UTC - timedelta(days=14))
+        f = watchdog.Findings()
+        watchdog.check_disk_and_backups(self.ctx, f, NOON_UTC)
+        self.assertEqual(dict(f.alerts), {}, "a nightly backup from ten hours ago is fresh, whatever sits beside it")
+        self.backup("convention_social-20261009-0230.sqlite3", NOON_UTC - timedelta(days=3))
+        f = watchdog.Findings()
+        watchdog.check_disk_and_backups(self.ctx, f, NOON_UTC)
+        self.assertIn("backup_stale", dict(f.alerts))
+        self.assertIn("3d", dict(f.alerts)["backup_stale"])
+
+
 class Heartbeat(WatchCase):
     """7.4 (2026-10-13): the one watch that does not live on the Mini. The watchdog checks in with the site
     hourly; the site's cron tells the phone when the Mini goes quiet."""
