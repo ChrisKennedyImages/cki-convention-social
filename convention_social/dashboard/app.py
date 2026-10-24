@@ -867,7 +867,8 @@ def create_app() -> FastAPI:
 
     async def token_of(request: Request) -> str:
         from urllib.parse import parse_qs
-        raw = (await request.body()).decode("utf-8", "replace")
+        from .team_routes import small_body
+        raw = await small_body(request)                   # at most a token's worth, refused before it is read
         return (parse_qs(raw).get("token") or [raw.strip()])[0]
 
     def choose_by_token(conn, qid: int, token: str, how: str) -> PlainTextResponse:

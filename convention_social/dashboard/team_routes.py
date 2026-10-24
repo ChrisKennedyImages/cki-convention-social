@@ -24,8 +24,28 @@ def _row(conn, qid: int):
     return row
 
 
+TOKEN_BODY_MAX = 4096       # a signed token is about 110 bytes; anyone on the tailnet could POST gigabytes to the no-login routes
+
+
+async def small_body(request: Request, limit: int = TOKEN_BODY_MAX) -> str:
+    """The body of a token POST, at most `limit` bytes; a longer one is refused before it is read (2026-10-24 audit: the
+    no-login token routes read any body whole into the dashboard's memory)."""
+    try:
+        if int(request.headers.get("content-length") or 0) > limit:
+            raise HTTPException(413, "too large for a token")
+    except ValueError:
+        pass
+    chunks, size = [], 0
+    async for chunk in request.stream():
+        size += len(chunk)
+        if size > limit:
+            raise HTTPException(413, "too large for a token")
+        chunks.append(chunk)
+    return b"".join(chunks).decode("utf-8", "replace")
+
+
 async def _token(request: Request) -> str:
-    raw = (await request.body()).decode("utf-8", "replace")
+    raw = await small_body(request)
     return (parse_qs(raw).get("token") or [raw.strip()])[0]
 
 
