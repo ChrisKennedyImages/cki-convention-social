@@ -64,7 +64,7 @@ class Repos(IsolatedCase):
         git(self.seed, "push", "-q", "origin", "main")
         return git(self.seed, "rev-parse", "HEAD")
 
-    def run_updater(self, dry=False, suite_ok=True, req_fail_on=None):
+    def run_updater(self, dry=False, suite_ok=True, put_back_fails=False):
         def suite(worktree):
             self.calls["suite"].append({"files": sorted(p.name for p in worktree.iterdir()),
                                         "b": (worktree / "b.txt").read_text() if (worktree / "b.txt").exists() else None})
@@ -73,7 +73,15 @@ class Repos(IsolatedCase):
         def requirements(repo, worktree):
             self.calls["requirements"] += 1
             self.calls.setdefault("requirements_from", []).append(str(worktree))
-            if self.calls["requirements"] == req_fail_on:
+            self.calls.setdefault("order", []).append("install")
+
+        def freeze(repo):
+            self.calls.setdefault("order", []).append("freeze")
+            return f"pillow==11.0.0\nrequests==2.32.3\n# freeze {len(self.calls['order'])}"
+
+        def restore(repo, before):
+            self.calls.setdefault("restored", []).append((str(repo), before))
+            if put_back_fails:
                 raise OSError("pip: no network")
 
         def migrations(repo):
@@ -96,8 +104,8 @@ class Repos(IsolatedCase):
             return self.deploy_ok, "LIVE on it" if self.deploy_ok else "not live: Cloudflare did not take the deploy"
 
         ctx = runner.Context("updater", self.conn, None, config.get_config(), dry, 0)
-        return updater.run(ctx, repo=self.repo, suite=suite, requirements=requirements, migrations=migrations, reels=reels,
-                           restart=restart, probe=lambda: self.dash, deploy=deploy)
+        return updater.run(ctx, repo=self.repo, suite=suite, requirements=requirements, freeze=freeze, restore=restore,
+                           migrations=migrations, reels=reels, restart=restart, probe=lambda: self.dash, deploy=deploy)
 
     def head(self):
         return git(self.repo, "rev-parse", "HEAD")
@@ -251,28 +259,29 @@ class Updater(Repos):
 
     def test_a_red_run_puts_the_requirements_back(self):
         """8.1 (2026-10-13): new requirements went into the live venv before the tests; a red run left the venv
-        on the new ones while the code stayed on the old. Now the checkout's own requirements are installed
-        again, and the line says so."""
+        on the new ones while the code stayed on the old. The venv is frozen before the install and put back to
+        that after a red run (what was added removed, what changed at its exact version), and the line says so."""
         head = self.head()
         self.commit("requirements.txt", "requests\n")
         line = self.run_updater(suite_ok=False)
         self.assertIn("tests failed", line)
         self.assertIn("requirements put back", line)
-        self.assertEqual(self.calls["requirements"], 2)
-        self.assertEqual(self.calls["requirements_from"][-1], str(self.repo), "from the checkout, which is still on the old commit")
+        self.assertEqual(self.calls["order"], ["freeze", "install"], "the venv is frozen before the candidate's requirements go in")
+        self.assertEqual(self.calls["restored"], [(str(self.repo), "pillow==11.0.0\nrequests==2.32.3\n# freeze 1")],
+                         "put back to that very freeze, in the live venv")
         self.assertEqual(self.head(), head)
         self.calls["requirements"] = 0
         self.commit("requirements.txt", "requests\nfixed\n")        # main moves: the refused commit itself is never tested again
         line = self.run_updater(suite_ok=True)
         self.assertIn("tests passed", line)
         self.assertNotIn("put back", line)
-        self.assertEqual(self.calls["requirements"], 1, "a green run installs once and keeps them")
+        self.assertEqual((self.calls["requirements"], len(self.calls["restored"])), (1, 1), "a green run installs once and keeps them")
 
     def test_requirements_that_cannot_be_put_back_are_an_error_said_out_loud(self):
         """8.1: the venv then holds the new commit's requirements while the code stays on the old one; the Agents
         page says so, with the commits, and the line does too."""
         self.commit("requirements.txt", "requests\n")
-        line = self.run_updater(suite_ok=False, req_fail_on=2)
+        line = self.run_updater(suite_ok=False, put_back_fails=True)
         self.assertIn("tests failed", line)
         self.assertIn("could NOT be put back (OSError)", line)
         kinds = [e["kind"] for e in db.rows(self.conn, "SELECT kind FROM errors WHERE agent='updater' ORDER BY id")]
@@ -285,6 +294,32 @@ class Updater(Repos):
         git(self.repo, "remote", "set-url", "origin", str(self.root / "nowhere.git"))
         self.assertEqual(self.run_updater(), "fetch failed")
         self.assertEqual(db.one(self.conn, "SELECT kind FROM errors WHERE agent='updater'")["kind"], "update_fetch")
+
+
+class PutBack(IsolatedCase):
+    def test_the_venv_goes_back_to_what_it_held_removed_and_exact(self):
+        """2026-10-16 audit, open until today: `pip install -r` of the old requirements.txt put nothing back (every pin
+        there is >=, and a file installs nothing it does not name). The put-back works from pip freeze: what the
+        candidate added is removed, what it changed goes back at its exact version, nothing else is touched."""
+        repo = self.root / "checkout"
+        (repo / ".venv" / "bin").mkdir(parents=True)
+        (repo / ".venv" / "bin" / "pip").write_text("")
+        before = "imageio-ffmpeg==0.6.0\npillow==11.0.0\nrequests==2.32.3\nours @ file:///Users/x/ours\n"
+        venv = {"now": "imageio-ffmpeg==0.6.0\npillow==12.0.0\nrequests==2.32.3\nours @ file:///Users/x/ours\nshiny-new==1.0\n"}
+        ran = []
+
+        def run(cmd, **kw):
+            self.assertEqual(cmd[0], str(repo / ".venv" / "bin" / "pip"), "the live venv's pip")
+            ran.append(cmd[1:])
+            return subprocess.CompletedProcess(cmd, 0, venv["now"] if cmd[1] == "freeze" else "", "")
+
+        updater.restore_requirements(repo, before, run=run)
+        self.assertEqual(ran, [["freeze"], ["uninstall", "-y", "-q", "shiny-new"], ["install", "-q", "--no-deps", "pillow==11.0.0"]])
+        ran.clear()
+        venv["now"] = before
+        updater.restore_requirements(repo, before, run=run)
+        self.assertEqual(ran, [["freeze"]], "already as it was: nothing installed or removed")
+        self.assertEqual(updater.frozen(self.root / "no-venv"), "", "a checkout without a venv has nothing to freeze")
 
 
 class RestartDashboard(IsolatedCase):
@@ -406,7 +441,7 @@ class Sync(Repos):
 
         def fake_run(ctx, **kw):
             return real(ctx, repo=self.repo, suite=suite,
-                        requirements=lambda r, w: None, migrations=lambda r: None,
+                        requirements=lambda r, w: None, freeze=lambda r: "", restore=lambda r, b: None, migrations=lambda r: None,
                         restart=lambda: "dashboard: restarted", probe=lambda: self.dash,
                         deploy=lambda repo: (self.deploys.append(1), (True, "LIVE"))[1], **kw)
         self.sleeps = []
@@ -585,6 +620,7 @@ class SyncLeavesTheSite(Repos):
 
         def fake_run(ctx, **kw):
             return real(ctx, repo=self.repo, suite=lambda wt: (True, "Ran 3 tests"), requirements=lambda r, w: None,
+                        freeze=lambda r: "", restore=lambda r, b: None,
                         migrations=lambda r: None, restart=lambda: "dashboard: restarted", probe=lambda: self.dash,
                         deploy=lambda repo: (deploys.append(1), (True, "LIVE"))[1], **kw)
         with mock.patch("convention_social.agents.updater.run", fake_run), \

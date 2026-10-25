@@ -83,11 +83,47 @@ def run_suite(worktree: Path) -> tuple[bool, str]:
     return r.returncode == 0, tail
 
 
-def install_requirements(repo: Path, worktree: Path) -> None:
+def _pip(repo: Path, *args: str, run: Callable = subprocess.run) -> str:
+    """The live venv's pip, when there is one (a checkout without .venv installs nothing)."""
     pip = repo / ".venv" / "bin" / "pip"
-    if pip.exists():
-        subprocess.run([str(pip), "install", "-q", "-r", str(worktree / "requirements.txt")],
-                       capture_output=True, text=True, timeout=15 * 60, check=True)
+    if not pip.exists():
+        return ""
+    return run([str(pip), *args], capture_output=True, text=True, timeout=15 * 60, check=True).stdout or ""
+
+
+def install_requirements(repo: Path, worktree: Path) -> None:
+    _pip(repo, "install", "-q", "-r", str(worktree / "requirements.txt"))
+
+
+def frozen(repo: Path, *, run: Callable = subprocess.run) -> str:
+    """`pip freeze` of the live venv: every package at its exact version, the thing to put back."""
+    return _pip(repo, "freeze", run=run)
+
+
+def _pins(freeze: str) -> dict[str, str]:
+    """{name: the line} for each `name==version` or `name @ url` in a pip freeze."""
+    pins = {}
+    for line in freeze.splitlines():
+        line = line.strip()
+        for sep in ("==", " @ "):
+            if sep in line:
+                pins[line.split(sep, 1)[0].strip().lower()] = line
+                break
+    return pins
+
+
+def restore_requirements(repo: Path, before: str, *, run: Callable = subprocess.run) -> None:
+    """The live venv back to `before` (its pip freeze from before the candidate's requirements went in): what the
+    candidate added is removed, what it changed is put back at the exact version, nothing else pulled in (--no-deps).
+    2026-10-16 audit, open until today: `pip install -r` of the old requirements.txt put nothing back, since every pin
+    there is >= and a file installs nothing that is not in it."""
+    was, now = _pins(before), _pins(frozen(repo, run=run))
+    added = sorted(name for name in now if name not in was)
+    if added:
+        _pip(repo, "uninstall", "-y", "-q", *added, run=run)
+    changed = [was[name] for name in sorted(was) if now.get(name) != was[name]]
+    if changed:
+        _pip(repo, "install", "-q", "--no-deps", *changed, run=run)
 
 
 def reels(repo: Path) -> None:
@@ -291,12 +327,14 @@ def servable(conn, repo: Optional[Path] = None) -> tuple[bool, str]:
 def run(ctx: runner.Context, *, repo: Optional[Path] = None,
         suite: Callable[[Path], tuple[bool, str]] = run_suite,
         requirements: Callable[[Path, Path], None] = install_requirements,
+        freeze: Callable[[Path], str] = frozen, restore: Callable[[Path, str], None] = restore_requirements,
         migrations: Callable[[Path], None] = migrate, reels: Callable[[Path], None] = reels,
         restart: Callable[[], str] = restart_dashboard,
         probe: Callable[[], Optional[str]] = dashboard_commit,
         deploy: Callable[[Path], tuple[bool, str]] = deploy_site, site: bool = True, retest: bool = False) -> str:
     repo = Path(repo or config.REPO_ROOT)
-    summary = update(ctx, repo, suite=suite, requirements=requirements, migrations=migrations, reels=reels, retest=retest)
+    summary = update(ctx, repo, suite=suite, requirements=requirements, freeze=freeze, restore=restore, migrations=migrations,
+                     reels=reels, retest=retest)
     if summary == "fetch failed":
         return summary
     ok, why = servable(ctx.conn, repo)
@@ -316,7 +354,8 @@ def run(ctx: runner.Context, *, repo: Optional[Path] = None,
 
 def update(ctx: runner.Context, repo: Path, *, suite: Callable[[Path], tuple[bool, str]],
            requirements: Callable[[Path, Path], None], migrations: Callable[[Path], None],
-           reels: Callable[[Path], None] = reels, retest: bool = False) -> str:
+           reels: Callable[[Path], None] = reels, retest: bool = False, freeze: Callable[[Path], str] = frozen,
+           restore: Callable[[Path, str], None] = restore_requirements) -> str:
     """`retest`: test the commit the suite refused once more (`ccs sync`, typed by Chris); the ten-minute run never does."""
     fetch = _git(repo, "fetch", "--quiet", "origin", "main", timeout=FETCH_TIMEOUT)
     if fetch.returncode != 0:
@@ -345,25 +384,25 @@ def update(ctx: runner.Context, repo: Path, *, suite: Callable[[Path], tuple[boo
     _git(repo, "worktree", "remove", "--force", str(worktree))
     shutil.rmtree(worktree, ignore_errors=True)
     _out(repo, "worktree", "add", "--detach", str(worktree), target)
-    installed = False
+    before = None                        # the live venv as it was, when the candidate's requirements go in before its tests
     try:
         venv = repo / ".venv"
         if venv.exists():
             (worktree / ".venv").symlink_to(venv)
         if "requirements.txt" in changed:
+            before = freeze(repo)
             requirements(repo, worktree)
-            installed = True
         ok, tail = suite(worktree)
     finally:
         _git(repo, "worktree", "remove", "--force", str(worktree))
         shutil.rmtree(worktree, ignore_errors=True)
     if not ok:
         put_back = ""
-        if installed:
+        if before is not None:
             # 8.1 (2026-10-13): the new requirements went into the live venv before the tests; the code stays on
-            # the old commit, so the venv goes back to the checkout's own requirements.txt
+            # the old commit, so the venv goes back to what it held (restore_requirements: removed, downgraded, exact)
             try:
-                requirements(repo, repo)
+                restore(repo, before)
                 put_back = "; requirements put back"
             except Exception as e:  # noqa: BLE001
                 put_back = f"; the requirements could NOT be put back ({type(e).__name__})"
