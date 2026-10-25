@@ -253,7 +253,7 @@ class DesignedDrafts(Case):
         row = db.one(self.conn, "SELECT * FROM content_queue WHERE id=?", (qid,))
         token = approve_token.issue(self.conn, row)
         anon = TestClient(create_app())
-        r = anon.get(f"/media/card/{qid}/{token}.jpg")
+        r = anon.get(f"/media/card/{qid}/{approve_token.card_key(row, token)}.jpg")
         self.assertEqual(r.status_code, 200)
         cover = json.loads(row["render_paths"])["cover"][0]
         self.assertEqual(r.content, open(cover, "rb").read(), "the reel's cover, not its Pinterest card")

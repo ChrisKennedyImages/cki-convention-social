@@ -24,7 +24,7 @@ from cryptography.hazmat.primitives.asymmetric import padding, rsa
 from fastapi.testclient import TestClient
 
 from convention_social import cli
-from convention_social.core import access, auth, config, notify, tunnel
+from convention_social.core import access, approve_token, auth, config, notify, tunnel
 from convention_social.dashboard.app import COOKIE, create_app
 from tests._base import IsolatedCase
 
@@ -490,6 +490,9 @@ class DashboardBehindAccess(BehindAccess):
 
 
 # ---------------------------------------------------------------------------------------------- the links
+DRAFT = {"id": 7, "updated_at": "2026-10-14T10:00:00+00:00"}      # the row a card is addressed for
+
+
 class Links(AccessCase):
     """Behind Access only a browser gets in, so a ping's buttons open the browser: the ntfy app's own POST and
     its picture fetch would land on Cloudflare's sign-in, and the Approve would look done when nothing was."""
@@ -503,7 +506,7 @@ class Links(AccessCase):
         self.assertEqual(actions, "; ".join(f"view, {label}, https://{HOST}/queue/7/choose-by-token/{how}?token=1.2.3, clear=true"
                                             for how, label in (("now", "Post now"), ("pace", "Follow the pace"), ("skip", "Skip"))))
         self.assertNotIn("http, ", actions)
-        self.assertIsNone(notify.card_link(7, "1.2.3"))
+        self.assertIsNone(notify.card_link(DRAFT, "1.2.3"))
 
     def test_any_address_on_the_sites_domain_counts_as_behind_access(self):
         self.configure(TUNNEL_HOSTNAME=None, DASHBOARD_PUBLIC_URL="https://dashboard.eventcaliber.com")
@@ -515,7 +518,8 @@ class Links(AccessCase):
         self.assertFalse(access.through_access(notify.link("/")))
         self.assertTrue(notify.choice_actions(7, "1.2.3").startswith(
             "http, Post now, https://mac-mini.tail915d2c.ts.net:8443/queue/7/choose-by-token/now, method=POST"))
-        self.assertEqual(notify.card_link(7, "1.2.3"), "https://mac-mini.tail915d2c.ts.net:8443/media/card/7/1.2.3.jpg")
+        self.assertEqual(notify.card_link(DRAFT, "1.2.3"),
+                         f"https://mac-mini.tail915d2c.ts.net:8443/media/card/7/{approve_token.card_key(DRAFT, '1.2.3')}.jpg")
 
     def test_no_picture_means_no_filename_either(self):
         """ntfy treats a message with a Filename and no Attach as a file upload: the words would arrive as a file."""

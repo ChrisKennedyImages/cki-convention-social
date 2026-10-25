@@ -974,12 +974,13 @@ def create_app() -> FastAPI:
 
     @app.get("/media/card/{qid}/{name}")
     def media_card(qid: int, name: str, conn=Depends(conn_dep)):
-        """The draft's card for the ping (ntfy `Attach`): fetched by the phone with the ping's token, no login.
-        The token is checked like the button's, so an old or spent one serves nothing."""
+        """The draft's card for the ping (ntfy `Attach`): fetched by the phone with the ping token's card key, no login
+        (never the token itself, which would land in the access log). The key dies with the token: an old or spent one
+        serves nothing."""
         if not name.endswith(".jpg"):
             raise HTTPException(404)
         row = db.one(conn, "SELECT * FROM content_queue WHERE id=?", (qid,))
-        if row is None or not approve_token.check(conn, row, name[:-4])[0]:
+        if row is None or not approve_token.check_card(conn, row, name[:-4]):
             raise HTTPException(404)
         renders = json.loads(row["render_paths"] or "{}")
         # a reel's own cover first (2026-10-15: the ping showed the reel's Pinterest card); an instant photo's Story (the

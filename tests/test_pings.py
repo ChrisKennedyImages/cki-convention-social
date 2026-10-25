@@ -122,7 +122,9 @@ class Draft(IsolatedCase):
         self.assertIn(f".{nonce}.", kw["actions"], "the token in the buttons is the one the nonce backs")
         self.assertNotIn("view, Open", kw["actions"], "three choices are the most ntfy shows; a tap on the ping opens the draft")
         token = kw["actions"].split("body='token=", 1)[1].split("'", 1)[0]
-        self.assertEqual(kw["attach"], f"https://mac-mini.example:8443/media/card/{qid}/{token}.jpg")
+        row = db.one(conn, "SELECT * FROM content_queue WHERE id=?", (qid,))
+        self.assertEqual(kw["attach"], f"https://mac-mini.example:8443/media/card/{qid}/{approve_token.card_key(row, token)}.jpg")
+        self.assertNotIn(token, kw["attach"], "the card's address never carries the approve token (it lands in the access log)")
         conn.close()
 
 
@@ -219,16 +221,23 @@ class ApproveFromThePing(IsolatedCase):
         self.assertEqual(self.row()["status"], "draft")
         self.assertEqual(self.approve(token).status_code, 200, "the token itself still stands once the photo is usable")
 
-    def test_the_card_is_served_without_a_cookie_only_with_a_valid_token(self):
+    def test_the_card_is_served_without_a_cookie_only_with_the_tokens_card_key(self):
+        """2026-10-24 audit: the card's address carried the approve token itself, and the dashboard's access log kept 59 of
+        them. The address carries the token's card key, which opens the card and approves nothing."""
         token = approve_token.issue(self.conn, self.row())
-        r = self.client.get(f"/media/card/{self.qid}/{token}.jpg")
+        key = approve_token.card_key(self.row(), token)
+        self.assertNotIn(token.split(".")[1], key, "neither the token nor its nonce is in the address")
+        r = self.client.get(f"/media/card/{self.qid}/{key}.jpg")
         self.assertEqual((r.status_code, r.headers["content-type"]), (200, "image/jpeg"))
+        self.assertEqual(self.client.get(f"/media/card/{self.qid}/{token}.jpg").status_code, 404, "the token itself opens nothing")
         self.assertEqual(self.client.get(f"/media/card/{self.qid}/nonsense.jpg").status_code, 404)
-        self.assertEqual(self.client.get(f"/media/card/{self.qid}/{token[:-4]}0000.jpg").status_code, 404)
+        self.assertEqual(self.client.get(f"/media/card/{self.qid}/{key[:-4]}0000.jpg").status_code, 404)
+        self.assertEqual(self.approve(key).status_code, 409, "the card key approves nothing")
+        self.assertEqual(self.row()["status"], "draft")
         self.assertNotEqual(self.client.get(f"/media/render/{self.qid}/4x5/1", follow_redirects=False).status_code, 200,
                             "the signed-in route stays signed in")
         self.approve(token)
-        self.assertEqual(self.client.get(f"/media/card/{self.qid}/{token}.jpg").status_code, 404, "single use covers the card")
+        self.assertEqual(self.client.get(f"/media/card/{self.qid}/{key}.jpg").status_code, 404, "single use covers the card")
 
     def test_the_header_forms_are_the_ones_ntfy_documents(self):
         os.environ["NTFY_TOPIC"] = "event-caliber-abc"
@@ -238,15 +247,16 @@ class ApproveFromThePing(IsolatedCase):
         def ok(url, **kw):
             seen.update(url=url, **kw)
             return mock.Mock(status_code=200)
-        actions = notify.choice_actions(7, "1.2.3")
+        row, qid = self.row(), self.qid
+        actions = notify.choice_actions(qid, "1.2.3")
         self.assertEqual(notify.push_result("t", "m", dry_run=False, transport=ok, actions=actions,
-                                            attach=notify.card_link(7, "1.2.3"), filename="post-7.jpg"), "sent")
+                                            attach=notify.card_link(row, "1.2.3"), filename=f"post-{qid}.jpg"), "sent")
         self.assertEqual(seen["headers"]["Actions"], "; ".join(
-            f"http, {label}, https://mac-mini.example:8443/queue/7/choose-by-token/{how}, method=POST, "
+            f"http, {label}, https://mac-mini.example:8443/queue/{qid}/choose-by-token/{how}, method=POST, "
             "headers.Content-Type=application/x-www-form-urlencoded, body='token=1.2.3', clear=true"
             for how, label in (("now", "Post now"), ("pace", "Follow the pace"), ("skip", "Skip"))))
-        self.assertEqual(seen["headers"]["Attach"], "https://mac-mini.example:8443/media/card/7/1.2.3.jpg")
-        self.assertEqual(seen["headers"]["Filename"], "post-7.jpg")
+        self.assertEqual(seen["headers"]["Attach"], f"https://mac-mini.example:8443/media/card/{qid}/{approve_token.card_key(row, '1.2.3')}.jpg")
+        self.assertEqual(seen["headers"]["Filename"], f"post-{qid}.jpg")
         seen.clear()
         notify.push_result("t", "m", dry_run=False, transport=ok)
         self.assertNotIn("Actions", seen["headers"])

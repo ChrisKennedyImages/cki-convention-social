@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import sys
 
-from . import access, config, runner
+from . import access, approve_token, config, runner
 
 NTFY_URL = "https://ntfy.sh"
 
@@ -86,12 +86,13 @@ def look_actions(qid: int, token: str) -> str:
     return f"{open_action(qid)}; " + _choice(qid, token, "skip", "Skip")
 
 
-def card_link(qid: int, token: str) -> str | None:
-    """The rendered card, served by the dashboard to the phone with the token and no login (`Attach`). None behind
-    Cloudflare Access: the ntfy app fetches it itself, without the browser's sign-in, and would get the sign-in page."""
+def card_link(row, token: str) -> str | None:
+    """The rendered card, served by the dashboard to the phone with no login (`Attach`), under the token's card key, never
+    the token itself (core/approve_token). None behind Cloudflare Access: the ntfy app fetches it itself, without the
+    browser's sign-in, and would get the sign-in page."""
     if access.through_access(link("/")):
         return None
-    return link(f"/media/card/{qid}/{token}.jpg")
+    return link(f"/media/card/{row['id']}/{approve_token.card_key(row, token)}.jpg")
 
 
 def push_result(title: str, message: str, *, dry_run: bool = True, priority: str = "high", transport=None,
