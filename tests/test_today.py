@@ -223,6 +223,17 @@ class DesignedDrafts(Case):
         self.assertEqual(len(set(stills)), len(stills), "the stills still take turns")
         self.assertNotEqual(designed.next_design(self.conn, has_music=False), "reel")
 
+    def test_a_reel_the_art_director_turned_back_is_not_one_of_the_two(self):
+        """A turn-back never reached him, so it is not one of the two reels of three (2026-10-24 audit: it counted, and
+        each turn-back cost the day a reel)."""
+        self.row([self.photo(1)], design="reel", source=designed.SOURCE)
+        self.row([self.photo(2)], design="reel", source=designed.SOURCE, status="rejected", art="reject")
+        self.assertEqual(designed.next_design(self.conn, has_music=True), "reel")
+        self.row([self.photo(3)], design="reel", source=designed.SOURCE)
+        self.assertNotEqual(designed.next_design(self.conn, has_music=True), "reel", "two reels reached him: a still now")
+        self.row([self.photo(4)], design="poster", source=designed.SOURCE, status="rejected", art="reject")
+        self.assertNotEqual(designed.next_design(self.conn, has_music=True), "reel", "a turned-back still is no post either")
+
     def test_a_reels_ping_says_reel_and_opens_it_playing(self):
         title, message = content.ping_words("Event Caliber", "reel", 6, "Saturday", designed=False)
         self.assertTrue(title.startswith("Reel:"), title)

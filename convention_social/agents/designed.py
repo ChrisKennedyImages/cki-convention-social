@@ -89,15 +89,19 @@ def rows(conn: sqlite3.Connection) -> list[sqlite3.Row]:
                          "ORDER BY id DESC", (SOURCE,))
 
 
+def reached_him(row) -> bool:
+    """A designed draft that reached him: waiting, chosen or skipped by him. One the art director turned back never did."""
+    return row["status"] != "rejected" or bool(_meta(row).get("rejected_by"))
+
+
 def of_day(conn: sqlite3.Connection, day: date) -> tuple[int, int]:
-    """(shown, tried) today: the designed drafts that reached him (waiting, chosen or skipped), and every try,
-    the art director's turn-backs included."""
+    """(shown, tried) today: the designed drafts that reached him, and every try, the art director's turn-backs included."""
     shown = tried = 0
     for r in rows(conn):
         if _meta(r).get("designed_day") != day.isoformat():
             continue
         tried += 1
-        if r["status"] != "rejected" or _meta(r).get("rejected_by"):
+        if reached_him(r):
             shown += 1
     return shown, tried
 
@@ -150,10 +154,11 @@ REELS_OF_THREE = 2              # Chris, 2026-10-23: "Mostly reels": two of ever
 
 
 def next_design(conn: sqlite3.Connection, has_music: bool) -> str:
-    """A reel while fewer than REELS_OF_THREE of the last three designed drafts were reels (music only); otherwise the
-    still design used least lately (never used first), in the list's order on a tie."""
+    """A reel while fewer than REELS_OF_THREE of the last three designed drafts that reached him were reels (music only;
+    a reel the art director turned back is not one of the three, 2026-10-24 audit); otherwise the still design used
+    least lately (never used first), in the list's order on a tie."""
     if has_music:
-        recent = [(_meta(r).get("design_wanted") or _meta(r).get("design")) for r in rows(conn)[:2]]
+        recent = [(_meta(r).get("design_wanted") or _meta(r).get("design")) for r in rows(conn) if reached_him(r)][:2]
         if recent.count("reel") < REELS_OF_THREE:          # a reel unless both of the last two were
             return "reel"
     choices = [d for d in designs(has_music) if d != "reel"]
