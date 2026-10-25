@@ -104,7 +104,10 @@ def access_token(conn: Optional[sqlite3.Connection] = None, *, refresh_fn: Optio
                 creds.refresh(Request())
         except Exception as e:  # noqa: BLE001 — RefreshError (invalid_grant), network
             name = type(e).__name__
-            dead = name == "RefreshError" or "invalid_grant" in str(e)
+            # google-auth tries Google's token endpoint again itself on a 500, 503, 504, 408 or 429, and marks the
+            # RefreshError it raises when that still fails `retryable`: Google's fault, not a dead sign-in (open since the
+            # 10-16 audit: such a day would have read "sign in again")
+            dead = (name == "RefreshError" and not getattr(e, "retryable", False)) or "invalid_grant" in str(e)
             set_state(conn, "expired" if dead else "ok", f"{name}: {str(e)[:200]}")
             if dead:
                 raise DriveAuthError("Google Drive sign-in has expired. Run `bin/ccs drive login` again.") from e
