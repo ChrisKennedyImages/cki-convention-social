@@ -4,6 +4,11 @@ A save lands whole or not at all (tmp + os.replace), the last good version
 survives as a rolling <name>.bak, and an unparsable file is copied to a
 .corrupt-<ts> sidecar before anything may overwrite it. Used for small JSON
 caches (Buffer channel ids, the Drive token); everything relational lives in SQLite.
+
+A `private` file (the Drive token) and its .bak and .tmp are readable by this user
+alone from their first byte; a corrupt sidecar always is, whatever it copies, since
+it may hold a token (2026-10-24 audit: two sidecars of the Drive token sat world-
+readable in cache/ with the refresh token in them).
 """
 from __future__ import annotations
 
@@ -21,6 +26,17 @@ def _bak_path(path: Path) -> Path:
     return path.with_name(path.name + ".bak")
 
 
+def _write(path: Path, blob: bytes, *, private: bool) -> None:
+    """`private`: mode 600 before anything is written, never written and then narrowed."""
+    if not private:
+        path.write_bytes(blob)
+        return
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "wb") as f:
+        os.fchmod(fd, 0o600)                 # a file that already existed keeps its old mode on open
+        f.write(blob)
+
+
 def preserve_corrupt(path: Path) -> Path | None:
     try:
         path = Path(path)
@@ -34,7 +50,7 @@ def preserve_corrupt(path: Path) -> Path | None:
             except OSError:
                 continue
         sidecar = path.with_name(path.name + ".corrupt-" + datetime.now().strftime("%Y%m%dT%H%M%S"))
-        sidecar.write_bytes(blob)
+        _write(sidecar, blob, private=True)
         log.warning("preserved corrupt %s -> %s", path.name, sidecar.name)
         return sidecar
     except Exception as e:  # noqa: BLE001
@@ -73,14 +89,9 @@ def save_json(path, obj: Any, *, indent=None, sort_keys: bool = False, private: 
             preserve_corrupt(path)
         else:
             try:
-                bak = _bak_path(path)
-                bak.write_bytes(path.read_bytes())
-                if private:
-                    bak.chmod(0o600)
+                _write(_bak_path(path), path.read_bytes(), private=private)
             except OSError as e:
                 log.warning("could not refresh %s.bak: %s", path.name, e)
     tmp = path.with_name(path.name + ".tmp")
-    tmp.write_text(text)
-    if private:
-        tmp.chmod(0o600)
+    _write(tmp, text.encode("utf-8"), private=private)
     os.replace(tmp, path)

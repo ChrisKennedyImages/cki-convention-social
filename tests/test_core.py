@@ -280,3 +280,23 @@ class StateIO(IsolatedCase):
         self.assertEqual(p.stat().st_mode & 0o777, 0o600)
         p.write_text("{broken")
         self.assertEqual(state_io.load_json(p, {}), {"a": 1})
+
+    def test_a_corrupt_copy_is_readable_by_this_user_alone(self):
+        """2026-10-24 audit: two corrupt copies of the Drive token sat in cache/ world-readable, the refresh token in
+        them. A sidecar is 600 whatever it copies, and so are a private file's .bak and .tmp, from their first byte."""
+        old_umask = os.umask(0o022)                # the Mini's own default: a plain write would be 644
+        self.addCleanup(os.umask, old_umask)
+        p = self.root / "google_token.json"
+        state_io.save_json(p, {"refresh_token": "r1"}, private=True)
+        state_io.save_json(p, {"refresh_token": "r2"}, private=True)
+        p.write_text("{broken")
+        self.assertEqual(state_io.load_json(p, {}), {"refresh_token": "r1"})
+        sidecars = list(self.root.glob("google_token.json.corrupt-*"))
+        self.assertEqual(len(sidecars), 1)
+        self.assertEqual(oct(sidecars[0].stat().st_mode & 0o777), "0o600", "the sidecar")
+        self.assertEqual(oct(p.with_name("google_token.json.bak").stat().st_mode & 0o777), "0o600", "the .bak")
+        state_io.save_json(self.root / "plain.json", {"a": 1})
+        (self.root / "plain.json").write_text("{broken")
+        state_io.load_json(self.root / "plain.json", {})
+        self.assertEqual([oct(s.stat().st_mode & 0o777) for s in self.root.glob("plain.json.corrupt-*")], ["0o600"],
+                         "a sidecar of a plain file too: nothing but the suite reads it")
