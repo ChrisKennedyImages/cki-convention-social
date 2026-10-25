@@ -16,6 +16,7 @@ raise BufferError. The transport is injectable so tests never touch the network.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import sqlite3
@@ -202,14 +203,20 @@ class BufferClient:
         return [o for o in ((data.get("account") or {}).get("organizations")) or [] if o.get("id")]
 
     def organization_id(self) -> str:
-        """The organization chosen on the dashboard's Buffer page (BUFFER_ORGANIZATION_ID), or the only
-        one the key sees. A key that sees several and none chosen fails closed: posting to the wrong
-        account's channels is the one mistake this must never make."""
+        """The organization chosen on the dashboard's Buffer page (BUFFER_ORGANIZATION_ID), or the one this key was
+        found to see when the channels were last read (the channel cache, written with the key's fingerprint), or else
+        the only one the key sees, asked of Buffer. A key that sees several and none chosen fails closed: posting to the
+        wrong account's channels is the one mistake this must never make. (2026-10-24 audit: the hourly channel refresh
+        and the hourly reconcile each asked Organizations first, two requests an hour of the 200-a-day ceiling for nothing.)"""
         if self._org:
             return self._org
         chosen = config.getenv("BUFFER_ORGANIZATION_ID", "") or ""
         if chosen:
             self._org = chosen
+            return self._org
+        cached = self._cached_channels()
+        if cached:
+            self._org = cached["organizationId"]
             return self._org
         orgs = self.organizations()
         if not orgs:
@@ -223,16 +230,28 @@ class BufferClient:
     def cache_path():
         return config.get_config().data_root / "cache" / "buffer_channels.json"
 
-    def channels(self, refresh: bool = False) -> list[dict]:
+    def _key_fingerprint(self) -> str:
+        """Which key the channel cache was read with (never the key): another key is another account."""
+        return hashlib.sha256(self.api_key.encode()).hexdigest()[:16]
+
+    def _cached_channels(self) -> Optional[dict]:
+        """The channel cache when it is this key's and the chosen organization's; else None."""
         cached = state_io.load_json(self.cache_path(), {})
         chosen = config.getenv("BUFFER_ORGANIZATION_ID", "") or ""
-        if not refresh and isinstance(cached, dict) and cached.get("channels") and (not chosen or cached.get("organizationId") == chosen):
-            self._org = self._org or cached.get("organizationId")
+        if (isinstance(cached, dict) and cached.get("channels") and cached.get("organizationId")
+                and cached.get("key") == self._key_fingerprint() and (not chosen or cached["organizationId"] == chosen)):
+            return cached
+        return None
+
+    def channels(self, refresh: bool = False) -> list[dict]:
+        cached = self._cached_channels()
+        if cached and not refresh:
+            self._org = self._org or cached["organizationId"]
             return cached["channels"]
         org = self.organization_id()
         data = self._gql(Q_CHANNELS, {"input": {"organizationId": org}}, op="Channels")
         chans = data.get("channels") or []
-        state_io.save_json(self.cache_path(), {"organizationId": org, "channels": chans,
+        state_io.save_json(self.cache_path(), {"organizationId": org, "channels": chans, "key": self._key_fingerprint(),
                                                "fetched_at": datetime.now(timezone.utc).isoformat()}, indent=2)
         return chans
 

@@ -3,11 +3,12 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from datetime import date, datetime, timedelta, timezone
 
 from convention_social.buffer import budget, media, metrics, payloads
 from convention_social.buffer.client import (BufferBudgetExceeded, BufferClient, BufferError, BufferRateLimited)
-from convention_social.core import config, db, settings
+from convention_social.core import config, db, settings, state_io
 from tests._fakes import AgentCase, FakeBuffer, add_channels, make_ctx
 from tests._photos import jpeg_bytes
 
@@ -25,6 +26,27 @@ class Client(AgentCase):
         self.assertEqual(len(BufferClient("test-key", conn=conn, transport=fake).channels()), 3)
         self.assertEqual(len(fake.calls), 2, "the cache served the second lookup")
         self.assertEqual(db.one(conn, "SELECT COUNT(*) n FROM api_usage WHERE provider='buffer'")["n"], 2)
+
+    def test_the_organization_is_remembered_with_the_channels_so_an_hourly_call_costs_one_request(self):
+        """2026-10-24 audit: the watchdog's hourly channel refresh and the publisher's hourly reconcile each asked
+        Organizations first: 128 requests in a day of the 200 ceiling, nearly half of them that one question. The
+        channel cache keeps the organization with the key's fingerprint; another key is another account, asked afresh."""
+        conn = self.connect()
+        fake = FakeBuffer()
+        ops = lambda f: [re.match(r"\w+ (\w+)", c[0]).group(1) for c in f.calls]  # noqa: E731  the operations' names
+        BufferClient("test-key", conn=conn, transport=fake).channels()
+        self.assertEqual(ops(fake), ["Organizations", "Channels"], "the first time: who am I, then the channels")
+        fake.calls.clear()
+        BufferClient("test-key", conn=conn, transport=fake).channels(refresh=True)          # the watchdog, an hour later
+        self.assertEqual(ops(fake), ["Channels"])
+        fake.calls.clear()
+        BufferClient("test-key", conn=conn, transport=fake).posts(status="sent")            # the publisher's reconcile
+        self.assertEqual(ops(fake), ["Posts"])
+        other = FakeBuffer(api_key="another-key")
+        BufferClient("another-key", conn=conn, transport=other).channels(refresh=True)
+        self.assertEqual(ops(other), ["Organizations", "Channels"], "another key is another account")
+        cached = state_io.load_json(BufferClient.cache_path(), {})
+        self.assertNotIn("another-key", json.dumps(cached), "the cache names the key by its fingerprint, never the key")
 
     def test_create_post_needs_a_positive_success_shape(self):
         conn = self.connect()

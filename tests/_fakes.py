@@ -72,10 +72,12 @@ class FakeBuffer:
     def __init__(self, *, status_sequence=None, reject_at=(), http_status=200, retry_after=None,
                  disconnected=(), error_message="Image could not be fetched", schema=None, orgs=None, channels=None,
                  unions=None, raise_on_create=(), create_http=None, posts_nodes=None, raise_on_posts=False,
-                 reject_message="board not found"):
+                 reject_message="board not found", api_key="test-key"):
         """`raise_on_create`: 1-based createPost calls on which the transport raises (Buffer did not answer);
         `create_http`: {call: HTTP status} answered instead; `posts_nodes`: what the Posts query lists when set;
-        `raise_on_posts`: the transport raises on the Posts query; `reject_message`: Buffer's words on a refusal."""
+        `raise_on_posts`: the transport raises on the Posts query; `reject_message`: Buffer's words on a refusal;
+        `api_key`: the one key this account answers to."""
+        self.api_key = api_key
         self.schema = schema if schema is not None else SCHEMA
         self.unions = unions if unions is not None else UNIONS
         self.orgs = orgs if orgs is not None else [{"id": "org-1", "name": "Event Caliber"}]
@@ -101,7 +103,7 @@ class FakeBuffer:
         op = payload["query"].strip().split("\n")[0]
         self.calls.append((op, payload["variables"]))
         assert url == "https://api.buffer.com"
-        assert headers["Authorization"] == "Bearer test-key"
+        assert headers["Authorization"] == f"Bearer {self.api_key}"
         assert headers["User-Agent"] == "cki-convention-social/0.1"
         if self.http_status == 429:
             return Response(429, {"Retry-After": str(self.retry_after or 42)}, {})
