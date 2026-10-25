@@ -522,10 +522,6 @@ def total_frames(kind: str, n: int = 6) -> int:
     return deal + room * n + morph + spin + end
 
 
-# the face match reel is retired (2026-10-11): it explained the delivery service, and a reel keeps to the photos
-REELS = {"rooms": rooms_reel}
-
-
 # The cover is a frame of the reel itself: Instagram shows the frame at thumbnailOffset (no network takes a
 # cover image, 2026-10-16), and the dashboard shows the same frame drawn as the cover still.
 COVER_FRAME = ROOMS_TIMING[0] + 20
@@ -552,5 +548,5 @@ def reel_stills(kind: str, shots: Sequence[Shot], copy: MotionCopy, *, out_dir: 
             saved.append(save(img, out_dir / f"{kind}-{i:03d}.jpg", meta))
         return _out
 
-    REELS[kind](shots, copy, out=out_dir / "unused.mp4", official=official, only=picks, encoder=keep)
+    rooms_reel(shots, copy, out=out_dir / "unused.mp4", official=official, only=picks, encoder=keep)
     return saved

@@ -54,8 +54,6 @@ Hard rules:
 7. Search: each caption is found through its words. Use the search phrase you are given word for word in the first sentence, and one or two of the related phrases word for word in the body, written as a person would say them, never as a list of keywords. The Instagram caption's first line is under 125 characters. The Pinterest caption opens with the search phrase in a first sentence under 100 characters: that sentence is the pin's title.
 8. alt_text: one plain sentence, under 125 characters, saying literally what the photo shows for someone who cannot see it. No names, no event, no handles.
 
-Separately, in "privacy", list anything visible that could identify a private person beyond their face: a readable badge name, a vehicle plate, a screen or document with personal details.
-
 Return JSON only, matching the schema you are given."""
 
 OUTPUT_SCHEMA = {
@@ -69,9 +67,8 @@ OUTPUT_SCHEMA = {
             "additionalProperties": False,
         },
         "alt_text": {"type": "string", "description": "Literal, under 125 characters, no names."},
-        "privacy": {"type": "array", "items": {"type": "string", "enum": ["badge_name", "vehicle_plate", "screen", "document"]}},
     },
-    "required": ["photo_summary", "captions", "alt_text", "privacy"],
+    "required": ["photo_summary", "captions", "alt_text"],
     "additionalProperties": False,
 }
 
@@ -94,7 +91,6 @@ class Draft:
     captions: dict[str, str]
     photo_summary: str
     model: str
-    privacy: tuple[str, ...] = ()
     input_tokens: int = 0
     output_tokens: int = 0
     raw: dict = field(default_factory=dict)
@@ -198,7 +194,6 @@ class ClaudeDrafter:
         data = json.loads(text)
         captions = {net: tidy(words) for net, words in data["captions"].items()}
         return Draft(captions=captions, photo_summary=data["photo_summary"], model=answered_by,
-                     privacy=tuple(data.get("privacy") or ()),
                      input_tokens=int(usage.input_tokens or 0), output_tokens=int(usage.output_tokens or 0), raw=data,
                      alt_text=tidy(data.get("alt_text") or ""))
 

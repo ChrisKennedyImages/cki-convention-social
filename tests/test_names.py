@@ -77,7 +77,7 @@ class Writers(IsolatedCase):
 
             def create(self, **kw):
                 seen.update(kw)
-                body = {"photo_summary": "A speaker.", "possible_minor": False, "privacy": [],
+                body = {"photo_summary": "A speaker.",
                         "captions": {n: "A conference stage before the keynote." for n in claude.NETWORKS}}
                 return types.SimpleNamespace(content=[types.SimpleNamespace(type="text", text=json.dumps(body))], stop_reason="end_turn",
                                              model="claude-opus-5", usage=types.SimpleNamespace(input_tokens=10, output_tokens=10))
@@ -202,3 +202,11 @@ class DailyDraft(IsolatedCase):
             for name in ("cpac", "liberty", "jordan"):
                 self.assertNotIn(name, fields, "nor in the file's own search fields")
         conn.close()
+
+
+class NothingUnread(IsolatedCase):
+    def test_the_caption_writer_asks_for_nothing_it_never_reads(self):
+        """2026-10-24 audit: Draft.privacy was asked of the model on every caption and read by nothing."""
+        self.assertNotIn("privacy", claude.SYSTEM_PROMPT)
+        self.assertNotIn("privacy", claude.OUTPUT_SCHEMA["properties"])
+        self.assertFalse(hasattr(claude.Draft, "privacy"))

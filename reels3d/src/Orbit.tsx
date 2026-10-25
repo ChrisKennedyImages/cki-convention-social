@@ -6,7 +6,7 @@ import {AbsoluteFill, Audio, staticFile} from 'remotion';
 import {ThreeCanvas} from '@remotion/three';
 import {useThree} from '@react-three/fiber';
 import * as THREE from 'three';
-import {Close, CYAN, H, K, Label, Props, TOTAL, END, W, easeIO, handheld, useFonts, useFrameInfo, useTextures} from './lib';
+import {Close, H, K, Label, Props, TOTAL, END, W, easeIO, handheld, useFonts, useFrameInfo, useTextures} from './lib';
 
 const R = 3, CARD_H = 1.3, THICK = 0.06, VFOV = 36, CAM_Z = 12;
 // the front card comes forward until it fills 95% of the frame's width
@@ -58,8 +58,7 @@ export const Orbit: React.FC<Props> = (props) => {
                 const ang = k * step;
                 const r = R + front * Math.max(0, fillAt(w) - R);
                 return (
-                  <group key={k} position={[Math.sin(ang) * r, 0.2 * front, Math.cos(ang) * r]} rotation={[0, ang, 0]}
-                         scale={1}>
+                  <group key={k} position={[Math.sin(ang) * r, 0.2 * front, Math.cos(ang) * r]} rotation={[0, ang, 0]}>
                     <mesh>
                       <boxGeometry args={[w, CARD_H, THICK]} />
                       <meshStandardMaterial attach="material-0" color="#111" metalness={0.9} roughness={0.25} />

@@ -92,16 +92,30 @@ class Pieces(IsolatedCase):
             self.assertGreater(cyan_pixels(close, (0, 900, 1080, 1250)), 30000)
 
     def test_the_reel_is_fifteen_seconds_of_vertical_frames(self):
-        for kind, fn in (("rooms", motion.rooms_reel),):
-            total = motion.total_frames(kind)
-            self.assertEqual(total, 15 * 30, kind)
-            got = []
-            picks = [0, 45, 120, 260, 330, total - 1]
-            fn(shots(), motion.MotionCopy(), out=self.root / f"{kind}.mp4", only=picks, encoder=lambda frames, out: got.extend(frames))
-            self.assertEqual(len(got), len(picks))
-            for im in got:
-                self.assertEqual(im.size, (1080, 1920))
-            self.assertGreater(cyan_pixels(got[-1], (0, 1000, 1080, 1250)), 30000, kind)   # the ask closes it
+        total = motion.total_frames("rooms")
+        self.assertEqual(total, 15 * 30)
+        got = []
+        picks = [0, 45, 120, 260, 330, total - 1]
+        motion.rooms_reel(shots(), motion.MotionCopy(), out=self.root / "rooms.mp4", only=picks, encoder=lambda frames, out: got.extend(frames))
+        self.assertEqual(len(got), len(picks))
+        for im in got:
+            self.assertEqual(im.size, (1080, 1920))
+        self.assertGreater(cyan_pixels(got[-1], (0, 1000, 1080, 1250)), 30000, "the ask closes it")
+
+    def test_nothing_is_left_of_the_retired_reels_and_the_one_entry_tables(self):
+        """2026-10-24 audit: dead code left by #93 to #98. The rooms reel is the one motion reel, so no table of reels;
+        the 3D reels import nothing they do not use and keep no helper nobody calls."""
+        from convention_social.core.config import REPO_ROOT
+        src = REPO_ROOT / "reels3d" / "src"
+        self.assertFalse(hasattr(motion, "REELS"))
+        self.assertNotIn("fadeIn", (src / "lib.tsx").read_text())
+        for name in ("Gallery", "Orbit"):
+            text = (src / f"{name}.tsx").read_text()
+            imported = text.split("from './lib'")[0].rsplit("import {", 1)[1]
+            self.assertNotIn("CYAN", imported, name)
+        self.assertNotIn("scale={1}", (src / "Orbit.tsx").read_text())
+        self.assertNotIn("const lit =", (src / "Gallery.tsx").read_text())
+        self.assertNotIn("let rot = new THREE.Euler(0, 0, ang + Math.PI / 2);", (src / "Ring.tsx").read_text())
 
     def test_the_rules_stop_every_piece(self):
         bad = shots()

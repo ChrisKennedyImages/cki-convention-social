@@ -60,9 +60,8 @@ export const Ring: React.FC<Props> = ({photos, cuts, grid, music}) => {
             const fall = ((f - OPEN_AT) * 0.028 + k * 0.9) % 14;
             const cas = new THREE.Vector3([-1.25, 1.35, 0.1][col], 7 - fall, depth);
             let pos = ring.clone().lerp(cas, open);
-            let rot = new THREE.Euler(0, 0, ang + Math.PI / 2);
             const tilt = [0.12, -0.16, 0.08][col];
-            rot = new THREE.Euler(0, open * tilt * 2, (ang + Math.PI / 2) * (1 - open) + tilt * open);
+            let rot = new THREE.Euler(0, open * tilt * 2, (ang + Math.PI / 2) * (1 - open) + tilt * open);
             const aspect = it.w / it.h;
             let w = CARD + (1.6 - CARD) * open, h = CARD + (1.6 / aspect - CARD) * open;
             const isHero = k === HERO;
