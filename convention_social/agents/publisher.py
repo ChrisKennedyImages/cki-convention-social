@@ -29,7 +29,7 @@ from typing import Optional
 
 from ..ai import copy_rules, names
 from ..buffer import budget, media, payloads
-from ..buffer.client import BufferBudgetExceeded, BufferClient, BufferError, BufferRateLimited
+from ..buffer.client import BufferBudgetExceeded, BufferClient, BufferError, BufferRateLimited, BufferUnknownOutcome
 from ..core import config, db, notify, runner, settings
 from . import pacing
 
@@ -50,6 +50,16 @@ ASSUMED_VIDEO_FIELDS = [{"name": "url", "type": "String", "required": True},
 DRY_REEL_NOTE = ("Dry run: the reel was built without asking Buffer for its video fields (the video's url and its "
                  "cover frame assumed). A live run reads them from Buffer before anything is uploaded.")
 ELIGIBILITY_MODULE = "convention_social.library.eligibility"
+# 2026-10-16 audit, critical: a createPost whose answer never came was marked "failed, never left", and the doctor or
+# Approve again sent it a second time. Now Buffer may have taken it: the row keeps its approval with a mark
+# (rule_report UNKNOWN_KEY: {network: {at, channel, text}}) and Buffer is asked before anything goes again.
+UNKNOWN_KEY = "unknown"
+# 2026-10-24: Buffer refused post 28 with "Invalid post: Video could not be read from its URL." and took the same
+# address eight hours later. A file not readable at its address (ours or Buffer's word) keeps the row approved for
+# URL_TRIES runs, then it fails like any other.
+UNREADABLE_URL = "could not be read from its URL"
+URL_TRIES_KEY = "url_tries"
+URL_TRIES = 3
 
 NO_CHANNELS = "No connected Buffer channel for any network on this post. Connect them in Buffer, then this goes out on the next run."
 NO_DAY = "No open day in the next {days} days for {nets}. Choose a time on the draft."
@@ -93,6 +103,76 @@ def captions_of(row) -> Optional[dict]:
 def render_paths_of(row) -> dict[str, list[str]]:
     out = _json(row["render_paths"], {})
     return out if isinstance(out, dict) else {}
+
+
+def unknown_of(row) -> dict:
+    """{network: {at, channel, text}}: the createPosts Buffer never answered for this row (UNKNOWN_KEY)."""
+    meta = _json(row["rule_report"], {}) if "rule_report" in row.keys() else {}
+    out = (meta or {}).get(UNKNOWN_KEY) if isinstance(meta, dict) else None
+    return dict(out) if isinstance(out, dict) else {}
+
+
+def url_tries_of(row) -> int:
+    meta = _json(row["rule_report"], {}) if "rule_report" in row.keys() else {}
+    try:
+        return int((meta or {}).get(URL_TRIES_KEY) or 0) if isinstance(meta, dict) else 0
+    except (TypeError, ValueError):
+        return 0
+
+
+def _set_meta(conn, row, **fields) -> None:
+    """Fields of the row's rule_report set (None removes one), from the row as it is in the database now."""
+    fresh = db.one(conn, "SELECT rule_report FROM content_queue WHERE id=?", (row["id"],))
+    meta = _json(fresh["rule_report"] if fresh else row["rule_report"], {})
+    meta = meta if isinstance(meta, dict) else {}
+    for key, value in fields.items():
+        if value is None:
+            meta.pop(key, None)
+        else:
+            meta[key] = value
+    conn.execute("UPDATE content_queue SET rule_report=?, updated_at=? WHERE id=?", (json.dumps(meta), db.utcnow(), row["id"]))
+
+
+def _since(now: Optional[datetime]) -> str:
+    """A minute before now, as Buffer's DateTime (...Z): the earliest a post this run makes could have been created."""
+    t = (now or datetime.now(timezone.utc)) - timedelta(minutes=1)
+    return t.astimezone(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def settle_unknown(ctx: runner.Context, client: BufferClient, row) -> Optional[str]:
+    """A createPost Buffer did not answer is settled before anything is sent again: a post sent twice is the one
+    mistake a retry must never make, so this fails closed. Buffer is asked for the posts made on that channel since
+    the attempt with exactly that text: one found is adopted as the row's post and never sent again; none means the
+    send never happened and the row may go. None when settled; else why the row waits (the lookup itself failed).
+    A budget or rate-limit stop is raised to the caller like any other."""
+    unknown = unknown_of(row)
+    if not unknown:
+        return None
+    ids = _json(row["buffer_post_ids"], {}) or {}
+    left: dict = {}
+    for net, mark in unknown.items():
+        try:
+            pid = client.find_post(str(mark.get("channel") or ""), str(mark.get("text") or ""), str(mark.get("at") or ""))
+        except (BufferBudgetExceeded, BufferRateLimited):
+            raise
+        except BufferError as e:
+            left[net] = mark
+            ctx.log.warning("post %s: Buffer could not be asked whether it took the %s post: %s", row["id"], net, e)
+            continue
+        if pid:
+            ids[net] = pid
+            ctx.log.info("post %s: Buffer holds the %s post it never answered for (%s); adopted, not sent again", row["id"], net, pid)
+    if ids:
+        ctx.conn.execute("UPDATE content_queue SET buffer_post_ids=? WHERE id=?", (json.dumps(ids), row["id"]))
+    if left:
+        _set_meta(ctx.conn, row, **{UNKNOWN_KEY: left})
+        return (f"Buffer did not answer for {', '.join(left)} and cannot be asked yet whether it took the post; "
+                "nothing is sent until it can be.")
+    _set_meta(ctx.conn, row, **{UNKNOWN_KEY: None})
+    if ids and row["status"] == "approved":
+        ctx.conn.execute("UPDATE content_queue SET status='scheduled', dry_run=0, last_error=?, updated_at=? WHERE id=?",
+                         ("Buffer had taken it after all: adopted, not sent again.", db.utcnow(), row["id"]))
+    return None
 
 
 def channel_for(conn, network: str) -> Optional[dict]:
@@ -332,7 +412,7 @@ def photo_urls(ctx: runner.Context, row, *, live: bool, uploader=None) -> list[s
             if not local or not Path(local).exists():
                 raise media.MediaError(f"photo {pid} has no local copy to upload")
             # never the original file: a fresh copy from pixels, so no EXIF or GPS leaves the Mini
-            url = (uploader or media.upload)(clean_copy(ctx, Path(local), pid), key)
+            url = (uploader or media.upload_checked)(clean_copy(ctx, Path(local), pid), key)
             ctx.conn.execute("UPDATE photos SET public_url=? WHERE id=?", (url, pid))
             urls.append(url)
         else:
@@ -356,7 +436,7 @@ def media_urls(ctx: runner.Context, row, networks: list[str], *, live: bool, upl
                 urls = []
                 for i, path in enumerate(paths, start=1):
                     key = media.card_key(row["id"], aspect, i)
-                    urls.append((uploader or media.upload)(Path(path), key) if live else media.public_url(key))
+                    urls.append((uploader or media.upload_checked)(Path(path), key) if live else media.public_url(key))
                 by_aspect[aspect] = urls
             out[net] = by_aspect[aspect]
         else:
@@ -398,7 +478,7 @@ def reel_urls(row, fields: list[dict], *, live: bool, uploader=None) -> str:
     payloads.video_asset(fields, would, reel_cover_ms(row))
     if not live:
         return would
-    return (uploader or media.upload)(video, key)
+    return (uploader or media.upload_checked)(video, key)
 
 
 # ------------------------------------------------------------------ publishing
@@ -515,6 +595,23 @@ def publish_ready(ctx: runner.Context, client: Optional[BufferClient] = None, up
         return alt_read[0]
 
     for row in rows:
+        if live and unknown_of(row):
+            # a createPost Buffer never answered: asked first, never sent again blind (settle_unknown)
+            try:
+                why = settle_unknown(ctx, client, row)
+            except (BufferBudgetExceeded, BufferRateLimited) as e:
+                record_once(ctx.conn, ctx.agent, "buffer_budget", str(e))
+                ctx.log.warning("stopping this run: %s", e)
+                break
+            if why:
+                _set_last_error(ctx.conn, row, why)
+                record_once(ctx.conn, ctx.agent, "buffer_unknown", f"post {row['id']}: {why}")
+                stats["held"] += 1
+                continue
+            row = db.one(ctx.conn, "SELECT * FROM content_queue WHERE id=?", (row["id"],))
+            if row["status"] != "approved":
+                stats["scheduled"] += 1
+                continue
         stop, row = check_in(ctx, row)
         if stop:
             action, why = stop
@@ -565,6 +662,7 @@ def publish_ready(ctx: runner.Context, client: Optional[BufferClient] = None, up
             continue
         post_ids: dict[str, str] = {}
         built: dict[str, dict] = {}
+        asked_since = _since(now)
         try:
             if fmt == "story":
                 urls = media_urls(ctx, row, ["instagram"], live=live, uploader=uploader, aspect_for={"instagram": "story"})
@@ -591,10 +689,30 @@ def publish_ready(ctx: runner.Context, client: Optional[BufferClient] = None, up
                 ctx.log.info("Buffer accepted post %s for %s: %s", row["id"], net, post_ids[net])
             ctx.conn.execute("UPDATE content_queue SET status='scheduled', payload=?, buffer_post_ids=?, dry_run=0, last_error=?, updated_at=? WHERE id=?",
                              (json.dumps(built), json.dumps(post_ids), skip_note, db.utcnow(), row["id"]))
+            if url_tries_of(row):
+                _set_meta(ctx.conn, row, **{URL_TRIES_KEY: None})
             stats["scheduled"] += 1
+        except BufferUnknownOutcome as e:
+            # Buffer may have taken the post: never 'failed' (the doctor and Approve again would send it a second time).
+            # The row keeps his Approve with the mark, and the next run asks Buffer first (settle_unknown).
+            net = next((n for n in built if n not in post_ids), "?")
+            marks = unknown_of(row)
+            marks[net] = {"at": asked_since, "channel": built.get(net, {}).get("channelId", ""), "text": built.get(net, {}).get("text", "")}
+            why = f"Buffer did not answer for {net}; it is asked whether it took the post before anything is sent again ({e})"[:500]
+            meta = _json(row["rule_report"], {})
+            meta = meta if isinstance(meta, dict) else {}
+            meta[UNKNOWN_KEY] = marks
+            ctx.conn.execute("UPDATE content_queue SET status=?, rule_report=?, payload=?, buffer_post_ids=?, dry_run=0, last_error=?, "
+                             "updated_at=? WHERE id=?",
+                             ("scheduled" if post_ids else "approved", json.dumps(meta), json.dumps(built),
+                              json.dumps(post_ids) if post_ids else None, why, db.utcnow(), row["id"]))
+            runner.record_error(ctx.conn, ctx.agent, "buffer_unknown", f"post {row['id']}: {why}")
+            stats["held"] += 1
+            continue
         except (BufferBudgetExceeded, BufferRateLimited, BufferError, media.MediaError, payloads.PayloadError, OSError) as e:
             kind = "buffer_budget" if isinstance(e, (BufferBudgetExceeded, BufferRateLimited)) else type(e).__name__
             runner.record_error(ctx.conn, ctx.agent, kind, f"post {row['id']}: {e}")
+            unreadable = isinstance(e, media.NotReadable) or (isinstance(e, BufferError) and UNREADABLE_URL in str(e))
             if post_ids:
                 # some networks already have a real Buffer post: track those, say what did not go
                 failed_nets = [n for n in built if n not in post_ids]
@@ -604,6 +722,12 @@ def publish_ready(ctx: runner.Context, client: Optional[BufferClient] = None, up
                 stats["scheduled"] += 1
             elif isinstance(e, (BufferBudgetExceeded, BufferRateLimited)):
                 pass   # nothing left; the row stays approved for the next run
+            elif unreadable and url_tries_of(row) + 1 < URL_TRIES:
+                # the file is not readable at its address yet: his Approve stands and it goes again next run
+                n = url_tries_of(row) + 1
+                _set_meta(ctx.conn, row, **{URL_TRIES_KEY: n})
+                _set_last_error(ctx.conn, row, f"Not sent yet: {e} (try {n} of {URL_TRIES}; it goes again on the next run)"[:500])
+                stats["held"] += 1
             else:
                 ctx.conn.execute("UPDATE content_queue SET status='failed', last_error=?, updated_at=? WHERE id=?",
                                  (str(e)[:500], db.utcnow(), row["id"]))
@@ -702,6 +826,13 @@ def verify_scheduled(ctx: runner.Context, client: Optional[BufferClient] = None,
     if client is None:
         return stats
     for row in due_rows:
+        if unknown_of(row):
+            try:
+                settle_unknown(ctx, client, row)
+            except (BufferBudgetExceeded, BufferRateLimited) as e:
+                record_once(ctx.conn, ctx.agent, "buffer_budget", str(e))
+                break
+            row = db.one(ctx.conn, "SELECT * FROM content_queue WHERE id=?", (row["id"],))
         ids = _json(row["buffer_post_ids"], {}) or {}
         infos: dict[str, dict] = {}
         try:
