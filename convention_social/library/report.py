@@ -15,7 +15,7 @@ import io
 import json
 import sqlite3
 from collections import Counter, defaultdict
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -149,12 +149,19 @@ def rotate(conn: sqlite3.Connection, rows: list, *, last: Optional[dict[int, str
     return [rows[i] for *_, i in sorted(keyed)]
 
 
+def use_stamp() -> str:
+    """When a use happened, to the microsecond. db.utcnow() is whole seconds: two site builds inside one second tied
+    on last use and the next build drew among both sets by chance (the rotation test went red under a frozen clock,
+    2026-10-24 audit)."""
+    return datetime.now(timezone.utc).isoformat(timespec="microseconds")
+
+
 def record_use(conn: sqlite3.Connection, surface: str, photo_ids, *, ref: str = "", now: Optional[str] = None) -> int:
     """These photos were used on `surface` now: a draft made (dry run included, since a draft approved in dry
     run goes out when the lane is switched live), a site built for publishing, samples made."""
     if surface not in USE_SURFACES:
         raise ValueError(f"unknown surface {surface!r}; one of {', '.join(USE_SURFACES)}")
-    now = now or db.utcnow()
+    now = now or use_stamp()
     ids = list(dict.fromkeys(int(p) for p in photo_ids))
     conn.executemany("INSERT INTO photo_use (photo_id, surface, ref, used_at) VALUES (?,?,?,?)", [(p, surface, ref, now) for p in ids])
     ensure_use_history(conn)          # after this write, so a draft recording its own use is not filled in a second time

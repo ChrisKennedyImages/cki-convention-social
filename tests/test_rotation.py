@@ -34,6 +34,17 @@ class Rotate(IsolatedCase):
         self.addCleanup(self.conn.close)
         self.ids = [event_photo(self.conn, f"p{i}", kind="business", final="business", quality=5 - i) for i in range(4)]
 
+    def test_two_uses_inside_one_second_still_tell_which_came_last(self):
+        """Seen red under a frozen clock (2026-10-24 audit): db.utcnow() is whole seconds, so two site builds inside
+        one second tied on last use and the next build drew among their photos by chance (OnTheSite below)."""
+        with mock.patch.object(db, "utcnow", return_value="2026-10-24T12:00:00+00:00"):
+            report.record_use(self.conn, "site", [self.ids[0]], ref="site:a")
+            report.record_use(self.conn, "site", [self.ids[1]], ref="site:b")
+        last = report.last_uses(self.conn)
+        self.assertGreater(last[self.ids[1]], last[self.ids[0]])
+        order = [r["id"] for r in report.rotate(self.conn, [{"id": i} for i in self.ids], last=last)]
+        self.assertEqual(order[-2:], [self.ids[0], self.ids[1]], "the older use comes round before the newer one")
+
     def test_never_used_first_then_the_oldest_use_on_any_surface(self):
         rows = [{"id": i} for i in self.ids]
         report.record_use(self.conn, "post", [self.ids[0]], ref="post:1", now="2026-10-01T08:00:00+00:00")
