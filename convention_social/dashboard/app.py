@@ -536,6 +536,27 @@ CRASH_PAGE = """<!doctype html><html><head><meta charset="utf-8"><meta name="vie
 <a href="/">Back to Today</a></body></html>"""
 
 
+SECURITY_HEADERS = {
+    "X-Frame-Options": "DENY",
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "same-origin",
+    # this dashboard's own pages, pictures and reels and the small scripts and styles written into its pages; nothing
+    # from anywhere else, no framing, forms only to itself
+    "Content-Security-Policy": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; "
+                               "frame-ancestors 'none'; form-action 'self'; base-uri 'none'; object-src 'none'",
+}
+
+
+def harden(response):
+    """Every answer carries SECURITY_HEADERS (2026-10-24 audit: the Worker's team pages had them, the dashboard none), and a
+    page or a redirect is never kept by the browser (the Back button after a sign-out or a Skip showed the old page)."""
+    response.headers.update(SECURITY_HEADERS)
+    if "cache-control" not in response.headers and (response.headers.get("content-type", "").startswith("text/html")
+                                                    or response.status_code in (303, 307)):
+        response.headers["Cache-Control"] = "no-store"
+    return response
+
+
 def record_crash(path: str, exc: BaseException) -> Optional[int]:
     """A page that fails says so and leaves its trace on the Agents page, instead of a dead screen."""
     import traceback
@@ -558,16 +579,13 @@ def create_app() -> FastAPI:
     async def crashed(request: Request, exc: Exception):
         import html as html_mod
         eid = record_crash(request.url.path, exc)
-        return HTMLResponse(CRASH_PAGE.format(path=html_mod.escape(request.url.path),
-                                              what=html_mod.escape(f"{type(exc).__name__}: {exc}"[:300]),
-                                              eid=eid if eid is not None else "not saved"), status_code=500)
+        return harden(HTMLResponse(CRASH_PAGE.format(path=html_mod.escape(request.url.path),
+                                                     what=html_mod.escape(f"{type(exc).__name__}: {exc}"[:300]),
+                                                     eid=eid if eid is not None else "not saved"), status_code=500))
 
     @app.middleware("http")
-    async def never_stale(request: Request, call_next):
-        response = await call_next(request)
-        if response.headers.get("content-type", "").startswith("text/html") or response.status_code in (303, 307):
-            response.headers["Cache-Control"] = "no-store"
-        return response
+    async def hardened(request: Request, call_next):
+        return harden(await call_next(request))
 
     @app.middleware("http")
     async def through_access_only(request: Request, call_next):
@@ -579,7 +597,7 @@ def create_app() -> FastAPI:
             return await call_next(request)
         why = await run_in_threadpool(access.refusal, request.headers, request.cookies)     # may read Cloudflare's keys
         if why:
-            return HTMLResponse(access.refused_page(why), status_code=403, headers={"Cache-Control": access.PRIVATE})
+            return harden(HTMLResponse(access.refused_page(why), status_code=403, headers={"Cache-Control": access.PRIVATE}))
         response = await call_next(request)
         # Cloudflare keeps .jpg and .mp4 for two hours unless told otherwise (developers.cloudflare.com/cache/concepts/
         # default-cache-behavior/): his photos, renders, samples and reels never stay in its cache
@@ -612,7 +630,7 @@ def create_app() -> FastAPI:
         return {"ok": True, "commit": RUNNING_COMMIT}
 
     @app.post("/logout")
-    def logout():
+    def logout(user: str = Depends(require_user)):
         resp = RedirectResponse("/login", status_code=303)
         resp.delete_cookie(COOKIE)
         return resp
@@ -1320,7 +1338,10 @@ def create_app() -> FastAPI:
                     attending=1 if form.get("attending") else 0, official=1 if form.get("official") else 0,
                     url=(form.get("url") or "").strip() or None, notes=(form.get("notes") or "").strip() or None)
         now = db.utcnow()
-        cid = int(form.get("id") or 0)
+        try:
+            cid = int(form.get("id") or 0)
+        except ValueError:
+            raise HTTPException(400, "The convention's id is not a number")
         if cid:
             sets = ", ".join(f"{k}=?" for k in vals)
             conn.execute(f"UPDATE conventions SET {sets}, updated_at=? WHERE id=?", (*vals.values(), now, cid))
