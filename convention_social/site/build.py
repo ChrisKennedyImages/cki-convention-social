@@ -42,6 +42,11 @@ from .clients import client_logos, clients_body, optical, save_logo  # noqa: F40
 
 DIST = config.REPO_ROOT / "site" / "dist"
 PAGES = offer.public_pages()        # the public pages, in sitemap order (2026-10-14: the coverage pages and Contact too)
+# Cloudflare Turnstile on the quote form (2026-10-24): the widget "eventcaliber.com quote form", managed mode, for
+# eventcaliber.com and www. The site key is public (it is on the page for everyone); the secret key is a Worker secret
+# and nothing else (TURNSTILE_SECRET_KEY, docs/SETUP.md). The Worker refuses a token solved for any other action.
+TURNSTILE_SITE_KEY = "0x4AAAAAAFkmbrAUupO81Nil"
+TURNSTILE_ACTION = "quote"
 AREA = "Washington, DC"                                                   # where the two of them are based, in every title
 AREA_SERVED = ("Washington, DC", "Maryland", "Virginia", "United States")
 AREA_LINE = "Based in Washington, DC. Serving DC, Maryland and Virginia, and travelling nationwide."
@@ -706,9 +711,13 @@ def build(conn: Optional[sqlite3.Connection], photos: SitePhotos, *, out: Path =
 <p class="mono g" style="margin-top:30px">{e(AREA_LINE)} <a href="/privacy/" class="c">Privacy and photo removal</a>.</p></section>""")
     chips = "".join(f'<label><input type="checkbox" name="coverage" value="{e(c["key"])}"><span>{e(c["label"])}</span></label>'
                     for c in o["coverage"])
-    site_key = config.getenv("TURNSTILE_SITE_KEY") or ""
-    turnstile = (f'<div class="full"><div class="cf-turnstile" data-sitekey="{e(site_key)}" data-theme="dark"></div></div>'
-                 '<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>') if site_key else ""
+    mail_link = f'<a href="mailto:{e(contact_email())}" class="c">{e(contact_email())}</a>'
+    # Cloudflare Turnstile (2026-10-24): managed, shown only when Cloudflare wants the visitor to tick a box, above Send;
+    # the Worker refuses a request without its token (worker/index.js turnstileRefusal)
+    turnstile = (f'<div class="cf-turnstile" data-sitekey="{TURNSTILE_SITE_KEY}" data-action="{TURNSTILE_ACTION}" data-theme="dark" '
+                 'data-size="flexible" data-appearance="interaction-only" data-callback="checkPassed" '
+                 'data-expired-callback="checkExpired" data-error-callback="checkFailed"></div>'
+                 f'<noscript><p class="mono g" style="margin-bottom:22px">This form needs JavaScript. Without it, email us at {mail_link}.</p></noscript>')
     questions = "".join(f"<li>{e(q)}</li>" for q in (o.get("quote_questions") or [])[:4])
     pages["book/index.html"] = ("Request a quote for event photography",
                                 f"Send the dates, the venue and the rooms that matter. One of us writes back within 24 hours with a quote, in {AREA} or wherever your event is.", f"""
@@ -733,11 +742,19 @@ What moves the quote: the days and hours, the rooms covered at the same time, ho
 <div class="f full"><label class="mono">What should be covered</label><div class="chips">{chips}</div></div>
 <div class="f full"><label class="mono" for="message">Anything else</label><textarea id="message" name="message" maxlength="4000"></textarea></div>
 <div class="hp" aria-hidden="true"><label for="website">Leave this empty</label><input id="website" name="website" tabindex="-1" autocomplete="off"></div>
-{turnstile}<div class="full"><button class="btn fill" type="submit">Send the request <span class="arr">&#8599;</span></button>
+<div class="full">{turnstile}<button class="btn fill" type="submit">Send the request <span class="arr">&#8599;</span></button>
 <p class="mono g" style="margin-top:16px">Used only to reply to you and put your quote together. <a href="/privacy/" class="c">Privacy</a>.</p></div>
 </form></div></div></section>
-<script>const q=new URLSearchParams(location.search).get("error");const m={{missing:"Please add your name and a working email.",busy:"A few requests just came from here. Please try again in an hour, or email us.",check:"The spam check did not pass. Please try again.",unreadable:"Something went wrong. Please try again."}};
-if(q)document.getElementById("err").innerHTML='<div class="err mono">'+(m[q]||m.unreadable)+'</div>';</script>""")
+<script>const q=new URLSearchParams(location.search).get("error");const m={{missing:"Please add your name and a working email.",busy:"A few requests just came from here. Please try again in an hour, or email us.",check:"The spam check did not pass. Please try again.",closed:'The form is not taking requests right now. Please email us at {mail_link}.',unreadable:"Something went wrong. Please try again."}};
+const err=document.getElementById("err"),say=t=>{{err.innerHTML=t?'<div class="err mono">'+t+'</div>':""}};if(q)say(m[q]||m.unreadable);
+// the spam check runs while the form is filled in; Send waits for its token when it has to, and says so
+const book=document.querySelector("form.book"),box=book.querySelector(".cf-turnstile");let token="",waiting=false,failed=false,timer=0;
+new ResizeObserver(([en])=>box.classList.toggle("shown",en.contentRect.height>0)).observe(box);   // room above Send only while the box shows
+function checkPassed(t){{token=t;if(failed){{failed=false;say("")}}if(waiting){{waiting=false;clearTimeout(timer);book.submit()}}}}
+function checkExpired(){{token=""}}
+function checkFailed(){{token="";waiting=false;failed=true;clearTimeout(timer);say('Our spam check could not load in this browser. Please email us at {mail_link}.')}}
+book.addEventListener("submit",ev=>{{if(token)return;ev.preventDefault();waiting=true;say("One moment: checking the connection before sending.");timer=setTimeout(checkFailed,20000)}});</script>
+<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer onerror="checkFailed()"></script>""")
     about_photos = "".join(f'<figure style="--ar:{ar}">{img}</figure>' for img, _, _, ar in frames[:2])
     about_paras = "".join(f"<p>{e(p)}</p>" for p in t["about"].split("\n\n"))
     pages["about/index.html"] = ("About us: two brothers, event photographers",

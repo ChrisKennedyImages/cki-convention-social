@@ -187,6 +187,7 @@ form.book textarea{min-height:120px;resize:vertical}
 .chips label:hover span{border-color:var(--g4);color:var(--w)}.chips input:checked+span{border-color:var(--c);color:var(--k);background:var(--c)}
 .chips input:focus-visible+span{outline:2px solid var(--c);outline-offset:2px}
 .hp{position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden}
+.cf-turnstile.shown{margin-bottom:22px}
 .err{border:1px solid var(--c);padding:14px 18px;margin:0 0 30px;color:var(--w)}
 .cal{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:40px 30px;margin-top:60px}
 .month h3{font:500 13px var(--mono);letter-spacing:.14em;text-transform:uppercase;margin:0 0 14px;color:var(--g5)}

@@ -5,6 +5,9 @@
 //   npx wrangler d1 execute eventcaliber-booking --remote --file worker/schema.sql
 //   npx wrangler secret put UPLOAD_TOKEN               (the same value as MEDIA_UPLOAD_TOKEN on the Mini)
 //   npx wrangler secret put NTFY_TOPIC                 (optional: a push on every quote request)
+//   npx wrangler versions secret put TURNSTILE_SECRET_KEY --name eventcaliber
+//                                                      (the quote form's Turnstile secret key, 2026-10-24: staged, live with the
+//                                                      next deploy; without it the Worker refuses every quote request)
 //   (SEND_TOKEN, the share sheet's, is made on the Keys page and put by every deploy from .env: site/deploy.py)
 //   bin/ccs site build && npx wrangler deploy
 {

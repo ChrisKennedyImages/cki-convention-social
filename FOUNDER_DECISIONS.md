@@ -1676,3 +1676,18 @@ again without his word.
   a thick drop-like lens ("like a raindrop magnified"); a flat disc over faces; reflections inside the lens; the
   grid shrinking at the close ("the ending goes back to the photo push"); a mix of effects ("that's a mix of
   everything we created"); anything drawn around a photo; light over a photo.
+
+
+## 2026-10-24: the quote form behind Turnstile
+
+Open since the 16 October audit ("Quote form spam, Turnstile: open; your site key"). Chris, on the day's fixes: "you do
+it all please, you're more careful".
+
+- The Cloudflare Turnstile widget "eventcaliber.com quote form" (managed, eventcaliber.com and www) is on the form,
+  right above Send, shown only when Cloudflare wants the visitor to tick a box; most visitors never see it. Send waits
+  for the token when it has to and says so; a browser that cannot load the check is told to email instead.
+- The Worker confirms every request's token with Cloudflare and refuses without one, with a token Cloudflare does not
+  confirm, one solved on another site or for another action, or when Cloudflare does not answer. Without its secret key
+  the form is closed and says so, with the email: never open to bots.
+- The site key is in the code (public); the secret key is a Worker secret only, staged with `wrangler versions secret
+  put` so it goes live with the next deploy and never reaches `.env` or the repo.

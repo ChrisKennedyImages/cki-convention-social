@@ -157,9 +157,16 @@ allowance) and, if the domain still has old website records, deleting the old
 A, AAAA or CNAME records for eventcaliber.com and www (keep MX and TXT; they
 carry the mail).
 
-Optional spam check: a free Cloudflare Turnstile widget for the domain; its
-site key goes in `.env` as `TURNSTILE_SITE_KEY` and its secret into
-`npx wrangler secret put TURNSTILE_SECRET -c wrangler.live.jsonc`.
+Spam check on the quote form (2026-10-24): the Cloudflare Turnstile widget
+"eventcaliber.com quote form" (managed mode, eventcaliber.com and www). Its
+site key is public and lives in the code (`convention_social/site/build.py`,
+`TURNSTILE_SITE_KEY`); its secret key is a Worker secret and nothing else,
+never in `.env` or the repo. The Worker refuses every quote request until it
+has it (the form says it is closed and gives the email). From the repo root:
+`npx wrangler turnstile widget get <sitekey> --json` prints the secret;
+`npx wrangler versions secret put TURNSTILE_SECRET_KEY --name eventcaliber`
+stages it for the next deploy without deploying anything (`wrangler secret
+put` would deploy at once).
 
 ### 8a. Search engines: Google Search Console and IndexNow
 

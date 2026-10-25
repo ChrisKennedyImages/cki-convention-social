@@ -1,8 +1,9 @@
 // eventcaliber.com: the website, quote requests, the public availability calendar and post images.
 //
 //   GET  /*                     the static site (binding ASSETS, built on the Mini by `bin/ccs site build`)
-//   POST /api/quote             a quote request from the /book/ form: checked, stored in D1 (binding DB),
-//                               a phone push with no personal details, then /thanks/
+//   POST /api/quote             a quote request from the /book/ form: its Turnstile token confirmed with Cloudflare
+//                               (2026-10-24), checked, stored in D1 (binding DB), a phone push with no personal details,
+//                               then /thanks/
 //   GET  /api/inquiries         the Mini pulls new requests (Bearer UPLOAD_TOKEN)
 //   POST /api/inquiries/ack     the Mini confirms it has them; they are then deleted here
 //   GET  /api/availability      booked dates only, no names (public)
@@ -33,10 +34,11 @@
 //                               no heartbeat ever: nothing. The only watch that does not live on the Mini.
 //   Opt-outs carry only the random token from the email, never the address; the Mini maps it back.
 //
-// Secrets (wrangler secret put): UPLOAD_TOKEN, and optionally NTFY_TOPIC, DASHBOARD_URL (the dashboard's Tailscale
-// address, so a push opens the requests page), SEND_TOKEN (the share sheet's; without it /api/send refuses every
-// send) and TURNSTILE_SECRET. The suite puts NTFY_TOPIC, DASHBOARD_URL and SEND_TOKEN from .env after every deploy
-// (site/deploy.py).
+// Secrets (wrangler secret put): UPLOAD_TOKEN; TURNSTILE_SECRET_KEY (the quote form's Turnstile widget, 2026-10-24;
+// without it /api/quote refuses every request: the form is closed, never open to bots); and optionally NTFY_TOPIC,
+// DASHBOARD_URL (the dashboard's Tailscale address, so a push opens the requests page) and SEND_TOKEN (the share
+// sheet's; without it /api/send refuses every send). The suite puts NTFY_TOPIC, DASHBOARD_URL and SEND_TOKEN from .env
+// after every deploy (site/deploy.py).
 const ALLOWED = /^(image\/(jpeg|png|gif)|video\/mp4)$/;
 const PUBLIC_PREFIX = "convention-social/";
 const PRIVATE_PREFIX = "private/";
@@ -45,6 +47,9 @@ const FIELDS = { name: 120, email: 200, phone: 40, organization: 160, event_name
 const COVERAGE = ["backstage", "green_room", "breakouts", "evening_events", "dinners", "portraits", "exhibition_hall",
                   "on_site_delivery", "stage"];      // portraits and headshots are one thing; so are exhibition halls, vendors and booths (Chris, 2026-10-12)
 const PER_HOUR = 5;
+const TURNSTILE_VERIFY = "https://challenges.cloudflare.com/turnstile/v0/siteverify";
+const TURNSTILE_HOSTS = ["eventcaliber.com", "www.eventcaliber.com"];   // the widget's domains (site/build.py TURNSTILE_SITE_KEY)
+const TURNSTILE_ACTION = "quote";                                        // the widget's data-action (site/build.py TURNSTILE_ACTION)
 const OPT_OUT_TOKEN = /^[a-f0-9]{32}$/;
 const OPT_OUTS_PER_HOUR = 20;     // per address; mail providers send one-click opt-outs from shared addresses
 const HEARTBEAT_KEY = `${PRIVATE_PREFIX}heartbeat.json`;
@@ -82,15 +87,25 @@ async function readForm(request) {
   return out;
 }
 
-async function turnstileOk(env, token, ip) {
-  if (!env.TURNSTILE_SECRET) return true;            // not set up yet: the honeypot and the rate limit still apply
-  if (!token) return false;
+// The quote form's Turnstile token (2026-10-24), confirmed with Cloudflare on every request. Fail closed: the reason the
+// request is refused, or "" when it passes. "closed" (no secret key on this Worker) tells the visitor the form is not
+// taking requests; "check" covers a missing token, one Cloudflare does not confirm, one solved on another site or for
+// another action, and no answer from siteverify at all.
+async function turnstileRefusal(env, token, ip) {
+  if (!env.TURNSTILE_SECRET_KEY) return "closed";
+  if (!token) return "check";
   const body = new FormData();
-  body.append("secret", env.TURNSTILE_SECRET);
+  body.append("secret", env.TURNSTILE_SECRET_KEY);
   body.append("response", token);
   if (ip) body.append("remoteip", ip);
-  const r = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", { method: "POST", body });
-  return Boolean((await r.json()).success);
+  let verdict;
+  try {
+    verdict = await (await fetch(TURNSTILE_VERIFY, { method: "POST", body, signal: AbortSignal.timeout(10e3) })).json();
+  } catch {
+    return "check";
+  }
+  const passed = verdict.success === true && TURNSTILE_HOSTS.includes(verdict.hostname) && verdict.action === TURNSTILE_ACTION;
+  return passed ? "" : "check";
 }
 
 const done = (request, status, payload) => {
@@ -105,7 +120,8 @@ async function quote(request, env) {
   try { data = await readForm(request); } catch { return done(request, 400, { error: "unreadable" }); }
   if ((data.website || "").trim()) return done(request, 200, { ok: true });       // the honeypot: quietly dropped
   const ip = request.headers.get("cf-connecting-ip") || "";
-  if (!(await turnstileOk(env, data["cf-turnstile-response"], ip))) return done(request, 400, { error: "check" });
+  const refused = await turnstileRefusal(env, data["cf-turnstile-response"], ip);
+  if (refused) return done(request, refused === "closed" ? 503 : 400, { error: refused });
   const rec = {};
   for (const [k, max] of Object.entries(FIELDS)) rec[k] = String(data[k] || "").trim().slice(0, max);
   if (!rec.name || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rec.email)) return done(request, 400, { error: "missing" });

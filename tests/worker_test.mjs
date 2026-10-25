@@ -36,7 +36,24 @@ class FakeD1 {
 }
 
 const pushes = [];
-globalThis.fetch = async (url, init) => { pushes.push({ url: String(url), body: init?.body, headers: init?.headers || {} }); return new Response("ok"); };
+// siteverify, stood in (2026-10-24): the token "passes" is a visitor who solved the widget on eventcaliber.com; "elsewhere" was
+// solved on another site, "other-form" for another action; anything else Cloudflare does not confirm. `verifyDown` makes
+// Cloudflare unreachable. Every call is kept in `verified`. Everything else fetch is asked for is a push.
+const verified = [];
+let verifyDown = false;
+globalThis.fetch = async (url, init) => {
+  if (String(url) === "https://challenges.cloudflare.com/turnstile/v0/siteverify") {
+    const token = init.body.get("response");
+    verified.push({ secret: init.body.get("secret"), token, remoteip: init.body.get("remoteip") });
+    if (verifyDown) throw new TypeError("fetch failed");
+    if (token === "passes") return Response.json({ success: true, hostname: "eventcaliber.com", action: "quote" });
+    if (token === "elsewhere") return Response.json({ success: true, hostname: "other.example", action: "quote" });
+    if (token === "other-form") return Response.json({ success: true, hostname: "eventcaliber.com", action: "login" });
+    return Response.json({ success: false, "error-codes": ["invalid-input-response"] });
+  }
+  pushes.push({ url: String(url), body: init?.body, headers: init?.headers || {} });
+  return new Response("ok");
+};
 class FakeR2 {
   // strings stay strings (the JSON the Worker keeps); anything else is kept as its bytes, with its metadata
   constructor() { this.store = new Map(); this.meta = new Map(); }
@@ -67,14 +84,16 @@ class FakeR2 {
   }
 }
 const env = { DB: new FakeD1(), UPLOAD_TOKEN: "tok", NTFY_TOPIC: "topic-x", DASHBOARD_URL: "https://mac-mini.example:8443",
-              MEDIA: new FakeR2(), ASSETS: { fetch: async () => new Response("site") } };
+              TURNSTILE_SECRET_KEY: "turnstile-secret", MEDIA: new FakeR2(), ASSETS: { fetch: async () => new Response("site") } };
 const base = "https://eventcaliber.com";
 const form = (fields) => {
   const f = new FormData();
   for (const [k, v] of Object.entries(fields)) (Array.isArray(v) ? v : [v]).forEach((x) => f.append(k, x));
   return f;
 };
-const post = (fields, headers = {}) => worker.fetch(new Request(`${base}/api/quote`, { method: "POST", body: form(fields),
+// a quote request carries the widget's token unless a test says otherwise (null: no token at all)
+const post = (fields, headers = {}, token = "passes") => worker.fetch(new Request(`${base}/api/quote`, { method: "POST",
+  body: form({ ...(token === null ? {} : { "cf-turnstile-response": token }), ...fields }),
   headers: { "cf-connecting-ip": "1.2.3.4", ...headers } }), env);
 let checks = 0;
 const ok = (cond, msg) => { assert.ok(cond, msg); checks++; };
@@ -89,6 +108,37 @@ ok(JSON.stringify(body.coverage) === JSON.stringify(["backstage", "on_site_deliv
 ok(pushes.length === 1 && pushes[0].url.endsWith("/topic-x"), "one push");
 ok(!pushes[0].body.includes("Dana") && !pushes[0].body.includes("dana@") && !pushes[0].body.includes("555"), "push carries no personal details");
 ok(pushes[0].headers.Click === "https://mac-mini.example:8443/inquiries", "the push opens the requests page (2026-10-13)");
+
+// the Turnstile check (2026-10-24): every request's token is confirmed with Cloudflare; anything short of that is refused
+// and stores nothing, the form says why in plain words, and without the secret key the form is closed (fail closed)
+ok(verified.length === 1 && verified[0].token === "passes" && verified[0].secret === "turnstile-secret" && verified[0].remoteip === "1.2.3.4",
+   "the good request's token went to siteverify with the secret key and the visitor's address");
+r = await post({ name: "Bot", email: "bot@example.org" }, {}, null);
+ok(r.status === 303 && r.headers.get("location").includes("error=check") && env.DB.quotes.length === 1, "no token: refused, nothing stored");
+ok(verified.length === 1, "and Cloudflare was not asked");
+r = await post({ name: "Bot", email: "bot@example.org" }, {}, "forged");
+ok(r.status === 303 && r.headers.get("location").includes("error=check") && env.DB.quotes.length === 1, "a token Cloudflare does not confirm: refused");
+r = await post({ name: "Bot", email: "bot@example.org" }, {}, "elsewhere");
+ok(r.headers.get("location").includes("error=check") && env.DB.quotes.length === 1, "a token solved on another site: refused");
+r = await post({ name: "Bot", email: "bot@example.org" }, {}, "other-form");
+ok(r.headers.get("location").includes("error=check") && env.DB.quotes.length === 1, "a token solved for another action: refused");
+verifyDown = true;
+r = await post({ name: "Dana", email: "dana@example.org" });
+ok(r.headers.get("location").includes("error=check") && env.DB.quotes.length === 1, "Cloudflare unreachable: refused, not let through");
+verifyDown = false;
+r = await post({ name: "Bot", email: "bot@example.org", website: "http://spam" }, {}, null);
+ok(r.status === 303 && r.headers.get("location").endsWith("/thanks/") && env.DB.quotes.length === 1, "the honeypot still drops quietly, before any check");
+r = await post({ name: "Bot", email: "bot@example.org" }, { accept: "application/json" }, "forged");
+ok(r.status === 400 && (await r.json()).error === "check", "a refusal is 400 to a client that asks for JSON");
+delete env.TURNSTILE_SECRET_KEY;
+r = await post({ name: "Dana", email: "dana@example.org" });
+ok(r.status === 303 && r.headers.get("location").includes("error=closed") && env.DB.quotes.length === 1,
+   "no secret key on the Worker: the form is closed, nothing stored, nothing let through");
+r = await post({ name: "Dana", email: "dana@example.org" }, { accept: "application/json" });
+ok(r.status === 503 && (await r.json()).error === "closed", "and 503 to a client that asks for JSON");
+ok(verified.length === 6, "Cloudflare is never asked without the secret key");
+env.TURNSTILE_SECRET_KEY = "turnstile-secret";
+ok(pushes.length === 1, "none of the refusals sent a push");
 delete env.DASHBOARD_URL;
 await post({ name: "Eve", email: "eve@example.org", event_name: "Other Con" });
 ok(pushes.length === 2 && !("Click" in pushes[1].headers), "no dashboard address, no Click");
