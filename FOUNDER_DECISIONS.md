@@ -1605,3 +1605,22 @@ so and open straight to it playing, he said **yes**.
 - Why it was buried: only Saturday was a reel day; designed drafts rotated through all nine designs (1 reel in 9);
   the lane paused while 3 drafts waited (Oct 18 to 22); and the ping showed only the reel's cover still.
 - Known limit: there is one reel style (rooms), so the reels will look alike until a second style is made.
+
+## 2026-10-24: after the audit; what the founder delegated
+
+Chris, on the audit's "needs your decision" list: "you do it all please. you're more careful." Settled, each
+reversible on the Keys page or in this file:
+
+- **A photo never pushes forward is Loop's rule.** It was given twice while Loop was being made ("the photos
+  should not punch out"). Wall lifts its hero toward the camera, Ring brings its hero forward, Orbit's front card
+  grows, Gallery dollies in; Chris watched each of those as a finished video and kept them. The rule stands for
+  Loop and for any new style unless he says otherwise for that style.
+- **One designed draft a day** (DESIGNED_PER_DAY=1, from 3) while Instagram has one slot a day. Seven posts were
+  scheduled a day apart through 31 October because every approved post adds a day; two drafts a day (the daily
+  post and one designed) is what one slot can carry. A second daily slot (POST_TIMES) is Chris's call, not made.
+- The two corrupt token sidecars from 11 October (world-readable, a refresh token inside) are deleted; sidecars
+  are to be written 0600 from now on.
+- The outreach lane stays as Chris switched it (live since 11 October): it sends only rows he approved
+  (agents/outreach.send_approved), and nothing has been sent.
+- Loop stays as it is (23 October: "Fuck it, it's fine"); the art director is to be told its glass loop is the
+  design, not a defect (its own session).
