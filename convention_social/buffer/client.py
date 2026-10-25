@@ -127,6 +127,11 @@ class BufferBudgetExceeded(BufferError):
     pass
 
 
+class BufferUnknownOutcome(BufferError):
+    """Buffer did not answer a createPost, or answered 5xx: it may have carried it out. Such a post is never sent
+    again until Buffer has been asked whether it holds it (agents/publisher.settle_unknown)."""
+
+
 @dataclass
 class Response:
     status: int
@@ -169,15 +174,22 @@ class BufferClient:
             if not ok:
                 raise BufferBudgetExceeded(why)
             budget.record(self.conn, self.agent, op or query.strip().split("\n")[0][:60])
-        resp = self.transport(API_URL, {"query": query, "variables": variables or {}},
-                              {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json",
-                               "User-Agent": USER_AGENT})
+        try:
+            resp = self.transport(API_URL, {"query": query, "variables": variables or {}},
+                                  {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json",
+                                   "User-Agent": USER_AGENT})
+        except Exception as e:  # noqa: BLE001  the network, the socket, a timeout: Buffer did not answer
+            if op == "CreatePost":
+                raise BufferUnknownOutcome(f"Buffer did not answer createPost ({type(e).__name__}: {e}); it may have taken the post") from e
+            raise BufferError(f"Buffer could not be reached ({type(e).__name__}: {e})") from e
         if resp.status == 429:
             try:
                 retry = int(resp.headers.get("Retry-After") or resp.headers.get("retry-after") or 60)
             except (TypeError, ValueError):
                 retry = 60
             raise BufferRateLimited(max(1, min(retry, 900)))
+        if resp.status >= 500 and op == "CreatePost":
+            raise BufferUnknownOutcome(f"Buffer answered HTTP {resp.status} to createPost; it may have taken the post")
         if resp.status >= 400:
             raise BufferError(f"Buffer HTTP {resp.status}: {json.dumps(resp.body)[:300]}")
         if resp.body.get("errors"):
@@ -367,12 +379,26 @@ class BufferClient:
     def post_status(self, post_id: str) -> Optional[str]:
         return self.post_info(post_id)["status"]
 
-    def posts(self, *, status: str = "sent", channel_ids: Optional[list[str]] = None, first: int = 50,
-              after: Optional[str] = None) -> tuple[list[dict], dict]:
-        inp = {"organizationId": self.organization_id(), "filter": {"status": [status]}}
+    def posts(self, *, status: Optional[str] = "sent", channel_ids: Optional[list[str]] = None, first: int = 50,
+              after: Optional[str] = None, created_since: Optional[str] = None) -> tuple[list[dict], dict]:
+        """`status` None: every status. `created_since`: only posts made since then (PostsFiltersInput.createdAt.start in
+        the live schema, read 2026-10-24)."""
+        flt: dict = {}
+        if status:
+            flt["status"] = [status]
         if channel_ids:
-            inp["filter"]["channelIds"] = channel_ids
+            flt["channelIds"] = channel_ids
+        if created_since:
+            flt["createdAt"] = {"start": created_since}
+        inp = {"organizationId": self.organization_id(), "filter": flt}
         data = self._gql(Q_POSTS, {"input": inp, "first": first, "after": after}, op="Posts")
         block = data.get("posts") or {}
         nodes = [e.get("node") for e in (block.get("edges") or []) if e.get("node")]
         return nodes, block.get("pageInfo") or {}
+
+    def find_post(self, channel_id: str, text: str, since: str) -> Optional[str]:
+        """The id of a post Buffer holds on this channel, made since `since`, with exactly this text; None when it holds
+        none. How a createPost that got no answer is settled before anything is sent again."""
+        nodes, _ = self.posts(status=None, channel_ids=[channel_id], first=20, created_since=since)
+        return next((n["id"] for n in nodes
+                     if n.get("id") and n.get("channelId") == channel_id and (n.get("text") or "") == text), None)

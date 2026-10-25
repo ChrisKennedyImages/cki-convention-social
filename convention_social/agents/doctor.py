@@ -261,6 +261,9 @@ def never_left(conn, row) -> bool:
         return False
     if ids:
         return False
+    from . import publisher
+    if publisher.unknown_of(row):
+        return False                  # a createPost Buffer never answered: it may hold the post (2026-10-24 audit)
     return db.one(conn, "SELECT 1 FROM post_history WHERE queue_id=?", (row["id"],)) is None
 
 

@@ -513,6 +513,16 @@ class RetriesPosts(DoctorCase):
         self.assertEqual(self.row(sent)["status"], "failed")
         self.assertEqual(self.row(half)["status"], "failed")
 
+    def test_a_post_whose_send_got_no_answer_is_never_sent_again(self):
+        """2026-10-24 audit: the publisher no longer marks such a post failed, but a row carrying the mark is never
+        sent again by the doctor either."""
+        qid = self.failed_post("Buffer did not answer createPost (ConnectionError: read timed out); it may have taken the post")
+        self.conn.execute("UPDATE content_queue SET rule_report=? WHERE id=?",
+                          (json.dumps({"unknown": {"instagram": {"at": "2026-10-24T13:00:00Z", "channel": "ch-ig", "text": "t"}}}), qid))
+        self.doc()
+        self.assertEqual(self.row(qid)["status"], "failed")
+        self.assertEqual(self.remedies(f"post:{qid}"), [])
+
     def test_failed_again_is_not_fixed(self):
         qid = self.failed_post("Buffer HTTP 502: {}")
         self.doc()

@@ -65,6 +65,27 @@ class Client(AgentCase):
         with self.assertRaises(BufferError):
             BufferClient("test-key", conn=conn, transport=FakeBuffer(http_status=500)).organization_id()
 
+    def test_no_answer_on_createpost_is_an_unknown_outcome_and_elsewhere_a_buffer_error(self):
+        from convention_social.buffer.client import BufferUnknownOutcome
+        conn = self.connect()
+        client = BufferClient("test-key", conn=conn, transport=FakeBuffer(raise_on_create={1}, raise_on_posts=True))
+        with self.assertRaises(BufferUnknownOutcome):
+            client.create_post({"channelId": "ch-ig", "text": "x", "assets": [], "mode": "shareNow", "schedulingType": "automatic"})
+        with self.assertRaises(BufferError) as cm:
+            client.posts()
+        self.assertNotIsInstance(cm.exception, BufferUnknownOutcome, "a read that got no answer is only unreachable")
+        with self.assertRaises(BufferUnknownOutcome):
+            BufferClient("test-key", conn=conn, transport=FakeBuffer(create_http={1: 502})).create_post({"channelId": "ch-ig"})
+
+    def test_find_post_asks_for_the_channel_since_the_attempt_and_matches_the_text(self):
+        conn = self.connect()
+        fake = FakeBuffer(posts_nodes=[{"id": "p1", "channelId": "ch-ig", "text": "other"}, {"id": "p2", "channelId": "ch-ig", "text": "hello"}])
+        client = BufferClient("test-key", conn=conn, transport=fake)
+        self.assertEqual(client.find_post("ch-ig", "hello", "2026-10-24T13:00:00Z"), "p2")
+        self.assertIsNone(client.find_post("ch-ig", "nothing", "2026-10-24T13:00:00Z"))
+        _, variables = [c for c in fake.calls if c[0].startswith("query Posts")][-1]
+        self.assertEqual(variables["input"]["filter"], {"channelIds": ["ch-ig"], "createdAt": {"start": "2026-10-24T13:00:00Z"}})
+
     def test_budget_stops_at_80_percent_of_the_smallest_window(self):
         conn = self.connect()
         os.environ["BUFFER_PLAN"] = "free"
@@ -227,6 +248,36 @@ class Media(AgentCase):
         self.assertEqual(url, "https://media.example/m/convention-social/cards/7-45-1.jpg")
         self.assertEqual(calls[0][0], url)
         self.assertEqual(calls[0][2], {"Authorization": "Bearer tok", "Content-Type": "image/jpeg"})
+
+    def test_verify_readable_wants_the_whole_file_at_its_address(self):
+        """2026-10-24: Buffer refused post 28, "Video could not be read from its URL", eight hours before the same
+        address served it. A one-byte range GET must give 200 or 206, the file's kind of type and its whole size."""
+        f = self.root / "v.mp4"
+        f.write_bytes(b"m" * 1000)
+
+        class R:
+            def __init__(self, code, headers):
+                self.status_code, self.headers = code, headers
+
+            def close(self):
+                pass
+
+        def answers(*replies):
+            it = iter(replies)
+            return lambda url: next(it)
+        waits = []
+        media.verify_readable("https://h/x.mp4", f, get=answers(R(206, {"Content-Type": "video/mp4", "Content-Range": "bytes 0-0/1000"})), sleep=waits.append)
+        media.verify_readable("https://h/x.mp4", f, get=answers(R(200, {"content-type": "video/mp4; charset=binary", "content-length": "1000"})), sleep=waits.append)
+        self.assertEqual(waits, [], "a readable file is found on the first look")
+        for bad in (R(404, {}), R(200, {"Content-Type": "text/html", "Content-Length": "1000"}),
+                    R(200, {"Content-Type": "video/mp4", "Content-Length": "999"}), R(200, {"Content-Type": "video/mp4"})):
+            with self.assertRaises(media.NotReadable):
+                media.verify_readable("https://h/x.mp4", f, get=answers(bad, bad, bad), sleep=waits.append)
+        self.assertEqual(len(waits), 8, "three looks each, a wait between them")
+        ok = R(206, {"Content-Type": "video/mp4", "Content-Range": "bytes 0-0/1000"})
+        media.verify_readable("https://h/x.mp4", f, get=answers(R(404, {}), ok), sleep=waits.append)     # the second look finds it
+        with self.assertRaises(media.NotReadable):
+            media.verify_readable("https://h/x.mp4", f, get=lambda url: (_ for _ in ()).throw(ConnectionError("down")), sleep=waits.append)
 
     def test_bucket_upload_uses_bucket_and_public_base(self):
         os.environ.update({"R2_ENDPOINT": "https://acct.r2.example", "R2_BUCKET": "bucket-x",

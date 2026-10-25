@@ -465,3 +465,110 @@ class Live(PublisherCase):
         self.publish(ctx, client=BufferClient("test-key", conn=self.conn, transport=FakeBuffer()), uploader=self.uploader())
         self.assertEqual(self.row(qid)["status"], "approved")
         self.assertEqual(db.one(self.conn, "SELECT kind FROM errors")["kind"], "buffer_budget")
+
+
+class UnknownOutcome(PublisherCase):
+    """2026-10-16 audit, critical: a createPost whose answer never came marked the post "failed, never left", and the
+    doctor or Approve again sent it a second time. Now Buffer may have taken it, so it is asked before any resend."""
+
+    def setUp(self):
+        super().setUp()
+        os.environ["POST_NETWORKS"] = "instagram"
+        config.reset()
+
+    def up(self):
+        return lambda path, key: f"https://media.example/m/{key}"
+
+    def live(self):
+        return make_ctx(self.conn, dry_run=False)
+
+    def test_no_answer_is_never_a_failed_post_and_buffer_is_asked_before_any_resend(self):
+        _, qid = self.rendered_post()
+        fake = FakeBuffer(raise_on_create={1})
+        client = BufferClient("test-key", conn=self.conn, transport=fake)
+        stats = self.publish(self.live(), client=client, uploader=self.up())
+        self.assertEqual((stats["failed"], stats["held"], fake.n_create), (0, 1, 1))
+        row = self.row(qid)
+        self.assertEqual(row["status"], "approved", "his Approve stands; nothing is marked failed")
+        self.assertIsNone(row["buffer_post_ids"])
+        mark = publisher.unknown_of(row)["instagram"]
+        self.assertEqual(mark["channel"], "ch-ig")
+        self.assertEqual(mark["text"], json.loads(row["caption"])["instagram"])
+        self.assertIn("did not answer", row["last_error"])
+        self.assertEqual(db.one(self.conn, "SELECT kind FROM errors ORDER BY id DESC LIMIT 1")["kind"], "buffer_unknown")
+        # the next run: Buffer holds a post on that channel with that text, made since the attempt: adopted, not sent again
+        fake.posts_nodes = [{"id": "post-x", "channelId": "ch-ig", "channelService": "instagram", "status": "scheduled",
+                             "sentAt": None, "dueAt": "2026-10-09T15:30:00Z", "text": mark["text"], "metricsUpdatedAt": None,
+                             "externalLink": None, "metrics": []}]
+        stats = self.publish(self.live(), client=client, uploader=self.up())
+        self.assertEqual((stats["scheduled"], fake.n_create), (1, 1), "no second createPost")
+        row = self.row(qid)
+        self.assertEqual((row["status"], json.loads(row["buffer_post_ids"])), ("scheduled", {"instagram": "post-x"}))
+        self.assertEqual(publisher.unknown_of(row), {})
+        asked = [v for op, v in fake.calls if op.startswith("query Posts")]
+        self.assertEqual(asked[-1]["input"]["filter"]["channelIds"], ["ch-ig"])
+        self.assertTrue(asked[-1]["input"]["filter"]["createdAt"]["start"].endswith("Z"))
+        self.assertNotIn("status", asked[-1]["input"]["filter"], "every status: scheduled, sending or sent")
+        self.assertEqual(publisher.verify_scheduled(self.live(), client=client)["pending"], 1, "then checked like any other")
+
+    def test_when_buffer_holds_nothing_the_post_goes_once(self):
+        _, qid = self.rendered_post()
+        fake = FakeBuffer(raise_on_create={1}, posts_nodes=[])
+        client = BufferClient("test-key", conn=self.conn, transport=fake)
+        self.publish(self.live(), client=client, uploader=self.up())
+        stats = self.publish(self.live(), client=client, uploader=self.up())
+        self.assertEqual((stats["scheduled"], fake.n_create), (1, 2))
+        row = self.row(qid)
+        self.assertEqual((row["status"], json.loads(row["buffer_post_ids"]), publisher.unknown_of(row)),
+                         ("scheduled", {"instagram": "post-1"}, {}))
+
+    def test_a_lookup_that_fails_holds_the_post(self):
+        _, qid = self.rendered_post()
+        fake = FakeBuffer(raise_on_create={1}, raise_on_posts=True)
+        client = BufferClient("test-key", conn=self.conn, transport=fake)
+        self.publish(self.live(), client=client, uploader=self.up())
+        stats = self.publish(self.live(), client=client, uploader=self.up())
+        self.assertEqual((stats["held"], fake.n_create, self.row(qid)["status"]), (1, 1, "approved"))
+        self.assertIn("cannot be asked", self.row(qid)["last_error"])
+
+    def test_a_5xx_from_buffer_on_createpost_is_unknown_too(self):
+        _, qid = self.rendered_post()
+        fake = FakeBuffer(create_http={1: 503})
+        self.publish(self.live(), client=BufferClient("test-key", conn=self.conn, transport=fake), uploader=self.up())
+        row = self.row(qid)
+        self.assertEqual(row["status"], "approved")
+        self.assertIn("instagram", publisher.unknown_of(row))
+
+    def test_the_doctor_never_sends_a_post_with_an_unknown_send_again(self):
+        from convention_social.agents import doctor
+        _, qid = self.rendered_post()
+        fake = FakeBuffer(raise_on_create={1})
+        self.publish(self.live(), client=BufferClient("test-key", conn=self.conn, transport=fake), uploader=self.up())
+        self.assertFalse(doctor.never_left(self.conn, self.row(qid)))
+
+    def test_a_file_not_readable_at_its_address_waits_three_runs_then_fails(self):
+        _, qid = self.rendered_post()
+        fake = FakeBuffer()
+        client = BufferClient("test-key", conn=self.conn, transport=fake)
+
+        def up(path, key):
+            raise media.NotReadable(f"https://media.example/m/{key} is not readable yet (HTTP 404)")
+        for n in (1, 2):
+            stats = self.publish(self.live(), client=client, uploader=up)
+            row = self.row(qid)
+            self.assertEqual((stats["held"], stats["failed"], row["status"]), (1, 0, "approved"))
+            self.assertIn(f"try {n} of 3", row["last_error"])
+        stats = self.publish(self.live(), client=client, uploader=up)
+        self.assertEqual((stats["failed"], self.row(qid)["status"]), (1, "failed"))
+        self.assertEqual(fake.n_create, 0, "nothing is ever sent for a file Buffer could not have read")
+
+    def test_buffers_word_that_the_video_could_not_be_read_is_tried_again_next_run(self):
+        _, qid = self.rendered_post()
+        fake = FakeBuffer(reject_at={1}, reject_message="Invalid post: Video could not be read from its URL.")
+        client = BufferClient("test-key", conn=self.conn, transport=fake)
+        stats = self.publish(self.live(), client=client, uploader=self.up())
+        self.assertEqual((stats["held"], self.row(qid)["status"]), (1, "approved"))
+        self.assertIn("try 1 of 3", self.row(qid)["last_error"])
+        stats = self.publish(self.live(), client=client, uploader=self.up())      # the second createPost is taken
+        row = self.row(qid)
+        self.assertEqual((stats["scheduled"], row["status"], publisher.url_tries_of(row)), (1, "scheduled", 0))
