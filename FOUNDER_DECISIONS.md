@@ -1654,9 +1654,13 @@ where that $200 sits and what Anthropic says about it"), then "Go ahead with it"
 "If you get this right this time, please save that prompt." Saved here and in memory; Loop is not changed
 again without his word.
 
-- **The loop:** one loupe of liquid glass, one size, that travels one smooth curve at one steady pace for the
-  whole reel: in from beyond the first photo, across each of the reel's four photos side to side, on to the next,
-  out beyond the last. It never stops, never changes. "The loop move fluidly." Inside it only the photo under it,
+- **The loop:** one loupe of liquid glass, one size, that travels one smooth curve for the whole reel: in from
+  beyond the first photo, across each of the reel's four photos side to side, on to the next, out beyond the
+  last. It never stops, never changes. "The loop move fluidly." Later that night: "the loop itself is moving too
+  fast. It's supposed to crawl and creep"; "it should slow on full bleed"; "ONLY TOUCH THE LOOP NOTHING ELSE FROM
+  THE LAST APPROVED ONE." So it reaches and leaves each photo on the frames of a steady pace (the grid's rests,
+  slides and enlarging are untouched) and in between creeps, slowest while the photo fills it, quicker over its
+  edges, the speed changing smoothly. Approved 2026-10-25 ("Yes, it's right"). Inside it only the photo under it,
   magnified mildly; "when you put your eye to a loop there are no reflections inside of the loop itself, just on
   the edges to show the liquid glass effect and magnification." "The whole point is the loop! If I didn't use a
   loop I would only then bring the photo closer. The LOOP magnifies, not the photo being lifted closer."
