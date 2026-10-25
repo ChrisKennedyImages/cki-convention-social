@@ -131,6 +131,7 @@ class Config:
     smtp_host: str
     smtp_user: str
     ai_monthly_cap_usd: float
+    ai_cap_resets_on: int
     buffer_plan: str
     ntfy_topic: str
     alert_email: str
@@ -172,6 +173,7 @@ def load_config() -> Config:
         smtp_host=getenv("SMTP_HOST", ""),
         smtp_user=getenv("SMTP_USER", ""),
         ai_monthly_cap_usd=_float("AI_MONTHLY_CAP_USD", 20.0),
+        ai_cap_resets_on=_int("AI_CAP_RESETS_ON", 1),           # the day the cap starts over: the 1st, or the credit's day
         buffer_plan=getenv("BUFFER_PLAN", "essentials").lower(),
         ntfy_topic=getenv("NTFY_TOPIC", ""),
         alert_email=getenv("ALERT_EMAIL", ""),

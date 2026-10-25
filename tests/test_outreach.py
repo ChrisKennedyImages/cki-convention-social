@@ -156,7 +156,7 @@ class Drafting(OutreachCase):
         self.assertEqual(kw["output_config"]["effort"], "medium")
         self.assertIn("Sample Con 2027", kw["messages"][0]["content"])
         self.assertIn("Exhibition halls", kw["messages"][0]["content"])      # coverage comes from offer.json
-        self.assertGreater(spend.month_to_date(self.conn), 0)
+        self.assertGreater(spend.cycle_to_date(self.conn), 0)
 
     def test_a_draft_that_breaks_a_rule_is_thrown_away(self):
         os.environ["AI_MONTHLY_CAP_USD"] = "5"
