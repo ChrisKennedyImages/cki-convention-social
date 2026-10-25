@@ -402,4 +402,13 @@ r = await worker.fetch(new Request(`${base}/upload`, { headers: { cookie } }), e
 ok((await r.text()).includes("Open the link you were sent"), "and the page says how to get back in");
 r = await worker.fetch(new Request(`${base}/join/${joinCode}`), env);
 ok((await r.text()).includes("Chris or Nic approves each one"), "outside, it is always Chris or Nic who approves (Chris, 2026-10-15)");
+// 2026-10-24 audit: authed() compared the upload token with ===, the send token through sameSecret; one way for both
+const source = (await import("node:fs")).readFileSync(new URL("../worker/index.js", import.meta.url), "utf8");
+const authedSource = source.slice(source.indexOf("async function authed("), source.indexOf("\n}\n", source.indexOf("async function authed(")));
+ok(authedSource.includes("await sameSecret(") && !authedSource.includes("==="), "the upload token is compared byte by byte to the end, like the send token");
+ok(!/\bauthed\(request, env\)\)/.test(source.replace(/await authed\(request, env\)/g, "")), "every gate awaits the compare (a bare call would be a Promise, always true)");
+r = await worker.fetch(new Request(`${base}/api/inquiries`, { headers: { authorization: "Bearer to" } }), env);
+ok(r.status === 403, "a prefix of the token is not the token");
+r = await worker.fetch(new Request(`${base}/api/inquiries`, { headers: { authorization: "tok" } }), env);
+ok(r.status === 403, "the token without Bearer is not accepted");
 console.log(`worker: ${checks} checks passed`);

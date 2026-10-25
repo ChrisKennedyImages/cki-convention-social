@@ -64,8 +64,11 @@ const SESSION_COOKIE = "ec_send";
 const HEX64 = /^[0-9a-f]{64}$/;
 const TOKEN_SHAPE = /^[A-Za-z0-9_-]{40,64}$/;      // a team token as the Mini makes it (token_urlsafe(32)); nothing else is looked up
 
-const authed = (request, env) =>
-  Boolean(env.UPLOAD_TOKEN) && (request.headers.get("authorization") || "") === `Bearer ${env.UPLOAD_TOKEN}`;
+async function authed(request, env) {
+  // the Mini's upload token, compared like the send token (sameSecret): no early exit tells a guesser how much was right
+  const auth = request.headers.get("authorization") || "";
+  return Boolean(env.UPLOAD_TOKEN) && auth.startsWith("Bearer ") && (await sameSecret(auth.slice(7), env.UPLOAD_TOKEN));
+}
 
 async function readForm(request) {
   const type = (request.headers.get("content-type") || "").split(";")[0].trim();
@@ -127,7 +130,7 @@ async function quote(request, env) {
 }
 
 async function inquiries(request, env, url) {
-  if (!authed(request, env)) return new Response("forbidden", { status: 403 });
+  if (!(await authed(request, env))) return new Response("forbidden", { status: 403 });
   if (request.method === "GET") {
     const { results } = await env.DB.prepare("SELECT id, received_at, body FROM quote_requests ORDER BY received_at LIMIT 200").all();
     return Response.json({ inquiries: results.map((r) => ({ id: r.id, received_at: r.received_at, ...JSON.parse(r.body) })) });
@@ -147,7 +150,7 @@ async function availability(request, env) {
     return Response.json({ booked: results.map((r) => r.day) }, { headers: { "cache-control": "public, max-age=300" } });
   }
   if (request.method === "PUT") {
-    if (!authed(request, env)) return new Response("forbidden", { status: 403 });
+    if (!(await authed(request, env))) return new Response("forbidden", { status: 403 });
     const days = ((await request.json()).booked || []).filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d)).slice(0, 1000);
     await env.DB.prepare("DELETE FROM booked_days").run();
     for (const d of days) await env.DB.prepare("INSERT OR IGNORE INTO booked_days (day) VALUES (?)").bind(d).run();
@@ -206,7 +209,7 @@ async function optOut(request, env, url) {
 }
 
 async function unsubscribes(request, env, url) {
-  if (!authed(request, env)) return new Response("forbidden", { status: 403 });
+  if (!(await authed(request, env))) return new Response("forbidden", { status: 403 });
   if (request.method === "GET" && url.pathname === "/api/unsubscribes") {
     const { results } = await env.DB.prepare("SELECT token, received_at FROM unsubscribes ORDER BY received_at LIMIT 500").all();
     return Response.json({ unsubscribes: results.map((r) => ({ token: r.token, received_at: r.received_at })) });
@@ -234,7 +237,7 @@ async function push(env, title, body, priority) {
 }
 
 async function heartbeat(request, env, url) {
-  if (!authed(request, env)) return new Response("forbidden", { status: 403 });
+  if (!(await authed(request, env))) return new Response("forbidden", { status: 403 });
   if (request.method !== "POST") return new Response("method not allowed", { status: 405 });
   if (url.pathname === "/api/heartbeat/test") {
     const sent = await push(env, "Event Caliber: the Mini is silent (test)",
@@ -374,7 +377,7 @@ async function sendPhoto(request, env, url) {
 }
 
 async function team(request, env) {
-  if (!authed(request, env)) return new Response("forbidden", { status: 403 });
+  if (!(await authed(request, env))) return new Response("forbidden", { status: 403 });
   if (request.method !== "PUT") return new Response("method not allowed", { status: 405 });
   let body;
   try { body = await request.json(); } catch { return new Response("bad team", { status: 400 }); }
@@ -459,7 +462,7 @@ async function uploadPage(request, env, url) {
 }
 
 async function sends(request, env, url) {
-  if (!authed(request, env)) return new Response("forbidden", { status: 403 });
+  if (!(await authed(request, env))) return new Response("forbidden", { status: 403 });
   if (request.method === "GET" && url.pathname === "/api/sends") {
     const listed = await env.MEDIA.list({ prefix: SENDS_PREFIX, limit: 100, include: ["customMetadata"] });
     return Response.json({ sends: listed.objects.map((o) => ({ id: o.key.slice(SENDS_PREFIX.length), size: o.size,
@@ -499,7 +502,7 @@ async function media(request, env, url) {
     return new Response(request.method === "HEAD" ? null : obj.body, { headers });
   }
   if (request.method === "PUT") {
-    if (!authed(request, env)) return new Response("forbidden", { status: 403 });
+    if (!(await authed(request, env))) return new Response("forbidden", { status: 403 });
     const type = (request.headers.get("content-type") || "").split(";")[0].trim();
     const isPrivate = key.startsWith(PRIVATE_PREFIX);
     if (!isPrivate && !key.startsWith(PUBLIC_PREFIX)) return new Response("bad key", { status: 400 });
