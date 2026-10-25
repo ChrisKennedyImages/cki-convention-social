@@ -12,13 +12,13 @@ dashboard that missed a restart catches up within ten minutes instead of serving
 If it is still on older code after that, Chris gets the one command that restarts it.
 
 A red run, a checkout on another branch or with local changes, or a history that is not a plain
-fast-forward leaves everything exactly as it is. The commit a red run refused is remembered (REFUSED_KEY) and not
-tested again until main moves on (2026-10-24 audit: a red main was retested every ten minutes, an hour-long suite
-each time, and nothing else could deploy meanwhile); `ccs sync`, which Chris types, tests it again. Only the commit this updater's own suite passed
-(TESTED_KEY), on main with nothing changed, is ever served by the dashboard or deployed to the site
-(2026-10-16 audit: a branch went to eventcaliber.com three times on 10-14, and on 10-15 a commit the
-suite had just refused was served and deployed after it was brought into the checkout by hand). A red run and a failed fetch are recorded as
-errors, which the watchdog pushes to Chris. New service files (`launchd/` templates) need one
+fast-forward leaves everything exactly as it is. The commit a red run refused is remembered (REFUSED_KEY) and
+not tested again until main moves on (2026-10-24 audit: a red main was tested again every ten minutes, an
+hour-long suite each time, and nothing else could deploy meanwhile); `ccs sync`, which Chris types, tests it
+again. Only the commit this updater's own suite passed (TESTED_KEY), on main with nothing changed, is ever
+served by the dashboard or deployed to the site (2026-10-16 audit: a branch went to eventcaliber.com three
+times on 10-14, and on 10-15 a commit the suite had just refused was served and deployed after it was brought
+into the checkout by hand). A red run and a failed fetch are recorded as errors, which the watchdog pushes to Chris. New service files (`launchd/` templates) need one
 `scripts/go-live.sh` on the Mini with his Mac password: that is flagged, never attempted.
 
 Every run also keeps eventcaliber.com on the code (Chris, 2026-10-12: "do what you can without needing
