@@ -34,8 +34,9 @@ const ENLARGE = 1.2;                                           // the whole grid
 const SWELL = 14;                                              // in 30ths: the grid's enlarging, once the loop is on the card
 // where the four visited cards sit: (row, x) in the middle rows, each a step or two from the last, so the slide reads
 const VISITS: [number, number][] = [[5, 0], [4, 1.6], [3, 0.2], [4, -1.8]];
+const CRAWL = 0.45;                                            // the loop crosses this much of a card's width either side of its middle
 const BEYOND = 1.2;                                            // where the loop comes in from and leaves to, past the first and last card
-const EDGE_PACE = 2, MOVE_PACE = 4;                            // the loop's speed over a photo's edge, and between photos, as multiples of its full-bleed creep
+const BLEED_SHARE = 0.7;                                       // of its time across a card, the share the loop spends creeping on full bleed
 const GLASS_DEPTH = 0.3, GLASS_THICKNESS = 0.6;              // flat enough never to invert, thick enough to magnify a little
 const LOOP_W = 0.6, LOOP_H = 0.74;                             // the loupe's half-size on the screen: about a third of the view wide
 
@@ -99,31 +100,31 @@ const smooth = (T: number[], S: number[]) => {
 };
 
 // The loop's one curve: in from beyond the first card; for each visited card, in the direction of travel, its near
-// edge, where full bleed begins (the loop wholly inside the photo), where it ends, its far edge; on to the next;
-// out beyond the last; a smooth spline through those points. Its pace: the full-bleed creep is the unit, a photo's
-// edge is crossed at EDGE_PACE times that, the moves run at MOVE_PACE times that, the whole fitting the reel, and
-// the speed changes smoothly between them. The grid's rests and slides are read off it: a card is held from the
-// frame the loop reaches its near edge to the frame it leaves the far edge.
+// side, where full bleed begins (the loop wholly inside the photo), where it ends, its far side; on to the next;
+// out beyond the last; a smooth spline through those points. The frame it reaches each card's near side and leaves
+// the far side is set by a steady pace over the whole curve (the approved reel, and what the grid's rests and
+// slides follow); inside that window it creeps on full bleed for BLEED_SHARE of the time and crosses the photo's
+// edges quicker, the speed changing smoothly ("it should slow on full bleed").
 type Path = {curve: THREE.CatmullRomCurve3; total: number; along: (f: number) => number; entries: number[]; exits: number[]};
 const path = (visit: Card[]): Path => {
   const pts: THREE.Vector3[] = [];
   visit.forEach((c, k) => {
     const from = visit[k - 1]?.x ?? c.x - 1, to = visit[k + 1]?.x ?? c.x + 1;
-    const dir = Math.sign(to - from) || 1, half = c.w / 2, bleed = Math.max(0, half - LOOP_W);
-    for (const d of [-half, -bleed, bleed, half]) pts.push(new THREE.Vector3(c.x + dir * d, c.y, 0));
+    const dir = Math.sign(to - from) || 1, side = CRAWL * c.w, bleed = Math.min(side, Math.max(0, c.w / 2 - LOOP_W));
+    for (const d of [-side, -bleed, bleed, side]) pts.push(new THREE.Vector3(c.x + dir * d, c.y, 0));
   });
   pts.unshift(pts[0].clone().add(new THREE.Vector3(-BEYOND, -0.3, 0)));
   pts.push(pts[pts.length - 1].clone().add(new THREE.Vector3(BEYOND, 0.3, 0)));
   const curve = new THREE.CatmullRomCurve3(pts, false, 'centripetal');
   const lengths = curve.getLengths(800), total = lengths[800];
   const S = pts.map((_, i) => lengths[Math.round((i / (pts.length - 1)) * 800)]);   // distance to each point
-  const pace = (i: number) => (i === 0 ? MOVE_PACE : [EDGE_PACE, 1, EDGE_PACE, MOVE_PACE][(i - 1) % 4]);   // the stretch from point i
-  const units = S.slice(0, -1).reduce((sum, s0, i) => sum + (S[i + 1] - s0) / pace(i), 0);   // the reel in creep-time
-  const creep = units / (TOTAL - END);                          // distance per frame at full bleed
-  const T = [0];
-  for (let i = 0; i < pts.length - 1; i++) T.push(T[i] + (S[i + 1] - S[i]) / (creep * pace(i)));
+  const T = S.map((d) => (d / total) * (TOTAL - END));          // at a steady pace: the sides' frames stay as approved
   const entries: number[] = [], exits: number[] = [];
-  visit.forEach((_, k) => { entries.push(T[1 + 4 * k]); exits.push(T[4 + 4 * k]); });
+  visit.forEach((_, k) => {
+    const e = 1 + 4 * k, x = 4 + 4 * k, span = T[x] - T[e], edge = (1 - BLEED_SHARE) / 2;
+    T[e + 1] = T[e] + edge * span; T[e + 2] = T[x] - edge * span;   // full bleed gets BLEED_SHARE of the crossing
+    entries.push(T[e]); exits.push(T[x]);
+  });
   return {curve, total, along: smooth(T, S), entries, exits};
 };
 const loopAt = (p: Path, f: number) => p.curve.getPointAt(Math.min(1, Math.max(0, p.along(f) / p.total)));
