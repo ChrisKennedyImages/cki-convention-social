@@ -12,7 +12,9 @@ dashboard that missed a restart catches up within ten minutes instead of serving
 If it is still on older code after that, Chris gets the one command that restarts it.
 
 A red run, a checkout on another branch or with local changes, or a history that is not a plain
-fast-forward leaves everything exactly as it is. Only the commit this updater's own suite passed
+fast-forward leaves everything exactly as it is. The commit a red run refused is remembered (REFUSED_KEY) and not
+tested again until main moves on (2026-10-24 audit: a red main was retested every ten minutes, an hour-long suite
+each time, and nothing else could deploy meanwhile); `ccs sync`, which Chris types, tests it again. Only the commit this updater's own suite passed
 (TESTED_KEY), on main with nothing changed, is ever served by the dashboard or deployed to the site
 (2026-10-16 audit: a branch went to eventcaliber.com three times on 10-14, and on 10-15 a commit the
 suite had just refused was served and deployed after it was brought into the checkout by hand). A red run and a failed fetch are recorded as
@@ -52,6 +54,7 @@ TEST_TIMEOUT = 90 * 60          # 2026-10-15: ~990 tests, ~21 min alone, held ba
 #                                 updates back that night. The watchdog's gap for the updater covers this and a deploy.
 NEEDS_INSTALL_KEY = "updater.needs_install"
 TESTED_KEY = "updater.tested_commit"   # the last commit this updater's own suite passed: the only one ever served
+REFUSED_KEY = "updater.refused_commit" # the commit the suite last refused: not tested again until main moves
 RESTARTED_KEY = "updater.dashboard_restarted_for"
 DASHBOARD_PROCESS = "-m convention_social.cli dashboard"
 KICKSTART = "sudo launchctl kickstart -k system/com.chriskennedyimages.conventionsocial.dashboard"
@@ -291,9 +294,9 @@ def run(ctx: runner.Context, *, repo: Optional[Path] = None,
         migrations: Callable[[Path], None] = migrate, reels: Callable[[Path], None] = reels,
         restart: Callable[[], str] = restart_dashboard,
         probe: Callable[[], Optional[str]] = dashboard_commit,
-        deploy: Callable[[Path], tuple[bool, str]] = deploy_site, site: bool = True) -> str:
+        deploy: Callable[[Path], tuple[bool, str]] = deploy_site, site: bool = True, retest: bool = False) -> str:
     repo = Path(repo or config.REPO_ROOT)
-    summary = update(ctx, repo, suite=suite, requirements=requirements, migrations=migrations, reels=reels)
+    summary = update(ctx, repo, suite=suite, requirements=requirements, migrations=migrations, reels=reels, retest=retest)
     if summary == "fetch failed":
         return summary
     ok, why = servable(ctx.conn, repo)
@@ -313,7 +316,8 @@ def run(ctx: runner.Context, *, repo: Optional[Path] = None,
 
 def update(ctx: runner.Context, repo: Path, *, suite: Callable[[Path], tuple[bool, str]],
            requirements: Callable[[Path, Path], None], migrations: Callable[[Path], None],
-           reels: Callable[[Path], None] = reels) -> str:
+           reels: Callable[[Path], None] = reels, retest: bool = False) -> str:
+    """`retest`: test the commit the suite refused once more (`ccs sync`, typed by Chris); the ten-minute run never does."""
     fetch = _git(repo, "fetch", "--quiet", "origin", "main", timeout=FETCH_TIMEOUT)
     if fetch.returncode != 0:
         runner.record_error_once(ctx.conn, ctx.agent, "update_fetch",
@@ -329,6 +333,8 @@ def update(ctx: runner.Context, repo: Path, *, suite: Callable[[Path], tuple[boo
         return "not updating: the checkout has local changes"
     if _git(repo, "merge-base", "--is-ancestor", head, target).returncode != 0:
         return "not updating: main on the Mini and on GitHub have gone different ways"
+    if target == settings.get(ctx.conn, REFUSED_KEY) and not retest:
+        return f"held back {target[:7]}: its tests failed on the Mini; not tested again until main moves (ccs sync tests it now)"
     changed = _out(repo, "diff", "--name-only", head, target).splitlines()
     install = [p for p in changed if p.startswith(INSTALL_PATHS)]
     if ctx.dry_run:
@@ -363,12 +369,14 @@ def update(ctx: runner.Context, repo: Path, *, suite: Callable[[Path], tuple[boo
                 put_back = f"; the requirements could NOT be put back ({type(e).__name__})"
                 runner.record_error(ctx.conn, ctx.agent, "update_requirements",
                                     f"The venv holds {target[:7]}'s requirements while the code is on {head[:7]}: {e}")
+        settings.set(ctx.conn, REFUSED_KEY, target)
         runner.record_error(ctx.conn, ctx.agent, "update_tests",
                             f"Update {target[:7]} held back: its tests did not pass on the Mini. {tail}")
         return f"held back {target[:7]}: tests failed{put_back}"
 
     _out(repo, "merge", "--ff-only", "--quiet", target)
     settings.set(ctx.conn, TESTED_KEY, target)
+    settings.set(ctx.conn, REFUSED_KEY, "")
     migrations(repo)
     reels_note = ""
     if any(p.startswith("reels3d/") for p in changed) and (repo / "reels3d" / "package.json").is_file():
@@ -444,7 +452,7 @@ def sync(*, sleep: Optional[Callable[[float], None]] = None, say: Callable[[str]
     said: list[str] = []
 
     def once(ctx: runner.Context) -> str:
-        summary = run(ctx, site=False)
+        summary = run(ctx, site=False, retest=True)
         said.append(summary)
         return summary
 

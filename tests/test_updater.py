@@ -200,6 +200,24 @@ class Updater(Repos):
         self.assertEqual(self.calls["requirements"], 0, "no new requirements: nothing installed, nothing to put back")
         self.assertNotIn("put back", line)
 
+    def test_a_refused_commit_is_not_tested_again_until_main_moves(self):
+        """2026-10-24 audit: a red main was tested again every ten minutes, an hour-long suite each time, and nothing
+        else could deploy meanwhile. The refused commit is remembered and skipped, with one error; the next one is tested."""
+        before = self.head()
+        broken = self.commit("b.txt", "broken")
+        self.run_updater(suite_ok=False)
+        line = self.run_updater(suite_ok=False)
+        self.assertTrue(line.startswith(f"held back {broken[:7]}: its tests failed on the Mini; not tested again until main moves (ccs sync tests it now)"), line)
+        self.assertEqual(len(self.calls["suite"]), 1, "the refused commit is not tested a second time")
+        self.assertEqual(len(db.rows(self.conn, "SELECT id FROM errors WHERE kind='update_tests'")), 1, "one error, not one every ten minutes")
+        self.assertIn("held back", self.run_updater(dry=True))
+        self.assertEqual(self.head(), before)
+        fixed = self.commit("b.txt", "fixed")
+        line = self.run_updater(suite_ok=True)
+        self.assertIn("tests passed", line)
+        self.assertEqual((self.head(), len(self.calls["suite"])), (fixed, 2))
+        self.assertEqual(settings.get(self.conn, updater.REFUSED_KEY), "")
+
     def test_dry_run_reports_and_changes_nothing(self):
         before = self.head()
         self.commit("b.txt", "two")
@@ -244,6 +262,7 @@ class Updater(Repos):
         self.assertEqual(self.calls["requirements_from"][-1], str(self.repo), "from the checkout, which is still on the old commit")
         self.assertEqual(self.head(), head)
         self.calls["requirements"] = 0
+        self.commit("requirements.txt", "requests\nfixed\n")        # main moves: the refused commit itself is never tested again
         line = self.run_updater(suite_ok=True)
         self.assertIn("tests passed", line)
         self.assertNotIn("put back", line)
@@ -379,10 +398,14 @@ class Sync(Repos):
         self.suite_ok = True
 
         self.deploys = []
+        self.suite_runs = 0
+
+        def suite(worktree):
+            self.suite_runs += 1
+            return self.suite_ok, "Ran 3 tests" if self.suite_ok else "FAILED (failures=1)"
 
         def fake_run(ctx, **kw):
-            return real(ctx, repo=self.repo,
-                        suite=lambda wt: (self.suite_ok, "Ran 3 tests" if self.suite_ok else "FAILED (failures=1)"),
+            return real(ctx, repo=self.repo, suite=suite,
                         requirements=lambda r, w: None, migrations=lambda r: None,
                         restart=lambda: "dashboard: restarted", probe=lambda: self.dash,
                         deploy=lambda repo: (self.deploys.append(1), (True, "LIVE"))[1], **kw)
@@ -431,6 +454,18 @@ class Sync(Repos):
         self.assertEqual((code, self.head()), (1, before))
         self.assertIn("1 commit(s) BEHIND GitHub main", out)
         self.assertIn("not brought up to date: held back", out)
+
+    def test_sync_tests_a_refused_commit_again(self):
+        """Chris typed it: the one deliberate retry of a commit the ten-minute run refused and now skips."""
+        self.commit("b.txt", "broken")
+        self.suite_ok = False
+        self.sync()
+        code, out = self.sync()
+        self.assertEqual((code, self.suite_runs), (1, 2))
+        self.assertIn("not brought up to date: held back", out)
+        self.suite_ok = True
+        code, out = self.sync()
+        self.assertEqual((code, self.suite_runs), (0, 3))
 
     def test_local_changes_stop_it_with_the_reason(self):
         self.commit("b.txt", "two")
