@@ -1720,8 +1720,10 @@ def create_app() -> FastAPI:
                                                       "site takes it on its own within about twenty minutes.",
              "fields": [f("SEND_TOKEN", "Send token", secret=True)]},
             {"title": "Phone alerts", "note": "This company's own ntfy topic. Pings: a post ready to approve, a post that went out, "
-                                              "the watchdog's alerts and the morning brief. Save the topic, then send a test below.",
-             "fields": [f("NTFY_TOPIC", "ntfy topic")]},
+                                              "the watchdog's alerts and the morning brief. Save the topic, then send a test below. "
+                                              "The topic is the only thing guarding the pings (whoever knows it reads them and can "
+                                              "push his own), so it is kept like a key.",
+             "fields": [f("NTFY_TOPIC", "ntfy topic", secret=True)]},
             {"title": "GitHub", "note": "For the doctor (2026-10-15): an error in the code becomes an issue in "
                                         "ChrisKennedyImages/cki-convention-social with the traceback, and your phone gets the link. "
                                         "A fine-grained token for that one repository with one permission, Issues: Read and write. "
