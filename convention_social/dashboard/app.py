@@ -1761,7 +1761,7 @@ def create_app() -> FastAPI:
         from ..site import build as site_build
         from ..site import deploy
         form = await request.form()
-        updates, cleared, refused = {}, 0, ""
+        updates, cleared, refused = {}, 0, []
         for name in key_names:
             if name in clearable and form.get(f"clear_{name}"):
                 if config.getenv(name) is not None:
@@ -1771,6 +1771,9 @@ def create_app() -> FastAPI:
             value = (form.get(name) or "").strip()
             if not value or value == (config.getenv(name) or ""):
                 continue
+            if any(ch in value for ch in "\r\n\0"):
+                refused.append(f"{name} was not saved: it has a line break in it, and one .env line holds one value")
+                continue
             if name == "BUFFER_PLAN" and value not in ("free", "essentials", "team"):
                 continue
             if name == "CREDITS_SHEET_ID":
@@ -1778,13 +1781,17 @@ def create_app() -> FastAPI:
             if name == site_build.VERIFICATION_KEY:
                 parsed = site_build.parse_verification(value)
                 if parsed[2]:
-                    refused = f"the Search Console value was not saved: {parsed[2]}"
+                    refused.append(f"the Search Console value was not saved: {parsed[2]}")
                     continue
                 if parsed[:2] == site_build.parse_verification(config.getenv(name) or "")[:2]:
                     continue                      # the same tag in another of Google's forms: nothing changes for the site
             updates[name] = value
         if updates:
-            config.write_env(updates)
+            try:
+                config.write_env(updates)
+            except ValueError as e:            # the till's own check (write_env), should this page ever miss one
+                refused.append(f"nothing was saved: {e}")
+                updates = {}
             if "SEND_TOKEN" in updates:
                 settings.set(conn, deploy.SEND_TOKEN_CHANGED_KEY, db.utcnow())     # the Worker takes it on the next publish
             if site_build.VERIFICATION_KEY in updates:
@@ -1797,7 +1804,7 @@ def create_app() -> FastAPI:
         elif any(k in updates for k in deploy.SITE_KEYS):
             note += "; the site republishes itself in a few minutes with the new contact details"
         if refused:
-            note += "; " + refused
+            note += "; " + "; ".join(refused)
         return RedirectResponse("/keys?msg=" + quote_plus(note), status_code=303)
 
     @app.post("/keys/send-token", response_class=HTMLResponse)

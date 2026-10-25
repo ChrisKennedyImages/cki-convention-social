@@ -613,6 +613,18 @@ class Dashboard(IsolatedCase):
         self.assertNotIn("sk-secret-value", page)
         self.assertIn("New Name", page)
 
+    def test_a_keys_value_with_a_line_break_is_refused_and_adds_no_line_to_env(self):
+        """2026-10-24 audit: BRAND_NAME "Fine Name\\nINJECTED_KEY=pwned" went into .env as two lines."""
+        from urllib.parse import unquote_plus
+        c = self.signed_in()
+        r = c.post("/keys", data={"BRAND_NAME": "Fine Name\nINJECTED_KEY=pwned\nAUTOPOST_ENABLED=1"}, follow_redirects=False)
+        self.assertEqual(r.status_code, 303)
+        self.assertIn("line break", unquote_plus(r.headers["location"]))
+        config.reset()
+        self.assertIsNone(config.getenv("INJECTED_KEY"))
+        self.assertIsNone(config.getenv("AUTOPOST_ENABLED"))
+        self.assertNotIn("Fine Name", config.getenv("BRAND_NAME") or "")
+
     def test_library_never_opens_empty_when_folders_exist(self):
         d = FakeDrive()
         d.folder("fmisc", "Phone dump")

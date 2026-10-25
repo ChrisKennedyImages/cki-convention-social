@@ -63,6 +63,15 @@ class Config(IsolatedCase):
         self.assertEqual(config.getenv("B"), "has space")
         self.assertEqual(path.stat().st_mode & 0o777, 0o600)
 
+    def test_write_env_refuses_a_line_break_or_a_bad_key_and_writes_nothing(self):
+        """2026-10-24 audit: a value with a line break was written raw, so one Keys field could add any line to .env."""
+        path = config.env_file_path()
+        path.write_text("A=1\n")
+        for bad in ({"A": "x\nINJECTED=1"}, {"A": "x\r\nB=2"}, {"not a key": "x"}, {"A": "x\0"}):
+            with self.assertRaises(ValueError):
+                config.write_env(bad)
+        self.assertEqual(path.read_text(), "A=1\n")
+
     def test_process_env_wins_over_file(self):
         config.env_file_path().write_text("X_TEST=file\n")
         os.environ["X_TEST"] = "env"
