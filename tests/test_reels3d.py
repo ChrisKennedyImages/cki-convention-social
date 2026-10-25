@@ -2,9 +2,13 @@
 the reel, the fillers around the post's photos. Remotion itself is never run here: the run is a seam."""
 from __future__ import annotations
 
+import inspect
 import json
+import os
 import random
+import signal
 import subprocess
+import time
 from pathlib import Path
 from unittest import mock
 
@@ -112,6 +116,31 @@ class Render(IsolatedCase):
         with self.assertRaises(ValueError):
             reels3d.render("wall", shots(4), out=self.root / "x.mp4", audio=None, run=self.remotion)
         self.assertEqual(self.runs, [])
+
+    def test_a_render_past_its_time_is_stopped_with_the_browser_it_started(self):
+        """2026-10-24 audit: the timeout's kill reached npx alone, and Remotion's browser could stay on, rendering. The
+        render runs in a process group of its own and the whole group is stopped: here a shell standing for npx and a
+        sleep standing for the browser."""
+        pidfile = self.root / "browser.pid"
+        cmd = ["/bin/sh", "-c", f"sleep 60 & echo $! > {pidfile}; wait"]
+        with self.assertRaises(RuntimeError) as got:
+            reels3d.run_remotion(cmd, cwd=str(self.root), timeout=0.5)
+        self.assertEqual(str(got.exception), "remotion ran past 0 s and was stopped, with its browser")
+        browser = int(pidfile.read_text())
+        for _ in range(50):                               # the orphaned sleep is reaped by launchd within a moment
+            try:
+                os.kill(browser, 0)
+            except ProcessLookupError:
+                break
+            time.sleep(0.05)
+        else:
+            os.kill(browser, signal.SIGKILL)
+            self.fail("the browser kept running after the render was stopped")
+
+    def test_the_render_is_run_in_its_own_process_group(self):
+        """Pinned where it is consumed: render() hands Remotion to run_remotion unless a test injects its own runner."""
+        self.assertIs(inspect.signature(reels3d.render).parameters["run"].default, reels3d.run_remotion)
+        self.assertTrue(reels3d.run_remotion(["/bin/sh", "-c", "exit 3"], cwd=str(self.root), timeout=5).returncode == 3)
 
     def test_without_node_the_reel_fails_closed_and_says_so(self):
         with mock.patch.object(reels3d.shutil, "which", return_value=None), mock.patch.object(reels3d.Path, "exists", return_value=False):
