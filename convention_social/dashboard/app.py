@@ -1098,7 +1098,7 @@ def create_app() -> FastAPI:
         if name == "index.html":
             return RedirectResponse("/", status_code=303)   # 2026-10-15: no samples page; the designed drafts are on Today
         path = config.get_config().data_root / "renders" / folder / name
-        if not path.is_file():
+        if not path.is_file() or not inside_data_root(path):      # a planted link out of the data folder serves nothing
             raise HTTPException(404)
         return FileResponse(path, media_type=DESIGN_TYPES[Path(name).suffix])
 
@@ -1140,7 +1140,7 @@ def create_app() -> FastAPI:
         if not RENDER_NAME.fullmatch(name):
             raise HTTPException(404)
         path = config.get_config().data_root / "renders" / name
-        if not path.is_file():
+        if not path.is_file() or not inside_data_root(path):      # a planted link out of the data folder serves nothing
             raise HTTPException(404)
         return FileResponse(path, media_type="text/html" if name.endswith(".html") else "image/jpeg")
 

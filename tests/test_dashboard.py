@@ -658,6 +658,21 @@ class Dashboard(IsolatedCase):
         self.assertIn("Phone dump", page)
         self.assertIn("No folder has been recognised as event work yet", page)
 
+    def test_a_file_route_never_follows_a_link_out_of_the_data_folder(self):
+        """2026-10-24 audit: /library/renders/{name} and /library/design/{folder}/{name} checked the name and nothing
+        else, so a link planted under renders/ with a good name would have served any file on the Mini."""
+        renders = config.get_config().data_root / "renders"
+        (renders / "design-20261011-1800").mkdir(parents=True)
+        outside = self.root / "outside.jpg"
+        outside.write_bytes(b"\xff\xd8not for the web")
+        (renders / "contact-sheet-20261011.jpg").symlink_to(outside)
+        (renders / "design-20261011-1800" / "fan-post.jpg").symlink_to(outside)
+        (renders / "building-sheet-20261011.jpg").write_bytes(b"\xff\xd8jpeg")
+        c = self.signed_in()
+        self.assertEqual(c.get("/library/renders/contact-sheet-20261011.jpg").status_code, 404)
+        self.assertEqual(c.get("/library/design/design-20261011-1800/fan-post.jpg").status_code, 404)
+        self.assertEqual(c.get("/library/renders/building-sheet-20261011.jpg").status_code, 200, "a file of its own is served")
+
     def test_library_report_and_sheets_are_on_the_dashboard(self):
         renders = config.get_config().data_root / "renders"
         renders.mkdir(parents=True, exist_ok=True)
