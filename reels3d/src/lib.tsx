@@ -1,7 +1,7 @@
 // Shared pieces of the 3D reels: assets that hold the render until they are loaded, timing on the beat, and the
 // close every direction ends on. Brand: black, paper white, cyan; Unbounded, JetBrains Mono, Archivo, Inter Tight.
 import React, {useEffect, useMemo, useState} from 'react';
-import {continueRender, delayRender, interpolate, staticFile, useCurrentFrame, useVideoConfig, Easing} from 'remotion';
+import {continueRender, delayRender, staticFile, useCurrentFrame, useVideoConfig} from 'remotion';
 import * as THREE from 'three';
 
 export const W = 1080, H = 1920, FPS = 30, TOTAL = 450, END = 72;
@@ -133,6 +133,3 @@ export const useFrameInfo = (cuts: number[]) => {
   const f = useCurrentFrame() * (30 / fps);
   return useMemo(() => ({f, ...segmentAt(cuts, f), closing: f >= TOTAL - END}), [f, cuts.join(',')]);
 };
-
-export const fadeIn = (f: number, at: number, len = 8) => interpolate(f, [at, at + len], [0, 1], {
-  extrapolateLeft: 'clamp', extrapolateRight: 'clamp', easing: Easing.out(Easing.cubic)});

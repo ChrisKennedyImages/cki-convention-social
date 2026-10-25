@@ -218,14 +218,14 @@ def make(conn, fetch: Callable[[str], bytes], *, out_root: Optional[Path] = None
     if reels:
         if track is None:
             failed.append("the reels are silent: no music added yet (Library page, Music for reels)")
-        for name, job in (("rooms-reel.mp4", motion.rooms_reel),):
-            try:
-                job(shots, copy, out=out / name, audio=track)
-                made.append(name)
-            except Exception as e:  # noqa: BLE001 — the stills stand on their own; the page says why
-                failed.append(f"{name}: {e}")
-                log(f"{name} not made: {e}")
-                continue
+        name = "rooms-reel.mp4"
+        try:
+            motion.rooms_reel(shots, copy, out=out / name, audio=track)
+            made.append(name)
+        except Exception as e:  # noqa: BLE001 — the stills stand on their own; the page says why
+            failed.append(f"{name}: {e}")
+            log(f"{name} not made: {e}")
+        else:
             try:
                 made.append(cover_for(name, shots, copy, out))
             except Exception as e:  # noqa: BLE001 — the reel plays without its poster; the player shows its own first frame

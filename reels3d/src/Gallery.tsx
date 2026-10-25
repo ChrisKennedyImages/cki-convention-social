@@ -6,7 +6,7 @@ import {ThreeCanvas} from '@remotion/three';
 import {MeshReflectorMaterial} from '@react-three/drei';
 import {useThree} from '@react-three/fiber';
 import * as THREE from 'three';
-import {Close, CYAN, END, H, K, Label, Props, TOTAL, W, easeIO, handheld, lerp, useFonts, useFrameInfo, useTextures} from './lib';
+import {Close, END, H, K, Label, Props, TOTAL, W, easeIO, handheld, lerp, useFonts, useFrameInfo, useTextures} from './lib';
 
 const VFOV = 38, ASPECT = W / H;
 const HFOV = 2 * Math.atan(Math.tan((VFOV * Math.PI) / 360) * ASPECT);
@@ -62,25 +62,21 @@ const Rig: React.FC<{props: Props; widths: number[]}> = ({props, widths}) => {
 };
 
 const Prints: React.FC<{props: Props; tex: THREE.Texture[]; widths: number[]}> = ({props, tex, widths}) => {
-  const {i, f, a} = useFrameInfo(props.cuts);
   const spots = useMemo(() => layout(props.photos.length), [props.photos.length]);
   return (
     <>
-      {spots.map((s, k) => {
-        const lit = k === i ? Math.min(1, (f - a) / 10) : 0;
-        return (
-          <group key={k} position={s.pos} rotation={[0, s.rotY, 0]}>
-            <mesh position={[0, 0, -0.06]}>
-              <boxGeometry args={[widths[k] + 0.08, PRINT_H + 0.08, 0.1]} />
-              <meshStandardMaterial color="#050505" roughness={0.4} />
-            </mesh>
-            <mesh>
-              <planeGeometry args={[widths[k], PRINT_H]} />
-              <meshBasicMaterial map={tex[k]} toneMapped={false} />
-            </mesh>
-          </group>
-        );
-      })}
+      {spots.map((s, k) => (
+        <group key={k} position={s.pos} rotation={[0, s.rotY, 0]}>
+          <mesh position={[0, 0, -0.06]}>
+            <boxGeometry args={[widths[k] + 0.08, PRINT_H + 0.08, 0.1]} />
+            <meshStandardMaterial color="#050505" roughness={0.4} />
+          </mesh>
+          <mesh>
+            <planeGeometry args={[widths[k], PRINT_H]} />
+            <meshBasicMaterial map={tex[k]} toneMapped={false} />
+          </mesh>
+        </group>
+      ))}
     </>
   );
 };
