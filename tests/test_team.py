@@ -256,7 +256,7 @@ class Stories(TeamCase):
         self.run_sends(self.site((ID1, "chris")))
         row, _ = self.post()
         token = approve_token.issue(self.conn, row)
-        r = TestClient(create_app()).get(f"/media/card/{row['id']}/{token}.jpg")
+        r = TestClient(create_app()).get(f"/media/card/{row['id']}/{approve_token.card_key(row, token)}.jpg")
         self.assertEqual(r.status_code, 200)
         self.assertEqual(Image.open(io.BytesIO(r.content)).size, (1080, 1920))
 

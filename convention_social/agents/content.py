@@ -634,12 +634,12 @@ def ping_click(qid: int, design: str) -> str:
 
 def ping_extras(conn: sqlite3.Connection, row, art: Optional[dict]) -> dict:
     """What a draft's ping carries besides the words: the card (fetched by the phone from the dashboard with the
-    token, no login; a reel's own cover), and his three choices when the art director passed it (2026-10-15: Post
-    now, Follow the pace, Skip); Open and Skip otherwise, so he looks himself before anything can go out."""
+    token's card key, no login; a reel's own cover), and his three choices when the art director passed it (2026-10-15:
+    Post now, Follow the pace, Skip); Open and Skip otherwise, so he looks himself before anything can go out."""
     token = approve_token.issue(conn, row)
     passed = (art or {}).get("verdict") == "pass"
     return {"actions": notify.choice_actions(row["id"], token) if passed else notify.look_actions(row["id"], token),
-            "attach": notify.card_link(row["id"], token), "filename": f"post-{row['id']}.jpg"}
+            "attach": notify.card_link(row, token), "filename": f"post-{row['id']}.jpg"}
 
 
 def read_photo(cfg, row, download: Callable[[str], bytes]) -> bytes:

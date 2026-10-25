@@ -392,7 +392,7 @@ def ask_chris(ctx: runner.Context, send, qid: int, art: dict, line: str) -> str:
         return f"{line}; from the team, dry run: the phone was told"
     row = db.one(conn, "SELECT * FROM content_queue WHERE id=?", (qid,))
     token = approve_token.issue(conn, row)
-    card = {"attach": notify.card_link(qid, token), "filename": f"post-{qid}.jpg"}
+    card = {"attach": notify.card_link(row, token), "filename": f"post-{qid}.jpg"}
     if art.get("verdict") == "pass":
         tell(ctx, f"{brand}: a photo from your team to approve",
              f"A photo from your team, sent at {at}, passed the checks. Approve and it goes out as an Instagram Story right away; "
@@ -454,7 +454,7 @@ def approve_sent(ctx: runner.Context, send, qid: int, art: dict, line: str) -> s
     row = db.one(conn, "SELECT * FROM content_queue WHERE id=?", (qid,))
     where = where_words(row)
     card = {"click": notify.link(f"/queue/{qid}"), "actions": notify.open_action(qid),
-            "attach": notify.card_link(qid, approve_token.issue(conn, row)), "filename": f"post-{qid}.jpg"}
+            "attach": notify.card_link(row, approve_token.issue(conn, row)), "filename": f"post-{qid}.jpg"}
     if settings.dry_run(conn, "publisher"):
         tell(ctx, f"{brand}: dry run, your photo was not posted",
              f"Dry run: the photo you sent at {at} passed the checks and is approved by your send as post {qid}, but the "
