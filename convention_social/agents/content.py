@@ -584,7 +584,7 @@ def make_draft(ctx: runner.Context, day: date, chosen: list[tuple[dict, bytes]],
                           rule_report=json.dumps({"for_day": "turned back", "art": art, "subject": hero["subject"], "design": design,
                                                   **(extra_meta or {})}),
                           created_at=now_r, updated_at=now_r)
-        report.record_use(ctx.conn, "post", photo_ids, ref=f"post:{qid_r}", now=now_r)
+        report.record_use(ctx.conn, "post", photo_ids, ref=f"post:{qid_r}")
         return qid_r, art, f"art director turned back photo {hero['id']}: {art.get('notes', '')}"
     people = [c for r, _ in chosen for c in (r["credit"] or "").split()]
     meta = {"for_day": day.isoformat(), "subject": hero["subject"], "event": hero.get("convention_name") or "",
@@ -599,8 +599,10 @@ def make_draft(ctx: runner.Context, day: date, chosen: list[tuple[dict, bytes]],
                     caption=json.dumps(captions), render_paths=json.dumps(render_paths), rule_report=json.dumps(meta),
                     created_at=now_s, updated_at=now_s)
     # the rotation's memory: every photo on this draft was used now (a dry-run draft too: approved in dry run, it goes
-    # out when the lane is switched live), so the site, the samples and later drafts reach for the others first
-    report.record_use(ctx.conn, "post", photo_ids, ref=f"post:{qid}", now=now_s)
+    # out when the lane is switched live), so the site, the samples and later drafts reach for the others first. The
+    # moment is record_use's, to the microsecond like every surface's: the queue row's whole second sorted before a
+    # site use made in the same second, and the fresh photo came round again (CI, 2026-10-25)
+    report.record_use(ctx.conn, "post", photo_ids, ref=f"post:{qid}")
     # the ping that opens the draft (Chris, 2026-10-11: "I haven't received any ntfy"); 2026-10-13: it carries the
     # card, and an Approve button when the art director passed the draft (core/approve_token: signed, single use)
     title, message = ping or ping_words(ctx.cfg.brand_name, design, len(photo_ids), f"{day:%A}", designed=False)
