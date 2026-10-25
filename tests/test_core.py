@@ -271,6 +271,42 @@ class Spend(IsolatedCase):
         self.assertTrue(spend.cap_reached(db.connect()))
 
 
+class Logs(IsolatedCase):
+    def test_lines_go_to_the_rotating_file_and_to_stderr_only_when_someone_is_watching(self):
+        """2026-10-24 audit: every agent's log was written twice, its own rotating file and launchd's capture of stderr,
+        which never rotates (6.8 MB in two weeks). Under launchd stderr is no terminal, so the lines go to the file alone."""
+        from logging import StreamHandler
+        from logging.handlers import RotatingFileHandler
+        from convention_social.core import logs
+        with mock.patch.object(logs, "watched", return_value=False):
+            quiet = logs.get_logger("quiet-agent")
+        self.assertEqual([type(h) for h in quiet.handlers], [RotatingFileHandler])
+        self.assertEqual(quiet.handlers[0].baseFilename, str(config.get_config().logs_dir / "quiet-agent.log"))
+        with mock.patch.object(logs, "watched", return_value=True):
+            typed = logs.get_logger("typed-agent")
+        self.assertEqual([type(h) for h in typed.handlers], [RotatingFileHandler, StreamHandler])
+        self.assertEqual([type(h) for h in logs.get_logger("typed-agent", to_stderr=False).handlers], [RotatingFileHandler, StreamHandler],
+                         "the same logger again: not configured twice")
+
+    def test_the_dashboard_gives_uvicorn_the_same_rotating_log(self):
+        """The access log went to stderr and so to dashboard.launchd.log, 1.4 MB in two weeks, unrotated."""
+        import logging
+        from logging.handlers import RotatingFileHandler
+        from convention_social import cli
+        from convention_social.core import logs
+        served = logging.getLogger("uvicorn")
+        for h in list(served.handlers):
+            served.removeHandler(h)
+        with mock.patch("uvicorn.run") as run, mock.patch.object(logs, "watched", return_value=False):
+            cli.main(["dashboard"])
+        self.assertIsNone(run.call_args.kwargs["log_config"], "uvicorn's own stderr logging is off")
+        self.assertEqual([type(h) for h in served.handlers], [RotatingFileHandler])
+        self.assertEqual(served.handlers[0].baseFilename, str(config.get_config().logs_dir / "dashboard.log"))
+        for h in list(served.handlers):
+            served.removeHandler(h)
+            h.close()
+
+
 class StateIO(IsolatedCase):
     def test_atomic_save_and_private(self):
         p = self.root / "s.json"
