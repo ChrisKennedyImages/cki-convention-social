@@ -625,6 +625,30 @@ class Dashboard(IsolatedCase):
         self.assertIsNone(config.getenv("AUTOPOST_ENABLED"))
         self.assertNotIn("Fine Name", config.getenv("BRAND_NAME") or "")
 
+    def test_a_token_body_bigger_than_a_token_is_refused_before_it_is_read(self):
+        """2026-10-24 audit: the no-login token routes read any body whole into memory."""
+        import asyncio
+        from fastapi import HTTPException
+        from convention_social.dashboard import team_routes
+        c = self.signed_in()
+        now = db.utcnow()
+        qid = db.insert(self.conn, "content_queue", kind="photo", photo_ids="[1]", targets='["instagram"]', caption='{"instagram": "x"}',
+                        status="draft", created_at=now, updated_at=now)
+        big = b"token=" + b"x" * (team_routes.TOKEN_BODY_MAX + 1)
+        for path in (f"/queue/{qid}/choose-by-token/now", f"/queue/{qid}/approve-by-token", f"/queue/{qid}/feed-by-token"):
+            self.assertEqual(c.post(path, content=big).status_code, 413, path)
+        self.assertEqual(c.post(f"/queue/{qid}/choose-by-token/now", data={"token": "x"}).status_code, 409, "a small one is read as before")
+
+        class Chunked:
+            headers: dict = {}
+
+            async def stream(self):
+                for _ in range(3):
+                    yield b"x" * 2000
+        with self.assertRaises(HTTPException) as cm:
+            asyncio.run(team_routes.small_body(Chunked(), 4096))
+        self.assertEqual(cm.exception.status_code, 413, "a body with no length is cut off as it streams")
+
     def test_library_never_opens_empty_when_folders_exist(self):
         d = FakeDrive()
         d.folder("fmisc", "Phone dump")
