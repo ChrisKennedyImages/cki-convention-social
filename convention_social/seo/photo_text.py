@@ -429,8 +429,10 @@ class ClaudeWriter:
                 **common, max_tokens=4000, betas=[FALLBACK_BETA], fallbacks="default", thinking={"type": "adaptive"},
                 output_config={"effort": "low", "format": {"type": "json_schema", "schema": SCHEMA}})
         else:
+            # no effort here: Haiku 4.5 refuses the parameter ("This model does not support the effort parameter"), so every
+            # weekly run from 2026-10-12 to 10-19 failed on its first photo and every photo kept template text
             response = self.client.messages.create(
-                **common, max_tokens=1500, output_config={"effort": "low", "format": {"type": "json_schema", "schema": SCHEMA}})
+                **common, max_tokens=1500, output_config={"format": {"type": "json_schema", "schema": SCHEMA}})
         u = response.usage
         answered = getattr(response, "model", None) or self.model
         spend.record(self.conn, self.agent, answered, int(u.input_tokens or 0), int(u.output_tokens or 0),
