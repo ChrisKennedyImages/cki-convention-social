@@ -513,9 +513,14 @@ async function media(request, env, url) {
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
-    if (url.hostname.startsWith("www.")) {
-      // one address for search engines (2026-10-14): www. is the same site, so it goes to the apex for good
-      url.hostname = url.hostname.slice(4);
+    const www = url.hostname.startsWith("www.");
+    const local = url.hostname === "localhost" || url.hostname === "127.0.0.1";      // wrangler dev keeps plain http
+    if (www || (url.protocol === "http:" && !local)) {
+      // https only (2026-10-16 audit: the quote form's name, email and phone went over plain http) and one address for
+      // the search engines (2026-10-14: www. is the same site): one 301 to the https apex, path and query kept, before
+      // any route reads anything
+      url.protocol = "https:";
+      if (www) url.hostname = url.hostname.slice(4);
       return Response.redirect(url.toString(), 301);
     }
     if (url.pathname.startsWith("/m/")) return media(request, env, url);

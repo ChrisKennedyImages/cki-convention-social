@@ -730,7 +730,8 @@ class TheWorker(SizesCase):
         apex, before any route. The live check is tests/worker_test.mjs under node (CI runs it too)."""
         js = (REPO / "worker/index.js").read_text()
         body = js[js.index("async fetch(request, env) {"):]
-        self.assertLess(body.index('if (url.hostname.startsWith("www."))'), body.index('url.pathname.startsWith("/m/")'))
+        self.assertLess(body.index('url.hostname.startsWith("www.")'), body.index('url.pathname.startsWith("/m/")'))
+        self.assertLess(body.index('url.protocol === "http:"'), body.index('url.pathname.startsWith("/m/")'), "https only, before any route")
         self.assertIn("url.hostname = url.hostname.slice(4);", body)
         self.assertIn("return Response.redirect(url.toString(), 301);", body)
         test = (REPO / "tests/worker_test.mjs").read_text()
