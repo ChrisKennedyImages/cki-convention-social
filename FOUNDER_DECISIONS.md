@@ -1639,8 +1639,8 @@ where that $200 sits and what Anthropic says about it"), then "Go ahead with it"
 - **Photo sorting goes to Claude** (CLASSIFY_BACKEND=claude, CLASSIFY_MODEL=claude-opus-5, CLASSIFY_PER_RUN=100):
   Ollama graded 7,102 of 8,578 undecided photos a 4, so "best first" ranked nothing. About a cent a photo,
   ~1,300 a day; the unsorted event and architecture photos are done in about eight days.
-- **Atlas is not Anthropic.** "Atlas" is the Atlas Cloud video API (Seedance) in cki-agents (~/PresentCare), capped
-  at $16 a week in its own atlas_budget.py and its own ledger; nothing in this suite can reach it, and nothing
-  in PresentCare was changed. "I don't want anything in PresentCare changed."
+- **Atlas is not Anthropic.** "Atlas" is the Atlas Cloud video API (Seedance) in Chris's other fleet (its own repo
+  and .env on the Mini), capped at $16 a week in its own atlas_budget.py and its own ledger; nothing in this suite
+  can reach it, and nothing in that fleet was changed, as he asked.
 - The photo-review work (shoots first, then Claude grades the pool, then a faster per-photo tab) is its own
   session, started when Chris is at the Mac: "We can wait until on the Mac for that specifically."
