@@ -70,6 +70,53 @@ class Dashboard(IsolatedCase):
         self.assertEqual(good.headers["location"], "/")
         self.assertIn(COOKIE, good.cookies)
 
+    def test_every_answer_carries_the_security_headers_and_pages_are_never_kept(self):
+        """2026-10-24 audit: the dashboard sent no X-Frame-Options, X-Content-Type-Options, Referrer-Policy or Content
+        Security Policy (the Worker's team pages do), and the crash page, answered outside the middleware, carried no
+        cache header."""
+        from unittest import mock
+        from convention_social.dashboard import app as dash
+        wanted = {"x-frame-options": "DENY", "x-content-type-options": "nosniff", "referrer-policy": "same-origin"}
+        page = self.signed_in().get("/")
+        self.assertEqual(page.status_code, 200)
+        for name, value in wanted.items():
+            self.assertEqual(page.headers[name], value, name)
+        csp = page.headers["content-security-policy"]
+        for word in ("default-src 'self'", "frame-ancestors 'none'", "form-action 'self'", "object-src 'none'"):
+            self.assertIn(word, csp)
+        self.assertNotIn("http", csp, "nothing from anywhere else")
+        self.assertEqual(page.headers["cache-control"], "no-store")
+        renders = config.get_config().data_root / "renders"
+        renders.mkdir(parents=True, exist_ok=True)
+        (renders / "contact-sheet-20261011.jpg").write_bytes(b"\xff\xd8jpeg")
+        picture = self.client.get("/library/renders/contact-sheet-20261011.jpg")
+        self.assertEqual((picture.status_code, picture.headers["x-content-type-options"]), (200, "nosniff"))
+        self.assertNotIn("cache-control", picture.headers, "a picture may be kept; only pages and redirects never are")
+        away = TestClient(create_app()).get("/library", follow_redirects=False)
+        self.assertEqual((away.status_code, away.headers["x-frame-options"], away.headers["cache-control"]), (307, "DENY", "no-store"))
+        crashing = TestClient(create_app(), raise_server_exceptions=False)
+        crashing.cookies.set(COOKIE, make_token("chris"))
+
+        def boom(*a, **k):
+            raise RuntimeError("the photo list could not be read")
+        with mock.patch.object(dash, "photo_page", boom):
+            crash = crashing.get("/library")
+        self.assertEqual(crash.status_code, 500)
+        self.assertEqual((crash.headers["cache-control"], crash.headers["x-frame-options"]), ("no-store", "DENY"))
+
+    def test_signing_out_is_the_signed_in_users_own_choice(self):
+        """2026-10-24 audit: /logout was an unauthenticated POST."""
+        self.assertEqual(TestClient(create_app()).post("/logout", follow_redirects=False).status_code, 401)
+        r = self.signed_in().post("/logout", follow_redirects=False)
+        self.assertEqual((r.status_code, r.headers["location"]), (303, "/login"))
+        self.assertIn("Max-Age=0", r.headers["set-cookie"], "the cookie is dropped")
+
+    def test_a_convention_saved_with_a_bad_id_is_refused_not_a_crash(self):
+        """2026-10-24 audit: POST /calendar/save with id=abc crashed the page."""
+        r = self.signed_in().post("/calendar/save", data={"id": "abc", "name": "Big Con", "kind": "fan"}, follow_redirects=False)
+        self.assertEqual(r.status_code, 400)
+        self.assertIsNone(db.one(self.conn, "SELECT 1 FROM conventions"))
+
     def test_every_page_renders(self):
         c = self.signed_in()
         self.seed_library()
