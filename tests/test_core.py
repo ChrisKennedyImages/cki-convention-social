@@ -206,7 +206,7 @@ class Spend(IsolatedCase):
         conn = db.connect()
         self.assertFalse(spend.cap_reached(conn))
         spend.record(conn, "t", "claude-opus-5", 1_000_000, 1_000_000)
-        self.assertAlmostEqual(spend.month_to_date(conn, datetime.now(timezone.utc)), 30.0)
+        self.assertAlmostEqual(spend.cycle_to_date(conn, datetime.now(timezone.utc)), 30.0)
         self.assertTrue(spend.cap_reached(conn))
 
     def test_a_reservation_holds_the_cap_until_the_call_settles(self):
@@ -217,7 +217,7 @@ class Spend(IsolatedCase):
         conn = db.connect()
         rid = spend.reserve(conn, "content", "claude-opus-5", estimate_usd=0.6)
         self.assertIsNotNone(rid)
-        self.assertAlmostEqual(spend.month_to_date(conn), 0.6)
+        self.assertAlmostEqual(spend.cycle_to_date(conn), 0.6)
         self.assertTrue(spend.cap_reached(conn, about_to_spend=0.6), "a second call of the same size would overshoot: refused while the first is in flight")
         self.assertFalse(spend.cap_reached(conn), "the plain check still reads the ledger as it stands")
         self.assertIsNone(spend.reserve(conn, "scout", "claude-opus-5", estimate_usd=0.6), "the second agent cannot reserve past the cap")
@@ -234,13 +234,35 @@ class Spend(IsolatedCase):
         self.assertEqual(db.one(conn, "SELECT COUNT(*) n FROM api_usage")["n"], 1, "a call that failed leaves nothing")
         stale = spend.reserve(conn, "chief", "claude-opus-5", estimate_usd=0.5)
         conn.execute("UPDATE api_usage SET ts=? WHERE id=?", ("2026-10-13T00:00:00+00:00", stale))
-        self.assertAlmostEqual(spend.month_to_date(conn), 0.575, msg="held until swept")
+        self.assertAlmostEqual(spend.cycle_to_date(conn), 0.575, msg="held until swept")
         self.assertIsNotNone(spend.reserve(conn, "content", "claude-opus-5", estimate_usd=0.1))
         self.assertIsNone(db.one(conn, "SELECT id FROM api_usage WHERE cost_usd=0.5 AND detail LIKE 'reserved %'"),
                           "a reservation older than the sweep window is a crashed call: swept by the next reserve")
-        self.assertAlmostEqual(spend.month_to_date(conn), 0.175)
+        self.assertAlmostEqual(spend.cycle_to_date(conn), 0.175)
         spend.record(conn, "content", "claude-opus-5", 1, 1, "x", reservation=999999)
         self.assertEqual(db.one(conn, "SELECT COUNT(*) n FROM api_usage WHERE detail LIKE '%x'")["n"], 1, "an unknown reservation still records the call")
+        conn.close()
+
+    def test_the_cap_counts_from_the_day_the_credit_arrives(self):
+        """2026-10-25: Chris's Max plan pays $200 of API credit on the 17th and Anthropic stops every call when it is
+        gone. A cap counted from the 1st could spend its whole amount twice inside one credit (late this month, early
+        next); counted from the 17th it cannot. Unset, the cap counts from the 1st as it always did."""
+        conn = db.connect()
+        spend.record(conn, "t", "claude-opus-5", 1_000_000, 0)                                  # $5
+        conn.execute("UPDATE api_usage SET ts='2026-10-10T12:00:00+00:00'")
+        spend.record(conn, "t", "claude-opus-5", 400_000, 0)                                    # $2
+        conn.execute("UPDATE api_usage SET ts='2026-10-18T12:00:00+00:00' WHERE ts > '2026-10-11'")
+        oct20, nov10 = datetime(2026, 10, 20, tzinfo=timezone.utc), datetime(2026, 11, 10, tzinfo=timezone.utc)
+        self.assertAlmostEqual(spend.cycle_to_date(conn, oct20), 7.0, msg="from the 1st: both October rows")
+        self.assertAlmostEqual(spend.cycle_to_date(conn, nov10), 0.0, msg="from the 1st: November starts clean")
+        os.environ["AI_CAP_RESETS_ON"] = "17"
+        config.reset()
+        self.assertAlmostEqual(spend.cycle_to_date(conn, oct20), 2.0, msg="from the 17th: the 10th was last cycle")
+        self.assertAlmostEqual(spend.cycle_to_date(conn, nov10), 2.0, msg="from the 17th: the 18th is still this cycle")
+        self.assertEqual(spend.cycle_start(datetime(2026, 11, 17, 0, 0, 1, tzinfo=timezone.utc), 17).day, 17)
+        self.assertEqual(spend.cycle_start(datetime(2026, 11, 16, 23, 59, tzinfo=timezone.utc), 17).month, 10)
+        self.assertEqual(spend.cycle_start(datetime(2026, 3, 1, tzinfo=timezone.utc), 31), datetime(2026, 2, 28, tzinfo=timezone.utc), "past the 28th reads as the 28th")
+        self.assertEqual(spend.cycle_start(datetime(2026, 3, 5, tzinfo=timezone.utc), 0).day, 1, "below 1 reads as the 1st")
         conn.close()
 
     def test_zero_cap_fails_closed(self):

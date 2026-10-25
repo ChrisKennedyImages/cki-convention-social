@@ -1487,7 +1487,7 @@ def create_app() -> FastAPI:
         switches = [r for r in rows if r["dry_run"] is not None]
         return render(request, "agents.html", agents=rows, alerts=alerts.open_alerts(conn), back="/agents", msg=request.query_params.get("msg", ""),
                       live_n=sum(1 for r in switches if not r["dry_run"]), switch_n=len(switches),
-                      ai_mtd=spend.month_to_date(conn), ai_cap=config.get_config().ai_monthly_cap_usd)
+                      ai_mtd=spend.cycle_to_date(conn), ai_cap=config.get_config().ai_monthly_cap_usd)
 
     @app.post("/agents/{name}/run")
     def run_now(name: str, user: str = Depends(require_user)):
@@ -1698,7 +1698,8 @@ def create_app() -> FastAPI:
             {"title": "AI", "note": "Chris's Anthropic key, the one his other suite uses (his choice, 2026-10-11): "
                                     "bin/ccs copy-key ANTHROPIC_API_KEY --from <that .env> copies it without showing it. "
                                     "This suite stops at its own monthly cap below.",
-             "fields": [f("ANTHROPIC_API_KEY", "Anthropic API key", secret=True), f("AI_MONTHLY_CAP_USD", "Monthly cap, USD")]},
+             "fields": [f("ANTHROPIC_API_KEY", "Anthropic API key", secret=True), f("AI_MONTHLY_CAP_USD", "Monthly cap, USD"),
+                        f("AI_CAP_RESETS_ON", "Cap starts over on this day of the month (1, or the day the Anthropic credit arrives)")]},
             {"title": "Buffer", "note": "This company's own Buffer account. After the key, link the channels on the Buffer page.",
              "fields": [f("BUFFER_API_KEY", "Buffer API key", secret=True), f("BUFFER_PLAN", "Buffer plan", choices=["free", "essentials", "team"]),
                         f("PINTEREST_BOARD_ID", "Pinterest board id"), f("PINTEREST_LINK", "Page a pin opens (blank: the quote page)")]},
@@ -1733,8 +1734,10 @@ def create_app() -> FastAPI:
                                                  "Follow the pace and Skip. No more are made while that many still wait for you. A photo "
                                                  "is never on two posts inside the longer of the two windows under Posting.",
              "fields": [f("DESIGNED_PER_DAY", "Designed drafts a day (default 3; 0 stops them; 6 at most)")]},
-            {"title": "Local sorting", "note": "Ollama on this Mini sorts the photo library for free. Leave blank to use the first vision model it has.",
-             "fields": [f("OLLAMA_MODEL", "Ollama model"), f("CLASSIFY_BACKEND", "Sorter", choices=["auto", "ollama", "claude"])]},
+            {"title": "Photo sorting", "note": "Ollama on this Mini sorts the photo library for free but grades almost everything a 4. "
+                                              "Sorter \"claude\" sends new photos to Claude instead, under the AI cap above; the model and the photos per run are yours to set.",
+             "fields": [f("OLLAMA_MODEL", "Ollama model (blank: the first vision model it has)"), f("CLASSIFY_BACKEND", "Sorter", choices=["auto", "ollama", "claude"]),
+                        f("CLASSIFY_MODEL", "Claude sorter model (default claude-haiku-4-5)"), f("CLASSIFY_PER_RUN", "Photos sorted per scanner run (default 200 paid, 500 free)")]},
             {"title": "This dashboard", "note": "The address you open this dashboard at from your phone.",
              "fields": [f("DASHBOARD_PUBLIC_URL", "Dashboard address")]},
             {"title": "Search engines", "note": "Google: if Search Console verified the property by itself (through Cloudflare's DNS), "

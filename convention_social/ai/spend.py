@@ -1,4 +1,8 @@
-"""The one till for Anthropic spend: record every call, know month-to-date, stop at the cap.
+"""The one till for Anthropic spend: record every call, know the cycle to date, stop at the cap.
+
+The cap counts one cycle: from the first of the month as it always did, or from the day the Anthropic credit
+arrives (AI_CAP_RESETS_ON; Chris's Max plan pays $200 of API credit on the 17th, 2026-10-25), so the cap and the
+credit count the same days and two cycles cannot stack inside one credit.
 
 Rates are USD per million tokens (input, output), matched by longest model
 prefix (Anthropic price table, read 2026-10-10). Unknown models are counted with cost 0 so the count stays honest even
@@ -87,9 +91,19 @@ def release(conn: sqlite3.Connection, reservation: Optional[int]) -> None:
         conn.execute("DELETE FROM api_usage WHERE id=? AND detail LIKE ?", (reservation, f"{RESERVED} %"))
 
 
-def month_to_date(conn: sqlite3.Connection, now: datetime | None = None) -> float:
+def cycle_start(now: datetime, resets_on: int) -> datetime:
+    """Midnight UTC of the most recent `resets_on` day of the month. A day past the 28th reads as the 28th, so every
+    month has one; below 1 reads as the 1st."""
+    day = min(max(int(resets_on), 1), 28)
+    start = now.replace(day=day, hour=0, minute=0, second=0, microsecond=0)
+    if start > now:
+        start = (start.replace(day=1) - timedelta(days=1)).replace(day=day)
+    return start
+
+
+def cycle_to_date(conn: sqlite3.Connection, now: datetime | None = None) -> float:
     now = now or datetime.now(timezone.utc)
-    start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0).isoformat()
+    start = cycle_start(now, config.get_config().ai_cap_resets_on).isoformat()
     row = db.one(conn, "SELECT COALESCE(SUM(cost_usd), 0) AS c FROM api_usage WHERE provider='anthropic' AND ts >= ?", (start,))
     return float(row["c"])
 
@@ -98,4 +112,4 @@ def cap_reached(conn: sqlite3.Connection, about_to_spend: float = 0.0) -> bool:
     """Fails closed: a cap of 0 or less means no paid calls at all. Reservations count (they are rows).
     `about_to_spend` asks whether a call of that size would pass the cap."""
     cap = config.get_config().ai_monthly_cap_usd
-    return cap <= 0 or month_to_date(conn) + max(0.0, about_to_spend) >= cap + (1e-9 if about_to_spend else 0)
+    return cap <= 0 or cycle_to_date(conn) + max(0.0, about_to_spend) >= cap + (1e-9 if about_to_spend else 0)

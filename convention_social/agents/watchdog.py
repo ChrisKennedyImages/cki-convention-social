@@ -153,7 +153,7 @@ def check_budgets(ctx: runner.Context, f: Findings, now: datetime) -> None:
             f.alert(f"buffer_budget:{b['window']}", f"Buffer API {b['window']} window: {b['used']} of {b['limit']} requests used. The agents are holding.")
         elif b["used"] >= b["limit"] * 0.6:
             f.note(f"Buffer API {b['window']} window is at {b['used']} of {b['limit']}.")
-    mtd = spend.month_to_date(ctx.conn)
+    mtd = spend.cycle_to_date(ctx.conn)
     cap = ctx.cfg.ai_monthly_cap_usd
     if cap > 0 and mtd >= cap:
         f.alert("ai_cap", f"AI spend ${mtd:.2f} has reached the ${cap:.2f} monthly cap. Caption drafting is paused.")
@@ -355,7 +355,7 @@ def digest_data(ctx: runner.Context, now: datetime) -> dict:
     return {"doctor": doctor.digest_lines(conn, now - timedelta(hours=24)), "published": published, "waiting": waiting, "approved": approved, "scheduled": scheduled, "would_publish": would,
             "failed": failed, "errors": errors, "agents": agents, "channels": channels,
             "drive": (settings.get(conn, DRIVE_STATE_KEY) or "unknown"),
-            "ai_mtd": spend.month_to_date(conn), "ai_cap": ctx.cfg.ai_monthly_cap_usd, "buffer": budget.snapshot(conn)}
+            "ai_mtd": spend.cycle_to_date(conn), "ai_cap": ctx.cfg.ai_monthly_cap_usd, "buffer": budget.snapshot(conn)}
 
 
 def digest_html(ctx: runner.Context, d: dict, notes: list[str], now: datetime) -> tuple[str, str]:

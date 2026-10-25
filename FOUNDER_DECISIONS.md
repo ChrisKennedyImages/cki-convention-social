@@ -1624,3 +1624,23 @@ reversible on the Keys page or in this file:
   (agents/outreach.send_approved), and nothing has been sent.
 - Loop stays as it is (23 October: "Fuck it, it's fine"); the art director is to be told its glass loop is the
   design, not a defect (its own session).
+
+## 2026-10-25: the Anthropic credit, the cap, Claude sorting; Atlas and the other fleet untouched
+
+Chris's Max 20x plan pays $200 of API credit a month into his Console organization ("Chris's Individual Org",
+linked 14 October; next credit 17 November; unused credit expires; when it is gone Anthropic stops every call
+and bills no card). This suite's key is in that organization: the Console showed $7.69 of credit used since
+the link and the suite alone had spent $7.16–$8.58 in those days. Checked before deciding ("I want to check
+where that $200 sits and what Anthropic says about it"), then "Go ahead with it":
+
+- **The cap is $150, counted from the 17th** (AI_MONTHLY_CAP_USD=150, AI_CAP_RESETS_ON=17), so the cap and the
+  credit count the same days and two cycles cannot stack inside one credit. $50 of credit and the $32.36
+  purchased balance stay as headroom for anything else in the organization.
+- **Photo sorting goes to Claude** (CLASSIFY_BACKEND=claude, CLASSIFY_MODEL=claude-opus-5, CLASSIFY_PER_RUN=100):
+  Ollama graded 7,102 of 8,578 undecided photos a 4, so "best first" ranked nothing. About a cent a photo,
+  ~1,300 a day; the unsorted event and architecture photos are done in about eight days.
+- **Atlas is not Anthropic.** "Atlas" is the Atlas Cloud video API (Seedance) in Chris's other fleet (its own repo
+  and .env on the Mini), capped at $16 a week in its own atlas_budget.py and its own ledger; nothing in this suite
+  can reach it, and nothing in that fleet was changed, as he asked.
+- The photo-review work (shoots first, then Claude grades the pool, then a faster per-photo tab) is its own
+  session, started when Chris is at the Mac: "We can wait until on the Mac for that specifically."
