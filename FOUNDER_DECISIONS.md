@@ -1625,7 +1625,7 @@ reversible on the Keys page or in this file:
 - Loop stays as it is (23 October: "Fuck it, it's fine"); the art director is to be told its glass loop is the
   design, not a defect (its own session).
 
-## 2026-10-25: the Anthropic credit, the cap, Claude sorting; Atlas and PresentCare untouched
+## 2026-10-25: the Anthropic credit, the cap, Claude sorting; Atlas and the other fleet untouched
 
 Chris's Max 20x plan pays $200 of API credit a month into his Console organization ("Chris's Individual Org",
 linked 14 October; next credit 17 November; unused credit expires; when it is gone Anthropic stops every call
