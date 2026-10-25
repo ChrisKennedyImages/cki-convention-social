@@ -14,8 +14,10 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import random
 import shutil
+import signal
 import sqlite3
 import subprocess
 from pathlib import Path
@@ -89,8 +91,24 @@ def props(shots: Sequence[Shot], *, music: Path, grid: Sequence[Path], public: P
     return {"photos": photos, "cuts": cuts_for(len(shots)), "grid": tiles, "music": track.name}
 
 
+def run_remotion(cmd: Sequence[str], *, cwd: str, timeout: float) -> subprocess.CompletedProcess:
+    """Remotion in a process group of its own, so a render past its time is stopped together with the browser it
+    started (2026-10-24 audit: subprocess.run's kill reached npx alone and could leave Chrome rendering on)."""
+    proc = subprocess.Popen(cmd, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, start_new_session=True)
+    try:
+        out, err = proc.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)          # the group's id is the leader's pid (start_new_session)
+        except ProcessLookupError:
+            pass
+        proc.communicate()
+        raise RuntimeError(f"remotion ran past {int(timeout)} s and was stopped, with its browser") from None
+    return subprocess.CompletedProcess(list(cmd), proc.returncode, out, err)
+
+
 def render(style: str, shots: Sequence[Shot], *, out: Path, audio: Optional[Path], grid: Sequence[Path] = (),
-           run: Callable = subprocess.run) -> Path:
+           run: Callable = run_remotion) -> Path:
     """The reel as an mp4 at `out`: 1080 x 1920, 60 fps, 15 s, with its track."""
     if style not in STYLES:
         raise ValueError(f"no reel style {style!r}; one of {', '.join(STYLES)}")
@@ -105,7 +123,7 @@ def render(style: str, shots: Sequence[Shot], *, out: Path, audio: Optional[Path
         (public / "props.json").write_text(json.dumps(p))
         cmd = [node_tool("npx"), "remotion", "render", "src/Root.tsx", COMPOSITION[style], str(out),
                f"--props={public / 'props.json'}", f"--public-dir={public}", "--gl=angle", f"--timeout={ASSET_WAIT_MS}", "--log=error"]
-        r = run(cmd, cwd=str(REELS3D), capture_output=True, text=True, timeout=RENDER_TIMEOUT)
+        r = run(cmd, cwd=str(REELS3D), timeout=RENDER_TIMEOUT)
         if r.returncode != 0:
             said = (r.stderr or r.stdout or "").strip().splitlines()
             raise RuntimeError(f"remotion stopped with code {r.returncode}: {' '.join(said[-3:])[:400]}")
