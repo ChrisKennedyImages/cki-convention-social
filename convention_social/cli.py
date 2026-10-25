@@ -155,15 +155,23 @@ def cmd_hash_password(args) -> int:
 
 
 def cmd_dashboard(_args) -> int:
+    import logging
     import os
     import uvicorn
     from .dashboard.app import create_app
-    from .core import limits
+    from .core import limits, logs
     cfg = config.get_config()
     cfg.locks_dir.mkdir(parents=True, exist_ok=True)
     limits.raise_open_files()                                          # 48 thumbnails at once need more than macOS's 256
     (cfg.locks_dir / "dashboard.pid").write_text(str(os.getpid()))   # the updater restarts it after an update
-    uvicorn.run(create_app(), host="127.0.0.1", port=cfg.dashboard_port, log_level="info")
+    # uvicorn's own lines (its access log among them) go to the dashboard's rotating log like every agent's, and to
+    # stderr only when someone is watching; launchd's unrotated copy of stderr kept them all (2026-10-24 audit)
+    served = logging.getLogger("uvicorn")
+    for h in logs.handlers("dashboard"):
+        served.addHandler(h)
+    served.setLevel(logging.INFO)
+    served.propagate = False
+    uvicorn.run(create_app(), host="127.0.0.1", port=cfg.dashboard_port, log_level="info", log_config=None)
     return 0
 
 
