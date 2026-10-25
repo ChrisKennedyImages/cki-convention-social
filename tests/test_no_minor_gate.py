@@ -73,6 +73,25 @@ class NoAgeGate(IsolatedCase):
         from convention_social.dashboard import app as dash
         self.assertNotIn("possible_minor", dash.VIEWS["review"][0])
 
+    def test_no_code_reads_the_age_flag_and_no_prompt_asks(self):
+        """The gate is gone everywhere, not only in eligibility: until 2026-10-24 reels3d.fillers kept flagged photos
+        off a reel's wall, and the caption writer was still asked whether anyone could be under 18 (nothing read
+        the answer). The column stays in the database; no line of code reads it and no prompt asks."""
+        import re
+        from pathlib import Path
+        import convention_social
+        from convention_social.ai import claude as captions
+        self.assertNotIn("under 18", captions.SYSTEM_PROMPT)
+        self.assertNotIn("possible_minor", captions.SYSTEM_PROMPT)
+        self.assertNotIn("possible_minor", captions.OUTPUT_SCHEMA["properties"])
+        self.assertNotIn("possible_minor", captions.OUTPUT_SCHEMA["required"])
+        pkg = Path(convention_social.__file__).resolve().parent
+        reads = re.compile(r"""\[\s*['"]possible_minor['"]\s*\]|\.get\(\s*['"]possible_minor['"]|(?<!excluded)\.possible_minor\b""")
+        hits = [f"{p.relative_to(pkg)}:{n}" for p in sorted(pkg.rglob("*.py")) if "__pycache__" not in p.parts
+                for n, line in enumerate(p.read_text().splitlines(), 1) if reads.search(line)]
+        self.assertEqual(hits, [], "a line of code reads the age flag")
+        self.assertTrue(reads.search('if r["possible_minor"]:'), "the pin catches a planted read")
+
 
 class InstagramOnly(AgentCase):
     def setUp(self):
