@@ -18,6 +18,7 @@ FOLDER_MIME = "application/vnd.google-apps.folder"
 PAGE_SIZE = 1000
 TIMEOUT = 60
 TOKEN_MAX_AGE = 300        # how long a token is reused before the provider is asked again
+RETRY_AFTER = (1, 2, 4)    # seconds before each further try of a request Drive answered 5xx or did not answer at all
 
 SHARE_FIELDS = "ownedByMe,sharingUser(displayName),owners(displayName)"      # who shared it: a name only, never an address
 FILE_FIELDS = ("id,name,mimeType,md5Checksum,size,parents,modifiedTime,description,trashed,"
@@ -28,9 +29,20 @@ FOLDER_FIELDS = "id,name,parents,modifiedTime,driveId," + SHARE_FIELDS
 Transport = Callable[[str, dict, dict, bool], object]   # (url, params, headers, stream) -> response
 
 
+def _status(error: object) -> Optional[int]:
+    return getattr(getattr(error, "response", None), "status_code", None)
+
+
 def unauthorized(error: object) -> bool:
     """True when Drive answered 401: the access token has expired or been revoked."""
-    return getattr(getattr(error, "response", None), "status_code", None) == 401
+    return _status(error) == 401
+
+
+def passing(error: object) -> bool:
+    """True for a 5xx from Drive, or no answer at all (the connection dropped, the read timed out): worth another try
+    after a pause (open since the 10-16 audit: a 500 or a reset failed the photo at once). A 4xx is final."""
+    status = _status(error)
+    return status >= 500 if status is not None else isinstance(error, OSError)
 
 
 def requests_get(url: str, params: dict, headers: dict, stream: bool = False):
@@ -46,7 +58,7 @@ class NoThumbnail(RuntimeError):
 
 class DriveReader:
     def __init__(self, token: Union[str, Callable[[], str]], *, conn: Optional[sqlite3.Connection] = None,
-                 agent: str = "scanner", transport: Optional[Transport] = None):
+                 agent: str = "scanner", transport: Optional[Transport] = None, sleep: Callable[[float], None] = time.sleep):
         """`token` is a bearer string, or a callable that returns a currently valid one.
 
         Pass the callable for any pass that can outlive an access token. Google's last about an
@@ -64,6 +76,7 @@ class DriveReader:
         self.conn = conn
         self.agent = agent
         self.transport = transport or requests_get
+        self.sleep = sleep
 
     @property
     def token(self) -> str:
@@ -88,14 +101,23 @@ class DriveReader:
         return self.transport(url, dict(params), {"Authorization": "Bearer " + self.token}, stream)
 
     def get(self, path: str, params: Optional[dict] = None, *, stream: bool = False, absolute: bool = False):
+        """One read. A 401 is tried once more at once with a fresh token; a 5xx or no answer at all is tried again after
+        each pause in RETRY_AFTER, then raised; anything else is raised as it came. Every try is counted as a request."""
         url = path if absolute else API + path
         params = dict(params or {})
-        try:
-            return self._send(url, params, stream, path)
-        except Exception as e:  # noqa: BLE001 — only a 401 is handled; everything else is re-raised
-            if not (unauthorized(e) and self._drop_token()):
-                raise
-            return self._send(url, params, stream, path)   # counted again: it is a second request
+        fresh_token = False
+        pauses = iter(RETRY_AFTER)
+        while True:
+            try:
+                return self._send(url, params, stream, path)
+            except Exception as e:  # noqa: BLE001
+                if unauthorized(e) and not fresh_token and self._drop_token():
+                    fresh_token = True
+                    continue
+                pause = next(pauses, None) if passing(e) else None
+                if pause is None:
+                    raise
+                self.sleep(pause)
 
     def _pages(self, path: str, params: dict, key: str) -> Iterator[dict]:
         page = None

@@ -392,17 +392,51 @@ class TokenLifetime(IsolatedCase):
         self.assertEqual(st.failed, 0, "the pass must pick up the new token, not die on 401s")
         self.assertGreater(st.done, 0)
 
-    def test_a_non_401_error_is_not_retried(self):
+    def _answered(self, status):
+        err = RuntimeError(f"{status} Server Error")
+        err.response = types.SimpleNamespace(status_code=status)
+        return err
+
+    def test_a_5xx_or_no_answer_is_tried_again_after_a_pause_then_given_up(self):
+        """Open since the 10-16 audit: Drive's 500 and 503 and a dropped connection failed the photo at once; only a 401
+        was tried again. Three more tries, the pause doubling, every try counted as a request; a 4xx stays final."""
+        d = library()
+        conn = db.connect()
+        failures = [self._answered(503), self._answered(500), ConnectionError("reset by peer")]
+        calls, pauses = [], []
+
+        def transport(url, params, headers, stream=False):
+            calls.append(url)
+            if failures:
+                raise failures.pop(0)
+            return d(url, params, headers, stream)
+
+        reader = DriveReader(lambda: "tok", conn=conn, transport=transport, sleep=pauses.append)
+        self.assertEqual(reader.root_id(), d.root)
+        self.assertEqual((len(calls), pauses), (4, [1, 2, 4]))
+        self.assertEqual(db.one(conn, "SELECT COUNT(*) n FROM api_usage WHERE provider='drive'")["n"], 4, "every try is a request")
+        failures[:] = [self._answered(502)] * 4
+        calls.clear()
+        with self.assertRaises(RuntimeError):
+            reader.root_id()
+        self.assertEqual(len(calls), 4, "three more tries, then it is raised")
+        failures[:] = [self._answered(404)]
+        calls.clear()
+        with self.assertRaises(RuntimeError):
+            reader.root_id()
+        self.assertEqual(len(calls), 1, "a 4xx is final")
+
+    def test_an_error_that_is_neither_is_not_retried(self):
         calls = []
 
         def transport(url, params, headers, stream=False):
             calls.append(url)
-            raise RuntimeError("connection reset")
+            raise RuntimeError("something else entirely")
 
         reader = DriveReader(lambda: "tok", conn=db.connect(), transport=transport)
         with self.assertRaises(RuntimeError):
             reader.root_id()
-        self.assertEqual(len(calls), 1, "only a 401 is worth a second attempt")
+        self.assertEqual(len(calls), 1, "only a 401, a 5xx or a dropped connection is worth another try")
 
 
 class ArchitectureSheet(IsolatedCase):
@@ -754,6 +788,28 @@ class OAuthState(IsolatedCase):
             raise RefreshError("invalid_grant: Token has been expired or revoked.")
         with self.assertRaises(oauth.DriveAuthError):
             oauth.access_token(conn, refresh_fn=boom)
+        self.assertEqual(settings.get(conn, oauth.STATE_KEY), "expired")
+
+    def test_googles_own_5xx_on_the_token_endpoint_is_not_an_expired_sign_in(self):
+        """google-auth tries the token endpoint again on a 5xx and raises a RefreshError marked retryable when it still
+        fails. Open since the 10-16 audit: that read as "sign in again" and the watchdog would have said so, loudly."""
+        from google.auth.exceptions import RefreshError
+        from convention_social.core import state_io
+        conn = db.connect()
+        state_io.save_json(oauth.token_path(), {"token": "a", "refresh_token": "r", "client_id": "c", "client_secret": "s",
+                                                "token_uri": oauth.TOKEN_URI, "scopes": list(oauth.SCOPES),
+                                                "expiry": "2020-01-01T00:00:00Z"}, private=True)
+
+        def google_down(creds):
+            raise RefreshError("Internal error encountered.", retryable=True)
+        with self.assertRaises(RefreshError):
+            oauth.access_token(conn, refresh_fn=google_down)
+        self.assertEqual(settings.get(conn, oauth.STATE_KEY), "ok", "a passing fault, not a dead sign-in")
+
+        def revoked(creds):
+            raise RefreshError("invalid_grant: Token has been expired or revoked.", retryable=False)
+        with self.assertRaises(oauth.DriveAuthError):
+            oauth.access_token(conn, refresh_fn=revoked)
         self.assertEqual(settings.get(conn, oauth.STATE_KEY), "expired")
 
     def test_token_with_extra_scope_refused(self):
