@@ -649,6 +649,16 @@ class Dashboard(IsolatedCase):
         self.assertEqual(calls, [("POST", "https://eventcaliber.com/api/heartbeat/test")])
         self.assertIn("sent", r.headers["location"].lower())
 
+    def test_the_ntfy_topic_is_kept_like_a_key(self):
+        """2026-10-24 audit: the topic was shown plain on the Keys page though it is the only thing guarding the pings:
+        whoever knows it reads every ping and can push fake ones with a link of their choosing."""
+        os.environ["NTFY_TOPIC"] = "event-caliber-k9x7"
+        config.reset()
+        page = self.signed_in().get("/keys").text
+        self.assertNotIn("event-caliber-k9x7", page)
+        self.assertRegex(page, r'<input type="password" name="NTFY_TOPIC"')
+        self.assertNotIn('name="clear_NTFY_TOPIC"', page, "replaced, never cleared, like a key")
+
     def test_keys_page_writes_env_and_never_shows_secrets(self):
         c = self.signed_in()
         c.post("/keys", data={"ANTHROPIC_API_KEY": "sk-secret-value", "BRAND_NAME": "New Name",
