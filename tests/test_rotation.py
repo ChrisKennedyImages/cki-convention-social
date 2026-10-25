@@ -141,6 +141,21 @@ class Drafts(IsolatedCase):
         self.assertEqual(self.draft()[1], [weak])
         self.assertEqual(self.draft()[1], [strong], "its turn once the others had theirs")
 
+    def test_a_draft_in_the_same_second_as_a_site_use_comes_after_it(self):
+        """Red on CI (2026-10-25, #126's run): the draft stamped its use with the queue row's whole-second time while
+        the site stamps to the microsecond; inside one second the whole second sorts first ('+' before '.'), so the
+        draft's photo read as used before the site's and came round again at once."""
+        strong = event_photo(self.conn, "strong", kind="business", quality=5)
+        weak = event_photo(self.conn, "weak", kind="business", quality=3)
+        middle = event_photo(self.conn, "middle", kind="business", quality=4)
+        stamps = iter(f"2026-10-25T12:00:00.{n:06d}+00:00" for n in (100, 200, 300, 400))
+        with mock.patch.object(db, "utcnow", return_value="2026-10-25T12:00:00+00:00"), \
+             mock.patch.object(report, "use_stamp", side_effect=lambda: next(stamps)):
+            report.record_use(self.conn, "site", [strong], ref="site:a")
+            self.assertEqual(self.draft()[1], [middle])
+            self.assertEqual(self.draft()[1], [weak])
+            self.assertEqual(self.draft()[1], [strong], "the site's use is the oldest, whole second or not")
+
     def test_a_draft_records_a_post_use_for_every_photo_on_it_dry_run_included(self):
         for i in range(5):
             event_photo(self.conn, f"p{i}", kind="business", quality=5)
