@@ -1644,3 +1644,35 @@ where that $200 sits and what Anthropic says about it"), then "Go ahead with it"
   can reach it, and nothing in that fleet was changed, as he asked.
 - The photo-review work (shoots first, then Claude grades the pool, then a faster per-photo tab) is its own
   session, started when Chris is at the Mac: "We can wait until on the Mac for that specifically."
+
+
+- Loop stayed as it was that afternoon (23 October: "Fuck it, it's fine") until the evening's rework, next
+  entry; the art director is to be told its glass loop is the design, not a defect (its own session).
+
+## 2026-10-24: the Loop reel, in Chris's words (approved; reels3d/src/Loop.tsx)
+
+"If you get this right this time, please save that prompt." Saved here and in memory; Loop is not changed
+again without his word.
+
+- **The loop:** one loupe of liquid glass, one size, that travels one smooth curve for the whole reel: in from
+  beyond the first photo, across each of the reel's four photos side to side, on to the next, out beyond the
+  last. It never stops, never changes. "The loop move fluidly." Later that night: "the loop itself is moving too
+  fast. It's supposed to crawl and creep"; "it should slow on full bleed"; "ONLY TOUCH THE LOOP NOTHING ELSE FROM
+  THE LAST APPROVED ONE." So it reaches and leaves each photo on the frames of a steady pace (the grid's rests,
+  slides and enlarging are untouched) and in between creeps, slowest while the photo fills it, quicker over its
+  edges, the speed changing smoothly. Approved 2026-10-25 ("Yes, it's right"). Inside it only the photo under it,
+  magnified mildly; "when you put your eye to a loop there are no reflections inside of the loop itself, just on
+  the edges to show the liquid glass effect and magnification." "The whole point is the loop! If I didn't use a
+  loop I would only then bring the photo closer. The LOOP magnifies, not the photo being lifted closer."
+- **The grid:** "There is no camera." Level rows of cards, each its own shape, tight dark gaps; a 3:2 card is two
+  thirds of the width ("the grid is too small" at less). "The background moves in 2d with the loop crawling over
+  the photos grid." While the loop crosses a card the grid rests and "the whole grid enlarges to make the photo
+  bigger when the loop has crawled to that image" (a little, x1.2), the rest of the grid dark; "the loop doesn't
+  shrink but the grid should" as the loop leaves, and it slides level to the next card. "The photo should never
+  lift from the background." "The loop and photo itself don't transition to anything else other than what they
+  are." "We pick the images the loop is going to on the grid and they are the reel's images": "do 4 images and go
+  slower on the reel." A fifth or sixth photo fills the grid.
+- **Never again:** the photo lifting or pushing toward the viewer; a zoom that reads as the photo coming closer;
+  a thick drop-like lens ("like a raindrop magnified"); a flat disc over faces; reflections inside the lens; the
+  grid shrinking at the close ("the ending goes back to the photo push"); a mix of effects ("that's a mix of
+  everything we created"); anything drawn around a photo; light over a photo.

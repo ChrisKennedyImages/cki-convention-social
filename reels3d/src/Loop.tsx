@@ -1,46 +1,54 @@
-// Loop, made to match Chris's reelfolio recording (2026-10-23, compared frame by frame against it).
-// What the recording does, and this does:
-// - a GRID of cards in level rows, every card its own shape (nothing cropped), tight even gaps of flat dark space;
-//   the post's photos are the cards visited, the grid photos fill the rest
-// - HOLD: the camera stops over one card and the rest of the grid falls back into the dark (dim slivers of its
-//   neighbours); the card never leaves the grid and the camera never comes in (Chris: "the photos should not punch
-//   out"); its label under it on the dark (the room, then its line) and a counter at the right
-// - THE LOOP: a card-sized oval of liquid glass that glides onto the held photo, magnifies it as it crosses, and
-//   carries on ahead of the camera to the next card (Chris: "it should only magnify in the loop itself when it goes
-//   over the image"). Glass, not light: nothing is painted on the photo.
-// - MOVE (slow, about a second and a half): the camera travels, level, through the grid after the loop
-// Four cards in fifteen seconds. Photos unlit and exact.
-import React, {useLayoutEffect, useMemo} from 'react';
+// Loop: a flat grid of photos and a loupe of liquid glass that crawls over it (Chris's reelfolio recording, 2026-10-23;
+// his words of 2026-10-24: "there is no camera"; "the background moves in 2d with the loop crawling over the photos
+// grid"; "the whole grid enlarges when the loop is over the image"; "it enlarges to make the photo bigger"; "the loop
+// doesn't shrink but the grid should"; "the photo should never lift from the background"; "the loop and photo itself
+// don't transition to anything else other than what they are"; "the loop move fluidly"; "do 4 images and go slower";
+// "the grid is too small"; "when you put your eye to a loop there are no reflections inside of the loop itself, just
+// on the edges"). So:
+// - THE LOOP: one loupe of liquid glass, one size, that travels one smooth curve for the whole reel: in from beyond
+//   the first photo, across each of the reel's four photos side to side, on to the next, out beyond the last. It is
+//   slowest while it is wholly inside a photo ("it should slow on full bleed", the glass distorting what creeps
+//   under it), a little quicker while its edge is crossing the photo's edge, quicker again between photos, the
+//   speed changing smoothly; it never stops, never changes. Inside it only the photo under it, magnified mildly;
+//   the glass shows only at its rim.
+// - THE GRID: level rows of cards, every card its own shape (nothing cropped), tight even gaps of flat dark space;
+//   a 3:2 card is two thirds of the width. The reel's photos are the four cards the loop visits, the grid photos
+//   fill the rest. The grid is a flat picture: while the loop crosses a card it rests, enlarged a little around that
+//   card so the photo is bigger, with the rest of the grid fallen back into the dark; as the loop leaves, it shrinks
+//   back and slides, level, to bring the next card to the middle. Nothing moves in depth, nothing lifts.
+// - The card's label sits under it while the loop crosses (the room, then its line, a counter at the right).
+// Photos unlit and exact.
+import React, {useMemo} from 'react';
 import {AbsoluteFill, Audio, staticFile} from 'remotion';
 import {ThreeCanvas} from '@remotion/three';
-import {useThree} from '@react-three/fiber';
-import {RoomEnvironment} from 'three/examples/jsm/environments/RoomEnvironment.js';
 import * as THREE from 'three';
 import {Close, END, H, K, PAPER, Photo, Props, TOTAL, Tile, W, coverTex, easeIO, roundedMask, useFonts, useFrameInfo, useTextures} from './lib';
 
 const FOV = 30, TAN = Math.tan((FOV * Math.PI) / 360), ASPECT = W / H;
-const VIEW_W = 2 * TAN * ASPECT;                               // the width in view per unit of camera distance
+const VIEW_W = 2 * TAN * ASPECT;                               // the width in view per unit of distance to the grid
 const ROW_H = 1.5, GAP_X = 0.16, GAP_Y = 0.42;                 // rows of one height; a little more room under for the label
 const ROW_W = 15, ROWS = 11;                                   // each row filled to about this width, centred
 const PITCH_Y = ROW_H + GAP_Y;
-// one camera distance, about two and a half cards across, for the whole reel: the camera stops over a card and moves
-// on, it never comes in, so a photo never comes forward (Chris, 2026-10-23: "the photos should not punch out")
-const Z = 4.3 / VIEW_W;
-const HOLD = 60, MOVE = 42, FIRST = 24;                        // in 30ths of a second: 2 s held, 1.4 s travelling
-// where the visited cards sit: (row, x) in the middle rows, each a step or two from the last so the travel reads
-const VISITS: [number, number][] = [[5, 0], [4, 1.6], [3, -1.4], [6, 0.8]];
-const LOOP_AT = 0.6 * HOLD;                                    // the loop reaches a held card's centre this far into the hold
-const GLASS_DEPTH = 0.3, GLASS_THICKNESS = 0.6;              // deep enough to bend; flatter than a drop
+const Z = (ROW_H * 1.5) / (0.66 * VIEW_W);                    // the grid at rest: a 3:2 card is two thirds of the width
+const ENLARGE = 1.2;                                           // the whole grid, while the loop crosses a card: that photo bigger
+const SWELL = 14;                                              // in 30ths: the grid's enlarging, once the loop is on the card
+// where the four visited cards sit: (row, x) in the middle rows, each a step or two from the last, so the slide reads
+const VISITS: [number, number][] = [[5, 0], [4, 1.6], [3, 0.2], [4, -1.8]];
+const CRAWL = 0.45;                                            // the loop crosses this much of a card's width either side of its middle
+const BEYOND = 1.2;                                            // where the loop comes in from and leaves to, past the first and last card
+const BLEED_SHARE = 0.7;                                       // of its time across a card, the share the loop spends creeping on full bleed
+const GLASS_DEPTH = 0.3, GLASS_THICKNESS = 0.6;              // flat enough never to invert, thick enough to magnify a little
+const LOOP_W = 0.6, LOOP_H = 0.74;                             // the loupe's half-size on the screen: about a third of the view wide
 
 // The grid: photos laid row by row in their own shape (aspect kept between 2:3 and 16:9), each row centred, so
 // columns fall where they fall, as in the recording; the grid photos cycle, so none repeats within view, and the
-// post's photos take the visited cells.
+// reel's photos take the visited cells.
 type Card = {x: number; y: number; w: number; h: number; p: Tile};
 const shape = (p: Tile) => Math.min(16 / 9, Math.max(2 / 3, p.w / p.h));
 const rowY = (r: number) => ((ROWS - 1) / 2 - r) * PITCH_Y;
 const layout = (photos: Photo[], grid: Tile[]) => {
   const visited = photos.slice(0, VISITS.length);
-  const rest = [...photos.slice(VISITS.length), ...grid];   // a fifth or sixth photo is in the grid, not lost
+  const rest = [...photos.slice(VISITS.length), ...grid];     // a fifth or sixth photo is in the grid, not lost
   const fill = rest.length ? rest : photos;
   const cards: Card[] = [], visit: Card[] = [];
   let k = 0;
@@ -56,60 +64,94 @@ const layout = (photos: Photo[], grid: Tile[]) => {
       const placed = tiles.map((p) => { const w = ROW_H * shape(p); const c = {x: x + w / 2, y: rowY(r), w, h: ROW_H, p}; x += w + GAP_X; return c; });
       return placed.map((c) => ({...c, x: c.x - (x - GAP_X) / 2}));
     };
-    const v = VISITS.findIndex(([vr]) => vr === r);
     let placed = place(row);
-    if (v >= 0 && v < visited.length) {              // the visited photo takes the cell nearest its spot
-      const at = VISITS[v][1];
+    const taken: [number, number][] = [];            // (visit, cell) in this row
+    VISITS.forEach(([vr, at], v) => {                // each visited photo takes the cell nearest its spot
+      if (vr !== r || v >= visited.length) return;
       const n = placed.reduce((best, c, i) => (Math.abs(c.x - at) < Math.abs(placed[best].x - at) ? i : best), 0);
       row[n] = visited[v];
       placed = place(row);
-      visit[v] = placed[n];
-    }
+      taken.push([v, n]);
+    });
+    for (const [v, n] of taken) visit[v] = placed[n];   // the row's final cards, so a visited card is the one drawn
     cards.push(...placed);
   }
   return {cards, visit};
 };
 
-// Where the camera is at frame f: stopped over a card, or travelling, level, to the next.
-const cameraAt = (visit: Card[], arrivals: number[], f: number) => {
-  let k = 0;
-  for (let j = 0; j < arrivals.length; j++) if (f >= arrivals[j] - (j ? MOVE : 0)) k = j;
-  const travel = k > 0 ? (f - (arrivals[k] - MOVE)) / MOVE : 1;
-  const c = visit[k];
-  if (travel < 1) {
-    const a = visit[k - 1], t = easeIO(travel);
-    return {x: a.x + (c.x - a.x) * t, y: a.y + (c.y - a.y) * t, travel, k};
+// Distance along the curve as a smooth function of time through given (frame, distance) points: a monotone cubic
+// (Fritsch and Carlson), so the speed changes smoothly between creeping and moving and never drops to a stop.
+const smooth = (T: number[], S: number[]) => {
+  const n = T.length, d = T.slice(0, -1).map((t, i) => (S[i + 1] - S[i]) / (T[i + 1] - t)), m = new Array<number>(n).fill(0);
+  m[0] = d[0]; m[n - 1] = d[n - 2];
+  for (let i = 1; i < n - 1; i++) m[i] = d[i - 1] * d[i] <= 0 ? 0 : (d[i - 1] + d[i]) / 2;
+  for (let i = 0; i < n - 1; i++) {
+    const a = m[i] / d[i], b = m[i + 1] / d[i], h = Math.hypot(a, b);
+    if (h > 3) { m[i] = (3 * a / h) * d[i]; m[i + 1] = (3 * b / h) * d[i]; }
   }
-  return {x: c.x, y: c.y, travel: -1, k};
+  return (t: number) => {
+    if (t <= T[0]) return S[0];
+    if (t >= T[n - 1]) return S[n - 1];
+    let i = 0;
+    while (T[i + 1] < t) i++;
+    const h = T[i + 1] - T[i], x = (t - T[i]) / h, x2 = x * x, x3 = x2 * x;
+    return (2 * x3 - 3 * x2 + 1) * S[i] + (x3 - 2 * x2 + x) * h * m[i] + (-2 * x3 + 3 * x2) * S[i + 1] + (x3 - x2) * h * m[i + 1];
+  };
 };
 
-// Where the loop is at frame f: it reaches each held card's centre LOOP_AT into the hold, easing to a stop there
-// (the photo magnified under it), then moves on to the next card ahead of the camera; it comes in from beyond the
-// first card and leaves beyond the last.
-const loopAt = (visit: Card[], arrivals: number[], f: number) => {
-  const stops = visit.map((c) => new THREE.Vector2(c.x, c.y));
-  const T = [0, ...arrivals.map((a) => a + LOOP_AT), TOTAL];
-  const P = [stops[0].clone().add(new THREE.Vector2(-2.6, -0.4)), ...stops, stops[stops.length - 1].clone().add(new THREE.Vector2(2.6, 0.4))];
-  let i = 0;
-  while (i < T.length - 2 && f >= T[i + 1]) i++;
-  return P[i].clone().lerp(P[i + 1], easeIO((f - T[i]) / (T[i + 1] - T[i])));
+// The loop's one curve: in from beyond the first card; for each visited card, in the direction of travel, its near
+// side, where full bleed begins (the loop wholly inside the photo), where it ends, its far side; on to the next;
+// out beyond the last; a smooth spline through those points. The frame it reaches each card's near side and leaves
+// the far side is set by a steady pace over the whole curve (the approved reel, and what the grid's rests and
+// slides follow); inside that window it creeps on full bleed for BLEED_SHARE of the time and crosses the photo's
+// edges quicker, the speed changing smoothly ("it should slow on full bleed").
+type Path = {curve: THREE.CatmullRomCurve3; total: number; along: (f: number) => number; entries: number[]; exits: number[]};
+const path = (visit: Card[]): Path => {
+  const pts: THREE.Vector3[] = [];
+  visit.forEach((c, k) => {
+    const from = visit[k - 1]?.x ?? c.x - 1, to = visit[k + 1]?.x ?? c.x + 1;
+    const dir = Math.sign(to - from) || 1, side = CRAWL * c.w, bleed = Math.min(side, Math.max(0, c.w / 2 - LOOP_W));
+    for (const d of [-side, -bleed, bleed, side]) pts.push(new THREE.Vector3(c.x + dir * d, c.y, 0));
+  });
+  pts.unshift(pts[0].clone().add(new THREE.Vector3(-BEYOND, -0.3, 0)));
+  pts.push(pts[pts.length - 1].clone().add(new THREE.Vector3(BEYOND, 0.3, 0)));
+  const curve = new THREE.CatmullRomCurve3(pts, false, 'centripetal');
+  const lengths = curve.getLengths(800), total = lengths[800];
+  const S = pts.map((_, i) => lengths[Math.round((i / (pts.length - 1)) * 800)]);   // distance to each point
+  const T = S.map((d) => (d / total) * (TOTAL - END));          // at a steady pace: the sides' frames stay as approved
+  const entries: number[] = [], exits: number[] = [];
+  visit.forEach((_, k) => {
+    const e = 1 + 4 * k, x = 4 + 4 * k, span = T[x] - T[e], edge = (1 - BLEED_SHARE) / 2;
+    T[e + 1] = T[e] + edge * span; T[e + 2] = T[x] - edge * span;   // full bleed gets BLEED_SHARE of the crossing
+    entries.push(T[e]); exits.push(T[x]);
+  });
+  return {curve, total, along: smooth(T, S), entries, exits};
+};
+const loopAt = (p: Path, f: number) => p.curve.getPointAt(Math.min(1, Math.max(0, p.along(f) / p.total)));
+
+// Where the grid is at frame f: resting on the card the loop is crossing (enlarged once the loop is on it), or
+// sliding, level, from the card just left to the next; and which card that is.
+const gridAt = (visit: Card[], p: Path, f: number) => {
+  let k = 0;
+  for (let j = 0; j < visit.length; j++) if (f >= (j ? p.exits[j - 1] : 0)) k = j;
+  const c = visit[k];
+  if (f < p.entries[k] && k > 0) {                             // sliding from the card just left
+    const a = visit[k - 1], u = easeIO((f - p.exits[k - 1]) / (p.entries[k] - p.exits[k - 1]));
+    return {x: a.x + (c.x - a.x) * u, y: a.y + (c.y - a.y) * u, scale: ENLARGE - (ENLARGE - 1) * u, resting: false, k};
+  }
+  return {x: c.x, y: c.y, scale: 1 + (ENLARGE - 1) * easeIO((f - p.entries[k]) / SWELL), resting: f >= p.entries[k], k};
 };
 
-const Rig: React.FC<{x: number; y: number; z: number}> = ({x, y, z}) => {
-  const {camera, gl, scene} = useThree();
-  useLayoutEffect(() => {                                     // light for the glass only: the photos are unlit
-    const pmrem = new THREE.PMREMGenerator(gl);
-    scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-    return () => pmrem.dispose();
-  }, [gl, scene]);
-  useLayoutEffect(() => {
-    camera.position.set(x, y, z);
-    camera.up.set(0, 1, 0);
-    camera.lookAt(x, y, 0);
-    camera.updateProjectionMatrix();
-  }, [x, y, z]);
-  return null;
-};
+// The loupe's rim: the liquid-glass look lives only where the eye looks through the edge (a Fresnel term on the
+// silhouette), never inside the glass, where there is only the magnified photo.
+const rimMaterial = () => new THREE.ShaderMaterial({
+  transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+  vertexShader: `varying vec3 vN; varying vec3 vV;
+    void main() { vN = normalize(normalMatrix * normal); vec4 p = modelViewMatrix * vec4(position, 1.0); vV = normalize(-p.xyz);
+                  gl_Position = projectionMatrix * p; }`,
+  fragmentShader: `varying vec3 vN; varying vec3 vV;
+    void main() { float f = pow(1.0 - clamp(dot(normalize(vN), normalize(vV)), 0.0, 1.0), 5.0); gl_FragColor = vec4(vec3(1.0), f * 0.9); }`,
+});
 
 export const Loop: React.FC<Props> = ({photos, cuts, grid, music}) => {
   useFonts();
@@ -117,47 +159,53 @@ export const Loop: React.FC<Props> = ({photos, cuts, grid, music}) => {
   const tex = useTextures(items.map((p) => p.src));
   const {f, closing} = useFrameInfo(cuts);
   const {cards, visit} = useMemo(() => layout(photos, grid), [photos, grid]);
-  const arrivals = visit.map((_, k) => FIRST + k * (HOLD + MOVE));
+  const p = useMemo(() => path(visit), [visit]);
+  const rim = useMemo(rimMaterial, []);
   const cardTex = useMemo(() => (tex ? cards.map((c) => coverTex(tex[items.indexOf(c.p)], c.p.w / c.p.h, c.w / c.h)) : []), [tex, cards]);
-  const cam = cameraAt(visit, arrivals, f);
-  const card = visit[cam.k], photo = card.p as Photo;
-  // the hold: in as the camera stops, out before it moves on
-  const since = f - arrivals[cam.k], until = (cam.k + 1 < visit.length ? arrivals[cam.k + 1] - MOVE : TOTAL - END) - f;
-  const held = cam.travel < 0 && !closing ? easeIO(Math.min(1, (since + 14) / 18, (until + 4) / 14)) : 0;
-  // the rest of the grid falls back into the dark while a card is held
+  const at = gridAt(visit, p, f);
+  const card = visit[at.k], photo = card.p as Photo;
+  // while the loop crosses a card the rest of the grid falls back into the dark, and the label is up
+  const since = f - p.entries[at.k], until = p.exits[at.k] - f;
+  const held = at.resting && !closing ? easeIO(Math.min(1, (since + 4) / 14, (until + 4) / 14)) : 0;
   const grey = Math.round(255 - (255 - 32) * held);
   const dimmed = `rgb(${grey},${grey},${grey})`;
-  const z = closing ? Z * (1 + 0.2 * easeIO((f - (TOTAL - END)) / 36)) : Z;   // the close: a slow pull back
-  const labelOn = cam.travel < 0 && !closing ? Math.min(1, since / 10, until / 8) : 0;
-  const px = W / (Z * VIEW_W);                                 // screen pixels per grid unit
-  const loop = loopAt(visit, arrivals, f);
+  const labelOn = at.resting && !closing ? Math.min(1, since / 10, until / 8) : 0;
+  const px = (W / (Z * VIEW_W)) * at.scale;                    // screen pixels per grid unit, as the grid stands now
+  const loop = loopAt(p, f);                                   // in grid units; drawn where the grid puts that spot
   return (
     <AbsoluteFill style={{background: K}}>
       <Audio src={staticFile(music)} />
       {tex && (
         <ThreeCanvas width={W} height={H} camera={{fov: FOV, position: [0, 0, Z], near: 0.1, far: 100}} gl={{antialias: true}}>
           <color attach="background" args={[K]} />
-          <Rig x={cam.x} y={cam.y} z={z} />
-          <mesh position={[0, 0, -0.02]}>                       {/* the field: a real surface, so the glass sees it */}
-            <planeGeometry args={[100, 100]} />
-            <meshBasicMaterial color={K} toneMapped={false} />
-          </mesh>
-          {cards.map((c, s) => (
-            <mesh key={s} position={[c.x, c.y, 0]}>
-              <planeGeometry args={[c.w, c.h]} />
-              <meshBasicMaterial map={cardTex[s]} alphaMap={roundedMask()} alphaTest={0.5} toneMapped={false}
-                                 color={c === card ? '#ffffff' : dimmed} />
+          {/* the flat grid, slid so the visited card is in the middle, and enlarged while the loop crosses it */}
+          <group position={[-at.x * at.scale, -at.y * at.scale, 0]} scale={[at.scale, at.scale, 1]}>
+            <mesh position={[0, 0, -0.02]}>                     {/* the field: a real surface, so the glass sees it */}
+              <planeGeometry args={[100, 100]} />
+              <meshBasicMaterial color={K} toneMapped={false} />
             </mesh>
-          ))}
+            {cards.map((c, s) => (
+              <mesh key={s} position={[c.x, c.y, 0]}>
+                <planeGeometry args={[c.w, c.h]} />
+                <meshBasicMaterial map={cardTex[s]} alphaMap={roundedMask()} alphaTest={0.5} toneMapped={false}
+                                   color={c === card ? '#ffffff' : dimmed} />
+              </mesh>
+            ))}
+          </group>
           {!closing && (
-            <mesh position={[loop.x, loop.y, 1]} scale={[0.5 + 0.03 * Math.sin(f / 7), 0.62 - 0.03 * Math.sin(f / 7), GLASS_DEPTH]}
-                  rotation={[0, 0, 0.4 + 0.08 * Math.sin(f / 11)]}>
-              {/* liquid glass: deep enough to bend and catch light, flatter than a drop (Chris: "too thick, like a
-                  raindrop magnified"; then, flat, "a disc over the faces"); it breathes a little, as liquid does */}
-              <sphereGeometry args={[1, 64, 64]} />
-              <meshPhysicalMaterial transmission={1} thickness={GLASS_THICKNESS} roughness={0} ior={1.5} dispersion={2.5}
-                                    envMapIntensity={0.08} specularIntensity={0.2} color="#ffffff" />
-            </mesh>
+            <group position={[(loop.x - at.x) * at.scale, (loop.y - at.y) * at.scale, 1]} scale={[LOOP_W, LOOP_H, GLASS_DEPTH]}
+                   rotation={[0, 0, 0.4]}>
+              {/* the loupe, its own size and shape whatever the grid does: clear glass that only magnifies what is under
+                  it (no reflection inside: no light, no specular), flat enough never to invert */}
+              <mesh>
+                <sphereGeometry args={[1, 64, 64]} />
+                <meshPhysicalMaterial transmission={1} thickness={GLASS_THICKNESS} roughness={0} ior={1.5} dispersion={1.2}
+                                      envMapIntensity={0} specularIntensity={0} color="#ffffff" />
+              </mesh>
+              <mesh material={rim} scale={1.01}>
+                <sphereGeometry args={[1, 64, 64]} />
+              </mesh>
+            </group>
           )}
         </ThreeCanvas>
       )}
@@ -169,7 +217,7 @@ export const Loop: React.FC<Props> = ({photos, cuts, grid, music}) => {
             <div style={{fontFamily: 'body', fontSize: 25, color: '#8c8c93'}}>{photo.line}</div>
           </div>
           <div style={{fontFamily: 'mono', fontSize: 22, color: '#8c8c93', paddingTop: 8}}>
-            {String(cam.k + 1).padStart(2, '0')} / {String(visit.length).padStart(2, '0')}
+            {String(at.k + 1).padStart(2, '0')} / {String(visit.length).padStart(2, '0')}
           </div>
         </div>
       )}
