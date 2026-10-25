@@ -53,6 +53,7 @@ MAX_TRIES = 5
 # agent again inside the day's window when the reason was passing or the inputs changed
 LAST_ATTEMPT_KEY = "content.last_attempt"
 NO_DRAFT_PINGED_KEY = "content.no_draft_pinged"       # "day|reason": the phone hears each reason once a day
+REEL_STYLE_KEY = "reel.last_style"                     # the style the last reel was given, written the moment it is chosen
 TRANSIENT_WORDS = ("could not run", "could not", "not signed in")
 
 
@@ -328,10 +329,20 @@ def design_for(day: date, subject: str, has_music: bool = False) -> str:
 
 def reel_style(conn: sqlite3.Connection, rng=None) -> str:
     """One of the five 3D styles at random, never the one the last reel had (Chris, 2026-10-23: "there should be 5
-    different style reels (all very different)", used randomly). The rooms reel of before is out of the rotation."""
+    different style reels (all very different)", used randomly). The rooms reel of before is out of the rotation.
+    Chosen and recorded in one write under the database's write lock: the daily and the designed lane run under
+    different locks and a render takes minutes, so two reels that each read "the last reel's row" and wrote their own
+    after the render could come out the same (2026-10-24 audit). A reel the art director turns back was the last too."""
     from ..render import reels3d
-    last = db.one(conn, "SELECT rule_report FROM content_queue WHERE json_extract(rule_report, '$.reel') IS NOT NULL ORDER BY id DESC LIMIT 1")
-    return reels3d.next_style(json.loads(last["rule_report"])["reel"] if last else None, rng)
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        style = reels3d.next_style(settings.get(conn, REEL_STYLE_KEY), rng)
+        settings.set(conn, REEL_STYLE_KEY, style)
+        conn.execute("COMMIT")
+    except BaseException:
+        conn.execute("ROLLBACK")
+        raise
+    return style
 
 
 def order_pool(pool: list, design: str) -> list:
@@ -575,6 +586,7 @@ def make_draft(ctx: runner.Context, day: date, chosen: list[tuple[dict, bytes]],
     if reel_failed:
         design = "carousel"
     photo_ids = [r["id"] for r, _ in chosen]
+    reel_meta = {"reel": style, "music": track.name} if design == "reel" else {}
     if art.get("verdict") == "reject":
         # the photos do not hold up: they sit out like used ones
         now_r = db.utcnow()
@@ -582,16 +594,14 @@ def make_draft(ctx: runner.Context, day: date, chosen: list[tuple[dict, bytes]],
                           caption=json.dumps(captions), render_paths=json.dumps(render_paths), status="rejected",
                           last_error=f"Art director: {art.get('notes', '')}",
                           rule_report=json.dumps({"for_day": "turned back", "art": art, "subject": hero["subject"], "design": design,
-                                                  **(extra_meta or {})}),
+                                                  **reel_meta, **(extra_meta or {})}),
                           created_at=now_r, updated_at=now_r)
         report.record_use(ctx.conn, "post", photo_ids, ref=f"post:{qid_r}")
         return qid_r, art, f"art director turned back photo {hero['id']}: {art.get('notes', '')}"
     people = [c for r, _ in chosen for c in (r["credit"] or "").split()]
     meta = {"for_day": day.isoformat(), "subject": hero["subject"], "event": hero.get("convention_name") or "",
             "people": people, "model": writer, "rules": reports, "wanted": want, "art": art, "design": design,
-            "design_wanted": asked, "seo": seo_record, "alt_text": alt, **(extra_meta or {})}
-    if design == "reel":
-        meta.update(reel=style, music=track.name)
+            "design_wanted": asked, "seo": seo_record, "alt_text": alt, **reel_meta, **(extra_meta or {})}
     if reel_failed:
         meta["reel_failed"] = reel_failed[0]
     now_s = db.utcnow()

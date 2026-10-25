@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import os
+import random
 import re
 import subprocess
 from datetime import datetime, timezone
@@ -18,7 +19,7 @@ from convention_social import music
 from convention_social.agents import art_director, content, publisher
 from convention_social.buffer import media, payloads
 from convention_social.buffer.client import BufferClient, BufferError
-from convention_social.core import auth, config, db, runner
+from convention_social.core import auth, config, db, runner, settings
 from convention_social.dashboard.app import COOKIE, create_app, make_token
 from convention_social.render import meta, motion, reel, reels3d
 from tests._base import IsolatedCase
@@ -362,15 +363,53 @@ class Saturday(IsolatedCase):
     def test_the_reel_is_one_of_the_five_styles_never_the_same_twice_in_a_row(self):
         """Chris, 2026-10-23: five very different styles, used randomly; the rooms reel and the face match reel (retired
         2026-10-11) are out of the rotation."""
-        import random
         self.assertEqual(reels3d.STYLES, ("wall", "loop", "ring", "gallery", "orbit"))
-        first = {content.reel_style(self.conn, random.Random(seed)) for seed in range(40)}
+        first = {reels3d.next_style(None, random.Random(seed)) for seed in range(40)}
         self.assertEqual(first, set(reels3d.STYLES), "with no reel yet, any style")
-        for pid, meta_ in ((self.ids["e1"], {"design": "reel", "reel": "wall"}), (self.ids["e2"], {"design": "carousel"})):
-            self.conn.execute("UPDATE content_queue SET rule_report=? WHERE id=?", (json.dumps(meta_), add_post(self.conn, [pid])))
-        nxt = {content.reel_style(self.conn, random.Random(seed)) for seed in range(40)}
-        self.assertEqual(nxt, set(reels3d.STYLES) - {"wall"}, "never the last reel's style; the carousel between does not count")
+        self.assertEqual(self.styles_after("wall"), set(reels3d.STYLES) - {"wall"}, "never the last reel's style")
         self.assertFalse(hasattr(content, "reel_kind") or hasattr(motion, "facematch_reel"))
+
+    def styles_after(self, last):
+        """Every style a reel can get when the last one was `last`, over forty throws of the dice (each throw sees `last`)."""
+        seen = set()
+        for seed in range(40):
+            settings.set(self.conn, content.REEL_STYLE_KEY, last)
+            seen.add(content.reel_style(self.conn, random.Random(seed)))
+        return seen
+
+    def test_two_reels_chosen_at_once_never_get_the_same_style(self):
+        """2026-10-24 audit: the daily and the designed lane each read "the last reel's row" before a minutes-long render
+        and wrote their own after it, under different locks. The style is chosen and recorded in one write, so the second
+        choice sees the first whatever the renders are doing."""
+        a = content.reel_style(self.conn, random.Random(3))
+        b = content.reel_style(self.conn, random.Random(3))
+        self.assertNotEqual(a, b, "the same chance, the same last reel: only the record of the first keeps them apart")
+        self.assertEqual(settings.get(self.conn, content.REEL_STYLE_KEY), b)
+        self.assertFalse(self.conn.in_transaction)
+
+    def test_a_reel_the_art_director_turns_back_is_still_the_last_style(self):
+        """The turn-back's row says which style it was, and the next reel is another style (2026-10-24 audit: the row had
+        no style and the next reel could repeat it)."""
+        self.with_music()
+        reject = lambda conn, render, **kw: (render((0.5, 0.45)), {"verdict": "reject", "notes": "Soft focus."})  # noqa: E731
+        with mock.patch.object(art_director, "direct", reject):
+            line = content.draft_one(self.ctx(), self.fetch, now=FRIDAY)
+        self.assertIn("turned back", line)
+        row = self.queue()[0]                                  # the first try: every try is turned back and the photos sit out
+        meta_ = json.loads(row["rule_report"])
+        self.assertEqual((row["status"], meta_["design"]), ("rejected", "reel"))
+        self.assertEqual(meta_["reel"], self.reels[0][0], "the turned-back row says which style it was")
+        self.assertEqual(settings.get(self.conn, content.REEL_STYLE_KEY), self.reels[-1][0], "the last reel chosen, turned back or not")
+        self.assertEqual(self.styles_after(meta_["reel"]), set(reels3d.STYLES) - {meta_["reel"]})
+
+    def test_the_last_reel_so_far_seeds_the_style_memory(self):
+        """Migration 0080: the first reel on this code is still never the style of the one before it."""
+        for pid, meta_ in ((self.ids["e1"], {"design": "reel", "reel": "ring"}), (self.ids["e2"], {"design": "carousel"})):
+            self.conn.execute("UPDATE content_queue SET rule_report=? WHERE id=?", (json.dumps(meta_), add_post(self.conn, [pid])))
+        self.conn.execute("DELETE FROM schema_migrations WHERE version='0080_reel_last_style'")
+        self.conn.execute("DELETE FROM settings WHERE key=?", (content.REEL_STYLE_KEY,))
+        self.assertEqual(db.migrate(self.conn), ["0080_reel_last_style"])
+        self.assertEqual(settings.get(self.conn, content.REEL_STYLE_KEY), "ring")
 
     def test_the_art_director_never_gets_the_mp4(self):
         seen = []
