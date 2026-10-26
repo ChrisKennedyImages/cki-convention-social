@@ -181,26 +181,31 @@ def candidates(conn: sqlite3.Connection, subject: str) -> list[dict]:
                             FROM photos p JOIN classifications c ON c.photo_id = p.id
                             WHERE p.trashed = 0 AND c.subject = ? AND c.method IN ('ollama','vision')
                             ORDER BY COALESCE(c.quality,0) DESC, COALESCE(c.people_count,0) DESC, p.id""", (subject,))
-    out = []
+    fresh, lately = [], []
     for r in rows:
         if r["id"] in used_photos or not eligibility.is_candidate(conn, r["id"])[0]:
-            continue
-        if subject == "event" and (r["convention_name"] or "").lower() in used_events and r["convention_name"]:
             continue
         credit = eligibility.credit_line(conn, r["id"])
         if any(c.lower() in used_people for c in credit.split()):
             continue
-        out.append({**dict(r), "credit": credit})
+        # an event a post had inside VARIETY_DAYS comes after every other event, not never: the designed drafts' rule
+        # (2026-10-15, "while one is left"), now the daily draft's too. 2026-10-26: 1,481 of the 1,796 approved event
+        # photos are one event, so the wall here left six candidates and the same six on every draft.
+        shown = subject == "event" and bool(r["convention_name"]) and r["convention_name"].lower() in used_events
+        (lately if shown else fresh).append({**dict(r), "credit": credit})
     # what the learner found works, inside the founder's bounds
     def score(r):
         return -(r.get("quality") or 0) * learner.weight_for(conn, r.get("shot_type"), r.get("event_kind"))
-    out.sort(key=score)
     # then the rotation (2026-10-14, "the same photos for everything"): the least recently used photo first, on any
     # surface, so every approved photo gets its turn; the score above only breaks ties, and equal photos come by chance
     last = report.last_uses(conn)
-    for r in out:
-        r["last_use"] = last.get(r["id"])
-    return report.rotate(conn, out, last=last, alike=score)
+
+    def in_turn(group: list[dict]) -> list[dict]:
+        group.sort(key=score)
+        for r in group:
+            r["last_use"] = last.get(r["id"])
+        return report.rotate(conn, group, last=last, alike=score)
+    return in_turn(fresh) + in_turn(lately)
 
 
 def use_why(hero: dict, ready: int) -> str:

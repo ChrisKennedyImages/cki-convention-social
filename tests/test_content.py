@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 import os
 import types
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from PIL import Image
@@ -110,6 +110,21 @@ class Content(IsolatedCase):
         content.draft_one(self.ctx(), self.fetch, now=datetime(2026, 10, 20, 10, 0, tzinfo=timezone.utc))
         meta = json.loads(self.queue()[3]["rule_report"])
         self.assertEqual((meta["wanted"], meta["subject"], meta["event"]), ("architecture", "event", "Awesome Con"))
+
+    def test_an_event_posted_lately_comes_after_the_others_not_never(self):
+        """2026-10-26: 1,481 of the 1,796 approved event photos are CPAC Texas, and CPAC had posted inside VARIETY_DAYS,
+        so the daily draft's event wall left six candidates and the same six came round on every draft ("it keeps
+        posting the same photos again"). The rule is the designed drafts' (2026-10-15): fresh events first while one
+        is left, then the rest; the repeat window on the photo itself is untouched."""
+        when = (datetime.now(timezone.utc) - timedelta(days=3)).replace(microsecond=0).isoformat()
+        db.insert(self.conn, "content_queue", kind="photo", photo_ids="[999]", targets='["instagram"]', caption="{}",
+                  status="published", created_at=when, updated_at=when, rule_report=json.dumps({"event": "Katsucon"}))
+        order = [r["id"] for r in content.candidates(self.conn, "event")]
+        self.assertEqual(order[0], self.ids["e3"], "Otakon, which no post had lately, leads")
+        self.assertEqual(sorted(order[1:]), sorted([self.ids["e1"], self.ids["e2"]]), "Katsucon follows instead of vanishing")
+        db.insert(self.conn, "content_queue", kind="photo", photo_ids=json.dumps([self.ids["e1"]]), targets='["instagram"]', caption="{}",
+                  status="published", created_at=when, updated_at=when, rule_report=json.dumps({"event": "Katsucon"}))
+        self.assertNotIn(self.ids["e1"], [r["id"] for r in content.candidates(self.conn, "event")], "a photo on a post inside the window still sits out")
 
     def test_live_final_check_skips_a_photo_with_a_plate(self):
         """Deliberate change, 2026-10-15 (no age gate): this pinned the skip of a possible minor; the final check's
