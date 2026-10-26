@@ -59,7 +59,7 @@ Return JSON only, matching the schema you are given."""
 OUTPUT_SCHEMA = {
     "type": "object",
     "properties": {
-        "photo_summary": {"type": "string", "description": "One sentence: what the photo shows."},
+        "photo_summary": {"type": "string", "description": "One sentence: what kind of picture it is. No person's name, title or identity; no company or venue name."},
         "captions": {
             "type": "object",
             "properties": {n: {"type": "string"} for n in NETWORKS},

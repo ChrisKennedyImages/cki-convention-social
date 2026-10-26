@@ -60,6 +60,15 @@ class FinalCheck(IsolatedCase):
         self.assertEqual(db.one(conn, "SELECT shot_type FROM classifications WHERE photo_id=?", (pid,))["shot_type"], "stage_panel")
         self.assertIn("stage_panel for anyone on a stage", classify.FINAL_SYSTEM)
         self.assertIn("shot_type", classify.FINAL_SCHEMA["required"])
+        # Chris, 2026-10-26: "The sorting should also not name names! Just the type of image!"
+        from pathlib import Path
+        from convention_social.ai import claude as writer
+        for text in (classify.SYSTEM, classify.FINAL_SYSTEM, classify.SCHEMA["properties"]["summary"]["description"],
+                     classify.FINAL_SCHEMA["properties"]["summary"]["description"], writer.OUTPUT_SCHEMA["properties"]["photo_summary"]["description"]):
+            self.assertIn("person's name", text.lower().replace("person\u2019s", "person's"), "every description asked of a model forbids naming anyone")
+        conn.execute("UPDATE classifications SET summary=? WHERE photo_id=?", ("A senator waves to the crowd.", pid))
+        conn.executescript(Path(db.MIGRATIONS_DIR, "0083_summaries_name_no_one.sql").read_text())
+        self.assertEqual(db.one(conn, "SELECT summary FROM classifications WHERE photo_id=?", (pid,))["summary"], "", "what the old prompt wrote is cleared")
         self.assertTrue(classify.set_shot_type(conn, pid, "crowd"))
         self.assertFalse(classify.set_shot_type(conn, pid, "selfie"), "not a shot type: nothing written")
         self.assertEqual(db.one(conn, "SELECT shot_type FROM classifications WHERE photo_id=?", (pid,))["shot_type"], "crowd")
