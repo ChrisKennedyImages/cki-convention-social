@@ -388,7 +388,8 @@ class Variety(Case):
             ctx = runner.Context("publisher", self.conn, logging.getLogger("t"), config.get_config(), True, 0)
             stop = publisher.door(ctx, db.one(self.conn, "SELECT * FROM content_queue WHERE id=?", (qid,)))
             self.assertIsNotNone(stop, f"{source or 'daily'}: twenty days ago is inside the thirty")
-            self.assertIn(f"already went out as post #{old} in the last 30 days", stop[1])
+            self.assertIn(f"already went out as post #{old} on ", stop[1])
+            self.assertIn("A photo goes out once inside 30 days.", stop[1])
         self.assertEqual(config.repeat_window(config.get_config()), 30)
 
     def test_designed_drafts_never_take_a_photo_already_on_a_post(self):
@@ -447,6 +448,112 @@ class Variety(Case):
         line = sample.run(case.ctx(), fetch=case.fetch, check_client=LookClient(), art_client=ArtClientAny([say("pass")] * 4))
         self.assertIn(f"photo {photos[0]} is already on a post", line)
         self.assertEqual(db.one(case.conn, "SELECT COUNT(*) n FROM content_queue")["n"], 1, "nothing drafted")
+
+
+class OnePhotoOnePost(Case):
+    """Chris, 2026-10-16: "Why why why is it giving me this error when nothing was posted with this image!? Very frustrating
+    because it's a good reel." The 8:00 daily draft picked its photos at 12:00 UTC and saved post 7 at 12:07; the designed
+    draft started at 12:02, picked the same photo 894 (both draw the least used first) and saved post 6 at 12:03. Each
+    left out every photo in an open post; the other's picks did not exist yet. Approving the reel then met the door's
+    "Photo 894 already went out as post #6", though post 6 had not gone out."""
+
+    def rival_fetch(self, rival: list):
+        """Fetches each photo; while the first is fetched, another draft takes it (the race of 2026-10-16)."""
+        def fetch(row):
+            if not rival:
+                rival.append((row["id"], self.row([row["id"]], source="designed")))
+            return self.fetch(row)
+        return fetch
+
+    def holding(self, pid):
+        return [r["id"] for r in db.rows(self.conn, "SELECT id, photo_ids FROM content_queue") if pid in json.loads(r["photo_ids"])]
+
+    def test_a_designed_draft_never_keeps_a_photo_another_draft_took_meanwhile(self):
+        self.live()
+        a_library(self)
+        rival = []
+        with mock.patch.object(content.notify, "push_result", return_value="sent"):
+            line = designed.draft(self.ctx(), self.rival_fetch(rival), now=self.ten(), check_client=LookClient(shot_type=None),
+                                  art_client=ArtClientAny([say("pass")] * 8), drafter=claude.TemplateDrafter())
+        pid, qid = rival[0]
+        self.assertEqual(self.holding(pid), [qid], f"photo {pid} is in one post only: {line}")
+        self.assertIn(f"post #{qid}", line)
+
+    def test_the_daily_draft_never_keeps_a_photo_another_draft_took_meanwhile(self):
+        self.live()
+        a_library(self)
+        rival = []
+        ctx = runner.Context("content", self.conn, logging.getLogger("t"), config.get_config(), False, 0)
+        with mock.patch.object(content.notify, "push_result", return_value="sent"):
+            line = content.draft_one(ctx, self.rival_fetch(rival), now=self.ten(hour=9), check_client=LookClient(shot_type=None),
+                                     art_client=ArtClientAny([say("pass")] * 8), drafter=claude.TemplateDrafter())
+        pid, qid = rival[0]
+        self.assertEqual(self.holding(pid), [qid], f"photo {pid} is in one post only: {line}")
+        self.assertIn("could not", line, "said, and the watchdog's draft window tries the day again")
+
+    def test_no_designed_draft_is_picked_while_the_daily_draft_is_being_made(self):
+        self.live()
+        a_library(self)
+        lock = runner.Lock(content.DRAFTING)
+        self.assertTrue(lock.acquire())
+        self.addCleanup(lock.release)
+        line, _ = self.designed_draft()
+        self.assertIn("being drafted now", line)
+        self.assertEqual(self.designed_rows(), [])
+
+    def held(self, *, went_out: bool):
+        pid = self.photo(1)
+        self.checked(pid)
+        due = (datetime.now(timezone.utc) + timedelta(days=2)).replace(hour=14, minute=0, second=0, microsecond=0)
+        sent = (datetime.now(timezone.utc) - timedelta(days=1)).replace(microsecond=0)
+        other = self.row([pid], status="published" if went_out else "scheduled", design="spotlight",
+                         payload={"instagram": {"dueAt": (sent if went_out else due).isoformat().replace("+00:00", "Z")}})
+        if went_out:
+            self.conn.execute("UPDATE content_queue SET published_at=? WHERE id=?", (sent.isoformat(), other))
+            db.insert(self.conn, "post_history", buffer_post_id="b-1", queue_id=other, service="instagram", sent_at=sent.isoformat(),
+                      caption="", external_link="https://www.instagram.com/p/X/")
+        mine = self.row([pid], status="approved", design="reel")
+        ctx = runner.Context("publisher", self.conn, logging.getLogger("t"), config.get_config(), True, 0)
+        return pid, other, mine, publisher.door(ctx, db.one(self.conn, "SELECT * FROM content_queue WHERE id=?", (mine,))), due, sent
+
+    def test_the_door_says_the_photo_is_in_a_post_not_yet_out_and_the_way_out(self):
+        pid, other, mine, stop, due, _ = self.held(went_out=False)
+        local = due.astimezone(self.tz)
+        when = f"{local:%a} {local:%b} {local.day} at {(local.hour % 12) or 12}:{local.minute:02d} {'am' if local.hour < 12 else 'pm'}"
+        self.assertEqual(stop, ("back", f"Photo {pid} is already in post #{other}, set to go out {when}. Pull post #{other} back "
+                                        "to use it here, or Skip this one."))
+        self.assertNotIn("went out", stop[1])
+        self.conn.execute("UPDATE content_queue SET status='draft', last_error=?, rule_report=json_set(rule_report, '$.held_by', json(?)) "
+                          "WHERE id=?", (stop[1], json.dumps({"photo": pid, "post": other, "went_out": False}), mine))
+        page = html.unescape(self.client.get(f"/queue/{mine}").text)
+        self.assertIn(f'<a href="/queue/{other}">Pull post #{other} back</a>', page)
+        self.assertRegex(page, rf'action="/queue/{mine}/skip"')
+
+    def test_the_door_says_went_out_only_when_it_did(self):
+        pid, other, _, stop, _, sent = self.held(went_out=True)
+        local = sent.astimezone(self.tz)
+        self.assertEqual(stop[1], f"Photo {pid} already went out as post #{other} on {local:%a} {local:%b} {local.day}. "
+                                  f"A photo goes out once inside {config.repeat_window(config.get_config())} days.")
+
+    def test_the_publisher_records_who_holds_the_photo_for_the_draft_page(self):
+        from convention_social.buffer.client import BufferClient
+        from tests._fakes import FakeBuffer, add_channels
+        add_channels(self.conn, "instagram")
+        pid, other, mine, _, _, _ = self.held(went_out=False)
+        ctx = runner.Context("publisher", self.conn, logging.getLogger("t"), config.get_config(), True, 0)
+        publisher.publish_ready(ctx, client=BufferClient("test-key", conn=self.conn, transport=FakeBuffer()))
+        self.assertEqual(self.status(mine), "draft")
+        self.assertEqual(self.meta(mine)["held_by"], {"photo": pid, "post": other, "went_out": False})
+        today = html.unescape(self.client.get("/").text)
+        self.assertIn(f'<a href="/queue/{other}">Pull post #{other} back</a>', today, "on Today's card too")
+        self.assertIn(f'<a class="btn primary" href="/queue/{other}" style="grid-column:span 2">Open post #{other} to pull it back</a>', today)
+        self.assertNotIn(f'action="/queue/{mine}/approve"', today, "Post now would only meet the same refusal")
+        self.conn.execute("UPDATE content_queue SET status='draft' WHERE id=?", (other,))       # he pulled the other post back
+        today = html.unescape(self.client.get("/").text)
+        self.assertIn(f'action="/queue/{mine}/approve"', today, "the choices are his again")
+        card = today[today.index(f'id="d{mine}"'):]
+        card = card[:card.index("</article>")]
+        self.assertNotIn(f"Photo {pid} is already in post #{other}", card, "and the old words are gone from its card")
 
 
 # ============================================================ 2. one Today page

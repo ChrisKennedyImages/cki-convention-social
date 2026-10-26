@@ -103,6 +103,51 @@ def inputs_fingerprint(conn: sqlite3.Connection) -> str:
 
 SKIPPED = "skip"          # rule_report.rejected_by of a post Chris skipped: its photos go back into the rotation (2026-10-15)
 
+# Chris, 2026-10-16: "Why why why is it giving me this error when nothing was posted with this image!? Very frustrating
+# because it's a good reel." The 8:00 daily draft picked its photos at 12:00 UTC and saved post 7 at 12:07; the designed
+# draft started at 12:02, picked the same photo (both draw the least used first) and saved post 6 at 12:03. Each left out
+# every photo in an open post; the other's picks did not exist yet. Now the roads that pick from the library hold one
+# lock from the pick to the save (DRAFTING), and the save itself refuses a photo another post took meanwhile.
+DRAFTING = "drafting"
+DRAFTING_WAIT = 15 * 60          # seconds the daily draft and Post this wait for a draft being made to finish
+
+
+class PhotosTaken(Exception):
+    """A photo chosen for this draft went into another post while this one was being made."""
+
+    def __init__(self, photo: int, post: int):
+        super().__init__(f"photo {photo} went into post #{post} while this one was being drafted")
+        self.photo, self.post = photo, post
+
+
+def drafting_lock(wait: float):
+    """The lock every road that picks from the library holds from its pick to its save; None when not had in `wait`
+    seconds (0: no wait)."""
+    import time as _time
+    lock = runner.Lock(DRAFTING)
+    deadline = _time.monotonic() + wait
+    while not lock.acquire():
+        if _time.monotonic() >= deadline:
+            return None
+        _time.sleep(5)
+    return lock
+
+
+def photo_holder(conn: sqlite3.Connection, photo_ids, days: int) -> Optional[tuple[int, int]]:
+    """(photo id, post id) when one of these photos is on another post inside the window, by the same rule as
+    recent_use (open, sent, turned back by the art director or set aside by the do-not-use list; a skipped one is not)."""
+    wanted = {int(p) for p in photo_ids}
+    since = (datetime.now(timezone.utc) - timedelta(days=days)).replace(microsecond=0).isoformat()
+    for r in db.rows(conn, "SELECT id, status, photo_ids, rule_report FROM content_queue WHERE created_at >= ? AND "
+                           "(status != 'rejected' OR rule_report LIKE '%\"verdict\": \"reject\"%' "
+                           "OR rule_report LIKE '%\"rejected_by\"%') ORDER BY id", (since,)):
+        if r["status"] == "rejected" and f'"rejected_by": "{SKIPPED}"' in (r["rule_report"] or ""):
+            continue
+        hit = wanted & {int(p) for p in json.loads(r["photo_ids"] or "[]")}
+        if hit:
+            return min(hit), r["id"]
+    return None
+
 
 def recent_use(conn: sqlite3.Connection, days: int) -> tuple[set, set, set]:
     """(photo ids, event names, credited people) used by posts drafted inside the window, by any road (the daily
@@ -552,8 +597,12 @@ def draft_one(ctx: runner.Context, fetch: Callable[[dict], bytes], *, now: Optio
     asked = design
     if len(chosen) < NEEDS[design]:
         design, chosen = fallback_for(day), chosen[:1]
-    qid, art, line = make_draft(ctx, day, chosen, design, want=want, kind_used=kind_used, asked=asked, track=track,
-                                drafter=drafter, art_client=art_client, why=use_why(chosen[0][0], len(pool)))
+    try:
+        qid, art, line = make_draft(ctx, day, chosen, design, want=want, kind_used=kind_used, asked=asked, track=track,
+                                    drafter=drafter, art_client=art_client, why=use_why(chosen[0][0], len(pool)))
+    except PhotosTaken as e:
+        # said, and the watchdog's draft window tries the day again ("could not" is a passing reason)
+        return f"the photos for {day} could not be kept: {e}; the day is drafted again"
     if art.get("verdict") == "reject":
         # the photos do not hold up: they sit out like used ones (make_draft kept the row), and this run drafts again
         if _depth + 1 >= MAX_TRIES:
@@ -629,6 +678,16 @@ def make_draft(ctx: runner.Context, day: date, chosen: list[tuple[dict, bytes]],
     if reel_failed:
         meta["reel_failed"] = reel_failed[0]
     now_s = db.utcnow()
+    # the save refuses a photo another post took while this one was being made (2026-10-16), in one write transaction so
+    # no other process can slip a draft in between the look and the save
+    began = not ctx.conn.in_transaction
+    if began:
+        ctx.conn.execute("BEGIN IMMEDIATE")
+    held = photo_holder(ctx.conn, photo_ids, config.repeat_window(ctx.cfg))
+    if held:
+        if began:
+            ctx.conn.execute("ROLLBACK")
+        raise PhotosTaken(*held)
     qid = db.insert(ctx.conn, "content_queue", kind="photo", photo_ids=json.dumps(photo_ids), targets=json.dumps(list(TARGETS)),
                     caption=json.dumps(captions), render_paths=json.dumps(render_paths), rule_report=json.dumps(meta),
                     created_at=now_s, updated_at=now_s)
@@ -637,6 +696,8 @@ def make_draft(ctx: runner.Context, day: date, chosen: list[tuple[dict, bytes]],
     # moment is record_use's, to the microsecond like every surface's: the queue row's whole second sorted before a
     # site use made in the same second, and the fresh photo came round again (CI, 2026-10-25)
     report.record_use(ctx.conn, "post", photo_ids, ref=f"post:{qid}")
+    if began:
+        ctx.conn.execute("COMMIT")
     # the ping that opens the draft (Chris, 2026-10-11: "I haven't received any ntfy"); 2026-10-13: it carries the
     # card, and an Approve button when the art director passed the draft (core/approve_token: signed, single use)
     title, message = ping or ping_words(ctx.cfg.brand_name, design, len(photo_ids), f"{day:%A}", designed=False)
@@ -702,7 +763,14 @@ def run(ctx: runner.Context, fetch: Optional[Callable[[dict], bytes]] = None) ->
                 return read_photo(ctx.cfg, row, reader.download)
     if summary is None:
         mended = 0 if ctx.dry_run else mend_queue(ctx.conn, agent=ctx.agent)
-        summary = draft_one(ctx, fetch)
+        lock = drafting_lock(DRAFTING_WAIT)             # a designed draft or Post this being made finishes first
+        if lock is None:
+            summary = "could not start: another draft was being made for 15 minutes; tried again within the hour"
+        else:
+            try:
+                summary = draft_one(ctx, fetch)
+            finally:
+                lock.release()
     day = target_day(ctx.cfg)
     # what this run found, for the watchdog's draft window (2026-10-13): a reason that was passing, or inputs that
     # changed since, mean another try inside the day; the same reason on the same inputs means waiting
