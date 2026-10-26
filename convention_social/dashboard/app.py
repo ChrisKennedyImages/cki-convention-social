@@ -379,22 +379,25 @@ STRENGTH = """CASE WHEN c.light IS NULL AND c.moment IS NULL THEN COALESCE(c.qua
                                   - CASE WHEN c.sharp = 0 THEN 6 ELSE 0 END) * 10.0 / 15) END"""
 DECISION = ("CASE WHEN p.clearance = 'blocked' THEN 'blocked' WHEN fd.decision = 'excluded' THEN 'excluded' "
             "WHEN p.clearance = 'cleared' THEN 'cleared' ELSE COALESCE(fd.decision, 'not_cleared') END")
+# One card per picture: of identical copies (same md5) the lowest id stands for all; a tap on it decides every copy
+# (2026-10-26: "when I click Use the photo reappears": its twin did, 31 groups were half decided).
+ONE_COPY = "(p.md5 IS NULL OR p.id = (SELECT MIN(p2.id) FROM photos p2 WHERE p2.md5 = p.md5 AND p2.trashed = 0))"
 PAGE_FROM = """FROM photos p LEFT JOIN classifications c ON c.photo_id = p.id
                LEFT JOIN drive_folders f ON f.drive_id = p.folder_id
                LEFT JOIN temp.folder_decision fd ON fd.drive_id = p.folder_id"""
 VIEWS = {
     # Sorted photos Chris has not decided on that could ever be used: no readable personal detail
     # (temp.hidden_photo). No age filter: he judges every photo himself (2026-10-15). Strongest first.
-    "review": (f"p.trashed = 0 AND {SORTED} AND {DECISION} = 'not_cleared' "
+    "review": (f"p.trashed = 0 AND {ONE_COPY} AND {SORTED} AND {DECISION} = 'not_cleared' "
                "AND COALESCE(c.shot_type, '') NOT IN ('cosplay_portrait') "
                "AND COALESCE(c.event_kind, '') NOT IN ('wedding', 'private') "
                "AND p.id NOT IN (SELECT id FROM temp.hidden_photo)",
                f"({STRENGTH}) DESC, p.id"),
     # Everything Chris cleared, by the photo itself or by its folder. Sorted ones first, strongest first.
-    "approved": (f"p.trashed = 0 AND {DECISION} = 'cleared'",
+    "approved": (f"p.trashed = 0 AND {ONE_COPY} AND {DECISION} = 'cleared'",
                  f"CASE WHEN {SORTED} THEN 0 ELSE 1 END, CASE WHEN {SORTED} THEN ({STRENGTH}) ELSE 0 END DESC, p.id"),
     # Every photo Chris marked Don't use, newest decision first (2026-10-13: a Don't use was invisible afterwards).
-    "blocked": (f"p.trashed = 0 AND {DECISION} = 'blocked'", "COALESCE(p.clearance_at, '') DESC, p.id DESC"),
+    "blocked": (f"p.trashed = 0 AND {ONE_COPY} AND {DECISION} = 'blocked'", "COALESCE(p.clearance_at, '') DESC, p.id DESC"),
 }
 
 
@@ -1265,6 +1268,11 @@ def create_app() -> FastAPI:
         from ..site import deploy
         settings.set(conn, deploy.PHOTOS_CHANGED_KEY, db.utcnow())
 
+    def decide(conn, pid: int, state: str, now: str) -> None:
+        """Chris's decision on a picture, written to every copy of it (eligibility.copies_of)."""
+        for cid in eligibility.copies_of(conn, pid):
+            conn.execute("UPDATE photos SET clearance=?, clearance_at=? WHERE id=?", (state, now, cid))
+
     def safe_back(back: str, default: str = "/library") -> str:
         return back if back.startswith("/") and not back.startswith("//") else default
 
@@ -1275,7 +1283,7 @@ def create_app() -> FastAPI:
         whole page); the plain form, with no script, still gets the redirect."""
         if state not in TAP_WORDS:
             raise HTTPException(400)
-        conn.execute("UPDATE photos SET clearance=?, clearance_at=? WHERE id=?", (state, db.utcnow(), pid))
+        decide(conn, pid, state, db.utcnow())
         photos_changed(conn)
         if "application/json" in request.headers.get("accept", ""):
             return {"id": pid, "state": state, "words": TAP_WORDS[state]}
@@ -1291,7 +1299,7 @@ def create_app() -> FastAPI:
         ids = [int(x) for x in form.getlist("ids") if str(x).isdigit()]
         now = db.utcnow()
         for pid in ids:
-            conn.execute("UPDATE photos SET clearance=?, clearance_at=? WHERE id=?", (state, now, pid))
+            decide(conn, pid, state, now)
         if ids:
             photos_changed(conn)
         return RedirectResponse(safe_back(form.get("back") or "/library"), status_code=303)

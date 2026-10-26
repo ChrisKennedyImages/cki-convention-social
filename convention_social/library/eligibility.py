@@ -56,6 +56,14 @@ NOT_OFFERED_KINDS = ("wedding", "private")     # Chris, 2026-10-11: "not a weddi
 NOT_OFFERED_KIND_WHY = "a wedding or a private occasion: Event Caliber photographs conventions and conferences"
 
 
+def copies_of(conn: sqlite3.Connection, photo_id: int) -> list[int]:
+    """The live photos that are this one, byte for byte (Drive holds the same file in several places: 2,916 photos
+    in 1,432 identical copies on 2026-10-26, "Copy of" exports and re-uploads). A decision is on the picture, so it
+    is written to every copy; the one photo is always in the list."""
+    return [r["id"] for r in db.rows(conn, "SELECT id FROM photos WHERE id = ? OR (trashed = 0 AND md5 IS NOT NULL "
+                                           "AND md5 = (SELECT md5 FROM photos WHERE id = ?))", (photo_id, photo_id))]
+
+
 def clearance_of(conn: sqlite3.Connection, photo: sqlite3.Row) -> str:
     """'cleared' | 'blocked' | 'excluded' | 'not_cleared' — the decision that applies to this photo. Fail
     closed (2026-10-13): Don't use on the photo wins over everything; an excluded folder anywhere above it
