@@ -142,6 +142,72 @@ def when_words(times: dict[str, int]) -> str:
     return words(wd) if wd == we else f"{words(wd)} weekdays, {words(we)} weekends"
 
 
+# ------------------------------------------------------------------ the candidate slots
+
+# Chris, 2026-10-26 ("Do that"): until a network's hours have evidence, its posts try a few candidate slots in turn.
+# The candidates are Buffer's State of Social Engagement 2026 (9.6 million Instagram posts, local times): Wednesday
+# noon, Wednesday 6 pm and Thursday 9 am lead; 6 to 11 pm carries every other weekday; Sunday 9 pm is the weekend's
+# best; mornings are weak. Every post had gone out at 11:30, one bucket, so the hour could never move. When every
+# candidate has MIN_BUCKET posts with numbers, the best one is kept outright (it was posted at, so it is proven), and
+# from then on the hour-a-week law applies. A network whose time Chris set in POST_TIMES tries nothing.
+CANDIDATES: dict[str, dict[str, tuple[int, ...]]] = {
+    "instagram": {"weekday": (12 * 60, 18 * 60 + 30, 9 * 60), "weekend": (21 * 60, 10 * 60)},
+}
+
+
+def day_type(day: date) -> str:
+    return "weekend" if day.weekday() >= 5 else "weekday"
+
+
+def candidates_for(network: str, kind: str) -> tuple[int, ...]:
+    from . import pacing
+    if pacing.set_by_founder(network):
+        return ()
+    return CANDIDATES.get(network, {}).get(kind, ())
+
+
+def exploring(conn: sqlite3.Connection, network: str, kind: str) -> bool:
+    """True while this network still tries its candidate slots: it has some, and not every one has its numbers yet."""
+    if not candidates_for(network, kind):
+        return False
+    entry = applied_times(conn).get(network)
+    return not (isinstance(entry, dict) and entry.get("explored") is True)
+
+
+def placed(conn: sqlite3.Connection, network: str, kind: str) -> dict[int, int]:
+    """{minutes after midnight: our posts scheduled or sent then} on this day type."""
+    from . import pacing
+    tz = ZoneInfo(config.get_config().timezone)
+    counts: dict[int, int] = {}
+    for r in db.rows(conn, "SELECT targets, payload, scheduled_for, published_at, updated_at FROM content_queue "
+                           "WHERE status IN ('scheduled', 'published')"):
+        dt = pacing.due_times(r, tz).get(network)
+        if dt and day_type(dt.date()) == kind:
+            counts[dt.hour * 60 + dt.minute] = counts.get(dt.hour * 60 + dt.minute, 0) + 1
+    return counts
+
+
+def explore_slot(conn: sqlite3.Connection, network: str, day: date) -> Optional[time]:
+    """The candidate with the fewest posts placed on this day type, while the network is still trying them."""
+    kind = day_type(day)
+    if not exploring(conn, network, kind):
+        return None
+    cands = candidates_for(network, kind)
+    counts = placed(conn, network, kind)
+    m = min(cands, key=lambda c: (counts.get(c, 0), cands.index(c)))
+    return time(m // 60, m % 60)
+
+
+def candidate_words(network: str) -> str:
+    """'12:00 pm, 6:30 pm and 9:00 am on weekdays and 9:00 pm and 10:00 am at weekends'."""
+    parts = []
+    for kind, where in (("weekday", "on weekdays"), ("weekend", "at weekends")):
+        names = [words(m) for m in candidates_for(network, kind)]
+        if names:
+            parts.append((", ".join(names[:-1]) + f" and {names[-1]}" if len(names) > 1 else names[0]) + f" {where}")
+    return " and ".join(parts)
+
+
 # ------------------------------------------------------------------ what the consumers call
 
 def applied_times(conn: sqlite3.Connection) -> dict:
@@ -163,6 +229,10 @@ def post_time_for(conn: sqlite3.Connection, network: str, default: time, day: Op
     this same default, else `default`. Pass `day` so weekdays and weekends each get their own time.
     Never raises: anything unreadable or outside 07:00 to 22:00 gives back `default`."""
     try:
+        if day is not None:
+            slot = explore_slot(conn, network, day)
+            if slot is not None:
+                return slot
         entry = applied_times(conn).get(network)
         if not isinstance(entry, dict):
             return default
@@ -278,6 +348,27 @@ def decide_time(network: str, obs: list[Obs], base: tuple[time, time], entry: Op
     lead = f"{label(network)} stays at {when_words(current)}"
     if reset:
         lead = f"{label(network)} starts again from your time, {when_words(current)}"
+    out_entry["explored"] = isinstance(entry, dict) and entry.get("explored") is True and not reset
+    cands = {k: candidates_for(network, k) for k in DAY_TYPES}
+    if any(cands.values()) and not out_entry["explored"]:
+        by_kind = {k: [o for o in obs if day_type(o.local.date()) == k] for k in DAY_TYPES}
+        have = {k: {c: sum(1 for o in by_kind[k] if o.local.hour == c // 60) for c in cands[k]} for k in DAY_TYPES}
+        detail["trying"] = {k: {fmt(c): m for c, m in have[k].items()} for k in DAY_TYPES if cands[k]}
+        if any(m < MIN_BUCKET for k in DAY_TYPES for m in have[k].values()):
+            said = [f"{where} " + ", ".join(f"{words(c)} has {have[k][c]}" for c in cands[k])
+                    for k, where in (("weekday", "on weekdays"), ("weekend", "at weekends")) if cands[k]]
+            return out_entry, detail, (f"{label(network)} is trying its slots until each has {MIN_BUCKET} posts with numbers: "
+                                       f"{'; '.join(said)}."), False
+        for k in DAY_TYPES:                     # every slot has its numbers: the best is kept outright, it was posted at
+            if not cands[k]:
+                continue
+            prior_k = sum(o.engagement for o in by_kind[k]) / len(by_kind[k])
+            score = {c: bayes(sum(o.engagement for o in by_kind[k] if o.local.hour == c // 60), have[k][c], prior_k) for c in cands[k]}
+            new[k] = max(cands[k], key=lambda c: (score[c], -cands[k].index(c)))
+            detail.setdefault("settled", {})[k] = {fmt(c): round(s, 3) for c, s in score.items()}
+        out_entry.update(weekday=fmt(new["weekday"]), weekend=fmt(new["weekend"]), explored=True, moved_at=now.isoformat())
+        return out_entry, detail, (f"{label(network)} settles on {when_words(new)}: every slot it tried has {MIN_BUCKET} posts "
+                                   f"with numbers and these drew the most."), new != current
     if n < MIN_POSTS_FOR_TIME:
         return out_entry, detail, f"{lead}: {n} of the {MIN_POSTS_FOR_TIME} posts it needs have numbers so far.", False
     prior = sum(o.engagement for o in obs) / n
@@ -485,7 +576,9 @@ def dashboard_view(conn: sqlite3.Connection) -> dict:
         start = {"weekday": of_time(wd), "weekend": of_time(we)}
         now_used = {"weekday": of_time(post_time_for(conn, network, wd, monday)),
                     "weekend": of_time(post_time_for(conn, network, we, saturday))}
-        networks.append({"network": network, "start": when_words(start), "in_use": when_words(now_used),
+        trying = exploring(conn, network, "weekday") or exploring(conn, network, "weekend")
+        networks.append({"network": network, "start": when_words(start),
+                         "in_use": f"trying {candidate_words(network)}" if trying else when_words(now_used),
                          "applied": shown(applied.get(network)), "suggested": shown(suggested_times.get(network)),
                          "best_hour": (suggested_times.get(network) or {}).get("best_hour"),
                          "posts": (suggested_times.get(network) or {}).get("posts", 0)})

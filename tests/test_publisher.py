@@ -68,7 +68,7 @@ class DryRun(PublisherCase):
         self.assertEqual(pin["metadata"]["pinterest"]["boardServiceId"], "board-123")
         self.assertEqual(pin["metadata"]["pinterest"]["title"], "Backstage before the keynote, calm and ready.")
         # each network at its own time, one per day: 11:30, 09:30 and 20:30 New York
-        self.assertEqual((ig["mode"], ig["dueAt"]), ("customScheduled", "2026-10-09T15:30:00Z"))
+        self.assertEqual((ig["mode"], ig["dueAt"]), ("customScheduled", "2026-10-09T16:00:00Z"))
         self.assertEqual(fb["dueAt"], "2026-10-09T13:30:00Z")
         self.assertEqual(pin["dueAt"], "2026-10-10T00:30:00Z")
         # rendered designs: 4:5 to Instagram and Facebook, 2:3 to Pinterest, at the URL a live run would upload to
@@ -102,7 +102,7 @@ class DryRun(PublisherCase):
         self.assertEqual(stats["would_publish"], 2)
         payload = json.loads(self.row(second)["payload"])
         self.assertTrue(payload)
-        self.assertEqual(payload["instagram"]["dueAt"], "2026-10-10T14:00:00Z")   # Saturday 10:00, the weekend time
+        self.assertEqual(payload["instagram"]["dueAt"], "2026-10-11T01:00:00Z")   # Saturday 10:00, the weekend time
         self.assertEqual(payload["facebook"]["dueAt"], "2026-10-10T13:30:00Z")
         self.assertEqual(payload["pinterest"]["dueAt"], "2026-10-11T00:30:00Z")
 
@@ -111,13 +111,13 @@ class DryRun(PublisherCase):
         self.conn.execute("UPDATE content_queue SET rule_report=? WHERE id=?", (json.dumps({"for_day": "2026-10-12"}), qid))
         self.assertEqual(self.publish(make_ctx(self.conn))["would_publish"], 1)
         payload = json.loads(self.row(qid)["payload"])
-        self.assertEqual(payload["instagram"]["dueAt"], "2026-10-12T15:30:00Z")
+        self.assertEqual(payload["instagram"]["dueAt"], "2026-10-12T16:00:00Z")
         self.assertEqual(payload["facebook"]["dueAt"], "2026-10-12T13:30:00Z")
         self.assertEqual(payload["pinterest"]["dueAt"], "2026-10-13T00:30:00Z")
         _, other = self.rendered_post(seed=2)
         self.conn.execute("UPDATE content_queue SET rule_report=? WHERE id=?", (json.dumps({"for_day": "turned back"}), other))
         self.assertEqual(self.publish(make_ctx(self.conn))["would_publish"], 1)
-        self.assertEqual(json.loads(self.row(other)["payload"])["instagram"]["dueAt"], "2026-10-09T15:30:00Z", "no day: today")
+        self.assertEqual(json.loads(self.row(other)["payload"])["instagram"]["dueAt"], "2026-10-09T16:00:00Z", "no day: today")
 
     def test_a_pinterest_card_is_needed_when_the_photo_copy_is_not_a_jpeg(self):
         """The photo copies on the Mini are .img files; a post with no 2:3 card has nothing Pinterest can take."""
@@ -498,7 +498,7 @@ class UnknownOutcome(PublisherCase):
         self.assertEqual(db.one(self.conn, "SELECT kind FROM errors ORDER BY id DESC LIMIT 1")["kind"], "buffer_unknown")
         # the next run: Buffer holds a post on that channel with that text, made since the attempt: adopted, not sent again
         fake.posts_nodes = [{"id": "post-x", "channelId": "ch-ig", "channelService": "instagram", "status": "scheduled",
-                             "sentAt": None, "dueAt": "2026-10-09T15:30:00Z", "text": mark["text"], "metricsUpdatedAt": None,
+                             "sentAt": None, "dueAt": "2026-10-09T16:00:00Z", "text": mark["text"], "metricsUpdatedAt": None,
                              "externalLink": None, "metrics": []}]
         stats = self.publish(self.live(), client=client, uploader=self.up())
         self.assertEqual((stats["scheduled"], fake.n_create), (1, 1), "no second createPost")

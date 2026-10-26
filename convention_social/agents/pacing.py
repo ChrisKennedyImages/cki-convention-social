@@ -42,9 +42,9 @@ def parse_clock(text: str) -> Optional[time]:
         return None
 
 
-def times_table() -> dict[str, tuple[time, time]]:
-    """The defaults with POST_TIMES applied."""
-    table = dict(DEFAULT_TIMES)
+def founder_times() -> dict[str, tuple[time, time]]:
+    """The times Chris set in POST_TIMES, readable ones only."""
+    table: dict[str, tuple[time, time]] = {}
     for part in (config.getenv("POST_TIMES", "") or "").split(","):
         if "=" not in part:
             continue
@@ -58,6 +58,15 @@ def times_table() -> dict[str, tuple[time, time]]:
         if weekday and weekend:
             table[net] = (weekday, weekend)
     return table
+
+
+def set_by_founder(network: str) -> bool:
+    return network in founder_times()
+
+
+def times_table() -> dict[str, tuple[time, time]]:
+    """The defaults with POST_TIMES applied."""
+    return {**DEFAULT_TIMES, **founder_times()}
 
 
 def time_for(network: str, day: date) -> time:

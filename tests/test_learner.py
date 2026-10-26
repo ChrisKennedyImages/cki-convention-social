@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 import os
 from datetime import date, datetime, time, timedelta, timezone
+from unittest import mock
 from zoneinfo import ZoneInfo
 
 from fastapi.testclient import TestClient
@@ -19,6 +20,7 @@ NY = ZoneInfo("America/New_York")
 NOW = datetime(2026, 10, 10, 3, 0, tzinfo=timezone.utc)        # 23:00 New York, Friday Oct 9
 MONDAY, SATURDAY = date(2026, 10, 12), date(2026, 10, 17)
 FIRST_DAY = date(2026, 9, 1)
+SLOTS = {net: dict(kinds) for net, kinds in learner.CANDIDATES.items()}      # the candidate slots, kept aside
 
 
 class LearnerCase(AgentCase):
@@ -26,6 +28,10 @@ class LearnerCase(AgentCase):
         super().setUp()
         self.conn = self.connect()
         self.n = 0
+        # the laws below are pinned on a network that tries no candidate slots; Exploring puts the slots back
+        no_slots = mock.patch.dict(learner.CANDIDATES, {}, clear=True)
+        no_slots.start()
+        self.addCleanup(no_slots.stop)
 
     def ctx(self, dry_run=False):
         return make_ctx(self.conn, agent="learner", dry_run=dry_run)
@@ -53,6 +59,65 @@ class LearnerCase(AgentCase):
 
     def ig(self, kind_day=MONDAY, default=time(11, 30)):
         return learner.post_time_for(self.conn, "instagram", default, kind_day)
+
+
+class Exploring(LearnerCase):
+    """Chris, 2026-10-26: every post went out at 11:30, so the hour could never move. Until each candidate slot has
+    MIN_BUCKET posts with numbers the posts take them in turn; then the best is kept outright."""
+    def setUp(self):
+        super().setUp()
+        learner.CANDIDATES.update(SLOTS)
+
+    def scheduled(self, when: str):
+        now = db.utcnow()
+        db.insert(self.conn, "content_queue", kind="photo", photo_ids="[1]", targets=json.dumps(["instagram"]),
+                  caption=json.dumps({"instagram": "x"}), status="scheduled", scheduled_for=when, created_at=now, updated_at=now)
+
+    def test_the_slots_are_tried_in_turn_fewest_first(self):
+        self.assertEqual(self.ig(MONDAY), time(12, 0), "nothing placed: the first candidate")
+        self.scheduled("2026-10-12T12:00")
+        self.assertEqual(self.ig(MONDAY), time(18, 30))
+        self.scheduled("2026-10-13T18:30")
+        self.assertEqual(self.ig(MONDAY), time(9, 0))
+        self.scheduled("2026-10-14T09:00")
+        self.assertEqual(self.ig(MONDAY), time(12, 0), "all even: round again")
+        self.assertEqual(self.ig(SATURDAY), time(21, 0), "weekends have their own slots")
+        self.scheduled("2026-10-17T21:00")
+        self.assertEqual(self.ig(SATURDAY), time(10, 0))
+        self.assertEqual(learner.post_time_for(self.conn, "facebook", time(9, 30), MONDAY), time(9, 30), "a network with no slots keeps its time")
+
+    def test_a_time_chris_set_is_not_tried(self):
+        os.environ["POST_TIMES"] = "instagram=11:30/10:00"
+        config.reset()
+        self.assertEqual(self.ig(MONDAY), time(11, 30))
+        self.assertFalse(learner.exploring(self.conn, "instagram", "weekday"))
+
+    def test_the_learner_waits_for_every_slot_then_keeps_the_best_outright(self):
+        weekdays = [date(2026, 9, d) for d in (1, 2, 3, 4, 7, 8, 9, 10, 11, 14, 15, 16, 17, 18, 21)]
+        weekends = [date(2026, 9, d) for d in (5, 6, 12, 13, 19, 20, 26, 27, 5, 6)]
+        for k in range(5):
+            self.post("instagram", 12, 0, 10, day=weekdays[k])
+            self.post("instagram", 18, 30, 40, day=weekdays[5 + k])
+            self.post("instagram", 21, 0, 30, day=weekends[k])
+            self.post("instagram", 10, 0, 10, day=weekends[5 + k])
+        for k in range(4):
+            self.post("instagram", 9, 0, 10, day=weekdays[10 + k])
+        summary = learner.run(self.ctx(), now=NOW)
+        self.assertIn("0 time move(s)", summary)
+        note = settings.get(self.conn, learner.NOTE_KEY)
+        self.assertIn("Instagram is trying its slots until each has 5 posts with numbers", note)
+        self.assertIn("9:00 am has 4", note)
+        self.assertIn(self.ig(MONDAY), (time(12, 0), time(18, 30), time(9, 0)), "still trying")
+        self.post("instagram", 9, 0, 10, day=weekdays[14])
+        summary = learner.run(self.ctx(), now=NOW)
+        self.assertIn("1 time move(s)", summary)
+        self.assertIn("Instagram settles on 6:30 pm weekdays, 9:00 pm weekends", settings.get(self.conn, learner.NOTE_KEY))
+        self.assertEqual(self.ig(MONDAY), time(18, 30))
+        self.assertEqual(self.ig(SATURDAY, default=time(10, 0)), time(21, 0))
+        self.assertFalse(learner.exploring(self.conn, "instagram", "weekday"))
+        summary = learner.run(self.ctx(), now=NOW)
+        self.assertIn("0 time move(s)", summary, "settled: from here the hour-a-week law applies")
+        self.assertEqual(self.ig(MONDAY), time(18, 30))
 
 
 class Times(LearnerCase):

@@ -159,7 +159,7 @@ class Schedule(Case):
         sched = page[page.index('id="schedule"'):page.index('id="went-out"')]
         from convention_social.agents import content
         week = [f"{name.capitalize()} {d}" for name, d in content.DESIGNS.items() if name not in ("wednesday", "saturday")]
-        for words in ("8:00", "the daily post is drafted for the next day", "Instagram", "11:30 am on weekdays", "10:00 am on weekends",
+        for words in ("8:00", "the daily post is drafted for the next day", "Instagram is trying 12:00 pm, 6:30 pm and 9:00 am on weekdays and 9:00 pm and 10:00 am at weekends",
                       f"Wednesday {content.DESIGNS['wednesday']} of a building", "Saturday reel (", "Next daily draft", *week):
             self.assertIn(words, sched, words)          # the week as content.DESIGNS has it; no music here, so Saturday falls back
         os.environ["POST_TIMES"] = "instagram=12:15/09:45"

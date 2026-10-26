@@ -175,6 +175,10 @@ def schedule(conn: sqlite3.Connection, now: Optional[datetime] = None) -> dict:
     saturday = monday + timedelta(days=5)
     times = []
     for net in alerts.networks_on():
+        if learner.exploring(conn, net, "weekday") or learner.exploring(conn, net, "weekend"):
+            times.append(f"{net.capitalize()} is trying {learner.candidate_words(net)} until each slot has "
+                         f"{learner.MIN_BUCKET} posts with numbers, then keeps the best")
+            continue
         weekday, weekend = pacing.times_table().get(net, (pacing.FALLBACK_TIME, pacing.FALLBACK_TIME))
         wd = learner.post_time_for(conn, net, weekday, monday)
         we = learner.post_time_for(conn, net, weekend, saturday)
