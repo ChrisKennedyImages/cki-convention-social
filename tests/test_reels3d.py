@@ -190,6 +190,32 @@ class Fillers(IsolatedCase):
         self.conn = db.connect()
         self.addCleanup(self.conn.close)
 
+    def test_the_wall_rotates_and_is_recorded_so_the_next_reel_shows_other_photos(self):
+        """Chris, 2026-10-26: "it keeps posting the same photos again." The wall took the strongest 28 approved photos
+        in a fixed order, so every reel stood on the same wall. The pick now follows the rotation and counts as a
+        use ("grid"), so a second wall reaches for the photos the first did not show."""
+        from convention_social.core import config
+        from convention_social.library import report
+        cache = config.get_config().data_root / "photos"
+        cache.mkdir(parents=True, exist_ok=True)
+        ids = []
+        for k in range(8):                                             # two shoots, two rooms each, two photos a room
+            pid = event_photo(self.conn, f"g{k}", kind="business", final="business", quality=5, folder=["fa", "fb"][k % 2])
+            self.conn.execute("UPDATE classifications SET shot_type=? WHERE photo_id=?", (["crowd", "stage_panel"][(k // 2) % 2], pid))
+            self.conn.execute("UPDATE photos SET thumbnail_link='t' WHERE id=?", (pid,))
+            Image.new("RGB", (30, 20), (k, k, k)).save(cache / f"g{k}.img", "JPEG")
+            ids.append(pid)
+        first = {p.name for p in reels3d.fillers(self.conn)}
+        self.assertEqual(len(first), 4, "two shoots, two rooms each: four on the wall")
+        rows = db.rows(self.conn, "SELECT photo_id, surface, ref FROM photo_use")
+        self.assertEqual({r["surface"] for r in rows}, {"grid"})
+        self.assertEqual(len(rows), 4, "the wall's photos count as shown")
+        self.assertTrue(all(r["ref"].startswith("grid:") for r in rows))
+        second = {p.name for p in reels3d.fillers(self.conn)}
+        self.assertEqual(len(second), 4)
+        self.assertFalse(first & second, "the next wall shows the four the first did not")
+        self.assertIn("reel wall", report.use_line(report.use_of(self.conn, ids[:1]).get(ids[0]) or report.use_of(self.conn, ids[1:2]).get(ids[1])))
+
     def test_fillers_are_approved_cached_photos_one_per_room_per_shoot_never_the_posts_own(self):
         from convention_social.core import config
         cache = config.get_config().data_root / "photos"
@@ -203,6 +229,9 @@ class Fillers(IsolatedCase):
                 Image.new("RGB", (30, 20), (k, k, k)).save(cache / f"f{k}.img", "JPEG")
             ids.append(pid)
         self.conn.execute("UPDATE classifications SET possible_minor=1 WHERE photo_id=?", (ids[1],))     # no age gate (2026-10-15)
+        # the wall is in rotation and equals come by chance (2026-10-26), so the flagged photo is made the strongest
+        # of its room: if the flag kept it off, nothing else would
+        self.conn.execute("UPDATE classifications SET light=5, moment=5 WHERE photo_id=?", (ids[1],))
         got = reels3d.fillers(self.conn, exclude=[ids[0]])
         self.assertEqual(len(got), 2, "one folder, two rooms: two fillers")
         self.assertIn(cache / "f1.img", got, "an age flag written before the ruling keeps no photo off a reel's wall")

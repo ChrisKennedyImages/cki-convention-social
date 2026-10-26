@@ -188,26 +188,36 @@ def stills(style: str, video: Path, *, out_dir: Path, meta: Optional[ImageMeta] 
     return saved
 
 
-def fillers(conn: sqlite3.Connection, *, exclude: Sequence[int] = (), n: int = GRID_PHOTOS) -> list[Path]:
-    """Approved photos with a copy on this machine to fill a wall or a grid: the strongest first, one per room per
-    shoot (Drive folder), the shoots interleaved so no two neighbours come from one, never the post's own."""
+def fillers(conn: sqlite3.Connection, *, exclude: Sequence[int] = (), n: int = GRID_PHOTOS, rng=None) -> list[Path]:
+    """Approved photos with a copy on this machine to fill a wall or a grid: in rotation (the least recently shown
+    on any surface first, equals in strength by chance), one per room per shoot (Drive folder), the shoots
+    interleaved so no two neighbours come from one, never the post's own. The pick is recorded as a use on the
+    "grid" surface, so the next reel's wall reaches for other photos: Chris, 2026-10-26, "it keeps posting the same
+    photos again" — the strongest 28 had stood on every reel's wall."""
     from ..core import config
     from ..library import eligibility, report
     from . import design_samples
     cache = config.get_config().data_root / "photos"
-    by_shoot: dict = {}
     seen = set(exclude)
+    usable = []
     for r in report.best(conn, 600, cap=None):
-        key = (r["folder_id"], r["shot_type"])
         path = Path(r["local_path"]) if r["local_path"] else cache / f"{r['drive_id']}.img"
-        if (r["id"] in seen or key in seen or not path.is_file()
+        if (r["id"] in seen or not path.is_file()
                 or eligibility.clearance_of(conn, r) != "cleared" or not design_samples.usable(conn, r)):
             continue
+        usable.append({**dict(r), "path": path})
+    by_shoot: dict = {}
+    for r in report.rotate(conn, usable, rng=rng, alike=lambda r: -report.strength(r)):
+        key = (r["folder_id"], r["shot_type"])
+        if key in seen:
+            continue
         seen.add(key)
-        by_shoot.setdefault(r["folder_id"], []).append(path)
-    picked: list[Path] = []
+        by_shoot.setdefault(r["folder_id"], []).append(r)
+    picked: list[dict] = []
     while any(by_shoot.values()) and len(picked) < n:
         for queue in by_shoot.values():
             if queue and len(picked) < n:
                 picked.append(queue.pop(0))
-    return picked
+    if picked:
+        report.record_use(conn, "grid", [r["id"] for r in picked], ref=f"grid:{report.use_stamp()}")
+    return [r["path"] for r in picked]
