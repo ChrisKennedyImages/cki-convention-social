@@ -229,6 +229,9 @@ class Fillers(IsolatedCase):
                 Image.new("RGB", (30, 20), (k, k, k)).save(cache / f"f{k}.img", "JPEG")
             ids.append(pid)
         self.conn.execute("UPDATE classifications SET possible_minor=1 WHERE photo_id=?", (ids[1],))     # no age gate (2026-10-15)
+        # the wall is in rotation and equals come by chance (2026-10-26), so the flagged photo is made the strongest
+        # of its room: if the flag kept it off, nothing else would
+        self.conn.execute("UPDATE classifications SET light=5, moment=5 WHERE photo_id=?", (ids[1],))
         got = reels3d.fillers(self.conn, exclude=[ids[0]])
         self.assertEqual(len(got), 2, "one folder, two rooms: two fillers")
         self.assertIn(cache / "f1.img", got, "an age flag written before the ruling keeps no photo off a reel's wall")
