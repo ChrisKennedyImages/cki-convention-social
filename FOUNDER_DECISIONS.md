@@ -1731,3 +1731,16 @@ photo (the sorter's summary, the final check's, the caption writer's photo_summa
 is and what is happening in general terms, and never a person's name, title or identity, even when it is readable
 on a badge, a screen or a sign, nor a company's, sponsor's or venue's name. The event's name is kept only where
 the rotation needs it (event_name_seen, convention_name). What the old prompt wrote is cleared (0083).
+
+## 2026-10-26: Instagram tries its posting slots until its own numbers choose one
+
+Chris sent Buffer's "When is the best time to post on Instagram" (9.6 million posts, 2024 to 2025, local times:
+Wednesday noon, Wednesday 6 pm and Thursday 9 am lead; 6 to 11 pm carries every other weekday; Sunday 9 pm is the
+weekend's best; mornings are weak; 3 to 5 feed posts a week): "Some food for thought?" Read against the suite:
+Instagram went out at 11:30 weekdays and 10:00 weekends (2026-10-09, from general industry data), and the learner,
+built to move the hour on this account's own engagement, had all ten posts in one bucket and nothing to compare.
+"Do that": until every candidate slot (weekdays 12:00, 6:30 pm, 9:00 am; weekends 9:00 pm, 10:00 am) has five
+posts with numbers, Instagram's posts take the slot with the fewest; then the best is kept outright, it was posted
+at, and from there the hour-a-week law applies. A time Chris sets in POST_TIMES is never tried against. Posting
+frequency stays one a day until he says otherwise; the article's 3 to 5 a week is a question his numbers can answer
+once the hours vary.

@@ -53,7 +53,7 @@ class Slots(AgentCase):
         fb = pacing.next_slot(conn, "facebook", FRIDAY_8AM)
         pin = pacing.next_slot(conn, "pinterest", FRIDAY_8AM)
         self.assertIsNotNone(ig)
-        self.assertEqual(pacing.slot_value(ig), "2026-10-09T11:30")
+        self.assertEqual(pacing.slot_value(ig), "2026-10-09T12:00")     # Instagram tries its slots: the first, 12:00, with nothing placed (2026-10-26)
         self.assertEqual(pacing.slot_value(fb), "2026-10-09T09:30")
         self.assertEqual(pacing.slot_value(pin), "2026-10-09T20:30")
         late = datetime(2026, 10, 9, 13, 10, tzinfo=timezone.utc)       # 09:10, inside the 30 minute lead
@@ -68,7 +68,7 @@ class Slots(AgentCase):
         self.assertTrue(taken)
         self.assertEqual(taken, {FRIDAY})
         # Friday is taken on Instagram, so the next one is Saturday at the weekend time
-        self.assertEqual(pacing.slot_value(pacing.next_slot(conn, "instagram", FRIDAY_8AM)), "2026-10-10T10:00")
+        self.assertEqual(pacing.slot_value(pacing.next_slot(conn, "instagram", FRIDAY_8AM)), "2026-10-10T21:00")
         # Facebook has Saturday taken, Friday still open
         self.assertEqual(pacing.slot_value(pacing.next_slot(conn, "facebook", FRIDAY_8AM)), "2026-10-09T09:30")
         self.assertEqual(pacing.slot_value(pacing.next_slot(conn, "pinterest", FRIDAY_8AM)), "2026-10-09T20:30")
@@ -86,10 +86,10 @@ class Slots(AgentCase):
     def test_a_draft_for_a_later_day_waits_for_that_day(self):
         """2026-10-13: a draft "for Tuesday" went out the same day; the day it was drafted for is the floor."""
         conn = self.connect()
-        self.assertEqual(pacing.slot_value(pacing.next_slot(conn, "instagram", FRIDAY_8AM, not_before=MONDAY)), "2026-10-12T11:30")
-        self.assertEqual(pacing.slot_value(pacing.next_slot(conn, "instagram", FRIDAY_8AM, not_before=date(2026, 10, 1))), "2026-10-09T11:30")
+        self.assertEqual(pacing.slot_value(pacing.next_slot(conn, "instagram", FRIDAY_8AM, not_before=MONDAY)), "2026-10-12T12:00")
+        self.assertEqual(pacing.slot_value(pacing.next_slot(conn, "instagram", FRIDAY_8AM, not_before=date(2026, 10, 1))), "2026-10-09T12:00")
         planned = pacing.plan(conn, ["instagram", "pinterest"], None, FRIDAY_8AM, not_before=MONDAY)
-        self.assertEqual(planned, {"instagram": "2026-10-12T11:30", "pinterest": "2026-10-12T20:30"})
+        self.assertEqual(planned, {"instagram": "2026-10-12T12:00", "pinterest": "2026-10-12T20:30"})
         chosen = pacing.plan(conn, ["instagram"], "2026-10-09T14:00", FRIDAY_8AM, not_before=MONDAY)
         self.assertEqual(chosen, {"instagram": "2026-10-09T14:00"}, "a time Chris set still wins")
 
@@ -98,4 +98,4 @@ class Slots(AgentCase):
         chosen = pacing.plan(conn, ["instagram", "pinterest"], "2026-10-12T14:00", FRIDAY_8AM)
         self.assertEqual(chosen, {"instagram": "2026-10-12T14:00", "pinterest": "2026-10-12T14:00"})
         free = pacing.plan(conn, ["instagram", "pinterest"], None, FRIDAY_8AM)
-        self.assertEqual(free, {"instagram": "2026-10-09T11:30", "pinterest": "2026-10-09T20:30"})
+        self.assertEqual(free, {"instagram": "2026-10-09T12:00", "pinterest": "2026-10-09T20:30"})
