@@ -82,6 +82,11 @@ sharp: true when the main subject is in focus.
 light: 1 (flat, blown or muddy) to 5 (light that makes the picture).
 moment: 1 (nothing happening, a blink, a turned back) to 5 (a real expression or a moment worth
 keeping). For a building, judge the composition instead.
+summary: one short sentence saying what kind of picture this is and what is happening, in general terms (a
+speaker at a podium; attendees at an expo booth; a building's entrance at dusk). Never a person's name, title
+or identity, even when it is readable on a badge, a screen or a sign, and never the name of a company, a sponsor
+or a venue: write "a speaker", "a politician", "a sponsor's logo". The event's name belongs only in
+event_name_seen.
 Return JSON only, matching the schema."""
 
 KINDS = ("fan", "business", "wedding", "private", "unknown")
@@ -104,7 +109,7 @@ SCHEMA = {
         "moment": {"type": "integer", "description": "1 nothing happening, 5 a real moment; for a building, composition"},
         "people_count": {"type": "integer"},
         "personal_details": {"type": "array", "items": {"type": "string", "enum": list(DETAILS)}},
-        "summary": {"type": "string", "description": "one short sentence"},
+        "summary": {"type": "string", "description": "one short sentence on the kind of picture; no person's name, title or identity, no company or venue name"},
     },
     "required": ["subject", "event_kind", "event_name_seen", "shot_type", "view", "quality", "space",
                  "residential", "empty_room", "sharp", "light", "moment", "people_count",
@@ -122,6 +127,7 @@ personal_details: anything readable that identifies a private person or a home: 
 shot_type: what the photo is of. stage_panel for anyone on a stage, at a podium or on a panel, however close the framing; portrait (a headshot is a portrait) only for a posed picture of a person made for its own sake, away from a stage; group for a posed group; candid for an unposed moment; crowd for an audience or a room of people; vendor_hall for an exhibition hall, an exhibit floor, vendors or a booth (all one thing); backstage; dinner_reception; venue, building_exterior or building_interior for a building with no event in it; cosplay_portrait for a person in costume; other when none fits.
 event_kind: what kind of occasion the photo is from. fan for a fan convention (comics, anime, gaming); business for a business, trade or political conference or a corporate gala; wedding for a wedding or its reception (a bride, a groom, a wedding party, a first dance, a cake, wedding dress); private for a party, a family or personal occasion, a religious ceremony or a portrait session with no event around it; unknown only when nothing visible tells. A wedding is never business.
 room: the one room of an event the photo plainly shows, printed on the post as its title; none unless it is plain from the photo itself. main_stage for someone speaking or presenting on a stage with the stage in view; backstage for behind the scenes of an event (the wings, the crew, the preparation); portraits for a posed, lit portrait of a speaker or guest; expo_floor for an exhibition hall, its booths or a vendor at one; after_dark for a reception, dinner or party that is plainly in the evening or at night; the_crowd for an audience or a room full of people in the moment; the_venue for the room or the building itself with no event in it. A daytime garden reception is not after_dark; a speech at a reception with no stage is not main_stage; when in doubt, none.
+summary: one short sentence on what kind of picture it is; never a person's name, title or identity, and no company, sponsor or venue name.
 Return JSON only, matching the schema."""
 
 FINAL_SCHEMA = {
@@ -131,7 +137,7 @@ FINAL_SCHEMA = {
         "shot_type": {"type": "string", "enum": list(SHOT_TYPES)},
         "event_kind": {"type": "string", "enum": list(KINDS)},
         "room": {"type": "string", "enum": [*ROOMS, "none"]},
-        "summary": {"type": "string"},
+        "summary": {"type": "string", "description": "the kind of picture; no person's name, title or identity, no company or venue name"},
     },
     "required": ["personal_details", "shot_type", "event_kind", "room", "summary"],
     "additionalProperties": False,
