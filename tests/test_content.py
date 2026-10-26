@@ -206,14 +206,15 @@ class ArtClient:
         self.calls += 1
         assert kw["model"] == "claude-opus-5" and kw["fallbacks"] == "default"
         assert sum(1 for b in kw["messages"][0]["content"] if b["type"] == "image") == 2     # both aspects, side by side
+        assert kw["messages"][0]["content"][-1]["text"].endswith("Review this post."), "told what it sees, then asked"
         a = self.answers.pop(0)
         t = types.SimpleNamespace(type="text", text=json.dumps(a))
         return types.SimpleNamespace(content=[t], stop_reason="end_turn", model=kw["model"],
                                      usage=types.SimpleNamespace(input_tokens=2500, output_tokens=150))
 
 
-def say(verdict, x=0.5, y=0.42, notes="Fine."):
-    return {"verdict": verdict, "focus_x": x, "focus_y": y, "notes": notes}
+def say(verdict, x=0.5, y=0.42, notes="Fine.", pictures=("Looks fine.",)):
+    return {"pictures": list(pictures), "verdict": verdict, "focus_x": x, "focus_y": y, "notes": notes}
 
 
 class ArtDirector(Content):
@@ -402,13 +403,14 @@ class TheCapIsHeldInFlight(ArtDirector):
         for n in range(2):
             paths.append(self.root / f"r{n}.jpg")
             paths[-1].write_bytes(jpeg_bytes(seed=n))
-        self.assertEqual(art_director.look(self.conn, paths, client=ArtClient([say("pass")]))["verdict"], "pass")
+        told = content.BRIEFS["single"]
+        self.assertEqual(art_director.look(self.conn, paths, brief=told, client=ArtClient([say("pass")]))["verdict"], "pass")
         self.settled(self.ledger(), "art review")
-        self.assertIsNone(art_director.look(self.conn, paths, client=Broken([])))
+        self.assertIsNone(art_director.look(self.conn, paths, brief=told, client=Broken([])))
         self.assertEqual(len(self.ledger()), 1, "a call that failed holds nothing")
         self.spent(0.85)
         client = ArtClient([say("pass")])
-        self.assertIsNone(art_director.look(self.conn, paths, client=client))
+        self.assertIsNone(art_director.look(self.conn, paths, brief=told, client=client))
         self.assertEqual(client.calls, 0, "the reservation would pass the cap: no call")
         self.assertEqual(len(self.ledger()), 1)
 

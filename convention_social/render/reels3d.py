@@ -8,7 +8,9 @@ given that dir; the mp4 is the product and the dir is removed. No Node, no reel:
 reason, and the daily draft falls back to a carousel of the same photos (content.make_renderer).
 
 The cover is a frame of the reel itself (Instagram shows the frame at thumbnailOffset, 2026-10-16): COVER_S says
-where, per style, and `stills` cuts the same frame for the dashboard and the art director.
+where, per style, and `stills` cuts the same frame for the dashboard and the art director. Before the art director
+looks at them it is told the style and what the style puts on the frame on purpose (`brief`), so Loop's glass is not
+"a large dark circular artifact over the faces" (post 33, 2026-10-24) and a real fault in a photo still is one.
 """
 from __future__ import annotations
 
@@ -43,6 +45,29 @@ RENDER_TIMEOUT = 20 * 60
 ASSET_WAIT_MS = 120_000                                      # Remotion's wait for fonts and textures (default 30 s): thirty photos
 #                                                              on a busy Mini took longer on the first render (2026-10-24)
 GRID_PHOTOS = 28                                              # approved photos around the post's, one per room per shoot
+# What each style puts on the frame on purpose, for the art director: it judges the photos, not the design. Post 33
+# (2026-10-24, a Loop reel) was turned back for "a large dark circular artifact over the faces": the loop's own glass,
+# which Chris approved as the style (2026-10-23), and the turn-back cost the designed lane one of its retries.
+ON_PURPOSE = {
+    "wall": "a tilted wall of the photographer's other photos drifts past the camera; on every beat one of the post's "
+            "photos lifts out of the wall, turns to face the camera at its full shape, holds, and settles back. The "
+            "wall's other tiles are small, at an angle and cropped to the wall's tile shape on purpose.",
+    "loop": "a grid of the photographer's photos in level rows; the camera stops over the post's photos one at a time, "
+            "the held photo at full brightness while the rest of the grid dims around it, its room named under it; the "
+            "grid is bright again while the camera travels. A card-sized oval of liquid glass glides onto the held "
+            "photo, magnifies what is under it, faces included, and travels on to the next card ahead of the camera: "
+            "the oval is the design, not a defect and not an overlay to remove, and the photo under it is the one to "
+            "judge.",
+    "ring": "on paper white, the photos unspool as square cards into a ring turning around a small EVENT CALIBER; then "
+            "the ring opens and the cards cascade past the camera at their full shape to rest on one photo. The square "
+            "crop in the ring and the soft shadow behind each card are the design.",
+    "gallery": "the photos hang like prints at different depths in a dark room with a glossy floor; on every beat the "
+               "camera swoops to the next print and pushes in slowly while it holds. The dark room and the floor's "
+               "reflection are the design.",
+    "orbit": "thick cards on a tilted ring spin in; on every beat the ring turns the next card to the front and it "
+             "slides forward to fill the frame, the others glowing at their edges behind it. The glowing edges are "
+             "the design.",
+}
 
 
 def node_tool(name: str) -> str:
@@ -57,6 +82,16 @@ def next_style(last: Optional[str], rng: Optional[random.Random] = None) -> str:
     """A style at random, never the one the last reel had."""
     choices = [s for s in STYLES if s != last]
     return (rng or random.Random()).choice(choices)
+
+
+def brief(style: str) -> str:
+    """What the art director is told before it looks at a reel: what it sees, the style, and what the style puts on
+    the frame on purpose (ON_PURPOSE), so it judges the photos themselves."""
+    return (f"{2 + len(STILLS_S)} pictures of a fifteen second reel in the {style} style: its cover frame, the first photo "
+            f"on a 2:3 card, and {len(STILLS_S)} more frames from later in the reel. In the reel {ON_PURPOSE[style]} A card "
+            "cut by the frame's edge is the camera's move, not the crop. Nothing in the render softens or darkens a "
+            "featured photo: these frames have no motion blur, no fade and no transition, so a featured photo that reads "
+            "soft or dark is soft or dark in the photo itself, and that is a fault, as is a photo that does not belong.")
 
 
 def cuts_for(n: int) -> list[int]:
