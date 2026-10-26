@@ -841,6 +841,38 @@ class Dashboard(IsolatedCase):
         r = c.post(f"/errors/{eid}/ack", data={"back": "https://evil.example/"}, follow_redirects=False)
         self.assertEqual(r.headers["location"], "/agents", "only our own pages")
 
+    def test_identical_copies_are_one_card_and_one_decision(self):
+        """2026-10-26: "when I click Use the photo reappears to approve the next time." Drive held the same file twice;
+        Use landed on one copy and the twin stayed on the review list. One card per picture; a tap decides every copy;
+        the migration gives the half-decided groups their decision."""
+        from pathlib import Path
+        from convention_social.core import db as core_db
+        pid = self.seed_library()
+        now = core_db.utcnow()
+        twin = core_db.insert(self.conn, "photos", drive_id="p1-copy", name="Copy of a.jpg", folder_id="fcon", width=3000, height=2000,
+                              thumbnail_link="t", first_seen_at=now, last_seen_at=now)
+        self.conn.execute("INSERT INTO classifications (photo_id, method, subject, possible_minor, personal_details, classified_at) "
+                          "VALUES (?, 'ollama', 'event', 0, '[]', ?)", (twin, now))
+        self.conn.execute("UPDATE photos SET md5='samebytes'")
+        c = self.signed_in()
+        review = c.get("/library").text
+        self.assertIn(f'id="p{pid}"', review)
+        self.assertNotIn(f'id="p{twin}"', review, "one card for the picture")
+        c.post(f"/library/photo/{pid}/clearance", data={"state": "cleared", "back": "/library"}, follow_redirects=False)
+        self.assertEqual([r["clearance"] for r in core_db.rows(self.conn, "SELECT clearance FROM photos ORDER BY id")], ["cleared", "cleared"], "the tap decided both copies")
+        self.assertNotIn('id="p', c.get("/library").text)
+        approved = c.get("/library?view=approved").text
+        self.assertIn(f'id="p{pid}"', approved)
+        self.assertNotIn(f'id="p{twin}"', approved)
+        c.post("/library/photos/clearance", data={"ids": [str(twin)], "state": "blocked"})
+        self.assertEqual({r["clearance"] for r in core_db.rows(self.conn, "SELECT clearance FROM photos")}, {"blocked"}, "Don't use on a copy blocks the picture")
+        # the half-decided groups on the Mini: one copy cleared by hand, the other never touched
+        self.conn.execute("UPDATE photos SET clearance='cleared', clearance_at='2026-10-23T10:00:00+00:00' WHERE id=?", (pid,))
+        self.conn.execute("UPDATE photos SET clearance='inherit', clearance_at=NULL WHERE id=?", (twin,))
+        self.conn.executescript(Path(core_db.MIGRATIONS_DIR, "0082_copies_share_the_decision.sql").read_text())
+        row = core_db.one(self.conn, "SELECT clearance, clearance_at FROM photos WHERE id=?", (twin,))
+        self.assertEqual((row["clearance"], row["clearance_at"]), ("cleared", "2026-10-23T10:00:00+00:00"))
+
     def test_photos_review_then_approved_and_only_approved_counts(self):
         """Chris, 2026-10-11: "I only want to choose what I approve" and "I am unable to go back to the main
         library page where I can hit clear". To review lists the undecided photos with Use; Approved lists

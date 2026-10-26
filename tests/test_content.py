@@ -126,6 +126,21 @@ class Content(IsolatedCase):
                   status="published", created_at=when, updated_at=when, rule_report=json.dumps({"event": "Katsucon"}))
         self.assertNotIn(self.ids["e1"], [r["id"] for r in content.candidates(self.conn, "event")], "a photo on a post inside the window still sits out")
 
+
+    def test_a_copy_of_a_posted_photo_is_posted_too(self):
+        """2026-10-26: the same file sits in Drive twice; a post of one copy must keep the other out of the repeat window
+        and off the front of the rotation."""
+        self.conn.execute("UPDATE photos SET md5='samebytes' WHERE id IN (?, ?)", (self.ids["e1"], self.ids["e2"]))
+        when = (datetime.now(timezone.utc) - timedelta(days=3)).replace(microsecond=0).isoformat()
+        db.insert(self.conn, "content_queue", kind="photo", photo_ids=json.dumps([self.ids["e1"]]), targets='["instagram"]', caption="{}",
+                  status="published", created_at=when, updated_at=when, rule_report=json.dumps({"event": "Katsucon"}))
+        used, _, _ = content.recent_use(self.conn, 30)
+        self.assertEqual(used, {self.ids["e1"], self.ids["e2"]}, "the copy counts as used")
+        self.assertEqual([r["id"] for r in content.candidates(self.conn, "event")], [self.ids["e3"]])
+        from convention_social.library import report
+        report.record_use(self.conn, "site", [self.ids["e1"]], ref="site:x", now="2026-10-20T10:00:00+00:00")
+        self.assertEqual(report.last_uses(self.conn)[self.ids["e2"]], when, "the rotation sees the copy's use: the post three days ago, not the older site use")
+
     def test_live_final_check_skips_a_photo_with_a_plate(self):
         """Deliberate change, 2026-10-15 (no age gate): this pinned the skip of a possible minor; the final check's
         skip is now pinned with a readable plate, which still stops a photo."""

@@ -170,7 +170,19 @@ def recent_use(conn: sqlite3.Connection, days: int) -> tuple[set, set, set]:
         if meta.get("event"):
             events.add(meta["event"].lower())
         people.update(x.lower() for x in meta.get("people") or [])
-    return photos, events, people
+    return copies(conn, photos), events, people
+
+
+def copies(conn: sqlite3.Connection, photo_ids: set) -> set:
+    """The ids with every identical copy of each added (same md5): a picture that went out went out, whichever of
+    its files was on the post (2026-10-26)."""
+    out = set(photo_ids)
+    ids = sorted(photo_ids)
+    for k in range(0, len(ids), 500):
+        marks = ",".join("?" * len(ids[k:k + 500]))
+        out.update(r["id"] for r in db.rows(conn, f"SELECT id FROM photos WHERE trashed = 0 AND md5 IS NOT NULL AND md5 IN "
+                                                  f"(SELECT md5 FROM photos WHERE id IN ({marks}))", ids[k:k + 500]))
+    return out
 
 
 def candidates(conn: sqlite3.Connection, subject: str) -> list[dict]:

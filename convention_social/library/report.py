@@ -126,7 +126,12 @@ def ensure_use_history(conn: sqlite3.Connection) -> int:
 def last_uses(conn: sqlite3.Connection) -> dict[int, str]:
     """{photo id: when it was last used, on any surface}; a photo never used is absent."""
     ensure_use_history(conn)
-    return {r["photo_id"]: r["last"] for r in db.rows(conn, "SELECT photo_id, MAX(used_at) AS last FROM photo_use GROUP BY photo_id")}
+    # a use of one copy of a picture is a use of every copy (same md5), so a twin never leads as if never shown
+    return {r["photo_id"]: r["last"] for r in db.rows(conn, """
+        SELECT p2.id AS photo_id, MAX(u.used_at) AS last FROM photo_use u
+        JOIN photos p ON p.id = u.photo_id
+        JOIN photos p2 ON p2.id = p.id OR (p.md5 IS NOT NULL AND p2.md5 = p.md5 AND p2.trashed = 0)
+        GROUP BY p2.id""")}
 
 
 def rotate(conn: sqlite3.Connection, rows: list, *, last: Optional[dict[int, str]] = None, rng=None,
