@@ -40,8 +40,15 @@
 </form>
 <h2 style="margin-top:20px">Dashboard password</h2>
 <form method="post" action="/keys/password" class="card">
+  <div class="muted">The current password first. A change signs out every other phone and computer; this one stays in.</div>
+  <label>Current password</label><input type="password" name="current" autocomplete="current-password">
   <label>New password (8 or more characters)</label><input type="password" name="password" autocomplete="new-password">
   <label>Again</label><input type="password" name="confirm" autocomplete="new-password">
   <button type="submit" style="margin-top:10px">Change password</button>
+</form>
+<form method="post" action="/keys/sign-out-everywhere" class="card" onsubmit="return confirm('Sign out everywhere? Every phone and computer, this one too, needs the password again.')">
+  <strong>Sign out everywhere</strong>
+  <div class="muted">For a phone that is lost or in someone else's hands: every sign-in to this dashboard ends at once, this one too. The password stays as it is.</div>
+  <button class="danger" type="submit" style="margin-top:10px">Sign out everywhere</button>
 </form>
 {% endblock %}

@@ -53,7 +53,7 @@ TITLES = {
 
 # the fix is his to make, on another page
 LINKS = {
-    "drive_auth": ("Sign in to Drive", "/drive/login"),
+    "drive_auth": ("Sign in to Drive", "/drive"),            # the Drive page's button starts it (a POST, 2026-10-24)
     "buffer_key_missing": ("Add the Buffer key", "/keys"),
     "media_missing": ("Set up image hosting", "/keys"),
     "alert_mail": ("Set up mail", "/keys"),

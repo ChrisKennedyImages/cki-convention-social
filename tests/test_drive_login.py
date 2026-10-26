@@ -72,15 +72,17 @@ class DriveLogin(IsolatedCase):
         super().tearDown()
 
     def start(self):
-        return self.c.get("/drive/login", follow_redirects=False)
+        return self.c.post("/drive/login", follow_redirects=False)
 
     def finish(self, address):
         return self.c.post("/drive/login/finish", data={"address": address}, follow_redirects=False)
 
     def test_sign_in_from_the_phone_round_trip(self):
         page = self.c.get("/drive").text
-        self.assertIn('href="/drive/login"', page)
+        self.assertIn('<form method="post" action="/drive/login"', page)
         self.assertNotIn("bin/ccs drive login", page, "no terminal for Chris")
+        self.assertEqual(self.c.get("/drive/login", follow_redirects=False).status_code, 405, "a GET starts nothing (2026-10-24 audit)")
+        self.assertIsNone(settings.get(self.conn, oauth.PENDING_KEY))
         r = self.start()
         self.assertEqual(r.status_code, 303)
         self.assertTrue(r.headers["location"].startswith("https://accounts.google.com/o/oauth2/auth?"), r.headers["location"])

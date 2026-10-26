@@ -568,7 +568,7 @@ class Tabs(Case):
         runner.record_error(self.conn, "seo", "seo_text", "photo 3: the search text could not be written")
         runner.record_error(self.conn, "publisher", "buffer_budget", "Buffer 24h window at 200/250")
         page = html.unescape(self.client.get("/errors").text)
-        self.assertIn('<a class="btn primary" href="/drive/login">Sign in to Drive</a>', page)
+        self.assertIn('<a class="btn primary" href="/drive">Sign in to Drive</a>', page)
         self.assertIn(f"Approve post {failed} again", page)
         self.assertIn("Run the search agent again", page)
         budget = next(c for c in page.split('<div class="card alert">') if "Buffer's request limit" in c)
