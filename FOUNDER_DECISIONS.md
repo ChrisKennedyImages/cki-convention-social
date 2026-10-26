@@ -1714,3 +1714,11 @@ it all please, you're more careful".
   the form is closed and says so, with the email: never open to bots.
 - The site key is in the code (public); the secret key is a Worker secret only, staged with `wrangler versions secret
   put` so it goes live with the next deploy and never reaches `.env` or the repo.
+
+## 2026-10-26: the daily draft's event rule is a preference, not a wall
+
+Chris: "it keeps posting the same photos again." Read from the live database: 1,796 approved event photos, 1,676
+outside the 180-day photo window, six left after the daily draft's hard 14-day event rule (2026-10-15), because
+1,481 of the 1,796 are one event. The same six went on every draft and came round again. Chris: "Merge them all."
+The daily draft now follows the designed drafts' rule: an event a post had inside VARIETY_DAYS comes after every
+other event's photos, not never; the photo's own repeat window and the credited-people rule are unchanged.
