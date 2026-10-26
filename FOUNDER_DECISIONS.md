@@ -1722,3 +1722,12 @@ outside the 180-day photo window, six left after the daily draft's hard 14-day e
 1,481 of the 1,796 are one event. The same six went on every draft and came round again. Chris: "Merge them all."
 The daily draft now follows the designed drafts' rule: an event a post had inside VARIETY_DAYS comes after every
 other event's photos, not never; the photo's own repeat window and the credited-people rule are unchanged.
+
+
+## 2026-10-26: the sort names no one
+
+Chris: "The sorting should also not name names!!! Just the type of image!" Every sentence a model writes about a
+photo (the sorter's summary, the final check's, the caption writer's photo_summary) says what kind of picture it
+is and what is happening in general terms, and never a person's name, title or identity, even when it is readable
+on a badge, a screen or a sign, nor a company's, sponsor's or venue's name. The event's name is kept only where
+the rotation needs it (event_name_seen, convention_name). What the old prompt wrote is cleared (0083).
