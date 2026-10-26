@@ -34,6 +34,30 @@ class Site(IsolatedCase):
         book = (out / "book/index.html").read_text()
         self.assertIn('action="/api/quote"', book)
         self.assertIn('name="website"', book)                      # the honeypot the Worker checks
+        # Cloudflare Turnstile on the form (2026-10-24): the widget with the site key, shown only when a visitor has to tick
+        # a box; Send waits for the token; the Worker's refusals have plain words and the closed form names the email
+        self.assertEqual(build.TURNSTILE_SITE_KEY, "0x4AAAAAAFkmbrAUupO81Nil", "the widget made for eventcaliber.com and www on 2026-10-24")
+        self.assertIn(f'<div class="full"><div class="cf-turnstile" data-sitekey="{build.TURNSTILE_SITE_KEY}" data-action="quote" '
+                      'data-theme="dark" data-size="flexible" data-appearance="interaction-only" data-callback="checkPassed" '
+                      'data-expired-callback="checkExpired" data-error-callback="checkFailed"></div>', book)
+        self.assertLess(book.index('class="cf-turnstile"'), book.index('<button class="btn fill" type="submit">Send the request'),
+                        "the box, when it shows, sits right above Send")
+        self.assertIn('<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer onerror="checkFailed()"></script>', book)
+        self.assertLess(book.index("function checkFailed()"), book.index('src="https://challenges.cloudflare.com'),
+                        "the handlers exist before the script that calls them")
+        self.assertIn('book.addEventListener("submit",ev=>{if(token)return;ev.preventDefault();waiting=true;', book)
+        mail = f'<a href="mailto:{build.contact_email()}" class="c">{build.contact_email()}</a>'
+        self.assertIn(f"closed:'The form is not taking requests right now. Please email us at {mail}.'", book)
+        self.assertIn(f"say('Our spam check could not load in this browser. Please email us at {mail}.')", book)
+        self.assertIn(f'<noscript><p class="mono g" style="margin-bottom:22px">This form needs JavaScript. Without it, email us at {mail}.</p></noscript>', book)
+        self.assertIn('new ResizeObserver(([en])=>box.classList.toggle("shown",en.contentRect.height>0)).observe(box);', book)
+        self.assertIn(".cf-turnstile.shown{margin-bottom:22px}", (out / "assets/site.css").read_text(),
+                      "room above Send only while the box shows: a visitor who never sees it gets the form as it was")
+        # the Worker refuses a token solved for another action or site: it and the form must name the same ones
+        worker = (config.REPO_ROOT / "worker" / "index.js").read_text()
+        self.assertIn(f'const TURNSTILE_ACTION = "{build.TURNSTILE_ACTION}";', worker)
+        self.assertIn('const TURNSTILE_HOSTS = ["eventcaliber.com", "www.eventcaliber.com"];', worker)
+        self.assertIn('if (!env.TURNSTILE_SECRET_KEY) return "closed";', worker, "no secret key: the form is closed, never open")
         for key in offer.coverage_keys():
             self.assertIn(f'value="{key}"', book)
         home = (out / "index.html").read_text()
