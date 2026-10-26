@@ -99,7 +99,7 @@ def strength(r) -> float:
 # every surface. Now every surface draws the least recently used photo first, on any surface, and the quality
 # order only breaks ties: with N approved photos, all N are used before any comes round again.
 
-USE_SURFACES = ("post", "site", "sample")
+USE_SURFACES = ("post", "site", "sample", "grid")      # grid: the wall of approved photos around a reel's own
 HISTORY_KEY = "photo_use.backfilled"
 
 
@@ -191,7 +191,7 @@ def use_line(use: Optional[dict]) -> str:
     """One line under an approved photo: "used 3 times, last on 2026-10-14 (post, site)" or "never used yet"."""
     if not use:
         return "never used yet"
-    where = {"post": "post", "site": "site", "sample": "ideas"}       # the design samples are called ideas now (2026-10-15)
+    where = {"post": "post", "site": "site", "sample": "ideas", "grid": "reel wall"}   # the design samples are called ideas now (2026-10-15)
     return (f"used {use['n']} time{'s' if use['n'] != 1 else ''}, last on {use['last']} "
             f"({', '.join(where.get(s, s) for s in use['surfaces'])})")
 
