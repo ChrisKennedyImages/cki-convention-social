@@ -1797,4 +1797,6 @@ page's lede and meta description lead with photos reaching attendees while the e
 staff only, the organizer's choice; the delivery section and the coverage page carry the posting, the speakers, the
 staff and the hour for selects when the moments are known beforehand; the quote form asks about delivery first; the
 outreach email leads with it. No price, no proof, no method; anything more is a question for the quote. "Within the
-hour" joins "within 24 hours" as a stated promise the copy gate passes. Social copy is unchanged.
+hour" joins "within 24 hours" as a stated promise the copy gate passes. Social copy is unchanged. Added the same day: "attendees
+typically post these throughout the entire event giving the conference/event a lot of traction and exposure", so both
+pages say the event is seen far beyond the room, session after session, while it is still happening.

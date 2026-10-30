@@ -452,9 +452,10 @@ def copy_text() -> dict:
         # posting during the event is a super solid sell"; selects within the hour when the moments are known beforehand;
         # anything more, "let them contact us to inquire"
         "deliver_p": ("Photos reach the people in them while the event is still on, from every photographer in the room. "
-                      "You decide who gets them: all attendees, or your staff only. Attendees post the event while it is "
-                      "happening, and speakers have their stage photo before they have left the stage. Selects within the hour "
-                      "when we know before the event which moments you want. For anything more, ask us."),
+                      "You decide who gets them: all attendees, or your staff only. Attendees post their photos through the whole "
+                      "event, session after session, and the event is seen far beyond the room while it is still happening. "
+                      "Speakers have their stage photo before they have left the stage. Selects within the hour when we know "
+                      "before the event which moments you want. For anything more, ask us."),
         "steps": [("Tell us about your event", "Dates, venue, the rooms and moments that matter, and who needs images."),
                   ("A quote within 24 hours", "One of us writes back with a clear quote for the coverage you need, nothing bundled you did not ask for."),
                   ("Photos during the event, the full set after", "Selects go out while the event is on, and the finished set follows.")],
