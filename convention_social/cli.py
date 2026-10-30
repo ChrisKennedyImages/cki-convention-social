@@ -412,6 +412,8 @@ def cmd_site(args) -> int:
           f"{' PREVIEW' if args.preview else ''}")
     if photos.hero_note:
         print(f"hero: {photos.hero_note}")
+    if photos.grid_note:
+        print(f"gallery: {photos.grid_note}")
     conn.close()
     return 0
 

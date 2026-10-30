@@ -27,7 +27,7 @@ from typing import Optional
 from urllib.parse import quote_plus, urlsplit
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile, status
-from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from markupsafe import Markup, escape
 
@@ -1275,6 +1275,12 @@ def create_app() -> FastAPI:
     def safe_back(back: str, default: str = "/library") -> str:
         return back if back.startswith("/") and not back.startswith("//") else default
 
+    def back_with(back: str, msg: str) -> RedirectResponse:
+        """Back to the photo tapped (the page and its anchor), with the words at the top of the page."""
+        path, _, anchor = safe_back(back).partition("#")
+        return RedirectResponse(f"{path}{'&' if '?' in path else '?'}msg={quote_plus(msg)}" + (f"#{anchor}" if anchor else ""),
+                                status_code=303)
+
     @app.post("/library/photo/{pid}/clearance")
     def photo_clearance(pid: int, request: Request, user: str = Depends(require_user), conn=Depends(conn_dep), state: str = Form(...),
                         back: str = Form(default="/library")):
@@ -1365,11 +1371,34 @@ def create_app() -> FastAPI:
             settings.set(conn, HERO_KEY, str(pid))
             msg = "Site hero: this photo."
         photos_changed(conn)
-        msg = f"{msg} {publish_now()}"
-        back = back if back.startswith("/") and not back.startswith("//") else "/library"
-        path, _, anchor = back.partition("#")
-        return RedirectResponse(f"{path}{'&' if '?' in path else '?'}msg={quote_plus(msg)}" + (f"#{anchor}" if anchor else ""),
-                                status_code=303)
+        return back_with(back, f"{msg} {publish_now()}")
+
+    GALLERY_WORDS = {True: "Added to the site's gallery.", False: "Taken off the site's gallery."}
+
+    @app.post("/library/photo/{pid}/gallery")
+    def photo_gallery(pid: int, request: Request, user: str = Depends(require_user), conn=Depends(conn_dep), back: str = Form(default="/library")):
+        """Chris, 2026-10-29: "add a tab for the approved photos that I can click to add to the site's gallery". One tap
+        puts an approved photo at the front of the website's gallery, in the order tapped, every copy of the picture
+        with it; the next tap takes it off. A photo not approved is refused whatever the page said. The page's script
+        asks for JSON and swaps the button and badge in place; the plain form gets the redirect (as photo_clearance)."""
+        photo = db.one(conn, "SELECT * FROM photos WHERE id=?", (pid,))
+        if photo is None:
+            raise HTTPException(404)
+        wants_json = "application/json" in request.headers.get("accept", "")
+        if photo["trashed"] or eligibility.clearance_of(conn, photo) != "cleared":
+            words = "Not on the site's gallery: the photo is not approved."
+            if wants_json:
+                return JSONResponse({"id": pid, "picked": photo["site_pick_at"] is not None, "words": words}, status_code=409)
+            return back_with(back, words)
+        picked = photo["site_pick_at"] is None
+        stamp = db.utcnow(exact=True) if picked else None          # to the microsecond: two taps inside one second keep their order
+        for cid in eligibility.copies_of(conn, pid):
+            conn.execute("UPDATE photos SET site_pick_at=? WHERE id=?", (stamp, cid))
+        photos_changed(conn)
+        words = f"{GALLERY_WORDS[picked]} The site publishes itself with the change in a few minutes."
+        if wants_json:
+            return {"id": pid, "picked": picked, "words": words}
+        return back_with(back, words)
 
     # ------------------------------------------------------------------ do not use
     @app.get("/donotuse", response_class=HTMLResponse)

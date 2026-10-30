@@ -71,6 +71,7 @@ class SitePhotos:
     coverage: list = field(default_factory=list)
     venues: list = field(default_factory=list)
     hero_note: str = ""                            # which photo is the hero and why, for the go-live output
+    grid_note: str = ""                            # Chris's gallery picks: which lead the grid, which were left out and why (2026-10-29)
     ids: list = field(default_factory=list)        # every library photo shown (hero when from the library, grid, venues, coverage pages)
     grid_ids: list = field(default_factory=list)   # the home page's own: hero when from the library, grid, venues; a build records their use
     links: list = field(default_factory=list)      # the coverage page each grid frame opens, one per coverage entry (2026-10-14)
@@ -161,6 +162,40 @@ def pick_grid(rows: list[dict]) -> list[dict]:
     return spread(spread(rows, event_of), shot_of)[:COVERAGE_ROWS]
 
 
+def site_picks(conn: sqlite3.Connection, pool: list[dict], *, hero_id: Optional[int] = None) -> tuple[list[dict], str]:
+    """Chris's own picks for the home page's gallery (2026-10-29: "a tab for the approved photos that I can click to add
+    to the site's gallery"): the pool's rows he tapped Site gallery on, in the order he tapped them. A pick the pool no
+    longer holds (blocked, gone from Drive, unsorted, a building) is left out and said, and so is a pick that is the
+    hero (the gallery never shows the hero again). One picture under two ids is one pick. (picks, what to say)"""
+    by_id = {r["id"]: r for r in pool}
+    by_md5 = {r["md5"]: r for r in pool if r.get("md5")}
+    picks, said, seen = [], [], set()
+    for w in db.rows(conn, "SELECT id, md5 FROM photos WHERE site_pick_at IS NOT NULL ORDER BY site_pick_at, id"):
+        key = w["md5"] or f"id:{w['id']}"
+        if key in seen:
+            continue
+        seen.add(key)
+        row = by_id.get(w["id"]) or by_md5.get(w["md5"])
+        if row is None:
+            ok, why = eligibility.is_eligible(conn, w["id"])
+            said.append(f"your Site gallery pick (photo {w['id']}) could not be used: {why if not ok else 'not an event photo in the library'}")
+        elif row["id"] == hero_id:
+            said.append(f"your Site gallery pick (photo {row['id']}) is the hero, so the gallery does not show it again")
+        else:
+            picks.append(row)
+    if picks:
+        ids = ", ".join(str(r["id"]) for r in picks)
+        said.insert(0, f"your Site gallery picks lead the gallery, in your order: photos {ids}")
+    return picks, "; ".join(said)
+
+
+def lead_with_picks(picks: list[dict], pool: list[dict], hero: Optional[dict]) -> list[dict]:
+    """The home page's gallery: Chris's picks first, in his order, then pick_grid fills the rest of the COVERAGE_ROWS
+    frames from the pool as before; never the hero and never a photo twice."""
+    skip = {r["id"] for r in picks} | ({hero["id"]} if hero is not None else set())
+    return (picks + pick_grid([r for r in pool if r["id"] not in skip]))[:COVERAGE_ROWS]
+
+
 def pick_photos(conn: sqlite3.Connection, fetch: Callable[[dict], Image.Image],
                 recheck: Optional[Callable[[dict, Image.Image], Optional[dict]]] = None,
                 look: Optional[Callable[[bytes], Optional[dict]]] = None) -> SitePhotos:
@@ -228,8 +263,8 @@ def pick_photos(conn: sqlite3.Connection, fetch: Callable[[dict], Image.Image],
         rec = upload.record(conn) or {}
         out.hero = [(upload.image(), SHOT_WORDS.get(rec.get("shot_type") or "", "Event photography"))]
         out.hero_note = f"{yours} ({why})"
-        grid, rooms = pick_grid(pool), venues[:VENUE_ROWS]
-        return _finish(out, grid, rooms, None, pool, image_of)
+        picks, out.grid_note = site_picks(conn, pool)
+        return _finish(out, lead_with_picks(picks, pool, None), venues[:VENUE_ROWS], None, pool, image_of)
 
     def note(text):
         out.hero_note = (out.hero_note + "; " if out.hero_note else "") + text
@@ -245,7 +280,9 @@ def pick_photos(conn: sqlite3.Connection, fetch: Callable[[dict], Image.Image],
             why = why if not ok else eligibility.is_eligible(conn, picked["id"])[1]
             note(f"your Site hero pick (photo {chosen_id}) could not be used: {why}; the build chose instead")
     if hero is None:
-        land = [r for r in events if (r["width"] or 0) > (r["height"] or 0)][:HERO_CANDIDATES]
+        wide = [r for r in events if (r["width"] or 0) > (r["height"] or 0)]
+        # his gallery picks are for the gallery: the build's own hero is another frame while there is one (2026-10-29)
+        land = ([r for r in wide if not r.get("site_pick_at")] or wide)[:HERO_CANDIDATES]
         if land:
             scores = {r["id"]: hero_score(r, image_of(r)) for r in land}
             hero = max(land, key=lambda r: scores[r["id"]])
@@ -254,8 +291,9 @@ def pick_photos(conn: sqlite3.Connection, fetch: Callable[[dict], Image.Image],
             note("no usable landscape event photo for the hero")
     if hero is not None:
         out.hero = [(image_of(hero), site_alt(hero))]
-    grid, rooms = pick_grid([r for r in pool if hero is None or r["id"] != hero["id"]]), venues[:VENUE_ROWS]
-    return _finish(out, grid, rooms, hero, pool, image_of)
+    # Chris's gallery picks lead the grid (2026-10-29); the grid never shows the hero, so a pick that is the hero is said
+    picks, out.grid_note = site_picks(conn, pool, hero_id=hero["id"] if hero is not None else None)
+    return _finish(out, lead_with_picks(picks, pool, hero), venues[:VENUE_ROWS], hero, pool, image_of)
 
 
 def coverage_key_for(row: dict) -> str:

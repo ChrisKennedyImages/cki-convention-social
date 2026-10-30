@@ -10,7 +10,7 @@
 </div>
 <div class="card muted">
   {% if view == 'review' %}Only what you approve is ever used. These are the sorted photos you have not decided on yet, strongest first. Use approves one; Don't use keeps it out for good. Photos with a readable plate, house number or street sign never show here and are never used. A name badge or a name in the photo is fine.
-  {% elif view == 'approved' %}Everything you approved, one photo at a time or by its folder. Only these are ever used: in posts, the designed drafts and on the website, and every one of them gets its turn, the least recently used first. Undo puts a photo back to review; Don't use keeps it out for good.
+  {% elif view == 'approved' %}Everything you approved, one photo at a time or by its folder. Only these are ever used: in posts, the designed drafts and on the website, and every one of them gets its turn, the least recently used first. Undo puts a photo back to review; Don't use keeps it out for good. Site hero makes a photo the website's main photo; Site gallery puts it at the front of the website's gallery, in the order you tap them, and a second tap takes it off.
   {% else %}Photos you marked Don't use. Unblock puts one back where it was (to review, or approved by its folder). Never use adds it to the do-not-use list for good.{% endif %}
 </div>
 {% if view == 'approved' and subject == 'event' %}
@@ -21,7 +21,7 @@
   {% elif st.state == 'done' %}<div class="msg">Live: {{ st.message }} ({{ st.at[:10] }} {{ st.at[11:16] }}).</div>
   {% elif st.state == 'failed' %}<div class="msg bad">Not published: {{ st.message }} ({{ st.at[:10] }} {{ st.at[11:16] }}).{% if st.detail %}<pre style="white-space:pre-wrap;margin:6px 0 0">{{ st.detail }}</pre>{% endif %}</div>
   {% endif %}
-  <div class="muted">eventcaliber.com is published by itself after a code change that touches it, and by itself in a few minutes with your photo changes (Use, Don't use, a folder, the hero). Publish starts it now instead of waiting; it builds the pages, sends them to Cloudflare and checks every page from outside.{% if site.deployed %} The site is on code {{ site.deployed }}.{% endif %}</div>
+  <div class="muted">eventcaliber.com is published by itself after a code change that touches it, and by itself in a few minutes with your photo changes (Use, Don't use, a folder, the hero, a Site gallery pick). Publish starts it now instead of waiting; it builds the pages, sends them to Cloudflare and checks every page from outside.{% if site.deployed %} The site is on code {{ site.deployed }}.{% endif %}</div>
   {% if site.photos_pending[1] %}<div class="msg">Changes waiting: {{ site.photos_pending[1] }}.</div>{% endif %}
   <div class="muted" style="margin-top:6px">Search engines: {% if site.google_problem %}<span class="badge blocked">Google Search Console value unusable</span> the value on the <a href="/keys">Keys page</a> is {{ site.google_problem }}.{% elif site.google %}Google Search Console tag on every page.{% elif site.google_file %}Google Search Console file {{ site.google_file }} on the site.{% else %}No Google Search Console tag on the <a href="/keys">Keys page</a>: nothing to do when the property was verified another way (through Cloudflare's DNS); paste the tag only if Search Console asks for one.{% endif %}
     {% if st.engines %}Last publish: {{ st.engines }}.{% elif site.indexnow %}Bing and the other IndexNow engines are told after every publish.{% else %}The IndexNow key is made on the first publish.{% endif %}</div>
@@ -60,7 +60,7 @@
     <img src="/media/thumb/{{ p.id }}" loading="lazy" alt="">
     <div class="muted" style="margin-top:6px">{{ (p.shot_type or 'not sorted yet').replace('_',' ') }}</div>
     <a class="muted" href="/library/folder/{{ p.folder_id }}">{{ p.folder_name or '' }}</a>
-    {% if view == 'approved' %}<div><span class="badge {{ 'ok' if p.why[0] else 'blocked' }}">{{ 'ready to use' if p.why[0] else p.why[1] }}</span>{% if hero_id == p.id %} <span class="badge ok">site hero</span>{% endif %}</div>
+    {% if view == 'approved' %}<div class="state"><span class="badge {{ 'ok' if p.why[0] else 'blocked' }}">{{ 'ready to use' if p.why[0] else p.why[1] }}</span>{% if hero_id == p.id %} <span class="badge ok">site hero</span>{% endif %}{% if p.site_pick_at %} <span class="badge ok site-gallery">site gallery</span>{% endif %}</div>
     <div class="muted use-line">{{ p.use_line }}</div>{% endif %}
     <div class="row" style="margin-top:6px">
     {% if view != 'blocked' %}<label class="inline" style="margin:0"><input type="checkbox" form="bulk" name="ids" value="{{ p.id }}" style="width:auto;transform:scale(1.4)"></label>{% endif %}
@@ -81,6 +81,9 @@
     {% if view == 'approved' %}
       <form method="post" action="/library/photo/{{ p.id }}/hero" class="inline">
         <input type="hidden" name="back" value="{{ p.back }}"><button class="small {{ 'ok' if hero_id == p.id else '' }}" type="submit">{{ 'Site hero: chosen' if hero_id == p.id else 'Site hero' }}</button>
+      </form>
+      <form method="post" action="/library/photo/{{ p.id }}/gallery" class="inline pick">
+        <input type="hidden" name="back" value="{{ p.back }}"><button class="small {{ 'ok' if p.site_pick_at else '' }}" type="submit">{{ 'Site gallery: added' if p.site_pick_at else 'Site gallery' }}</button>
       </form>
     {% endif %}
     </div>
@@ -105,6 +108,31 @@ document.querySelectorAll('form.tap').forEach(function (form) {
         card.querySelector('.tapped').textContent = d.words;
         card.querySelectorAll('form.tap').forEach(function (f) { f.remove(); });
         card.classList.toggle('off', d.state === 'blocked');
+      })
+      .catch(function () { form.submit(); });
+  });
+});
+// Site gallery toggles in place the same way (2026-10-29): the button and the badge follow the answer, a refusal is
+// said in words; without JSON (the script failing, or no script) the form submits and the page comes back.
+document.querySelectorAll('form.pick').forEach(function (form) {
+  form.addEventListener('submit', function (event) {
+    event.preventDefault();
+    var card = form.closest('.card');
+    fetch(form.action, {method: 'POST', body: new FormData(form), headers: {'Accept': 'application/json'}})
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        var button = form.querySelector('button'), badge = card.querySelector('.site-gallery');
+        button.textContent = d.picked ? 'Site gallery: added' : 'Site gallery';
+        button.classList.toggle('ok', d.picked);
+        if (d.picked && !badge) {
+          badge = document.createElement('span');
+          badge.className = 'badge ok site-gallery';
+          badge.textContent = 'site gallery';
+          card.querySelector('.state').append(' ', badge);
+        } else if (!d.picked && badge) {
+          badge.remove();
+        }
+        card.querySelector('.tapped').textContent = d.words;
       })
       .catch(function () { form.submit(); });
   });

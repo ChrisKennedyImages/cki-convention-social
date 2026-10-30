@@ -1759,3 +1759,17 @@ shot type, the final check's room and the title on a post are the same eight wor
 judged again by Claude under the strict rule, about $36 of the month's credit ("We're good so yes send them for
 re-sorting"). Posts already titled keep their titles. Left for his word: the old "stage panel" covered anyone on a
 stage; splitting it into main stage, stage panel and stage would re-judge 3,621 more (about $18).
+
+
+## 2026-10-29: his picks lead the website's gallery
+
+Chris: "Can we also add a tab for the approved photos that I can click to add to the site's gallery (we already have
+the button to make any photo the site hero)." Photos tab, Approved: Site gallery on a photo, beside Site hero. One
+tap puts the photo at the front of the home page's gallery, the next tap takes it off, and the card says which are
+in. The pick is on the photo (`photos.site_pick_at`, written to every copy of the picture, migration 0085), never in
+a settings blob, and only an approved photo takes one. The gallery leads with his picks in the order he tapped them,
+then fills the rest of its twelve frames from the pool as before (the rooms, the events, the least recently used
+first); a pick no longer usable (blocked, gone from Drive, unsorted) is left out and said in the build's output, and
+the hero is never in the gallery as well (his hero pick wins; the build's own hero choice takes another frame while
+there is one). The picks count as a use like the rest of the gallery, and the site publishes itself after a tap as
+after any photo change.
