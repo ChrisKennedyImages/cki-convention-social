@@ -249,7 +249,7 @@ class Gallery(SizesCase):
         self.assertEqual(build.COVERAGE_ROWS, 12)
         pool = []                                            # the pool's order is the rotation's: least recently used first
         for pid, shot, event in ((1, "portrait", "E1"), (2, "portrait", "E1"), (3, "portrait", "E2"), (4, "stage", "E1"),
-                                 (5, "backstage", "E2"), (6, "dinner_reception", "E3"), (7, "vendor_hall", "E1"), (8, "portrait", "E3"),
+                                 (5, "backstage", "E2"), (6, "reception", "E3"), (7, "breakout", "E1"), (8, "portrait", "E3"),
                                  (9, "stage", "E2"), (10, "candid", "E1")):
             pool.append({"id": pid, "shot_type": shot, "convention_name": event})
         grid = [r["id"] for r in build.pick_grid(pool)]
@@ -308,7 +308,7 @@ class Gallery(SizesCase):
         from tests.test_wedding import event_photo
         conn = db.connect()
         self.addCleanup(conn.close)
-        shots = ["portrait", "portrait", "portrait", "portrait", "stage_panel", "backstage", "dinner_reception", "vendor_hall", "candid", "portrait",
+        shots = ["portrait", "portrait", "portrait", "portrait", "stage_panel", "backstage", "reception", "breakout", "candid", "portrait",
                  "portrait", "stage_panel", "portrait", "portrait"]
         ids = []
         for i, shot in enumerate(shots):
@@ -519,26 +519,25 @@ class CoveragePages(SizesCase):
             self.assertIn(key, offer.coverage_keys(), key)
             for shot in shots:
                 self.assertIn(shot, build.COVERAGE_SHOTS[build.coverage_key_for({"shot_type": shot})], shot)
-        for shot, key in (("stage", "stage"), ("stage_panel", "breakouts"), ("backstage", "backstage"), ("candid", "on_site_delivery"),
-                          ("dinner_reception", "evening_events"), ("dinner", "evening_events"), ("portrait", "portraits"),
-                          ("headshot", "portraits"), ("vendor_hall", "exhibition_hall"), ("booth", "exhibition_hall"),
-                          ("crowd", "on_site_delivery"), ("group", "on_site_delivery"), ("venue", ""), ("", ""), (None, "")):
+        for shot, key in (("stage", "stage"), ("main_stage", "stage"), ("stage_panel", "stage"), ("breakout", "breakouts"),
+                          ("backstage", "backstage"), ("candid", "on_site_delivery"), ("reception", "evening_events"),
+                          ("portrait", "portraits"), ("building_exterior", ""), ("", ""), (None, "")):
             self.assertEqual(build.coverage_key_for({"shot_type": shot}), key, shot)
         pool = []
-        for shot, n in (("backstage", 8), ("stage_panel", 7), ("stage", 2), ("portrait", 1), ("vendor_hall", 3), ("candid", 6), ("dinner_reception", 4)):
+        for shot, n in (("backstage", 8), ("stage_panel", 7), ("stage", 2), ("portrait", 1), ("breakout", 3), ("candid", 6), ("reception", 4)):
             pool += [{"id": len(pool) + 1 + j, "shot_type": shot} for j in range(n)]
         pages = build.pick_page_photos(pool)
         ids = {k: [r["id"] for r in v] for k, v in pages.items()}
         self.assertEqual(list(ids), offer.coverage_keys())
         self.assertEqual(ids["backstage"], [1, 2, 3, 4, 5, 6], "six of its own, in the pool's order")
         self.assertEqual(ids["green_room"], [7, 8, 1, 2, 3, 4], "the two left, then the same room again before any other")
-        self.assertEqual(ids["breakouts"], [9, 10, 11, 12, 13, 14])
-        self.assertEqual(ids["stage"], [16, 17, 15, 9, 10, 11], "its own stage shots first, then the panels nobody took, then the panels")
+        self.assertEqual(ids["breakouts"], [19, 20, 21], "three of its own: enough, so nothing borrowed")
+        self.assertEqual(ids["stage"], [16, 17, 9, 10, 11, 12], "its own stage shots first, then the panels (one room since 2026-10-29)")
         self.assertEqual(ids["evening_events"], [28, 29, 30, 31, 22, 23], "dinners first, then candids")
         self.assertEqual(ids["dinners"], [28, 29, 30, 31], "four of its own: enough, so nothing borrowed")
-        self.assertEqual(ids["portraits"], [18, 19, 20, 21, 24, 25], "one portrait is under three: the pool's unused photos fill in")
-        self.assertEqual(ids["exhibition_hall"], [19, 20, 21])
-        self.assertEqual(ids["on_site_delivery"], [26, 27, 22, 23, 24, 25])
+        self.assertEqual(ids["portraits"], [18, 13, 14, 15, 24, 25], "one portrait is under three: the pool's unused photos fill in")
+        self.assertEqual(ids["exhibition_hall"], [26, 27, 1, 2, 3, 4], "no expo title among the eight: the page fills from the pool")
+        self.assertEqual(ids["on_site_delivery"], [22, 23, 24, 25, 26, 27])
         two = [{"id": 1, "shot_type": "backstage"}, {"id": 2, "shot_type": "backstage"}]
         self.assertEqual({k: [r["id"] for r in v] for k, v in build.pick_page_photos(two).items()}, {k: [1, 2] for k in offer.coverage_keys()},
                          "two photos in the library: every page shows both")
@@ -554,7 +553,7 @@ class CoveragePages(SizesCase):
         self.assertEqual(got.ids[:len(got.grid_ids)], got.grid_ids)
         self.assertEqual(sorted(got.ids), sorted(ids), "every usable photo is somewhere on the site")
         self.assertEqual(list(got.pages), offer.coverage_keys())
-        self.assertEqual(got.links, ["/coverage/breakouts/"] * (len(ids) - 1), "the grid's frames open the page of their kind of shot")
+        self.assertEqual(got.links, ["/coverage/stage/"] * (len(ids) - 1), "the grid's frames open the page of their kind of shot")
         self.assertTrue(all(len(v) >= build.PAGE_MIN for v in got.pages.values()), {k: len(v) for k, v in got.pages.items()})
         self.assertEqual(len(got.pages["breakouts"]), build.PAGE_ROWS, "the panels' own page is full")
 

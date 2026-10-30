@@ -116,18 +116,18 @@ class Writers(IsolatedCase):
         row = dict(db.one(conn, "SELECT p.*, c.* FROM photos p JOIN classifications c ON c.photo_id=p.id WHERE p.id=?", (pid,)))
         row["credit"] = "@jordan.ex"
         m = meta.for_photo(conn, row)
-        self.assertEqual(m.title, "Stage and panel at a conference")
+        self.assertEqual(m.title, "Stage panel at a conference")
         everything = " ".join([m.title, m.description, *m.keywords, m.credit]).lower()
         for name in ("cpac", "acu", "liberty", "jordan"):
             self.assertNotIn(name, everything)
         db.insert(conn, "photo_seo", photo_id=pid, slug="s", title="Speaker at CPAC", alt="Speaker at CPAC", description="d",
                   keywords="[]", model="template", written_at=db.utcnow())
-        self.assertEqual(meta.for_photo(conn, row).title, "Stage and panel at a conference", "old text that names CPAC is not used")
+        self.assertEqual(meta.for_photo(conn, row).title, "Stage panel at a conference", "old text that names CPAC is not used")
         conn.close()
 
     def test_the_website_alt_text_is_never_the_sorters_description(self):
         row = {"subject": "event", "shot_type": "stage_panel", "summary": "A speaker at the CPAC podium, Jordan Example."}
-        self.assertEqual(build.site_alt(row), "Stage and panel")
+        self.assertEqual(build.site_alt(row), "Stage panel")
         self.assertEqual(build.site_alt({"subject": "architecture"}), "Venue and architecture photography")
 
 
@@ -198,7 +198,7 @@ class DailyDraft(IsolatedCase):
         for paths in json.loads(row["render_paths"]).values():
             fields = meta.search_text(Path(paths[0])).lower()           # the EXIF, XMP and IPTC text, never the pixels
             self.assertIn("event caliber", fields, "the reader sees the file's own fields")
-            self.assertIn("stage and panel", fields)
+            self.assertIn("stage panel", fields)
             for name in ("cpac", "liberty", "jordan"):
                 self.assertNotIn(name, fields, "nor in the file's own search fields")
         conn.close()

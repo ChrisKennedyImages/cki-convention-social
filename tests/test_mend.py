@@ -230,7 +230,7 @@ class TheCard(Mend):
                 self.assertTrue(Path(f).is_file(), f)
                 self.assertIn(str(config.get_config().data_root / "renders" / "posts" / "2026-10-12"), f)
         data = Path(paths["4:5"][0]).read_bytes()
-        self.assertIn(b"Stage and panel", data, "today's words travel in the file")
+        self.assertIn(b"Stage panel", data, "today's words travel in the file")
         self.assertIn("Card drawn again with today&#39;s words.", self.client_page(qid))
 
     def test_without_a_copy_of_the_photo_the_old_card_stays_and_says_so(self):

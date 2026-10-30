@@ -51,7 +51,7 @@ def folder_chain(conn: sqlite3.Connection, folder_id: str | None) -> list[sqlite
 
 # Chris, 2026-10-11: "We are going to NOT do ANY COSPLAY ... erase that from everything". The sorter still
 # tells costume photos apart, only so that none is ever used or offered for review.
-NOT_OFFERED = ("cosplay_portrait",)
+NOT_OFFERED_WHY = "a costume photo: Event Caliber does no cosplay"
 NOT_OFFERED_KINDS = ("wedding", "private")     # Chris, 2026-10-11: "not a wedding!"; Event Caliber does conventions and conferences
 NOT_OFFERED_KIND_WHY = "a wedding or a private occasion: Event Caliber photographs conventions and conferences"
 
@@ -195,12 +195,12 @@ def is_candidate(conn: sqlite3.Connection, photo_id: int) -> tuple[bool, str]:
     for c in credits_for(conn, photo):
         if c["consent"] == "no":
             return False, "the credits sheet says no consent"
-    cls = db.one(conn, "SELECT method, personal_details, subject, space, residential, empty_room, shot_type, event_kind "
+    cls = db.one(conn, "SELECT method, personal_details, subject, space, residential, empty_room, shot_type, costume, event_kind "
                        "FROM classifications WHERE photo_id=?", (photo_id,))
     if cls is None or cls["method"] not in SORTED_METHODS:
         return False, "not sorted yet"
-    if cls["shot_type"] in NOT_OFFERED:
-        return False, "a costume photo: Event Caliber does no cosplay"
+    if cls["costume"]:
+        return False, NOT_OFFERED_WHY
     if cls["event_kind"] in NOT_OFFERED_KINDS:
         return False, NOT_OFFERED_KIND_WHY
     if cls["subject"] == "architecture":

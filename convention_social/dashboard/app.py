@@ -278,10 +278,9 @@ DESIGN_WORDS = {"single": "single photo"}       # every other design is called b
 
 # what a photo shows, in plain words, for the draft page's correction (Chris, 2026-10-11: "it calls a
 # stage shot a portrait which, never can happen!")
-SHOT_CHOICES = [("stage_panel", "Stage and panel"), ("backstage", "Backstage"), ("portrait", "Portrait or headshot"),
-                ("group", "Group photo"), ("candid", "Candid moment"), ("crowd", "Crowd"),
-                ("vendor_hall", "Exhibition hall, vendors or a booth"), ("dinner_reception", "Dinner and reception"), ("venue", "Venue"),
-                ("building_exterior", "Building exterior"), ("building_interior", "Building interior"), ("other", "Other")]
+SHOT_CHOICES = [("main_stage", "Main stage"), ("stage_panel", "Stage panel"), ("stage", "Stage"), ("breakout", "Breakout"),
+                ("portrait", "Portrait"), ("backstage", "Backstage"), ("candid", "Candid"), ("reception", "Reception"),
+                ("building_exterior", "Building exterior"), ("building_interior", "Building interior")]
 
 
 def shot_type_of(conn, photo_id: int) -> str:
@@ -389,7 +388,7 @@ VIEWS = {
     # Sorted photos Chris has not decided on that could ever be used: no readable personal detail
     # (temp.hidden_photo). No age filter: he judges every photo himself (2026-10-15). Strongest first.
     "review": (f"p.trashed = 0 AND {ONE_COPY} AND {SORTED} AND {DECISION} = 'not_cleared' "
-               "AND COALESCE(c.shot_type, '') NOT IN ('cosplay_portrait') "
+               "AND COALESCE(c.costume, 0) = 0 "
                "AND COALESCE(c.event_kind, '') NOT IN ('wedding', 'private') "
                "AND p.id NOT IN (SELECT id FROM temp.hidden_photo)",
                f"({STRENGTH}) DESC, p.id"),

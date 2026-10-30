@@ -110,7 +110,7 @@ class OnTheSite(IsolatedCase):
         self.assertEqual(photos.hero_note, "your uploaded photo (your photo; Claude has not looked at it yet)")
         photos = build.pick_photos(self.conn, self.fetch, look=looker(self.conn, LookClient()))
         self.assertEqual(photos.hero[0][0].size, (1600, 1000))
-        self.assertEqual(photos.hero[0][1], "Stage and panel")
+        self.assertEqual(photos.hero[0][1], "Stage panel")
         self.assertEqual(photos.hero_note, "your uploaded photo (your photo, seen by Claude)")
         self.assertEqual(len(photos.coverage), 3, "the library frames fill the grid")
         settings.set(self.conn, build.HERO_KEY, str(db.one(self.conn, "SELECT id FROM photos WHERE drive_id='lib2'")["id"]))

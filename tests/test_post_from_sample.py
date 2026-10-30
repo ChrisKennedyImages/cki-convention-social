@@ -23,7 +23,7 @@ from tests.test_content import ArtClientAny, say
 from tests.test_hero_upload import LookClient
 from tests.test_wedding import event_photo
 
-ROOMS = ("stage_panel", "crowd", "backstage", "vendor_hall", "dinner_reception", "portrait")
+ROOMS = ("main_stage", "candid", "backstage", "breakout", "reception", "portrait")
 EVERY_SAMPLE = {"fan-post.jpg": "fan", "spotlight-post.jpg": "spotlight", "slide-01.jpg": "carousel", "rooms-reel.mp4": "reel"}
 
 

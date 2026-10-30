@@ -145,7 +145,7 @@ class Pieces(IsolatedCase):
             for word in ("your", "we ", "get ", "lit ", "properly", "every", "covered", "too"):
                 self.assertNotIn(word, line.lower(), (room, line))
             self.assertLessEqual(len(line.split()), 6, (room, line))
-        self.assertEqual(design_samples.ROOMS["portrait"], ("PORTRAITS", "Speakers and guests, backstage."))
+        self.assertEqual(design_samples.ROOMS["portrait"], ("PORTRAIT", "Speakers and guests, between sessions."))
         motion.check_copy(*design_samples.OTHER, motion.MotionCopy().words(), social=True)
         self.assertFalse((self.root / "x.jpg").exists())
 
@@ -231,8 +231,8 @@ class DesignSamples(IsolatedCase):
         return pid
 
     def test_picks_one_frame_per_room_first(self):
-        for n, st in enumerate(("stage_panel", "stage_panel", "backstage", "portrait", "vendor_hall", "dinner_reception",
-                                "crowd")):
+        for n, st in enumerate(("main_stage", "main_stage", "backstage", "portrait", "breakout", "reception",
+                                "candid")):
             self.photo(n, st)
         picked = design_samples.pick(self.conn, 6)
         rooms = [design_samples.ROOMS.get(r["shot_type"], design_samples.OTHER)[0] for r in picked]
@@ -244,17 +244,17 @@ class DesignSamples(IsolatedCase):
         2026-10-15 (no age gate): the photo flagged as maybe under 18 is now picked like any approved photo."""
         for n, st in enumerate(("stage_panel", "backstage", "portrait")):
             self.photo(n, st)
-        self.photo(10, "vendor_hall", minor=1)
+        self.photo(10, "breakout", minor=1)
         self.photo(11, "candid", clearance="blocked")
-        self.photo(14, "dinner_reception", clearance="inherit")     # never approved: Chris, "don't use it yet or at all"
-        self.photo(12, "crowd")
+        self.photo(14, "reception", clearance="inherit")     # never approved: Chris, "don't use it yet or at all"
+        self.photo(12, "candid")
         db.insert(self.conn, "do_not_use", kind="photo", value="d12", reason="takedown", added_at=db.utcnow())
-        self.photo(13, "group", details='["vehicle_plate"]')          # a name badge would be fine (2026-10-12); a plate is not
+        self.photo(13, "candid", details='["vehicle_plate"]')          # a name badge would be fine (2026-10-12); a plate is not
         picked = [r["drive_id"] for r in design_samples.pick(self.conn, 6)]
         self.assertEqual(sorted(picked), ["d0", "d1", "d10", "d2"])
 
     def test_makes_every_still_the_carousel_and_one_page(self):
-        for n, st in enumerate(("stage_panel", "backstage", "portrait", "vendor_hall")):
+        for n, st in enumerate(("stage_panel", "backstage", "portrait", "breakout")):
             self.photo(n, st)
         fetched = []
 

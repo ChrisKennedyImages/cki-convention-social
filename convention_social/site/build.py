@@ -54,10 +54,10 @@ TITLE_MAX, DESCRIPTION_MAX = 75, 160       # what a search result shows whole; a
 # which kinds of shot a coverage page shows (2026-10-14): the library's own shot words, by the room the page is about
 COVERAGE_SHOTS = {
     "backstage": ("backstage",), "green_room": ("backstage",),
-    "breakouts": ("stage_panel", "stage"), "stage": ("stage", "stage_panel"),
-    "evening_events": ("dinner_reception", "dinner", "candid"), "dinners": ("dinner_reception", "dinner"),
-    "portraits": ("portrait", "headshot"), "exhibition_hall": ("vendor_hall", "booth"),
-    "on_site_delivery": ("candid", "crowd", "group"),
+    "breakouts": ("breakout",), "stage": ("main_stage", "stage", "stage_panel"),
+    "evening_events": ("reception", "candid"), "dinners": ("reception",),
+    "portraits": ("portrait",), "exhibition_hall": (),               # no expo title in the eight: the page fills from the pool
+    "on_site_delivery": ("candid",),
 }
 PAGE_ROWS, PAGE_MIN = 6, 3                 # photos on a coverage page: six of its room; under three, the rest of the pool fills in
 LASTMOD_FILE = "lastmod.json"      # DATA_ROOT/site: each page's content hash and the date it last changed
@@ -87,7 +87,7 @@ EVENT_POOL = 20               # eligible event photos the hero is chosen among; 
 HERO_CANDIDATES = 12          # landscape frames looked at (fetched) for the hero's colour and punch
 RECHECKS = 12                 # Claude calls one site build may spend asking what kind of occasion a photo is from
 HERO_KEY = "site.hero_photo_id"   # Chris's own pick for the hero (Photos tab, Approved: Site hero); it wins while it is usable
-STAGE = ("stage_panel", "stage")
+STAGE = ("main_stage", "stage", "stage_panel")
 
 
 def colorfulness(im: Image.Image) -> float:

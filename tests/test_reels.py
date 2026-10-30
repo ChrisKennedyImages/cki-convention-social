@@ -43,7 +43,7 @@ FIELDS = [{"name": "url", "type": "String", "required": True, "description": "UR
 
 def shots(n=4):
     return [motion.Shot(Image.new("RGB", (900, 700), (40 + 30 * i, 70, 110)), room, "A line about the room.")
-            for i, room in zip(range(n), ("MAIN STAGE", "BACKSTAGE", "PORTRAITS", "EXPO FLOOR", "AFTER DARK", "THE CROWD"))]
+            for i, room in zip(range(n), ("MAIN STAGE", "BACKSTAGE", "PORTRAIT", "EXPO FLOOR", "AFTER DARK", "THE CROWD"))]
 
 
 # ------------------------------------------------------------------ the music reaches the mp4
@@ -288,7 +288,7 @@ class Saturday(IsolatedCase):
             db.insert(self.conn, "classifications", photo_id=pid, method="ollama", subject="event", convention_name="Awesome Con",
                       is_convention=1, quality=q, possible_minor=0, personal_details="[]", space="exterior", residential=0,
                       empty_room=0, sharp=1, light=4, moment=4, shot_type=room, classified_at=now)
-            confirmed = {"stage_panel": "main_stage", "backstage": "backstage", "portrait": "portraits"}.get(room)
+            confirmed = {"stage_panel": "main_stage", "backstage": "backstage", "portrait": "portrait"}.get(room)
             if confirmed:                    # the final check confirmed the room, so the reel may name it (2026-10-15)
                 db.insert(self.conn, "final_checks", photo_id=pid, possible_minor=0, personal_details="[]", summary="ok",
                           model="t", checked_at=now, shot_type=room, event_kind="business", room=confirmed)
@@ -351,7 +351,7 @@ class Saturday(IsolatedCase):
         self.assertEqual(len(self.reels), 1)
         kind, rooms, audio = self.reels[0]
         self.assertEqual((kind, audio), (meta_["reel"], track))
-        self.assertEqual(sorted(rooms[:4]), ["BACKSTAGE", "EVENT PHOTOGRAPHY", "MAIN STAGE", "PORTRAITS"],
+        self.assertEqual(sorted(rooms[:4]), ["BACKSTAGE", "EVENT PHOTOGRAPHY", "MAIN STAGE", "PORTRAIT"],
                          "one photo per room first; a room repeats only after every room has had one; a room is named "
                          "only when the final check confirmed it (2026-10-15), the rest say EVENT PHOTOGRAPHY")
         self.assertIn(ids[0], (self.ids["e1"],) if rooms[0] == "EVENT PHOTOGRAPHY" else (self.ids["s1"], self.ids["s2"]),

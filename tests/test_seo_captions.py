@@ -57,7 +57,7 @@ class Plans(IsolatedCase):
         p = lambda **kw: seo_plan.plan_for(**{"subject": "event", "design": "single", **kw}).primary  # noqa: E731
         self.assertEqual(p(event_kind="business", shot_type="stage_panel"), "conference photography")
         self.assertEqual(p(event_kind="business", shot_type="portrait"), "conference headshots")
-        self.assertEqual(p(event_kind="business", shot_type="vendor_hall"), "trade show photography")
+        self.assertEqual(p(event_kind="business", shot_type="reception"), "corporate event photography")
         self.assertEqual(p(event_kind="fan", shot_type="stage_panel"), "convention photography")
         self.assertEqual(p(event_kind=None, shot_type="backstage"), "backstage event photography")
         self.assertEqual(p(event_kind="business", shot_type="portrait", design="carousel"), "conference photography")
@@ -178,7 +178,7 @@ class DailyDraft(IsolatedCase):
         self.assertTrue(any("names 'CPAC'" in n for n in writer.calls[1]["notes"]))
         self.assertEqual((meta["model"], meta["seo"]["fell_back"]), ("template", True))
         self.assertNotIn("cpac", json.dumps(caps).lower())
-        self.assertEqual(meta["alt_text"], "Stage and panel at a conference, photographed by Event Caliber")
+        self.assertEqual(meta["alt_text"], "Stage panel at a conference, photographed by Event Caliber")
 
 
 class Prompt(IsolatedCase):
@@ -291,7 +291,7 @@ class NoCosplay(IsolatedCase):
         db.insert(conn, "drive_folders", drive_id="f", name="F", clearance="cleared", first_seen_at=now, last_seen_at=now)
         pid = db.insert(conn, "photos", drive_id="c1", name="c1.jpg", folder_id="f", first_seen_at=now, last_seen_at=now)
         db.insert(conn, "classifications", photo_id=pid, method="ollama", subject="event", possible_minor=0, personal_details="[]",
-                  shot_type="cosplay_portrait", classified_at=now)
+                  shot_type="candid", costume=1, classified_at=now)
         self.assertEqual(eligibility.is_candidate(conn, pid), (False, "a costume photo: Event Caliber does no cosplay"))
         from convention_social.dashboard import app as dash
         self.conn = conn

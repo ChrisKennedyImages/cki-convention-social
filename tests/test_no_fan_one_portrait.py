@@ -99,17 +99,12 @@ class OnePortrait(IsolatedCase):
         self.assertNotIn("headshots", keys)
         self.assertNotIn("headshots", (REPO / "worker" / "index.js").read_text().split("const COVERAGE")[1].split("]")[0])
         self.assertNotIn("headshot", classify.SHOT_TYPES)
-        self.assertIn("portrait (a headshot is a portrait)", classify.FINAL_SYSTEM)
+        self.assertIn("a headshot or a posed group", classify.FINAL_SYSTEM)
         self.assertNotIn("headshot", json.dumps(classify.FINAL_SCHEMA))
         self.assertNotIn("headshots", draft.COVERAGE_BY_KIND["business"])
         self.assertIn("portraits", draft.COVERAGE_BY_KIND["business"])
         self.assertEqual(dict(dashboard.SHOT_CHOICES).get("headshot"), None)
-        self.assertEqual(dict(dashboard.SHOT_CHOICES)["portrait"], "Portrait or headshot")
-
-    def test_rows_sorted_as_headshots_before_read_as_portraits(self):
-        for words in (photo_text.SHOT_WORDS, meta.SHOT_WORDS):
-            self.assertEqual(words["headshot"], "Portrait")
-        self.assertEqual(seo_plan.ROOM["headshot"], "portrait")
+        self.assertEqual(dict(dashboard.SHOT_CHOICES)["portrait"], "Portrait")
 
     def test_the_migration_turns_stored_headshots_into_portraits(self):
         from tests.test_wedding import event_photo
@@ -138,16 +133,14 @@ class OneHall(IsolatedCase):
         worker = (REPO / "worker" / "index.js").read_text().split("const COVERAGE")[1].split("]")[0]
         self.assertNotIn("vendors", worker)
         self.assertIn("exhibition_hall", worker)
-        self.assertNotIn("booth", classify.SHOT_TYPES)
-        self.assertIn("vendor_hall", classify.SHOT_TYPES)
-        self.assertIn("vendor_hall for an exhibition hall, an exhibit floor, vendors or a booth (all one thing)", classify.FINAL_SYSTEM)
-        self.assertNotIn('"booth"', json.dumps(classify.FINAL_SCHEMA))
+        # 2026-10-29: the hall is a coverage row of the site, not a shot type: the eight titles have no expo word
+        for word in ("booth", "vendor_hall"):
+            self.assertNotIn(word, classify.SHOT_TYPES)
+            self.assertNotIn(word, dict(dashboard.SHOT_CHOICES))
+            self.assertNotIn(word, photo_text.SHOT_WORDS)
+            self.assertNotIn(word, meta.SHOT_WORDS)
+            self.assertNotIn(word, seo_plan.ROOM)
         self.assertNotIn("vendors", draft.COVERAGE_BY_KIND["fan"])
-        self.assertEqual(dict(dashboard.SHOT_CHOICES).get("booth"), None)
-        self.assertEqual(dict(dashboard.SHOT_CHOICES)["vendor_hall"], "Exhibition hall, vendors or a booth")
-        for words in (photo_text.SHOT_WORDS, meta.SHOT_WORDS):
-            self.assertEqual((words["vendor_hall"], words["booth"]), ("Exhibition hall", "Exhibition hall"))
-        self.assertEqual(seo_plan.ROOM["booth"], "floor")
 
     def test_the_migration_turns_stored_booths_into_the_hall(self):
         from tests.test_wedding import event_photo
