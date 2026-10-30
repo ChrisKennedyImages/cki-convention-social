@@ -1773,3 +1773,12 @@ first); a pick no longer usable (blocked, gone from Drive, unsorted) is left out
 the hero is never in the gallery as well (his hero pick wins; the build's own hero choice takes another frame while
 there is one). The picks count as a use like the rest of the gallery, and the site publishes itself after a tap as
 after any photo change.
+
+## 2026-10-30: on a stage it is main stage, or stage panel
+
+Chris, on seeing none of the titles said "stage": "It just needs to say main stage and then a panel which typically
+are on the main stage, but need to be identified as a stage panel." "Main Stage and stage panel (both)." So "stage"
+leaves the list: seven event titles (main stage, stage panel, breakout, portrait, backstage, candid, reception) and
+the two building frames. Every stage photo is main stage unless it is a panel; a panel on the main stage is a stage
+panel. The five the new sorter had called "stage" are main stage; the 3,621 old "stage panel" photos (a word that
+once meant anyone on a stage) join the second look so the panels are told from the main stage (about $18).

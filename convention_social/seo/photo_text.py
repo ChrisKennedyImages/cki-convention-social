@@ -49,7 +49,7 @@ PER_RUN_DEFAULT = 300
 MAX_DEPTH = 64
 
 SHOT_WORDS = {
-    "main_stage": "Main stage", "stage_panel": "Stage panel", "stage": "Stage", "breakout": "Breakout session",
+    "main_stage": "Main stage", "stage_panel": "Stage panel", "breakout": "Breakout session",
     "portrait": "Portrait", "backstage": "Backstage", "candid": "Candid moment", "reception": "Reception",
 }
 PEOPLE_SHOTS = {"portrait"}

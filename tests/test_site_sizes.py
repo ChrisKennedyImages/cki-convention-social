@@ -248,9 +248,9 @@ class Gallery(SizesCase):
     def test_twelve_frames_across_the_rooms_and_the_events_never_the_same_photo_twice(self):
         self.assertEqual(build.COVERAGE_ROWS, 12)
         pool = []                                            # the pool's order is the rotation's: least recently used first
-        for pid, shot, event in ((1, "portrait", "E1"), (2, "portrait", "E1"), (3, "portrait", "E2"), (4, "stage", "E1"),
+        for pid, shot, event in ((1, "portrait", "E1"), (2, "portrait", "E1"), (3, "portrait", "E2"), (4, "main_stage", "E1"),
                                  (5, "backstage", "E2"), (6, "reception", "E3"), (7, "breakout", "E1"), (8, "portrait", "E3"),
-                                 (9, "stage", "E2"), (10, "candid", "E1")):
+                                 (9, "main_stage", "E2"), (10, "candid", "E1")):
             pool.append({"id": pid, "shot_type": shot, "convention_name": event})
         grid = [r["id"] for r in build.pick_grid(pool)]
         self.assertEqual(grid, [1, 6, 5, 4, 7, 10, 3, 9, 2, 8],
@@ -519,12 +519,12 @@ class CoveragePages(SizesCase):
             self.assertIn(key, offer.coverage_keys(), key)
             for shot in shots:
                 self.assertIn(shot, build.COVERAGE_SHOTS[build.coverage_key_for({"shot_type": shot})], shot)
-        for shot, key in (("stage", "stage"), ("main_stage", "stage"), ("stage_panel", "stage"), ("breakout", "breakouts"),
+        for shot, key in (("main_stage", "stage"), ("stage_panel", "stage"), ("breakout", "breakouts"),
                           ("backstage", "backstage"), ("candid", "on_site_delivery"), ("reception", "evening_events"),
                           ("portrait", "portraits"), ("building_exterior", ""), ("", ""), (None, "")):
             self.assertEqual(build.coverage_key_for({"shot_type": shot}), key, shot)
         pool = []
-        for shot, n in (("backstage", 8), ("stage_panel", 7), ("stage", 2), ("portrait", 1), ("breakout", 3), ("candid", 6), ("reception", 4)):
+        for shot, n in (("backstage", 8), ("stage_panel", 7), ("main_stage", 2), ("portrait", 1), ("breakout", 3), ("candid", 6), ("reception", 4)):
             pool += [{"id": len(pool) + 1 + j, "shot_type": shot} for j in range(n)]
         pages = build.pick_page_photos(pool)
         ids = {k: [r["id"] for r in v] for k, v in pages.items()}

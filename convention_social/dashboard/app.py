@@ -278,7 +278,7 @@ DESIGN_WORDS = {"single": "single photo"}       # every other design is called b
 
 # what a photo shows, in plain words, for the draft page's correction (Chris, 2026-10-11: "it calls a
 # stage shot a portrait which, never can happen!")
-SHOT_CHOICES = [("main_stage", "Main stage"), ("stage_panel", "Stage panel"), ("stage", "Stage"), ("breakout", "Breakout"),
+SHOT_CHOICES = [("main_stage", "Main stage"), ("stage_panel", "Stage panel"), ("breakout", "Breakout"),
                 ("portrait", "Portrait"), ("backstage", "Backstage"), ("candid", "Candid"), ("reception", "Reception"),
                 ("building_exterior", "Building exterior"), ("building_interior", "Building interior")]
 
