@@ -97,7 +97,7 @@ class TheGallery(IsolatedCase):
 
     def add(self, drive_id, shade, *, event="CPAC 2025", kind="business", **kw):
         pid = event_photo(self.conn, drive_id, kind=kind, final=kind, **kw)
-        self.conn.execute("UPDATE classifications SET shot_type='crowd', convention_name=? WHERE photo_id=?", (event, pid))
+        self.conn.execute("UPDATE classifications SET shot_type='candid', convention_name=? WHERE photo_id=?", (event, pid))
         self.colours[drive_id] = (shade, shade, shade)
         return pid
 
