@@ -54,7 +54,7 @@ TITLE_MAX, DESCRIPTION_MAX = 75, 160       # what a search result shows whole; a
 # which kinds of shot a coverage page shows (2026-10-14): the library's own shot words, by the room the page is about
 COVERAGE_SHOTS = {
     "backstage": ("backstage",), "green_room": ("backstage",),
-    "breakouts": ("breakout",), "stage": ("main_stage", "stage", "stage_panel"),
+    "breakouts": ("breakout",), "stage": ("main_stage", "stage_panel"),
     "evening_events": ("reception", "candid"), "dinners": ("reception",),
     "portraits": ("portrait",), "exhibition_hall": (),               # no expo title in the eight: the page fills from the pool
     "on_site_delivery": ("candid",),
@@ -88,7 +88,7 @@ EVENT_POOL = 20               # eligible event photos the hero is chosen among; 
 HERO_CANDIDATES = 12          # landscape frames looked at (fetched) for the hero's colour and punch
 RECHECKS = 12                 # Claude calls one site build may spend asking what kind of occasion a photo is from
 HERO_KEY = "site.hero_photo_id"   # Chris's own pick for the hero (Photos tab, Approved: Site hero); it wins while it is usable
-STAGE = ("main_stage", "stage", "stage_panel")
+STAGE = ("main_stage", "stage_panel")
 
 
 def colorfulness(im: Image.Image) -> float:

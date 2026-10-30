@@ -32,7 +32,6 @@ from . import motion
 ROOMS = {
     "main_stage": ("MAIN STAGE", "The keynote, from the room."),
     "stage_panel": ("STAGE PANEL", "The conversation on stage."),
-    "stage": ("STAGE", "At the podium."),
     "breakout": ("BREAKOUT", "The session, up close."),
     "portrait": ("PORTRAIT", "Speakers and guests, between sessions."),      # Chris, 2026-10-12: the speakers and VIPs, not the attendees
     "backstage": ("BACKSTAGE", "The minutes before the doors open."),
@@ -45,7 +44,7 @@ OTHER = ("ON THE FLOOR", "In the moment.")
 # A post prints a room only when Claude's final check of the full photo says it plainly shows that room
 # (library/classify.ROOMS; 2026-10-15: the sorter's shot type had put "After Dark" on a sunny garden and "Main Stage" on
 # a reception room). Anything else, a photo checked before then included, says EVENT PHOTOGRAPHY.
-ROOM_WORDS = {room: ROOMS[room] for room in ("main_stage", "stage_panel", "stage", "breakout", "portrait", "backstage", "candid", "reception")}
+ROOM_WORDS = {room: ROOMS[room] for room in ("main_stage", "stage_panel", "breakout", "portrait", "backstage", "candid", "reception")}
 UNCONFIRMED = ("EVENT PHOTOGRAPHY", "In the moment.")
 COPY_VERSION = "2026-10-15"              # bump when the words on the cards change: the samples are made again (2026-10-15: once, so
 #                                          every set on the Mini records its photos per sample and has its Post this)

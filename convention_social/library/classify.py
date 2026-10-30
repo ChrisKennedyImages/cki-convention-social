@@ -47,7 +47,9 @@ THUMB_EDGE = 512
 # Chris, 2026-10-29: "It's only one of these: main stage, stage panel, stage, breakout, portrait, backstage, candid (if you
 # can't identify where) and reception." The two building frames are the architecture subject's own. One vocabulary:
 # the sorter's shot type, the final check's room and the title printed on a post are the same word.
-EVENT_SHOTS = ("main_stage", "stage_panel", "stage", "breakout", "portrait", "backstage", "candid", "reception")
+# 2026-10-30, Chris: on a stage it is "Main Stage and stage panel (both)": every stage photo is main_stage unless it
+# is a panel, which "typically are on the main stage, but need to be identified as a stage panel".
+EVENT_SHOTS = ("main_stage", "stage_panel", "breakout", "portrait", "backstage", "candid", "reception")
 SHOT_TYPES = EVENT_SHOTS + ("building_exterior", "building_interior")
 DETAILS = ("badge_name", "vehicle_plate", "screen", "document", "house_number", "street_sign")
 # What an architecture frame shows. Chris, 2026-10-10, after the first building sheet: the
@@ -86,9 +88,15 @@ light: 1 (flat, blown or muddy) to 5 (light that makes the picture).
 moment: 1 (nothing happening, a blink, a turned back) to 5 (a real expression or a moment worth
 keeping). For a building, judge the composition instead.
 shot_type: one of these, and nothing else (Chris, 2026-10-29):
-main_stage: the keynote or general-session stage in the main hall: the big stage, screens, the full room.
-stage_panel: several people seated on a stage in conversation, a moderator and panelists.
-stage: one speaker or presenter on any other stage or at a podium.
+main_stage: anyone on a stage presenting to the room: standing, at a lectern or podium, mic in hand, screens behind,
+facing the audience; performers; a group standing for an award or a photo. Two people talking at a podium are
+main_stage. Every stage photo is main_stage unless it is a panel.
+stage_panel: several people seated on a stage in conversation, a moderator and panelists; a panel is usually on the
+main stage and is still stage_panel. Two to six people seated across the stage in chairs, stools or armchairs,
+turned toward each other, one talking and the rest listening to the speaker rather than facing the room; mics,
+often a low table, name cards or names on a screen; a fireside chat of two armchairs is a panel. It reads as a
+panel at any crop, the whole row or one panelist mid-sentence with a neighbour's chair in frame. The count of
+people does not decide it: standing and facing out is main_stage; seated and facing each other is stage_panel.
 breakout: a session in a smaller room: an audience at tables or in rows, a presenter without a main stage.
 portrait: a professional posed portrait only: the subject posed for the camera and lit for it, on a backdrop or in a
 deliberate setting; a headshot or a posed group. A face in a frame is never a portrait; an unposed person is candid.
@@ -141,9 +149,15 @@ FINAL_SYSTEM = """You are the last check before a photographer posts a photo pub
 Answer four things about the photo only from what is visible:
 personal_details: anything readable that identifies a private person or a home: a name on a badge, a vehicle plate, a screen or document with private information (a message, an email, a form, a medical or financial paper), a house number, a street sign. A book cover, a program, a slide, signage, a title or a name on its own is not private information. Empty when none.
 shot_type: one of these, and nothing else (Chris, 2026-10-29):
-main_stage: the keynote or general-session stage in the main hall: the big stage, screens, the full room.
-stage_panel: several people seated on a stage in conversation, a moderator and panelists.
-stage: one speaker or presenter on any other stage or at a podium.
+main_stage: anyone on a stage presenting to the room: standing, at a lectern or podium, mic in hand, screens behind,
+facing the audience; performers; a group standing for an award or a photo. Two people talking at a podium are
+main_stage. Every stage photo is main_stage unless it is a panel.
+stage_panel: several people seated on a stage in conversation, a moderator and panelists; a panel is usually on the
+main stage and is still stage_panel. Two to six people seated across the stage in chairs, stools or armchairs,
+turned toward each other, one talking and the rest listening to the speaker rather than facing the room; mics,
+often a low table, name cards or names on a screen; a fireside chat of two armchairs is a panel. It reads as a
+panel at any crop, the whole row or one panelist mid-sentence with a neighbour's chair in frame. The count of
+people does not decide it: standing and facing out is main_stage; seated and facing each other is stage_panel.
 breakout: a session in a smaller room: an audience at tables or in rows, a presenter without a main stage.
 portrait: a professional posed portrait only: the subject posed for the camera and lit for it, on a backdrop or in a
 deliberate setting; a headshot or a posed group. A face in a frame is never a portrait; an unposed person is candid.

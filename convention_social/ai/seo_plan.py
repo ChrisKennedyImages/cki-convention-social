@@ -36,7 +36,7 @@ IG_MAX = 2200
 IG_TAGS, PIN_TAGS = 5, 3
 
 # the room a photo is from, by the sorter's shot type
-ROOM = {"main_stage": "stage", "stage_panel": "stage", "stage": "stage", "breakout": "stage", "backstage": "backstage",
+ROOM = {"main_stage": "stage", "stage_panel": "stage", "breakout": "stage", "backstage": "backstage",
         "portrait": "portrait", "reception": "evening", "candid": "crowd"}
 
 PRIMARY = {
