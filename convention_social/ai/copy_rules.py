@@ -14,7 +14,8 @@ Blocks:
   names       public copy only (callers pass `names`): the name of an event, the company behind it
               or a person, or any @handle (Chris, 2026-10-11; ai/names.py)
   claims      anything about how the company works that Chris has not stated ("within 24 hours" is his
-              stated reply promise, 2026-10-12, and passes): what a service
+              stated reply promise, 2026-10-12, and "within the hour" his stated promise for selects when the
+              moments are known before the event, 2026-10-30; both pass): what a service
               includes or comes with, what anyone leaves with, how long anything takes, packages,
               turnaround. Chris, 2026-10-11, on a draft that said conference photography "includes
               portraits like this one, shot on site in a few minutes": "Suite wide - NOTHING
@@ -49,7 +50,7 @@ PROMISE = re.compile(r"\bguarantee(?:d|s)?\b|#1\b|\bnumber one\b|\bbest in\b|\ba
 CLAIMS = re.compile(
     r"\binclud(?:e|es|ed|ing|ive)\b|\bcomes?\s+with\b|\bcame\s+with\b|\bleaves?\s+with\b|\bleft\s+with\b|\bwalks?\s+away\s+with\b"
     r"|\bpackages?\b|\bbundles?\b|\badd[- ]ons?\b|\bturnaround\b|\bunlimited\b|\b(?:same|next)[- ]day\b"
-    r"|\bwithin\s+(?!24\s+hours\b)(?:minutes|hours|an?\s+(?:hour|day|week)|\d+)\b|\bin\s+(?:a\s+few\s+|just\s+|under\s+)?minutes\b",
+    r"|\bwithin\s+(?!24\s+hours\b|the\s+hour\b)(?:minutes|hours|an?\s+(?:hour|day|week)|\d+)\b|\bin\s+(?:a\s+few\s+|just\s+|under\s+)?minutes\b",
     re.IGNORECASE,
 )
 OFFER = re.compile(
