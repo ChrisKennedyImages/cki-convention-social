@@ -16,8 +16,12 @@ from . import config
 MIGRATIONS_DIR = Path(__file__).with_name("migrations")
 
 
-def utcnow() -> str:
-    return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+def utcnow(*, exact: bool = False) -> str:
+    """Now, as an ISO stamp in UTC: whole seconds, or with `exact` to the microsecond for a stamp that also orders
+    things that happen within one second (a Site gallery tap, 2026-10-29). report.use_stamp keeps its own clock on
+    purpose: a test that freezes this one must still tell two uses apart."""
+    now = datetime.now(timezone.utc)
+    return now.isoformat(timespec="microseconds") if exact else now.replace(microsecond=0).isoformat()
 
 
 def migration_files() -> list[Path]:
