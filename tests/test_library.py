@@ -106,7 +106,7 @@ class FakeClaude:
                                      usage=types.SimpleNamespace(input_tokens=900, output_tokens=120))
 
 
-ADULTS = {"subject": "event", "event_kind": "fan", "event_name_seen": "Katsucon", "shot_type": "portrait",
+ADULTS = {"subject": "event", "event_kind": "fan", "event_name_seen": "Katsucon", "shot_type": "portrait", "costume": False,
           "view": "interior", "quality": 5, "people_count": 1, "possible_minor": False, "personal_details": [],
           "space": "not_a_building", "residential": False, "empty_room": False,
           "sharp": True, "light": 4, "moment": 4, "summary": "A speaker."}

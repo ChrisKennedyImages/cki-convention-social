@@ -44,8 +44,11 @@ VISION_HINTS = ("llava", "vision", "-vl", "vl:", "qwen2.5vl", "qwen3-vl", "gemma
 THUMB_EDGE = 512
 # portraits and headshots are one thing (Chris, 2026-10-12); rows sorted "headshot" before then read as portrait
 # exhibition halls, vendors and booths are one thing too (Chris, 2026-10-12): rows sorted "booth" read as vendor_hall
-SHOT_TYPES = ("cosplay_portrait", "portrait", "group", "candid", "stage_panel", "vendor_hall",
-              "backstage", "dinner_reception", "crowd", "venue", "building_exterior", "building_interior", "other")
+# Chris, 2026-10-29: "It's only one of these: main stage, stage panel, stage, breakout, portrait, backstage, candid (if you
+# can't identify where) and reception." The two building frames are the architecture subject's own. One vocabulary:
+# the sorter's shot type, the final check's room and the title printed on a post are the same word.
+EVENT_SHOTS = ("main_stage", "stage_panel", "stage", "breakout", "portrait", "backstage", "candid", "reception")
+SHOT_TYPES = EVENT_SHOTS + ("building_exterior", "building_interior")
 DETAILS = ("badge_name", "vehicle_plate", "screen", "document", "house_number", "street_sign")
 # What an architecture frame shows. Chris, 2026-10-10, after the first building sheet: the
 # building work is buildings, never rooms. The library's architecture is largely commissioned
@@ -82,6 +85,18 @@ sharp: true when the main subject is in focus.
 light: 1 (flat, blown or muddy) to 5 (light that makes the picture).
 moment: 1 (nothing happening, a blink, a turned back) to 5 (a real expression or a moment worth
 keeping). For a building, judge the composition instead.
+shot_type: one of these, and nothing else (Chris, 2026-10-29):
+main_stage: the keynote or general-session stage in the main hall: the big stage, screens, the full room.
+stage_panel: several people seated on a stage in conversation, a moderator and panelists.
+stage: one speaker or presenter on any other stage or at a podium.
+breakout: a session in a smaller room: an audience at tables or in rows, a presenter without a main stage.
+portrait: a professional posed portrait only: the subject posed for the camera and lit for it, on a backdrop or in a
+deliberate setting; a headshot or a posed group. A face in a frame is never a portrait; an unposed person is candid.
+backstage: green room, wings, prep, rehearsal, mic check.
+reception: dinner, drinks, networking, the gala floor, the dance floor.
+candid: anything else at the event, when the place cannot be told.
+building_exterior or building_interior: a building with no event in it (subject architecture).
+costume: true when a person in the frame is in costume (cosplay).
 summary: one short sentence saying what kind of picture this is and what is happening, in general terms (a
 speaker at a podium; attendees at an expo booth; a building's entrance at dusk). Never a person's name, title
 or identity, even when it is readable on a badge, a screen or a sign, and never the name of a company, a sponsor
@@ -99,6 +114,7 @@ SCHEMA = {
         "event_kind": {"type": "string", "enum": list(KINDS)},
         "event_name_seen": {"type": "string", "description": "an event name readable on signage or badges; empty if none"},
         "shot_type": {"type": "string", "enum": list(SHOT_TYPES)},
+        "costume": {"type": "boolean", "description": "a person in the frame is in costume (cosplay)"},
         "view": {"type": "string", "enum": ["exterior", "interior", "none"]},
         "quality": {"type": "integer", "description": "technical quality 1 (unusable) to 5 (portfolio)"},
         "space": {"type": "string", "enum": list(SPACES), "description": "what an architecture frame shows"},
@@ -111,7 +127,7 @@ SCHEMA = {
         "personal_details": {"type": "array", "items": {"type": "string", "enum": list(DETAILS)}},
         "summary": {"type": "string", "description": "one short sentence on the kind of picture; no person's name, title or identity, no company or venue name"},
     },
-    "required": ["subject", "event_kind", "event_name_seen", "shot_type", "view", "quality", "space",
+    "required": ["subject", "event_kind", "event_name_seen", "shot_type", "costume", "view", "quality", "space",
                  "residential", "empty_room", "sharp", "light", "moment", "people_count",
                  "personal_details", "summary"],
     "additionalProperties": False,
@@ -119,12 +135,23 @@ SCHEMA = {
 
 # the rooms a post may name (render/design_samples.ROOM_WORDS gives each its words); Claude says which one a photo plainly
 # shows, or none (2026-10-15: the sorter's shot type had put "After Dark" on a sunny garden)
-ROOMS = ("main_stage", "backstage", "portraits", "expo_floor", "after_dark", "the_crowd", "the_venue")
+ROOMS = EVENT_SHOTS                      # the room the final check names is the title printed on the post: the same eight words
 
 FINAL_SYSTEM = """You are the last check before a photographer posts a photo publicly.
 Answer four things about the photo only from what is visible:
 personal_details: anything readable that identifies a private person or a home: a name on a badge, a vehicle plate, a screen or document with private information (a message, an email, a form, a medical or financial paper), a house number, a street sign. A book cover, a program, a slide, signage, a title or a name on its own is not private information. Empty when none.
-shot_type: what the photo is of. stage_panel for anyone on a stage, at a podium or on a panel, however close the framing; portrait (a headshot is a portrait) only for a posed picture of a person made for its own sake, away from a stage; group for a posed group; candid for an unposed moment; crowd for an audience or a room of people; vendor_hall for an exhibition hall, an exhibit floor, vendors or a booth (all one thing); backstage; dinner_reception; venue, building_exterior or building_interior for a building with no event in it; cosplay_portrait for a person in costume; other when none fits.
+shot_type: one of these, and nothing else (Chris, 2026-10-29):
+main_stage: the keynote or general-session stage in the main hall: the big stage, screens, the full room.
+stage_panel: several people seated on a stage in conversation, a moderator and panelists.
+stage: one speaker or presenter on any other stage or at a podium.
+breakout: a session in a smaller room: an audience at tables or in rows, a presenter without a main stage.
+portrait: a professional posed portrait only: the subject posed for the camera and lit for it, on a backdrop or in a
+deliberate setting; a headshot or a posed group. A face in a frame is never a portrait; an unposed person is candid.
+backstage: green room, wings, prep, rehearsal, mic check.
+reception: dinner, drinks, networking, the gala floor, the dance floor.
+candid: anything else at the event, when the place cannot be told.
+building_exterior or building_interior: a building with no event in it (subject architecture).
+costume: true when a person in the frame is in costume (cosplay).
 event_kind: what kind of occasion the photo is from. fan for a fan convention (comics, anime, gaming); business for a business, trade or political conference or a corporate gala; wedding for a wedding or its reception (a bride, a groom, a wedding party, a first dance, a cake, wedding dress); private for a party, a family or personal occasion, a religious ceremony or a portrait session with no event around it; unknown only when nothing visible tells. A wedding is never business.
 room: the one room of an event the photo plainly shows, printed on the post as its title; none unless it is plain from the photo itself. main_stage for someone speaking or presenting on a stage with the stage in view; backstage for behind the scenes of an event (the wings, the crew, the preparation); portraits for a posed, lit portrait of a speaker or guest; expo_floor for an exhibition hall, its booths or a vendor at one; after_dark for a reception, dinner or party that is plainly in the evening or at night; the_crowd for an audience or a room full of people in the moment; the_venue for the room or the building itself with no event in it. A daytime garden reception is not after_dark; a speech at a reception with no stage is not main_stage; when in doubt, none.
 summary: one short sentence on what kind of picture it is; never a person's name, title or identity, and no company, sponsor or venue name.
@@ -135,11 +162,12 @@ FINAL_SCHEMA = {
     "properties": {
         "personal_details": {"type": "array", "items": {"type": "string", "enum": list(DETAILS)}},
         "shot_type": {"type": "string", "enum": list(SHOT_TYPES)},
+        "costume": {"type": "boolean", "description": "a person in the frame is in costume (cosplay)"},
         "event_kind": {"type": "string", "enum": list(KINDS)},
         "room": {"type": "string", "enum": [*ROOMS, "none"]},
         "summary": {"type": "string", "description": "the kind of picture; no person's name, title or identity, no company or venue name"},
     },
-    "required": ["personal_details", "shot_type", "event_kind", "room", "summary"],
+    "required": ["personal_details", "shot_type", "costume", "event_kind", "room", "summary"],
     "additionalProperties": False,
 }
 
@@ -203,7 +231,7 @@ def queue(conn: sqlite3.Connection, limit: int) -> list[sqlite3.Row]:
                    ROW_NUMBER() OVER (PARTITION BY COALESCE(NULLIF(c.convention_name, ''), p.folder_id)
                                       ORDER BY COALESCE(p.taken_at, p.modified_time) DESC) AS rank_in_event
             FROM photos p JOIN classifications c ON c.photo_id = p.id
-            WHERE p.trashed = 0 AND c.method = 'folder' AND p.thumbnail_link IS NOT NULL
+            WHERE p.trashed = 0 AND (c.method = 'folder' OR c.rejudge = 1) AND p.thumbnail_link IS NOT NULL
               AND (c.subject IN ('event', 'architecture') OR p.clearance = 'cleared'
                    OR EXISTS (SELECT 1 FROM drive_folders f WHERE f.drive_id = p.folder_id AND f.clearance = 'cleared'))
         )
@@ -372,13 +400,13 @@ def save_sort(conn: sqlite3.Connection, photo: sqlite3.Row, data: dict, method: 
     conn.execute(
         "UPDATE classifications SET method=?, is_convention=?, subject=?, view=?, "
         "convention_name=COALESCE(?, convention_name), "
-        "event_kind=CASE WHEN ?='unknown' THEN event_kind ELSE ? END, shot_type=?, quality=?, people_count=?, personal_details=?, "
+        "event_kind=CASE WHEN ?='unknown' THEN event_kind ELSE ? END, shot_type=?, costume=?, rejudge=0, quality=?, people_count=?, personal_details=?, "
         "space=?, residential=?, empty_room=?, sharp=?, light=?, moment=?, "
         "summary=?, model=?, classified_at=? WHERE photo_id=?",
         (method, int(subject == "event" and data.get("event_kind") not in NOT_OFFERED_KINDS), subject, view,
          event_name_seen(data.get("event_name_seen")),
-         data.get("event_kind"), data.get("event_kind"), data.get("shot_type"),
-         _score_1_5(data.get("quality")), int(data.get("people_count") or 0),
+         data.get("event_kind"), data.get("event_kind"), data.get("shot_type") if data.get("shot_type") in SHOT_TYPES else None,
+         _flag(data.get("costume"), False), _score_1_5(data.get("quality")), int(data.get("people_count") or 0),
          json.dumps(data.get("personal_details") or []),
          space, _flag(data.get("residential"), True),   # unreadable counts as residential, so it is kept out
          _flag(data.get("empty_room"), True),      # and as empty, likewise

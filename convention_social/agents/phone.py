@@ -281,9 +281,9 @@ def fill_sort_from_check(conn: sqlite3.Connection, photo_id: int, verdict: dict)
     if row is None or row["method"] in eligibility.SORTED_METHODS:
         return
     kind = verdict.get("event_kind") if verdict.get("event_kind") in classify.KINDS else "unknown"
-    conn.execute("UPDATE classifications SET method='vision', personal_details=?, "
+    conn.execute("UPDATE classifications SET method='vision', personal_details=?, costume=?, "
                  "shot_type=COALESCE(shot_type, ?), event_kind=?, is_convention=?, summary=?, model=?, classified_at=? WHERE photo_id=?",
-                 (__import__("json").dumps(verdict.get("personal_details") or []),
+                 (__import__("json").dumps(verdict.get("personal_details") or []), int(bool(verdict.get("costume"))),
                   verdict.get("shot_type") if verdict.get("shot_type") in classify.SHOT_TYPES else None, kind,
                   0 if kind in classify.NOT_OFFERED_KINDS else 1, (verdict.get("summary") or "")[:300],
                   verdict.get("model_used") or "", db.utcnow(), photo_id))

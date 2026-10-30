@@ -49,12 +49,10 @@ PER_RUN_DEFAULT = 300
 MAX_DEPTH = 64
 
 SHOT_WORDS = {
-    "portrait": "Portrait", "headshot": "Portrait", "group": "Group photo",      # headshot: rows sorted before 2026-10-12
-    "candid": "Candid moment", "stage_panel": "Stage and panel", "stage": "Stage", "vendor_hall": "Exhibition hall",
-    "booth": "Exhibition hall", "backstage": "Backstage", "dinner_reception": "Dinner and reception", "dinner": "Dinner",
-    "crowd": "Crowd", "venue": "Venue",
+    "main_stage": "Main stage", "stage_panel": "Stage panel", "stage": "Stage", "breakout": "Breakout session",
+    "portrait": "Portrait", "backstage": "Backstage", "candid": "Candid moment", "reception": "Reception",
 }
-PEOPLE_SHOTS = {"portrait", "headshot", "group"}
+PEOPLE_SHOTS = {"portrait"}
 # Chris, 2026-10-12: no "fan conventions" anywhere public; a convention is a convention
 KIND_WORDS = {"fan": "convention", "business": "business conference"}
 KIND_KEYWORDS = {"fan": "convention photography", "business": "conference photography"}

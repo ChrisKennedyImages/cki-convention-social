@@ -118,9 +118,8 @@ def is_clean(path: Path) -> list[str]:
     return found
 
 
-SHOT_WORDS = {"portrait": "Portrait", "group": "Group photo", "candid": "Candid moment",
-              "stage_panel": "Stage and panel", "vendor_hall": "Exhibition hall", "booth": "Exhibition hall", "backstage": "Backstage",
-              "dinner_reception": "Dinner and reception", "headshot": "Portrait", "crowd": "Crowd", "venue": "Venue",
+SHOT_WORDS = {"main_stage": "Main stage", "stage_panel": "Stage panel", "stage": "Stage", "breakout": "Breakout session",
+              "portrait": "Portrait", "backstage": "Backstage", "candid": "Candid moment", "reception": "Reception",
               "building_exterior": "Building exterior", "building_interior": "Building interior"}
 
 

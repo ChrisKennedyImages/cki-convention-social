@@ -18,7 +18,7 @@ from convention_social.dashboard.app import COOKIE, create_app, make_token
 from convention_social.render import design_samples
 from tests._base import IsolatedCase
 
-ROOMS = ("stage_panel", "backstage", "portrait", "vendor_hall", "dinner_reception", "crowd")
+ROOMS = ("main_stage", "backstage", "portrait", "breakout", "reception", "candid")
 
 
 class Case(IsolatedCase):

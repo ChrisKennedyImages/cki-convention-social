@@ -1744,3 +1744,18 @@ posts with numbers, Instagram's posts take the slot with the fewest; then the be
 at, and from there the hour-a-week law applies. A time Chris sets in POST_TIMES is never tried against. Posting
 frequency stays one a day until he says otherwise; the article's 3 to 5 a week is a question his numbers can answer
 once the hours vary.
+
+## 2026-10-29: the eight titles, and a portrait is a portrait
+
+Chris: "It's only one of these: main stage, stage panel, stage, breakout, portrait, backstage, candid (if you can't
+identify where) and reception!!! Stop calling a single face in a frame a portrait! Anything called a portrait, an
+idiot should be able to look at it and tell it's a professional portrait!" Read from the live database: the local
+model had called 3,815 photos "portrait" and Claude 570 more; the titles printed on posts came from a second, older
+list (MAIN STAGE, PORTRAITS, EXPO FLOOR, AFTER DARK, THE CROWD, THE VENUE). One vocabulary from here: the sorter's
+shot type, the final check's room and the title on a post are the same eight words, defined in both prompts
+(library/classify.py) in the sentences Chris confirmed; the two building frames stay the architecture subject's own;
+"no cosplay" is a yes/no answer of its own, not a shot type. What was sorted maps where the old word was plain
+(reception, backstage, candid; crowd, expo, venue and "other" are candid); every "portrait" and "group" (7,130) is
+judged again by Claude under the strict rule, about $36 of the month's credit ("We're good so yes send them for
+re-sorting"). Posts already titled keep their titles. Left for his word: the old "stage panel" covered anyone on a
+stage; splitting it into main stage, stage panel and stage would re-judge 3,621 more (about $18).

@@ -32,9 +32,9 @@ class Score(IsolatedCase):
 
     def test_a_wide_colourful_stage_shot_outscores_a_grey_one_of_the_same_strength(self):
         stage = {"quality": 5, "sharp": 1, "light": 5, "moment": 5, "shot_type": "stage_panel", "width": 3000, "height": 1500}
-        grey = {**stage, "shot_type": "crowd", "width": 3000, "height": 2400}
+        grey = {**stage, "shot_type": "candid", "width": 3000, "height": 2400}
         self.assertGreater(build.hero_score(stage, picture(RED)), build.hero_score(grey, picture(GREY)) + 1.0)
-        self.assertAlmostEqual(build.hero_score(stage, picture(GREY)) - build.hero_score({**stage, "shot_type": "crowd", "width": 3000, "height": 2400}, picture(GREY)), 0.75)
+        self.assertAlmostEqual(build.hero_score(stage, picture(GREY)) - build.hero_score({**stage, "shot_type": "candid", "width": 3000, "height": 2400}, picture(GREY)), 0.75)
 
     def test_spread_puts_one_of_each_before_any_repeats(self):
         rows = [{"e": "cpac", "n": 1}, {"e": "cpac", "n": 2}, {"e": "katsu", "n": 3}, {"e": "cpac", "n": 4}, {"e": "summit", "n": 5}]
@@ -48,7 +48,7 @@ class Hero(IsolatedCase):
         self.addCleanup(self.conn.close)
         self.colours, self.fetched = {}, []
 
-    def add(self, drive_id, colour, *, event="CPAC 2025", shot="crowd", width=3000, height=2000, kind="business", **kw):
+    def add(self, drive_id, colour, *, event="CPAC 2025", shot="candid", width=3000, height=2000, kind="business", **kw):
         pid = event_photo(self.conn, drive_id, kind=kind, final=kind, width=width, height=height, **kw)
         self.conn.execute("UPDATE classifications SET shot_type=?, convention_name=? WHERE photo_id=?", (shot, event, pid))
         self.colours[drive_id] = colour
@@ -64,9 +64,9 @@ class Hero(IsolatedCase):
         self.add("red-crowd", RED, quality=4, light=4, moment=4)
         photos = build.pick_photos(self.conn, self.fetch)
         self.assertEqual(photos.hero[0][0].getpixel((5, 5)), RED)
-        self.assertEqual(photos.hero[0][1], "Stage and panel")
+        self.assertEqual(photos.hero[0][1], "Stage panel")
         self.assertEqual(len(photos.coverage), 2)
-        self.assertRegex(photos.hero_note, r"^the build's choice: photo \d+ \(stage and panel, score \d\.\d\d of 3 looked at\)$")
+        self.assertRegex(photos.hero_note, r"^the build's choice: photo \d+ \(stage panel, score \d\.\d\d of 3 looked at\)$")
 
     def test_chris_own_pick_wins_while_it_is_usable(self):
         self.add("grey-best", GREY, quality=5, light=5, moment=5)
@@ -74,7 +74,7 @@ class Hero(IsolatedCase):
         settings.set(self.conn, build.HERO_KEY, str(pick))
         photos = build.pick_photos(self.conn, self.fetch)
         self.assertEqual(photos.hero[0][0].size, (2000, 3000), "his pick, portrait or not")
-        self.assertEqual(photos.hero_note, f"your Site hero pick (photo {pick}, crowd)")
+        self.assertEqual(photos.hero_note, f"your Site hero pick (photo {pick}, candid moment)")
         self.conn.execute("UPDATE photos SET clearance='blocked' WHERE id=?", (pick,))
         self.fetched.clear()
         photos = build.pick_photos(self.conn, self.fetch)

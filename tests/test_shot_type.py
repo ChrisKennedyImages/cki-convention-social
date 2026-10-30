@@ -58,7 +58,7 @@ class FinalCheck(IsolatedCase):
         self.assertEqual(data["shot_type"], "stage_panel")
         self.assertEqual(db.one(conn, "SELECT shot_type FROM final_checks WHERE photo_id=?", (pid,))["shot_type"], "stage_panel")
         self.assertEqual(db.one(conn, "SELECT shot_type FROM classifications WHERE photo_id=?", (pid,))["shot_type"], "stage_panel")
-        self.assertIn("stage_panel for anyone on a stage", classify.FINAL_SYSTEM)
+        self.assertIn("stage_panel: several people seated on a stage", classify.FINAL_SYSTEM)
         self.assertIn("shot_type", classify.FINAL_SCHEMA["required"])
         # Chris, 2026-10-26: "The sorting should also not name names! Just the type of image!"
         from pathlib import Path
@@ -69,9 +69,9 @@ class FinalCheck(IsolatedCase):
         conn.execute("UPDATE classifications SET summary=? WHERE photo_id=?", ("A senator waves to the crowd.", pid))
         conn.executescript(Path(db.MIGRATIONS_DIR, "0083_summaries_name_no_one.sql").read_text())
         self.assertEqual(db.one(conn, "SELECT summary FROM classifications WHERE photo_id=?", (pid,))["summary"], "", "what the old prompt wrote is cleared")
-        self.assertTrue(classify.set_shot_type(conn, pid, "crowd"))
+        self.assertTrue(classify.set_shot_type(conn, pid, "candid"))
         self.assertFalse(classify.set_shot_type(conn, pid, "selfie"), "not a shot type: nothing written")
-        self.assertEqual(db.one(conn, "SELECT shot_type FROM classifications WHERE photo_id=?", (pid,))["shot_type"], "crowd")
+        self.assertEqual(db.one(conn, "SELECT shot_type FROM classifications WHERE photo_id=?", (pid,))["shot_type"], "candid")
         conn.close()
 
 
@@ -89,12 +89,12 @@ class Draft(IsolatedCase):
         row = db.one(conn, "SELECT caption, render_paths, rule_report FROM content_queue")
         meta = json.loads(row["rule_report"])
         self.assertEqual(meta["seo"]["primary"], "conference photography")
-        self.assertEqual(meta["alt_text"], "Stage and panel at a conference, photographed by Event Caliber")
+        self.assertEqual(meta["alt_text"], "Stage panel at a conference, photographed by Event Caliber")
         self.assertNotIn("headshot", row["caption"].lower())
         self.assertNotIn("portrait", row["caption"].lower())
         for paths in json.loads(row["render_paths"]).values():
             data = Path(paths[0]).read_bytes()
-            self.assertIn(b"Stage and panel at a conference", data, "the file's own search fields too")
+            self.assertIn(b"Stage panel at a conference", data, "the file's own search fields too")
             self.assertNotIn(b"Portrait at", data)
         conn.close()
 
@@ -127,20 +127,20 @@ class Correction(IsolatedCase):
         self.assertEqual((self.shot("classifications"), self.shot("final_checks")), ("stage_panel", "stage_panel"))
         row = db.one(self.conn, "SELECT status, last_error FROM content_queue WHERE id=?", (qid,))
         self.assertEqual(row["status"], "rejected")
-        self.assertIn("shows Stage and panel", row["last_error"])
+        self.assertIn("shows Stage panel", row["last_error"])
         self.assertIn("new one is being made", self.client.get("/?msg=redraft").text)
 
     def test_refusals_and_a_post_already_approved(self):
         qid = add_post(self.conn, [self.pid], status="draft")
         with mock.patch.object(dash, "start_agent") as start:
             self.assertEqual(self.client.post(f"/queue/{qid}/photo/{self.pid}/shot", data={"shot_type": "selfie"}).status_code, 400)
-            self.assertEqual(self.client.post(f"/queue/{qid}/photo/999/shot", data={"shot_type": "crowd"}).status_code, 400)
+            self.assertEqual(self.client.post(f"/queue/{qid}/photo/999/shot", data={"shot_type": "candid"}).status_code, 400)
             self.assertEqual(start.call_count, 0)
             self.assertEqual(self.shot("classifications"), "portrait")
             approved = add_post(self.conn, [self.pid], status="approved")
-            r = self.client.post(f"/queue/{approved}/photo/{self.pid}/shot", data={"shot_type": "crowd"}, follow_redirects=False)
+            r = self.client.post(f"/queue/{approved}/photo/{self.pid}/shot", data={"shot_type": "candid"}, follow_redirects=False)
         self.assertEqual(r.headers["location"], f"/queue/{approved}?msg=saved")
-        self.assertEqual(self.shot("classifications"), "crowd")
+        self.assertEqual(self.shot("classifications"), "candid")
         self.assertEqual(db.one(self.conn, "SELECT status FROM content_queue WHERE id=?", (approved,))["status"], "approved")
         self.assertEqual(start.call_count, 0, "an approved post is not redrafted behind Chris's back")
 

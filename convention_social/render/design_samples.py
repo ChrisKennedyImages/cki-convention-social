@@ -28,18 +28,16 @@ from . import motion
 
 # The room a photo is from and one line about what it shows. Never what is offered or how it is done
 # (Chris, 2026-10-11: "keep to specifics and not talk about what is offered or what is a service").
+# Chris, 2026-10-29: the eight titles, his words; the building frames keep THE VENUE
 ROOMS = {
-    "stage_panel": ("MAIN STAGE", "The keynote, from the room."),
+    "main_stage": ("MAIN STAGE", "The keynote, from the room."),
+    "stage_panel": ("STAGE PANEL", "The conversation on stage."),
+    "stage": ("STAGE", "At the podium."),
+    "breakout": ("BREAKOUT", "The session, up close."),
+    "portrait": ("PORTRAIT", "Speakers and guests, between sessions."),      # Chris, 2026-10-12: the speakers and VIPs, not the attendees
     "backstage": ("BACKSTAGE", "The minutes before the doors open."),
-    "portrait": ("PORTRAITS", "Speakers and guests, backstage."),      # Chris, 2026-10-12: the speakers and VIPs, not the attendees
-    "headshot": ("PORTRAITS", "Speakers and guests, backstage."),
-    "vendor_hall": ("EXPO FLOOR", "On the exhibition floor."),
-    "booth": ("EXPO FLOOR", "On the exhibition floor."),
-    "dinner_reception": ("AFTER DARK", "After the last session."),
-    "crowd": ("THE CROWD", "In the moment."),
-    "candid": ("THE CROWD", "In the moment."),
-    "group": ("THE CROWD", "In the moment."),
-    "venue": ("THE VENUE", "The room, before the event."),
+    "candid": ("CANDID", "In the moment."),
+    "reception": ("RECEPTION", "After the last session."),
     "building_exterior": ("THE VENUE", "The building, before the event."),
     "building_interior": ("THE VENUE", "The room, before the event."),
 }
@@ -47,9 +45,7 @@ OTHER = ("ON THE FLOOR", "In the moment.")
 # A post prints a room only when Claude's final check of the full photo says it plainly shows that room
 # (library/classify.ROOMS; 2026-10-15: the sorter's shot type had put "After Dark" on a sunny garden and "Main Stage" on
 # a reception room). Anything else, a photo checked before then included, says EVENT PHOTOGRAPHY.
-ROOM_WORDS = {"main_stage": ROOMS["stage_panel"], "backstage": ROOMS["backstage"], "portraits": ROOMS["portrait"],
-              "expo_floor": ROOMS["vendor_hall"], "after_dark": ROOMS["dinner_reception"], "the_crowd": ROOMS["crowd"],
-              "the_venue": ROOMS["venue"]}
+ROOM_WORDS = {room: ROOMS[room] for room in ("main_stage", "stage_panel", "stage", "breakout", "portrait", "backstage", "candid", "reception")}
 UNCONFIRMED = ("EVENT PHOTOGRAPHY", "In the moment.")
 COPY_VERSION = "2026-10-15"              # bump when the words on the cards change: the samples are made again (2026-10-15: once, so
 #                                          every set on the Mini records its photos per sample and has its Post this)
@@ -162,7 +158,7 @@ def usable(conn, row) -> bool:
         return False
     if eligibility.blocked_by_list(conn, photo):
         return False
-    if (row["shot_type"] if "shot_type" in row.keys() else None) in eligibility.NOT_OFFERED:
+    if ("costume" in row.keys() and row["costume"]):
         return False                     # a costume photo, which Event Caliber does not offer
     if (row["event_kind"] if "event_kind" in row.keys() else None) in eligibility.NOT_OFFERED_KINDS:
         return False                     # a wedding or a private occasion (Chris, 2026-10-11)
