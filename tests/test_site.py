@@ -124,7 +124,7 @@ class Site(IsolatedCase):
         for word in ("selfie", "badge", "scan"):
             self.assertNotIn(word, hero.lower(), word)
         self.assertIn("conventions, conferences, galas and award dinners for more than thirty years each", hero)
-        self.assertIn("while the event is still on: all attendees, or your staff only, your choice", hero)
+        self.assertIn("while the event is still on, and post them as it happens: all attendees, or your staff only, your choice", hero)
         self.assertNotIn("within the hour", hero)
 
     def test_delivery_is_a_feature_with_no_name_and_no_steps_and_portraits_are_backstage(self):

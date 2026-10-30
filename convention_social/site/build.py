@@ -424,7 +424,8 @@ def copy_text() -> dict:
         # writes back within 24 hours. 2026-10-30: "Instant delivery needs to be a top priority for getting customers": it leads,
         # as the outcome and the organizer's choice; never the method, never a price, never proof. The hour for selects is not
         # in the hero ("Don't include the selects part in the top").
-        "lede": ("Your attendees have the photos while the event is still on: all attendees, or your staff only, your choice. "
+        "lede": ("Your attendees have the photos while the event is still on, and post them as it happens: all attendees, or "
+                 "your staff only, your choice. "
                  "We've photographed conventions, conferences, galas and award dinners for more than thirty years each, "
                  "room by room, across the country. Tell us about your event and one of us will write back within 24 hours."),
         "coverage_first": ("Backstage, green rooms, breakouts, the main stage, evening events, dinners, portraits and exhibition halls: "
