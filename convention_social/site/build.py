@@ -423,11 +423,12 @@ def copy_text() -> dict:
         # Chris, 2026-10-12: the site is the two of them, in their own voice; no "fan conventions" on the main page; one of them
         # writes back within 24 hours. 2026-10-30: "Instant delivery needs to be a top priority for getting customers": it leads,
         # as the outcome and the organizer's choice; never the method, never a price, never proof. The hour for selects is not
-        # in the hero ("Don't include the selects part in the top").
-        "lede": ("Your attendees have the photos while the event is still on, and post them as it happens: all attendees, or "
-                 "your staff only, your choice. "
-                 "We've photographed conventions, conferences, galas and award dinners for more than thirty years each, "
-                 "room by room, across the country. Tell us about your event and one of us will write back within 24 hours."),
+        # in the hero ("Don't include the selects part in the top"). 2026-10-31: the lede is in two parts because the link to
+        # the delivery page sits between them ("a link at the top where the instant delivery also lives to the detailed page").
+        "lede_delivery": ("Your attendees have the photos while the event is still on, and post them as it happens: all attendees, or "
+                          "your staff only, your choice."),
+        "lede_brothers": ("We've photographed conventions, conferences, galas and award dinners for more than thirty years each, "
+                          "room by room, across the country. Tell us about your event and one of us will write back within 24 hours."),
         "coverage_first": ("Backstage, green rooms, breakouts, the main stage, evening events, dinners, portraits and exhibition halls: "
                            "every room of a conference or convention, photographed by the two of us."),
         "coverage_description": ("Backstage, green rooms, breakouts, the main stage, evening events, dinners, portraits and exhibition "
@@ -449,14 +450,12 @@ def copy_text() -> dict:
                   "We are based in Washington, DC and travel wherever the event is.\n\n"
                   "Tell us about your event and one of us will write back within 24 hours."),
         "coverage_p": "Tell us which rooms matter. Coverage is planned around your schedule, and every event is quoted on its own.",
-        # Chris, 2026-10-12: never "face match", never the steps. 2026-10-30: the outcome and the choice lead; "The attendees
-        # posting during the event is a super solid sell"; selects within the hour when the moments are known beforehand;
-        # anything more, "let them contact us to inquire"
-        "deliver_p": ("Photos reach the people in them while the event is still on, from every photographer in the room. "
-                      "You decide who gets them: all attendees, or your staff only. Attendees post their photos through the whole "
-                      "event, session after session, and the event is seen far beyond the room while it is still happening. "
-                      "Speakers have their stage photo before they have left the stage. Selects within the hour when we know "
-                      "before the event which moments you want. For anything more, ask us."),
+        # Chris, 2026-10-31: "The bottom one was suppose to be replaced with 1 hour selects": "the selects for the clients in 1
+        # hour during the event". The organizer's selects, when the moments are known before the event; attendee delivery is
+        # said once, in the hero, and in full on its coverage page. Never the method, never a price, never proof.
+        "selects_p": ("Tell us before the event which moments you want: the keynote, the awards, the people on stage. "
+                      "During the event, the selects from those moments are yours within the hour. "
+                      "The finished set follows after the event."),
         "steps": [("Tell us about your event", "Dates, venue, the rooms and moments that matter, and who needs images."),
                   ("A quote within 24 hours", "One of us writes back with a clear quote for the coverage you need, nothing bundled you did not ask for."),
                   ("Photos during the event, the full set after", "Selects go out while the event is on, and the finished set follows.")],
@@ -523,7 +522,7 @@ def home_body(t: dict, hero: str, frames: list[tuple[str, str, str, str]], stack
 <div class="copy"><div class="kick mono c">{e(t['kicker'])}</div>
 <h1 class="mega"><span><em>Two</em></span><span class="o"><em>brothers,</em></span><span><em>every room<b>.</b></em></span></h1>
 <p class="first">{e(t['first'])}</p>
-<div class="row"><p class="lede">{e(t['lede'])}</p><a class="btn fill" href="/book/">Request a quote <span class="arr">&#8599;</span></a></div></div></section>
+<div class="row"><p class="lede">{e(t['lede_delivery'])} <a class="c" href="{e(offer.coverage_page('on_site_delivery'))}">More about instant delivery &#8599;</a> {e(t['lede_brothers'])}</p><a class="btn fill" href="/book/">Request a quote <span class="arr">&#8599;</span></a></div></div></section>
 {clients}{_ticker(short)}
 <section id="coverage" class="index"><div class="head rv"><div><div class="kick mono c">Coverage</div>
 <h2>From the green room<br><span class="o">to the last</span> reception.</h2></div><p>{e(t['coverage_p'])}</p></div>
@@ -532,9 +531,9 @@ def home_body(t: dict, hero: str, frames: list[tuple[str, str, str, str]], stack
 <section><div class="rv"><div class="kick mono c">Who will be at your event</div><h2>One of us, <span class="o">every</span> time.</h2>
 <p class="g" style="max-width:640px;margin-top:22px">{e(t['who'])}</p>
 <p class="mono g" style="margin-top:14px">References available on request. <a class="c" href="/about/">About the two of us &#8599;</a></p></div></section>
-<section class="deliver"><div class="rv"><div class="kick mono c">Photos during the event</div>
-<h2>Photos find <span class="o">their</span> people.</h2><p>{e(t['deliver_p'])}</p></div>
-{f'<div class="stack rv">{stack_html}<span class="stamp mono">Sent</span></div>' if stack_html else ''}</section>
+<section class="deliver"><div class="rv"><div class="kick mono c">Selects during the event</div>
+<h2>Your selects, <span class="o">within</span> the hour.</h2><p>{e(t['selects_p'])}</p></div>
+{f'<div class="stack rv">{stack_html}<span class="stamp mono">Selects</span></div>' if stack_html else ''}</section>
 {f'<section id="venues" class="venues"><div class="head rv"><div><div class="kick mono c">Venues</div><h2>The building is <span class="o">part of</span> the story.</h2></div><p>{e(t["venues_p"])}</p></div><div class="grid{' one' if len(venues[:VENUE_ROWS]) == 1 else ''}">{venue_html}</div></section>' if venue_html else ''}
 <section><div class="kick mono c rv">How it works</div><h2 class="rv">Three steps.</h2><div class="steps">{steps}</div></section>
 {_ticker(list(reversed(short)), rev=True)}

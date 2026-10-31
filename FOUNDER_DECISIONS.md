@@ -1815,3 +1815,15 @@ first (press, media, events, sponsors, info); one request a second, forty fetche
 refuses an automated read is left alone and said so; the do-not-contact rule is checked on what is found. It runs at
 the start of the daily outreach run, so the drafts follow the same hour, and the Scout page says what was found or why
 not.
+
+## 2026-10-31: the bottom block is the organizer's selects within the hour; the top links to the delivery page
+
+Chris, on the home page after the 10-30 change: "why instant delivery is still also on the bottom service on the main page
+... let's also have a link at the top where the instant delivery also lives to the detailed page about it. The bottom one
+was suppose to be replaced with 1 hour selects." Asked what the block is: "the selects for the clients in 1 hour during
+the event." So the home page says instant delivery once, in the hero, in the 10-30 words, with a link right after them to
+the delivery page (/coverage/on_site_delivery/, where the choice, the posting, the speakers, the staff and the hour all
+still are); the bottom block is the organizer's own selects: tell us before the event which moments you want, and during
+the event the selects from those moments are yours within the hour, the finished set after. No attendee, no posting, no
+method, no price, no proof in that block. The stack of prints stays and its stamp says Selects, not Sent; the third step
+("Photos during the event, the full set after") and the ticker's "Instant delivery" stand, both still true of the page.
