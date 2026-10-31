@@ -25,6 +25,7 @@
   <div class="muted">{{ e.dates or 'dates not found' }}{% if e.city %} · {{ e.city }}{% endif %}{% if e.venue %} · {{ e.venue }}{% endif %}</div>
   {% if e.website %}<div><a href="{{ e.website }}" rel="noopener noreferrer" target="_blank">{{ e.website }}</a></div>{% endif %}
   {% if e.organizer or e.organizer_email %}<div class="muted">Organizer: {{ e.organizer or '' }}{% if e.organizer_email %} · {{ e.organizer_email }} (from <a href="{{ e.email_source_url }}" rel="noopener noreferrer" target="_blank">their site</a>){% endif %}</div>{% endif %}
+  {% if not e.organizer_email %}<div class="muted">No email yet{% if e.email_note %}: {{ e.email_note }}{% elif e.website %}: their site is read for one on the next outreach run{% endif %}.</div>{% endif %}
   <div class="muted">Sources:{% for s in e.source_list %} <a href="{{ s }}" rel="noopener noreferrer" target="_blank">{{ loop.index }}</a>{% endfor %}</div>
   <div class="row" style="margin-top:8px">
     {% if e.status != 'added' %}<form method="post" action="/scout/{{ e.id }}/add" class="inline"><button class="primary small" type="submit">Add to calendar</button></form>{% endif %}
