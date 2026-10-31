@@ -44,6 +44,30 @@ class Discover(IsolatedCase):
         self.assertEqual(emails.addresses("a: events@samplecon.example b: info@samplecon.example c: zz@samplecon.example", "samplecon.example"),
                          ["events@samplecon.example", "info@samplecon.example", "zz@samplecon.example"], "press and events before info, and before the rest")
 
+    def test_a_named_persons_address_waits_for_a_role_address_on_a_later_page(self):
+        site = Site({"/": (200, "web by paul.clark@samplecon.example"), "/contact": (200, CONTACT)})
+        found = emails.discover("https://samplecon.example", budget=[40], fetch=site, sleep=no_sleep)
+        self.assertEqual(found.email, "press@samplecon.example", "the role address on the contact page, not the person on the home page")
+        only_person = Site({"/": (200, "web by paul.clark@samplecon.example")})
+        found = emails.discover("https://samplecon.example", budget=[40], fetch=only_person, sleep=no_sleep)
+        self.assertEqual((found.email, found.page), ("paul.clark@samplecon.example", "https://samplecon.example"), "kept when nothing better turns up anywhere")
+        self.assertEqual(len(only_person.fetched), len(emails.PROBE_PATHS), "every page was read first")
+
+    def test_the_events_own_page_is_read_first_when_the_site_is_the_organizers(self):
+        site = Site({"/conference/sample-con": (200, "<a href='mailto:events@samplecon.example'>x</a>"), "/": (200, HOME)})
+        found = emails.discover("https://www.samplecon.example/conference/sample-con/", budget=[40], fetch=site, sleep=no_sleep)
+        self.assertEqual((found.email, found.page), ("events@samplecon.example", "https://samplecon.example/conference/sample-con"))
+        self.assertEqual(site.fetched, ["https://samplecon.example/conference/sample-con"])
+
+    def test_a_page_that_lands_on_another_site_is_not_the_events(self):
+        def elsewhere(url):
+            # every page of the event's site redirects to an affiliate that prints an address on the event's domain
+            return "write to ashe@samplecon.example", "https://affiliate.example/press", False
+        found = emails.discover("https://annual.samplecon.example", budget=[40], fetch=elsewhere, sleep=no_sleep)
+        self.assertEqual(found.email, "")
+        self.assertIn("sends readers to another site (https://affiliate.example/press)", found.note)
+        self.assertTrue(emails.own_host("aha.org", "annualmeeting.aha.org"), "the organizer's own site is still the event's")
+
     def test_a_refusal_stops_the_walk_and_is_said(self):
         site = Site({"/": (403, None)})
         found = emails.discover("https://samplecon.example", budget=[40], fetch=site, sleep=no_sleep)
@@ -90,6 +114,17 @@ class Lookup(IsolatedCase):
         self.assertEqual(site.fetched[0], "https://othercon.example", "the sooner event is read first")
         self.assertIsNone(db.one(self.conn, "SELECT email_checked_at FROM scout_events WHERE id=?", (c,))["email_checked_at"], "an event with an address is left alone")
         self.assertEqual(emails.lookup_missing(self.conn, fetch=site, sleep=no_sleep), {"looked": 0, "found": 0, "refused": 0}, "each event once")
+
+    def test_a_walk_cut_short_by_the_budget_leaves_the_event_for_the_next_run(self):
+        a = self.event("Sample Con 2027", "https://samplecon.example", start=20)
+        b = self.event("Other Con 2027", "https://othercon.example", start=30)
+        site = Site({"/": (200, HOME), "/contact": (200, CONTACT)})
+        stats = emails.lookup_missing(self.conn, budget=[1], fetch=site, sleep=no_sleep)
+        self.assertEqual(stats, {"looked": 0, "found": 0, "refused": 0})
+        self.assertEqual(site.fetched, ["https://samplecon.example"], "one page, then the run stops")
+        for ev in (a, b):
+            row = db.one(self.conn, "SELECT email_checked_at, email_note FROM scout_events WHERE id=?", (ev,))
+            self.assertEqual((row["email_checked_at"], row["email_note"]), (None, None), "not marked: it is first in line next run")
 
     def test_an_address_on_the_do_not_contact_list_is_never_kept(self):
         self.event("CPAC Texas 2027", "https://samplecon.example")

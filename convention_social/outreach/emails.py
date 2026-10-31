@@ -26,11 +26,12 @@ import requests
 from ..core import db
 from . import compliance, keys
 
-# where an organizer prints a contact: the home page, then the usual pages, press and sponsors first for an event
+# where an organizer prints a contact: the event's own page when the site is the organizer's (terrapinn.com/conference/x),
+# then the home page and the usual pages, press and sponsors first for an event
 PROBE_PATHS = ("", "/contact", "/contact-us", "/press", "/media", "/about", "/about-us", "/sponsors", "/exhibit", "/faq")
 REQUEST_SPACING_S = 1.0
 FETCH_TIMEOUT = 8
-MAX_FETCHES_PER_RUN = 40          # ten events' worth of pages a day at most; the rest wait for tomorrow
+MAX_FETCHES_PER_RUN = 120         # ten events' pages, a few minutes of reading a day at most; the rest wait for tomorrow
 LOOKUPS_PER_RUN = 10
 USER_AGENT = "Mozilla/5.0 (compatible; EventCaliber-Scout/1.0; +https://eventcaliber.com)"
 # the addresses an organizer means for the public, in the order a photographer would write to them
@@ -41,6 +42,7 @@ VENDOR_DOMAINS = ("wixpress.com", "wix.com", "squarespace.com", "godaddy.com", "
                   "eventbrite.com", "hubspot.com", "mailchimp.com", "salesforce.com")
 EMAIL_RE = re.compile(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}")
 REFUSED = (401, 403, 406, 429)
+BUDGET_SPENT = "the run's fetch budget is spent; next run"
 
 
 @dataclass
@@ -61,9 +63,25 @@ def registered(host: str) -> str:
     return ".".join(parts[-2:]) if len(parts) >= 2 else host
 
 
+def own_host(host: str, site: str) -> bool:
+    return bool(host and site) and (host == site or host.endswith("." + site) or registered(host) == registered(site))
+
+
 def own_address(email: str, site: str) -> bool:
-    domain = email.rsplit("@", 1)[-1]
-    return bool(domain and site) and (domain == site or domain.endswith("." + site) or registered(domain) == registered(site))
+    return own_host(email.rsplit("@", 1)[-1], site)
+
+
+def preferred(email: str) -> bool:
+    """A role address the organizer means for the public (press@, events@, info@), not a named person's."""
+    local = email.split("@", 1)[0]
+    return any(local == p or local.startswith(p) for p in PREFERRED)
+
+
+def probes(website: str, site: str) -> list[str]:
+    """The pages to read, in order: the event's own page first when the website has a path, then the usual ones."""
+    path = urlsplit(website if "://" in website else f"https://{website}").path.rstrip("/")
+    urls = [f"https://{site}{p}" for p in PROBE_PATHS]
+    return [f"https://{site}{path}", *urls] if path else urls
 
 
 def addresses(body: str, site: str) -> list[str]:
@@ -104,25 +122,42 @@ def fetch(url: str) -> tuple[Optional[str], str, bool]:
 
 
 def discover(website: str, *, budget: list[int], fetch: Callable = fetch, sleep: Callable = time.sleep) -> Found:
-    """Walk the event site's usual pages for a public address. `budget` is a one-element counter shared by a run."""
+    """Walk the event site's pages for a public address. `budget` is a one-element counter shared by a run.
+
+    A role address (press@, events@, info@) ends the walk; a named person's is kept only if no role address turns
+    up on any page read. A page that redirects to another site is not the event's and is skipped (the AHA meeting's
+    /press landed on an affiliate's site; its address was that affiliate's)."""
     site = host_of(website)
     if not site:
         return Found(note="no website to read")
-    for path in PROBE_PATHS:
+    fallback: Optional[Found] = None
+    answered = sent_elsewhere = ""
+    for url in probes(website, site):
         if budget[0] <= 0:
-            return Found(note="the run's fetch budget is spent; next run")
+            return fallback or Found(note=BUDGET_SPENT)
         budget[0] -= 1
-        body, final_url, refused = fetch(f"https://{site}{path}")
+        body, final_url, refused = fetch(url)
         sleep(REQUEST_SPACING_S)
         if refused:
-            return Found(note=f"the site refused an automated read ({final_url}); open it by hand")
+            return fallback or Found(note=f"the site refused an automated read ({final_url}); open it by hand")
         if body is None:
-            if path == "":
-                return Found(note="the website did not answer")
             continue
+        if not own_host(host_of(final_url), site):
+            sent_elsewhere = final_url
+            continue
+        answered = final_url
         found = addresses(body, site)
-        if found:
+        if not found:
+            continue
+        if preferred(found[0]):
             return Found(email=found[0], page=final_url)
+        fallback = fallback or Found(email=found[0], page=final_url)
+    if fallback:
+        return fallback
+    if not answered:
+        if sent_elsewhere:
+            return Found(note=f"the website sends readers to another site ({sent_elsewhere}); open it by hand")
+        return Found(note="the website did not answer")
     return Found(note="no public address on the pages read; the site may use a form")
 
 
@@ -138,6 +173,8 @@ def lookup_missing(conn: sqlite3.Connection, *, limit: int = LOOKUPS_PER_RUN, bu
         if budget[0] <= 0:
             break
         found = discover(ev["website"], budget=budget, fetch=fetch, sleep=sleep)
+        if found.note == BUDGET_SPENT:
+            break                      # not looked at: the row stays unmarked and is first in line next run
         stats["looked"] += 1
         now = db.utcnow()
         if found.email:
