@@ -1,52 +1,27 @@
-"""Drafting the note to an event organizer, in Chris's voice. Chris edits and approves; nothing sends on its own.
+"""The note to an event organizer: Chris's own words, with the event's facts in their places. Chris edits and
+approves on the Outreach page; nothing sends on its own.
 
-The note is short and specific to their event: it names the event, offers
-coverage from offer.json, asks whether they have a photographer lined up, and
-is signed Chris and the company name. It never names a price, past clients or
-an official role (there are none: FOUNDER_DECISIONS.md), and the footer and
-opt-out line are added at send time by outreach.compliance, not here.
-
-Claude (claude-opus-5, OUTREACH_MODEL overrides) when a key is set and the
-monthly cap allows; a plain template otherwise. A Claude draft that fails any
-check is thrown away for the template, so what Chris sees always passes.
+2026-10-31, after reading the first two drafts Claude wrote: "I just read it and wasn't really satisfied. Here is
+what I want it to say Specifically and this should be the template for all of them." So every first note is his
+template (FOUNDER_DECISIONS.md carries it verbatim) and Claude no longer writes them. The footer and the opt-out
+line are added at send time by outreach.compliance, not here.
 """
 from __future__ import annotations
 
-import json
-import sqlite3
+import re
 from dataclasses import dataclass
-from typing import Optional
+from datetime import date
 
-from .. import offer
-from ..ai import spend
-from ..ai.claude import FALLBACK_BETA, tidy
-from ..core import config, secrets
+from ..ai.claude import tidy
+from ..core import config
 from . import compliance, keys
 
-DEFAULT_MODEL = "claude-opus-5"
-MAX_WORDS = 160
-
-# what fits each kind of event, as offer.json keys; labels always come from offer.json
-COVERAGE_BY_KIND = {
-    "fan": ("stage", "portraits", "exhibition_hall"),
-    "business": ("stage", "breakouts", "portraits", "evening_events", "dinners"),
-    "other": ("stage", "portraits", "evening_events", "dinners"),
-}
-
-SYSTEM = """You draft a short first email from Chris, a convention and event photographer, to the organizer of one event he would like to photograph. Write in his voice: warm, plain, short sentences, commas and periods, never a dash of any kind, no exclamation marks in a row, no hype.
-Rules:
-1. Never write a price, a rate, a discount, a package or anything about cost. The next step is a quote.
-2. Never claim past clients, past bookings, an official role at any event, a partnership, awards, or that he has photographed, attended or worked this event before. He has no past clients to name. Never use the word official.
-3. Offer only coverage from the offer list you are given; pick the few that fit this event. Lead with photos reaching attendees while the event is still on, the organizer's choice of all attendees or staff only; never say how it works, and promise no other delivery time.
-4. Be specific to their event: name it, and its dates or city when you are given them. Never invent a fact about the event.
-5. Ask whether they already have a photographer lined up.
-6. Under 140 words. No links, no attachments, no footer and no unsubscribe line: those are added for you.
-7. Greet by first name only if the organizer is clearly a person; otherwise open with Hello.
-8. Sign off with Chris on one line and the company name on the next.
-Return JSON only: a subject and the body. The subject is plain and accurate, about photography for their event, and never starts with Re or Fwd."""
-
-SCHEMA = {"type": "object", "properties": {"subject": {"type": "string"}, "body": {"type": "string"}},
-          "required": ["subject", "body"], "additionalProperties": False}
+# the word for their event in "while the ___ is still underway", read off the event's name; "event" when it says nothing
+KIND_WORDS = (("meeting", re.compile(r"\bmeeting\b", re.I)),
+              ("convention", re.compile(r"\bconvention\b", re.I)),
+              ("conference", re.compile(r"\b(conference|congress|summit|symposium|forum)\b", re.I)),
+              ("show", re.compile(r"\b(expo|exposition|show|exhibition|fair)\b", re.I)),
+              ("gala", re.compile(r"\b(gala|awards?|dinner|ball)\b", re.I)))
 
 
 @dataclass
@@ -54,7 +29,7 @@ class OutreachDraft:
     subject: str
     body: str
     model: str
-    note: str = ""          # why the template was used, or what Chris must fix first
+    note: str = ""          # what Chris must fix before approving, when anything
 
 
 def _get(ev, key: str) -> str:
@@ -65,44 +40,62 @@ def _get(ev, key: str) -> str:
     return str(value or "").strip()
 
 
-def coverage_for(kind: str) -> list[str]:
-    return offer.coverage_labels(COVERAGE_BY_KIND.get(kind if kind in COVERAGE_BY_KIND else "other"))
+def kind_word(event_name: str) -> str:
+    for word, pattern in KIND_WORDS:
+        if pattern.search(event_name):
+            return word
+    return "event"
 
 
-def facts(ev) -> str:
-    o = offer.load()
-    cfg = config.get_config()
-    kind = _get(ev, "event_kind") or "other"
-    return "\n".join([
-        f"Company: {cfg.brand_name} ({o.get('tagline')})",
-        f"Offer list: {'; '.join(offer.coverage_labels())}",
-        f"Fits this kind of event best: {'; '.join(coverage_for(kind))}",
-        "Their event:",
-        f"  name: {_get(ev, 'event_name')}",
-        f"  kind: {kind}",
-        f"  dates: {keys.dates_in_words(_get(ev, 'start_date'), _get(ev, 'end_date')) or 'not known, do not mention dates'}",
-        f"  city: {_get(ev, 'city') or 'not known'}",
-        f"  venue: {_get(ev, 'venue') or 'not known'}",
-        f"  organizer: {_get(ev, 'organizer') or 'not known'}",
-    ])
+def month_of(start: str) -> str:
+    """'2027-03-11' -> 'March'; '' when the start is not a real day."""
+    iso = keys.iso_day(start)
+    return date.fromisoformat(iso).strftime("%B") if iso else ""
+
+
+def dates_as_chris_writes_them(start: str, end: str) -> str:
+    """'March 11–14, 2027' (his template's form, an en dash and no spaces); 'March 30–April 2, 2027' across months;
+    'December 31, 2026–January 2, 2027' across years; one day is 'March 11, 2027'; '' when the start is not a real day."""
+    a, b = keys.iso_day(start), keys.iso_day(end)
+    if not a:
+        return ""
+    first = date.fromisoformat(a)
+    last = date.fromisoformat(b) if b else first
+    if last <= first:
+        return f"{first.strftime('%B')} {first.day}, {first.year}"
+    if (first.year, first.month) == (last.year, last.month):
+        return f"{first.strftime('%B')} {first.day}–{last.day}, {first.year}"
+    if first.year == last.year:
+        return f"{first.strftime('%B')} {first.day}–{last.strftime('%B')} {last.day}, {first.year}"
+    return f"{first.strftime('%B')} {first.day}, {first.year}–{last.strftime('%B')} {last.day}, {last.year}"
 
 
 def template_first(ev) -> OutreachDraft:
+    """Chris's words (2026-10-31), the event's name, dates, city and month in their places; nothing said that is not known."""
     cfg = config.get_config()
-    event = _get(ev, "event_name") or "your event"
-    when = keys.dates_in_words(_get(ev, "start_date"), _get(ev, "end_date"))
+    event = tidy(_get(ev, "event_name")) or "your event"
+    when = dates_as_chris_writes_them(_get(ev, "start_date"), _get(ev, "end_date"))
     city = _get(ev, "city")
-    where = (f" on {when}" if when else "") + (f" in {city}" if city else "")
-    lines = ["Hello,", "",
-             f"I am Chris, a convention and event photographer with {cfg.brand_name}. I saw that {event} is coming up{where}, "
-             "and I wanted to ask: do you have a photographer lined up yet?", "",
-             f"We cover whole events. What we photograph at {event}:"]
-    lines += [f"  {label}" for label in coverage_for(_get(ev, "event_kind"))]
-    lines += ["", "Photos can also reach the people in them while the event is still on. You decide whether that is open to everyone "
-              "or kept to your staff.", "",
-              "If that would help, reply with the days and the parts of the event that matter most, and I will put together a quote.",
-              "", "Chris", cfg.brand_name]
-    return OutreachDraft(subject=tidy(f"Photography for {event}"), body=tidy_lines(lines), model="template")
+    month = month_of(_get(ev, "start_date"))
+    opening = f"I'm reaching out regarding {event}"
+    if when:
+        opening += f", taking place {when}"
+    if city:
+        opening += f", in {city}" if when else f" in {city}"
+    asked = f"Do you already have a photographer lined up for {month}?" if month else "Do you already have a photographer lined up?"
+    lines = [
+        "Hello,", "",
+        opening + ".", "",
+        "We're local convention and event photographers offering a unique service: delivering photos to attendees while the "
+        f"{kind_word(event)} is still underway. We can provide this service to all attendees or exclusively to your staff, "
+        "depending on your preference.", "",
+        "For an event like yours, we can cover keynotes and main-stage presentations, breakout sessions and panels, dinners and "
+        "receptions, and portraits. We also offer flexible coverage before, during, and into the evening to accommodate your "
+        "event schedule.", "",
+        asked + " If not, I'd love to hear a little about your plans so I can put together a quote tailored to your needs.", "",
+        "Chris", cfg.brand_name,
+    ]
+    return OutreachDraft(subject=f"Photography for {event}", body="\n".join(lines), model="template")
 
 
 def template_follow_up(ev) -> OutreachDraft:
@@ -116,7 +109,7 @@ def template_follow_up(ev) -> OutreachDraft:
 
 
 def tidy_lines(lines: list[str]) -> str:
-    """ai.claude.tidy per line, so the indented coverage lines keep their indent."""
+    """ai.claude.tidy per line, so an indented line keeps its indent."""
     return "\n".join(("  " + tidy(line)) if line.startswith("  ") else tidy(line) for line in lines)
 
 
@@ -127,60 +120,6 @@ def with_note(d: OutreachDraft) -> OutreachDraft:
     return d
 
 
-def use_claude(conn: sqlite3.Connection, client) -> Optional[str]:
-    """None when a Claude call may be made; else why not."""
-    if (config.getenv("AI_MODEL") or "").lower() == "template":
-        return "AI_MODEL=template"
-    if client is None and not secrets.get_secret("ANTHROPIC_API_KEY"):
-        return "no ANTHROPIC_API_KEY"
-    if spend.cap_reached(conn):
-        return "monthly AI cap reached"
-    return None
-
-
-def draft_first(conn: sqlite3.Connection, ev, *, client=None, agent: str = "outreach") -> OutreachDraft:
-    why_not = use_claude(conn, client)
-    if why_not:
-        d = template_first(ev)
-        d.note = f"template ({why_not})"
-        return with_note(d)
-    if client is None:
-        import anthropic
-        client = anthropic.Anthropic(api_key=secrets.get_secret("ANTHROPIC_API_KEY"))
-    model = config.getenv("OUTREACH_MODEL") or DEFAULT_MODEL
-    fallback = template_first(ev)
-    try:
-        response = client.beta.messages.create(
-            model=model, max_tokens=4000, betas=[FALLBACK_BETA], fallbacks="default", thinking={"type": "adaptive"},
-            output_config={"effort": "medium", "format": {"type": "json_schema", "schema": SCHEMA}},
-            system=[{"type": "text", "text": SYSTEM, "cache_control": {"type": "ephemeral"}}],
-            messages=[{"role": "user", "content": facts(ev)}],
-        )
-    except Exception as e:  # noqa: BLE001 — an API hiccup costs one Claude draft, not the day's sends
-        fallback.note = f"template (the Claude call failed: {type(e).__name__})"
-        return with_note(fallback)
-    u = response.usage
-    answered = getattr(response, "model", None) or model
-    spend.record(conn, agent, answered, int(u.input_tokens or 0), int(u.output_tokens or 0), "outreach draft")
-    if response.stop_reason == "refusal":
-        fallback.note = "template (the model declined)"
-        return with_note(fallback)
-    text = next((b.text for b in response.content if getattr(b, "type", "") == "text"), None)
-    try:
-        data = json.loads(text or "")
-        subject, body = tidy(str(data["subject"])), "\n".join(tidy(line) for line in str(data["body"]).splitlines())
-    except (ValueError, KeyError, TypeError):
-        fallback.note = f"template (unreadable answer, stop_reason={response.stop_reason})"
-        return with_note(fallback)
-    cfg = config.get_config()
-    if "Chris" not in body.split("\n")[-3:] and not body.rstrip().endswith(cfg.brand_name):
-        body = body.rstrip() + f"\n\nChris\n{cfg.brand_name}"
-    reasons = [p.message for p in compliance.text_problems(subject, body)]
-    if "http" in body.lower() or "www." in body.lower():
-        reasons.append("it put a link in the message")
-    if len(body.split()) > MAX_WORDS:
-        reasons.append("it ran long")
-    if reasons:
-        fallback.note = "template (the drafted note was thrown away: " + " ".join(reasons) + ")"
-        return with_note(fallback)
-    return OutreachDraft(subject=subject, body=body, model=answered)
+def draft_first(ev) -> OutreachDraft:
+    """The first note to an organizer, checked against the rules Chris's edits must keep passing too."""
+    return with_note(template_first(ev))
