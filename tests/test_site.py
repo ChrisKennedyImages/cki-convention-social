@@ -116,7 +116,8 @@ class Site(IsolatedCase):
     def test_the_main_page_never_says_fan_conventions_and_delivery_leads_without_its_method(self):
         """Chris, 2026-10-12: "Get rid of 'fan conventions'... Don't put that on the main page". 2026-10-30: "Instant delivery
         needs to be a top priority for getting customers": the outcome and the choice lead the hero; the method never does,
-        and the hour for selects stays out of the top ("Don't include the selects part in the top")."""
+        and the hour for selects stays out of the top ("Don't include the selects part in the top"). 2026-10-31: "a link at
+        the top where the instant delivery also lives to the detailed page about it": right after the delivery sentence."""
         home = (self.built() / "index.html").read_text()
         text = re.sub(r"<script.*?</script>|<style.*?</style>|<[^>]+>", " ", home, flags=re.S).lower()
         self.assertNotIn("fan convention", text)
@@ -126,6 +127,10 @@ class Site(IsolatedCase):
         self.assertIn("conventions, conferences, galas and award dinners for more than thirty years each", hero)
         self.assertIn("while the event is still on, and post them as it happens: all attendees, or your staff only, your choice", hero)
         self.assertNotIn("within the hour", hero)
+        link = f'<a class="c" href="{offer.coverage_page("on_site_delivery")}">More about instant delivery &#8599;</a>'
+        self.assertIn(link, hero, "the top links to the detailed delivery page")
+        self.assertLess(hero.index("your staff only, your choice."), hero.index(link), "right after the delivery sentence")
+        self.assertLess(hero.index(link), hero.index("for more than thirty years each"))
 
     def test_delivery_is_a_feature_with_no_name_and_no_steps_and_portraits_are_backstage(self):
         """Chris, 2026-10-12: "Don't say instant delivery by 'facematch' and don't give the steps ... it's a feature not the
@@ -139,8 +144,12 @@ class Site(IsolatedCase):
         self.assertIn("Instant delivery during the event", home)
         self.assertIn('<span class="">Instant delivery</span><span class="dot">', home, "the ticker says it the same way")
         self.assertNotIn("Delivered on site", home)
-        self.assertIn("You decide who gets them: all attendees, or your staff only.", home)
-        self.assertIn("Selects within the hour when we know before the event which moments you want.", home)
+        # 2026-10-31: the choice, the posting and the staff are said in full on the delivery page; the home page says the
+        # choice once, in the hero, and links there
+        delivery_page = (out / "coverage/on_site_delivery/index.html").read_text()
+        self.assertIn("You decide who gets them: all attendees, or your staff only.", delivery_page)
+        self.assertIn("Selects within the hour when we know before the event which moments you want;", delivery_page)
+        self.assertNotIn("You decide who gets them", home)
         self.assertNotIn("The photography is the work.", home, "2026-10-30: delivery is no longer played down")
         self.assertIn("<em>Backstage, for the speakers and the people the event is about.", home)
         self.assertIn("finished in the camera", home)
@@ -149,6 +158,23 @@ class Site(IsolatedCase):
         self.assertIn("<span>Instant delivery during the event</span>", book)
         self.assertIn("Whether photos go out during the event, and to whom", book)
         self.assertIn(".list a .t em{display:block", (out / "assets/site.css").read_text())
+
+    def test_the_bottom_block_is_the_organizers_selects_within_the_hour(self):
+        """Chris, 2026-10-31: "why instant delivery is still also on the bottom service on the main page ... The bottom one was
+        suppose to be replaced with 1 hour selects": "the selects for the clients in 1 hour during the event". The block is the
+        organizer's selects, within the hour, when the moments are known before the event; attendee delivery is in the hero
+        and on its coverage page, never here."""
+        home = (self.built() / "index.html").read_text()
+        block = home[home.index('<section class="deliver">'):]
+        block = block[:block.index("</section>")]
+        self.assertIn('<div class="kick mono c">Selects during the event</div>', block)
+        self.assertIn('<h2>Your selects, <span class="o">within</span> the hour.</h2>', block)
+        self.assertIn("Tell us before the event which moments you want", block)
+        self.assertIn("yours within the hour", block)
+        self.assertIn("The finished set follows after the event.", block)
+        words = re.sub(r"<[^>]+>", " ", block).lower()
+        self.assertIsNone(re.search(r"\b(attendees?|posts?|posting|staff|speakers?|instant|sent)\b", words), words)
+        self.assertIn('<span class="stamp mono">Selects</span>', block, "the stamp on the prints says what they are, not that they went out")
 
     def test_a_coverage_note_passes_the_same_gate_as_the_labels(self):
         """The Portraits row's note is public copy: a price or a claim in it stops the build like one in a label would."""
