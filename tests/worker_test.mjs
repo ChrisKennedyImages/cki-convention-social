@@ -171,6 +171,18 @@ r = await worker.fetch(new Request(`${base}/api/availability`, { method: "PUT", 
 ok((await r.json()).booked === 3, "bad dates dropped");
 r = await worker.fetch(new Request(`${base}/api/availability`), env);
 ok(JSON.stringify((await r.json()).booked) === JSON.stringify(["2099-01-02", "2099-01-03"]), "past dates hidden, no names");
+// the Availability page folded into the quote page (2026-10-31): the old address answers 301 to /book/ for good, with or
+// without the slash and anything under it; nothing that merely starts the same way; www. goes to the apex first
+for (const path of ["/availability/", "/availability", "/availability/index.html", "/availability/?m=11"]) {
+  r = await worker.fetch(new Request(`${base}${path}`), env);
+  ok(r.status === 301 && r.headers.get("location") === `${base}/book/`, `${path} answers 301 to /book/`);
+}
+r = await worker.fetch(new Request("https://www.eventcaliber.com/availability/"), env);
+ok(r.status === 301 && r.headers.get("location") === "https://eventcaliber.com/availability/", "www. to the apex first, then to /book/");
+for (const path of ["/availabilityx/", "/book/availability/"]) {
+  r = await worker.fetch(new Request(`${base}${path}`), env);
+  ok(r.status === 200 && (await r.text()) === "site", `${path} is not the old page`);
+}
 
 // media and the site
 r = await worker.fetch(new Request(`${base}/m/private/backups/x.gz`), env);

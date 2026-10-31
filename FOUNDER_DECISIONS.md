@@ -1827,3 +1827,14 @@ still are); the bottom block is the organizer's own selects: tell us before the 
 the event the selects from those moments are yours within the hour, the finished set after. No attendee, no posting, no
 method, no price, no proof in that block. The stack of prints stays and its stamp says Selects, not Sent; the third step
 ("Photos during the event, the full set after") and the ticker's "Instant delivery" stand, both still true of the page.
+
+## 2026-10-31: the booked dates are one line on the quote page; the Availability page is gone
+
+Chris, 2026-10-15, on the site: "the availabilty calender is completly empty which is a very bad look and its its own
+tab". A session began the change that day and left it uncommitted; today he ruled it is redone fresh from today's main as
+its own pull request. So: the Availability page and its menu word are gone, from the menu, the footer, the public pages
+list, the sitemap and the outside check; the quote page carries one line, "Dates already booked", the dates and nothing
+else, never a name, hidden in the page itself so it shows nothing while nothing is booked, when the script does not run,
+and when the API is down or answers with an error; days in a row read as one run ("Nov 7 to 9"); the old address
+/availability/ answers 301 to /book/ in the Worker. The API is untouched: GET /api/availability still gives booked dates
+only, the Mini's PUT (the inbox agent) still feeds it, and the quote page's line reads the same API.

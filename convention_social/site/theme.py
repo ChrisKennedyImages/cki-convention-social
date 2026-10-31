@@ -189,15 +189,9 @@ form.book textarea{min-height:120px;resize:vertical}
 .hp{position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden}
 .cf-turnstile.shown{margin-bottom:22px}
 .err{border:1px solid var(--c);padding:14px 18px;margin:0 0 30px;color:var(--w)}
-.cal{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:40px 30px;margin-top:60px}
-.month h3{font:500 13px var(--mono);letter-spacing:.14em;text-transform:uppercase;margin:0 0 14px;color:var(--g5)}
-.days{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
-.days span{aspect-ratio:1;display:flex;align-items:center;justify-content:center;border:1px solid var(--g2);font:500 13px var(--mono);color:var(--g5)}
-.days span.h{border:0;color:var(--g4);font-size:11px}.days span.x{border:0}
-.days span.b{color:var(--k);background:repeating-linear-gradient(135deg,var(--c) 0 4px,#00B8D4 4px 8px);border-color:var(--c)}
-.days span.t{border-color:var(--w);color:var(--w)}
-.legend{display:flex;gap:26px;margin-top:26px;color:var(--g4)}.legend i{display:inline-block;width:14px;height:14px;vertical-align:-2px;margin-right:8px;border:1px solid var(--g2)}
-.legend i.b{background:var(--c);border-color:var(--c)}
+/* the booked dates on the quote page (2026-10-31): one line between two rules, never shown while nothing is booked */
+.booked{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 18px;max-width:640px;margin:0;padding:16px 0;border-top:1px solid var(--g3);border-bottom:1px solid var(--g3)}
+.booked[hidden]{display:none}.booked .when{font-weight:400;color:var(--w)}
 .prose{max-width:760px;margin-top:50px}.prose h3{font:600 22px var(--body);margin:44px 0 10px}.prose p{color:var(--g5)}
 .preview{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);z-index:80;background:var(--c);color:var(--k);padding:9px 16px}
 /* the iPad (2026-10-14): the computer's layout with closer spacing, the menu in words, the phone number in the footer */
@@ -328,8 +322,8 @@ def shell(*, title: str, description: str, body: str, mark_svg: str, brand: str,
     work = "/#work" if "work" in sections else "/coverage/"
     # the menu in words: Work only while the home page has the strip (a site built before any photo is cleared has none;
     # the footer and the phone's bar send Work to the coverage pages instead, so the word is never a dead link)
-    links = ([(work, "Work")] if "work" in sections else []) + [("/coverage/", "Coverage"), ("/about/", "About"),
-                                                                 ("/availability/", "Availability"), ("/contact/", "Contact")]
+    # (2026-10-31: Availability left the menu; the booked dates are one line on the quote page)
+    links = ([(work, "Work")] if "work" in sections else []) + [("/coverage/", "Coverage"), ("/about/", "About"), ("/contact/", "Contact")]
     nav = "".join(f'<a href="{h}"{_current(h, path)}>{label}</a>' for h, label in links)
     tabs = [(work, "work", "Work", ""), ("/about/", "about", "About", ""), ("/contact/", "contact", "Contact", ""), ("/book/", "quote", "Quote", " q")]
     tabbar = "".join(f'<a href="{h}" class="{icon}{cls}"{_current(h, path)}>{ICONS[icon]}<span>{label}</span></a>' for h, icon, label, cls in tabs)
@@ -361,7 +355,7 @@ def shell(*, title: str, description: str, body: str, mark_svg: str, brand: str,
 <footer><div class="big" aria-hidden="true">{brand}</div><div class="foot">
 <div><h4>{brand}</h4><p class="about">Event and convention photography by two brothers, more than thirty years each. {area_line}</p></div>
 <div><h4>Coverage</h4><ul>{cover_links}</ul></div>
-<div><h4>Pages</h4><ul><li><a href="{work}">Work</a></li><li><a href="/about/">About</a></li><li><a href="/availability/">Availability</a></li><li><a href="/contact/">Contact</a></li><li><a href="/book/">Request a quote</a></li><li><a href="/privacy/">Privacy and photo removal</a></li></ul></div>
+<div><h4>Pages</h4><ul><li><a href="{work}">Work</a></li><li><a href="/about/">About</a></li><li><a href="/contact/">Contact</a></li><li><a href="/book/">Request a quote</a></li><li><a href="/privacy/">Privacy and photo removal</a></li></ul></div>
 <div><h4>Contact</h4><ul><li><a href="mailto:{email}">{email}</a></li>{phone_li}{social_links}</ul></div></div>
 <div class="legal mono"><span>&#169; {date.today().year} {legal}. {brand} is a brand of {legal}.</span><span>Washington, DC</span></div></footer>
 <nav class="tabbar" aria-label="Pages">{tabbar}</nav>

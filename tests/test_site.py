@@ -28,7 +28,7 @@ class Site(IsolatedCase):
 
     def test_pages_and_form(self):
         out = self.built()
-        for rel in ("index.html", "book/index.html", "thanks/index.html", "availability/index.html", "privacy/index.html", "404.html",
+        for rel in ("index.html", "book/index.html", "thanks/index.html", "privacy/index.html", "404.html",
                     "assets/site.css", "assets/mark.svg"):
             self.assertTrue((out / rel).exists(), rel)
         book = (out / "book/index.html").read_text()
@@ -64,7 +64,8 @@ class Site(IsolatedCase):
         self.assertIn("a brand of CKI, LLC", home)
         self.assertNotIn("PREVIEW", home)
         self.assertNotIn("noindex", home)
-        self.assertIn("/api/availability", (out / "availability/index.html").read_text())
+        self.assertIn("/api/availability", book, "the booked dates are a line on the quote page (2026-10-31)")
+        self.assertFalse((out / "availability").exists(), "no Availability page; the Worker sends the old address to /book/")
 
     def test_the_hero_carries_the_magnetic_web(self):
         """Chris, 2026-10-11: "make the photo have the magnetic web effect": a canvas over the hero, drawn by the
@@ -136,7 +137,7 @@ class Site(IsolatedCase):
         """Chris, 2026-10-12: "Don't say instant delivery by 'facematch' and don't give the steps ... it's a feature not the
         entire product"; and portraits are backstage for the speakers, lit on site with our own lights and gels."""
         out = self.built()
-        for rel in ("index.html", "about/index.html", "book/index.html", "availability/index.html", "privacy/index.html"):
+        for rel in ("index.html", "about/index.html", "book/index.html", "privacy/index.html"):
             text = re.sub(r"<script.*?</script>|<style.*?</style>|<[^>]+>", " ", (out / rel).read_text(), flags=re.S).lower()
             for word in ("face match", "facematch", "selfie", "scan the code", "scan their badge", "three short fields", "add a selfie"):
                 self.assertNotIn(word, text, (rel, word))
@@ -218,7 +219,7 @@ class Site(IsolatedCase):
             self.assertIn("within 24 hours", page, rel)
             self.assertNotIn("political", page.lower(), rel)
         # Chris, 2026-10-12: "We are going to get rid of 'fan conventions'": nowhere on the site, the quote form included
-        for rel in ("index.html", "about/index.html", "book/index.html", "availability/index.html", "privacy/index.html"):
+        for rel in ("index.html", "about/index.html", "book/index.html", "privacy/index.html"):
             self.assertNotIn("fan convention", (out / rel).read_text().lower(), rel)
         book = (out / "book/index.html").read_text()
         self.assertIn("What moves the quote", book)
@@ -268,7 +269,7 @@ class Site(IsolatedCase):
         sitemap = (out / "sitemap.xml").read_text()
         locs = re.findall(r"<loc>([^<]+)</loc>", sitemap)
         self.assertEqual(locs, ["https://eventcaliber.com" + p for p in build.PAGES])
-        self.assertEqual(len(locs), 16)
+        self.assertEqual(len(locs), 15)
         self.assertEqual(locs[:3], ["https://eventcaliber.com/", "https://eventcaliber.com/about/", "https://eventcaliber.com/coverage/"])
         self.assertIn("https://eventcaliber.com/coverage/backstage/", locs)
         self.assertIn("https://eventcaliber.com/contact/", locs)

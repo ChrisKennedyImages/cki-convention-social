@@ -45,6 +45,7 @@ def coverage_page(key: str) -> str:
 
 def public_pages() -> tuple[str, ...]:
     """Every public page, in sitemap order (2026-10-14): the home page, About, the coverage index and one page per
-    coverage item, the quote form, Availability, Contact, Privacy. The build, the sitemap, IndexNow and the
-    outside check all read this one list."""
-    return ("/", "/about/", "/coverage/") + tuple(coverage_page(k) for k in coverage_keys()) + ("/book/", "/availability/", "/contact/", "/privacy/")
+    coverage item, the quote form, Contact, Privacy. The build, the sitemap, IndexNow and the outside check all read
+    this one list. No Availability page since 2026-10-31 (Chris, 2026-10-15: empty calendars, "a very bad look"): the
+    booked dates are a line on the quote form, and the Worker sends /availability/ there."""
+    return ("/", "/about/", "/coverage/") + tuple(coverage_page(k) for k in coverage_keys()) + ("/book/", "/contact/", "/privacy/")

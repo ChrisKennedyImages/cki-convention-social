@@ -6,8 +6,8 @@
    text. Live: claude-haiku-4-5 under the monthly cap, every answer checked,
    the template where an answer fails. Dry run (the default): the template
    only, no paid call; the rows are internal, so they are written.
-2. The site check (seo/site_check.py), live only: GET /, /book/,
-   /availability/, /privacy/, /sitemap.xml and /robots.txt on BRAND_DOMAIN,
+2. The site check (seo/site_check.py), live only: GET every public page
+   (offer.public_pages), /sitemap.xml and /robots.txt on BRAND_DOMAIN,
    a site_checks row per page, an errors row for each page that fails. Dry
    run only says what it would check.
 

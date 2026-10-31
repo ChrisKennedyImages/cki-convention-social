@@ -87,7 +87,7 @@ class GoogleTag(IsolatedCase):
         config.reset()
         self.assertEqual(build.verification_value(), "AbC-123_xyzXYZ789", "the whole tag may be pasted; its content is kept")
         build.build(None, photos(), out=out)
-        for rel in ("index.html", "about/index.html", "book/index.html", "availability/index.html", "privacy/index.html"):
+        for rel in ("index.html", "about/index.html", "book/index.html", "privacy/index.html"):
             self.assertIn('<meta name="google-site-verification" content="AbC-123_xyzXYZ789">', (out / rel).read_text(), rel)
         self.assertTrue(site_check.check_html(200, (out / "index.html").read_text())["ok"])
         build.build(None, photos(), out=out, preview=True)
@@ -201,8 +201,8 @@ class IndexNow(IsolatedCase):
         self.assertFalse(indexnow.valid("a" * 129))
 
     def test_the_ping_names_every_page_and_the_key_file_and_reads_the_answer(self):
-        """2026-10-14: sixteen pages (the coverage index, nine coverage pages and Contact joined the five), from the
-        same list the sitemap and the outside check read (offer.public_pages)."""
+        """Fifteen pages (2026-10-14: the coverage index, nine coverage pages and Contact joined the five; 2026-10-31:
+        Availability left), from the same list the sitemap and the outside check read (offer.public_pages)."""
         seen = []
 
         def post(url, body):
@@ -210,15 +210,15 @@ class IndexNow(IsolatedCase):
             return 202, ""
         told, note = indexnow.ping("https://eventcaliber.com", build.PAGES, value="k" * 32, post=post)
         self.assertTrue(told)
-        self.assertIn("IndexNow told about 16 page(s)", note)
+        self.assertIn("IndexNow told about 15 page(s)", note)
         url, body = seen[0]
         self.assertEqual(url, "https://api.indexnow.org/indexnow")
         self.assertEqual(body["host"], "eventcaliber.com")
         self.assertEqual(body["key"], "k" * 32)
         self.assertEqual(body["keyLocation"], f"https://eventcaliber.com/{'k' * 32}.txt")
         self.assertEqual(body["urlList"][:2], ["https://eventcaliber.com/", "https://eventcaliber.com/about/"])
-        self.assertEqual(len(body["urlList"]), 16)
-        self.assertEqual(len(build.PAGES), 16)
+        self.assertEqual(len(body["urlList"]), 15)
+        self.assertEqual(len(build.PAGES), 15)
         told, note = indexnow.ping("https://eventcaliber.com", build.PAGES, value="k" * 32, post=lambda u, b: (422, "key not found"))
         self.assertEqual((told, note), (False, "IndexNow answered 422: key not found"))
 
@@ -252,7 +252,7 @@ class AfterAPublish(deploy_tests.Run):
     """The engines are told only once the site is live; a ping that fails never fails the publish."""
 
     def test_a_live_publish_tells_the_engines_and_the_card_says_so(self):
-        """2026-10-14: sixteen pages, the coverage pages and Contact among them."""
+        """Fifteen pages, the coverage pages and Contact among them (2026-10-14), Availability no longer (2026-10-31)."""
         settings.set(self.conn, deploy.DEPLOYED_KEY, "")
         calls = []
         with mock.patch("convention_social.seo.indexnow._post", side_effect=lambda u, b: (calls.append(b), (200, ""))[1]):
@@ -264,7 +264,7 @@ class AfterAPublish(deploy_tests.Run):
         st = deploy.read_status()
         self.assertEqual(st["state"], "done")
         self.assertTrue(st["engines_told"])
-        self.assertIn("IndexNow told about 16 page(s)", st["engines"])
+        self.assertIn("IndexNow told about 15 page(s)", st["engines"])
         self.assertIn(st["engines"], self.said)
 
     def test_a_failed_ping_is_a_note_not_a_failed_publish(self):
