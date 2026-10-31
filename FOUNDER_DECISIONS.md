@@ -1801,3 +1801,17 @@ hour" joins "within 24 hours" as a stated promise the copy gate passes. Social c
 typically post these throughout the entire event giving the conference/event a lot of traction and exposure", so both
 pages say the event is seen far beyond the room, session after session, while it is still happening; and "add a clip about
 attendees posting on the top too": the lede says they post them as it happens.
+
+## 2026-10-30: the organizer's email is read off the event's own website
+
+Chris: "I haven't received one email to send so we need to check that. Not one outreach email has been sent." Read from
+the live database: the scout found eight events on 18 October and kept an email for none, because research keeps an
+address only when a search citation quotes it; the outreach agent drafts only for an event with an address; so no
+draft, no ping, no send. "It should search for these emails, it does on my other suite. Look at how that part of
+the other repo works. Only LOOK!" (the other suite is named in his message; its name is kept out of this repo) Looked, not copied: the same shape, written for events (outreach/emails.py): the
+event's own site, already backed by a source, is read on its usual pages (home, contact, press, media, about, sponsors,
+exhibit, FAQ); an address is kept only when it is on the event's own domain or its organizer's, public-facing names
+first (press, media, events, sponsors, info); one request a second, forty fetches a run, each event once, a server that
+refuses an automated read is left alone and said so; the do-not-contact rule is checked on what is found. It runs at
+the start of the daily outreach run, so the drafts follow the same hour, and the Scout page says what was found or why
+not.
