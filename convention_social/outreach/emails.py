@@ -124,22 +124,23 @@ def fetch(url: str) -> tuple[Optional[str], str, bool]:
 def discover(website: str, *, budget: list[int], fetch: Callable = fetch, sleep: Callable = time.sleep) -> Found:
     """Walk the event site's pages for a public address. `budget` is a one-element counter shared by a run.
 
-    A role address (press@, events@, info@) ends the walk; a named person's is kept only if no role address turns
-    up on any page read. A page that redirects to another site is not the event's and is skipped (the AHA meeting's
-    /press landed on an affiliate's site; its address was that affiliate's)."""
+    A role address (press@, events@, info@) ends the walk. A page naming one person is a fallback when no role
+    address turns up anywhere; a page naming several (an organizer's team list) is left to a human, who is told
+    where it is. A page that redirects to another site is not the event's and is skipped (the AHA meeting's /press
+    landed on an affiliate's site; its address was that affiliate's)."""
     site = host_of(website)
     if not site:
         return Found(note="no website to read")
-    fallback: Optional[Found] = None
-    answered = sent_elsewhere = ""
+    person: Optional[Found] = None
+    people = answered = sent_elsewhere = ""
     for url in probes(website, site):
         if budget[0] <= 0:
-            return fallback or Found(note=BUDGET_SPENT)
+            return person or Found(note=BUDGET_SPENT)
         budget[0] -= 1
         body, final_url, refused = fetch(url)
         sleep(REQUEST_SPACING_S)
         if refused:
-            return fallback or Found(note=f"the site refused an automated read ({final_url}); open it by hand")
+            return person or Found(note=f"the site refused an automated read ({final_url}); open it by hand")
         if body is None:
             continue
         if not own_host(host_of(final_url), site):
@@ -151,9 +152,14 @@ def discover(website: str, *, budget: list[int], fetch: Callable = fetch, sleep:
             continue
         if preferred(found[0]):
             return Found(email=found[0], page=final_url)
-        fallback = fallback or Found(email=found[0], page=final_url)
-    if fallback:
-        return fallback
+        if len(found) == 1:
+            person = person or Found(email=found[0], page=final_url)
+        else:
+            people = people or f"no role address; people named on {final_url}: {', '.join(found[:3])}; pick one by hand"
+    if person:
+        return person
+    if people:
+        return Found(note=people)
     if not answered:
         if sent_elsewhere:
             return Found(note=f"the website sends readers to another site ({sent_elsewhere}); open it by hand")

@@ -52,6 +52,10 @@ class Discover(IsolatedCase):
         found = emails.discover("https://samplecon.example", budget=[40], fetch=only_person, sleep=no_sleep)
         self.assertEqual((found.email, found.page), ("paul.clark@samplecon.example", "https://samplecon.example"), "kept when nothing better turns up anywhere")
         self.assertEqual(len(only_person.fetched), len(emails.PROBE_PATHS), "every page was read first")
+        team = Site({"/": (200, "a.b@samplecon.example c.d@samplecon.example e.f@samplecon.example g.h@samplecon.example")})
+        found = emails.discover("https://samplecon.example", budget=[40], fetch=team, sleep=no_sleep)
+        self.assertEqual(found.email, "", "several people named: no one is picked for them")
+        self.assertEqual(found.note, "no role address; people named on https://samplecon.example: a.b@samplecon.example, c.d@samplecon.example, e.f@samplecon.example; pick one by hand")
 
     def test_the_events_own_page_is_read_first_when_the_site_is_the_organizers(self):
         site = Site({"/conference/sample-con": (200, "<a href='mailto:events@samplecon.example'>x</a>"), "/": (200, HOME)})
