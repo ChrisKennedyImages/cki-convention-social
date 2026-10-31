@@ -70,15 +70,15 @@
       "key": "on_site_delivery",
       "label": "Instant delivery during the event",
       "title": "Instant photo delivery during the event",
-      "first": "Photos can reach the people in them while the event is still on, from every photographer in the room.",
-      "about": "It is one part of how we work, never the whole of it. Selects go out during the event to the people you choose, and the finished set follows after. The photography is the work."
+      "first": "Photos reach the people in them while the event is still on, from every photographer in the room.",
+      "about": "You decide who gets them: all attendees, or your staff only. Attendees post their photos through the whole event, session after session, and the event is seen far beyond the room while it is still happening; speakers have their stage photo before they have left the stage, and your team has what it needs the same hour. Selects within the hour when we know before the event which moments you want; the finished set follows after. For anything more, ask us when you request a quote."
     }
   ],
   "quote_questions": [
+    "Whether photos go out during the event, and to whom: all attendees, or staff only",
     "Which days and hours you need covered",
     "Roughly how many attendees",
     "Which rooms or parts of the event matter most",
-    "Whether photos go out during the event, and to whom",
     "Where the images will be used"
   ],
   "call_to_action": "Request a quote",

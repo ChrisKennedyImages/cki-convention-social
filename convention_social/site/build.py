@@ -416,13 +416,17 @@ def copy_text() -> dict:
     return {
         # 2026-10-14: the place in the title, a plain first sentence a search engine or an AI can quote, a description that fits
         "title": f"{o['tagline']} in {AREA} | {o['company']}",
-        "description": (f"{o['company']} photographs conventions, conferences, galas and award dinners in {AREA} and nationwide. "
-                        "Two brothers, thirty years each. Request a quote."),
+        "description": (f"{o['company']} photographs conventions, conferences and galas in {AREA} and nationwide. "
+                        "Photos reach attendees while the event is on. Request a quote."),
         "kicker": f"Event and convention photography, {AREA} and nationwide",
         "first": f"{o['company']} photographs conventions, conferences, galas and award dinners in {AREA} and across the country.",
-        # Chris, 2026-10-12: the site is the two of them, in their own voice; no "fan conventions" on the main page;
-        # instant delivery is never front and center; one of them writes back within 24 hours
-        "lede": ("We've photographed conventions, conferences, galas and award dinners for more than thirty years each, "
+        # Chris, 2026-10-12: the site is the two of them, in their own voice; no "fan conventions" on the main page; one of them
+        # writes back within 24 hours. 2026-10-30: "Instant delivery needs to be a top priority for getting customers": it leads,
+        # as the outcome and the organizer's choice; never the method, never a price, never proof. The hour for selects is not
+        # in the hero ("Don't include the selects part in the top").
+        "lede": ("Your attendees have the photos while the event is still on, and post them as it happens: all attendees, or "
+                 "your staff only, your choice. "
+                 "We've photographed conventions, conferences, galas and award dinners for more than thirty years each, "
                  "room by room, across the country. Tell us about your event and one of us will write back within 24 hours."),
         "coverage_first": ("Backstage, green rooms, breakouts, the main stage, evening events, dinners, portraits and exhibition halls: "
                            "every room of a conference or convention, photographed by the two of us."),
@@ -445,9 +449,14 @@ def copy_text() -> dict:
                   "We are based in Washington, DC and travel wherever the event is.\n\n"
                   "Tell us about your event and one of us will write back within 24 hours."),
         "coverage_p": "Tell us which rooms matter. Coverage is planned around your schedule, and every event is quoted on its own.",
-        # Chris, 2026-10-12: never "face match", never the steps; it is a feature, not the product
-        "deliver_p": ("Photos can reach the people in them while the event is still on, from every photographer in the room. "
-                      "It is one part of how we work. The photography is the work."),
+        # Chris, 2026-10-12: never "face match", never the steps. 2026-10-30: the outcome and the choice lead; "The attendees
+        # posting during the event is a super solid sell"; selects within the hour when the moments are known beforehand;
+        # anything more, "let them contact us to inquire"
+        "deliver_p": ("Photos reach the people in them while the event is still on, from every photographer in the room. "
+                      "You decide who gets them: all attendees, or your staff only. Attendees post their photos through the whole "
+                      "event, session after session, and the event is seen far beyond the room while it is still happening. "
+                      "Speakers have their stage photo before they have left the stage. Selects within the hour when we know "
+                      "before the event which moments you want. For anything more, ask us."),
         "steps": [("Tell us about your event", "Dates, venue, the rooms and moments that matter, and who needs images."),
                   ("A quote within 24 hours", "One of us writes back with a clear quote for the coverage you need, nothing bundled you did not ask for."),
                   ("Photos during the event, the full set after", "Selects go out while the event is on, and the finished set follows.")],

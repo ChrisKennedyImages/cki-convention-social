@@ -37,6 +37,9 @@ class CopyRules(unittest.TestCase):
             self.assertIn("claims", [b.rule for b in r.blocks], text)
             self.assertIn("nothing includes anything", r.blocks[0].message)
         self.assertTrue(copy_rules.check("One of us writes back within 24 hours.").ok, "his stated reply promise")
+        self.assertTrue(copy_rules.check("Selects within the hour when we know before the event which moments you want.").ok,
+                        "his stated promise for selects, 2026-10-30")
+        self.assertFalse(copy_rules.check("Selects within an hour.").ok, "any other time is still a claim")
         for text in ("Conference photography, covering the main stage, the keynotes, the breakouts and the panels.",
                      "Guests scan their badge, add a selfie, and every photo they are in comes straight to them.",
                      "Request a quote for your event.", "Based in Washington DC, covering events nationwide."):

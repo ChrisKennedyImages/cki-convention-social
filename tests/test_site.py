@@ -113,9 +113,10 @@ class Site(IsolatedCase):
             self.assertGreater(saved.getpixel((10, 10))[0], 28, "the saved hero carries the lift")
             self.assertLess(saved.getpixel((10, 10))[0], 42, "a tad, not a wash (Chris: way too much dodging)")
 
-    def test_the_main_page_never_says_fan_conventions_and_keeps_delivery_out_of_the_hero(self):
-        """Chris, 2026-10-12: "Get rid of 'fan conventions'... Don't put that on the main page"; instant delivery
-        can be highlighted but never front and center."""
+    def test_the_main_page_never_says_fan_conventions_and_delivery_leads_without_its_method(self):
+        """Chris, 2026-10-12: "Get rid of 'fan conventions'... Don't put that on the main page". 2026-10-30: "Instant delivery
+        needs to be a top priority for getting customers": the outcome and the choice lead the hero; the method never does,
+        and the hour for selects stays out of the top ("Don't include the selects part in the top")."""
         home = (self.built() / "index.html").read_text()
         text = re.sub(r"<script.*?</script>|<style.*?</style>|<[^>]+>", " ", home, flags=re.S).lower()
         self.assertNotIn("fan convention", text)
@@ -123,6 +124,8 @@ class Site(IsolatedCase):
         for word in ("selfie", "badge", "scan"):
             self.assertNotIn(word, hero.lower(), word)
         self.assertIn("conventions, conferences, galas and award dinners for more than thirty years each", hero)
+        self.assertIn("while the event is still on, and post them as it happens: all attendees, or your staff only, your choice", hero)
+        self.assertNotIn("within the hour", hero)
 
     def test_delivery_is_a_feature_with_no_name_and_no_steps_and_portraits_are_backstage(self):
         """Chris, 2026-10-12: "Don't say instant delivery by 'facematch' and don't give the steps ... it's a feature not the
@@ -136,7 +139,9 @@ class Site(IsolatedCase):
         self.assertIn("Instant delivery during the event", home)
         self.assertIn('<span class="">Instant delivery</span><span class="dot">', home, "the ticker says it the same way")
         self.assertNotIn("Delivered on site", home)
-        self.assertIn("The photography is the work.", home)
+        self.assertIn("You decide who gets them: all attendees, or your staff only.", home)
+        self.assertIn("Selects within the hour when we know before the event which moments you want.", home)
+        self.assertNotIn("The photography is the work.", home, "2026-10-30: delivery is no longer played down")
         self.assertIn("<em>Backstage, for the speakers and the people the event is about.", home)
         self.assertIn("finished in the camera", home)
         self.assertNotIn("every attendee", home.lower(), "attendee portraits are a different product, not advertised")

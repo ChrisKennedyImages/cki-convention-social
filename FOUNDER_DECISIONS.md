@@ -1782,3 +1782,22 @@ leaves the list: seven event titles (main stage, stage panel, breakout, portrait
 the two building frames. Every stage photo is main stage unless it is a panel; a panel on the main stage is a stage
 panel. The five the new sorter had called "stage" are main stage; the 3,621 old "stage panel" photos (a word that
 once meant anyone on a stage) join the second look so the panels are told from the main stage (about $18).
+
+## 2026-10-30: instant delivery leads the site, as the outcome and the organizer's choice
+
+Chris: "Instant delivery needs to be a top priority for getting customers on the website." The 12 October ruling
+("a feature, not the entire product"; the site played it down: "never the whole of it") gives way on the emphasis and
+stands on the method: the site now leads with it, and still never says how it works. His words: "The company has the
+option to let all attendees have instant delivery"; "I don't want to include pricing for this on the website"; "I also
+don't want to prove it at the moment"; "The attendees posting during the event is a super solid sell too. It also can be
+pushed to staff and then approved and then pushed to attendees, but that's too much info, let them contact us to
+inquire. We can also deliver selects within an hour if we have that info before the event and what parts they want for
+selects"; "Don't include the selects part in the top, maybe replace the existing instant delivery area." So: the home
+page's lede and meta description lead with photos reaching attendees while the event is still on, all attendees or
+staff only, the organizer's choice; the delivery section and the coverage page carry the posting, the speakers, the
+staff and the hour for selects when the moments are known beforehand; the quote form asks about delivery first; the
+outreach email leads with it. No price, no proof, no method; anything more is a question for the quote. "Within the
+hour" joins "within 24 hours" as a stated promise the copy gate passes. Social copy is unchanged. Added the same day: "attendees
+typically post these throughout the entire event giving the conference/event a lot of traction and exposure", so both
+pages say the event is seen far beyond the room, session after session, while it is still happening; and "add a clip about
+attendees posting on the top too": the lede says they post them as it happens.
