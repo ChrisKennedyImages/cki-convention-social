@@ -105,7 +105,7 @@ class TheGallery(IsolatedCase):
         return Image.new("RGB", (int(row["width"]), int(row["height"])), self.colours[row["drive_id"]])
 
     def shades(self, photos):
-        return [im.getpixel((0, 0))[0] for im, _ in photos.coverage]
+        return [im.getpixel((0, 0))[0] for im, *_ in photos.coverage]      # (image, alt, meta, slug, label) since 2026-10-31
 
     def hero_shade(self, photos):
         return photos.hero[0][0].getpixel((0, 0))[0]

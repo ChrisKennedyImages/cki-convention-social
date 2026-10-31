@@ -94,7 +94,7 @@ class Hero(IsolatedCase):
         photos = build.pick_photos(self.conn, self.fetch)
         hero = photos.hero[0][0].getpixel((0, 0))[0]
         self.assertIn(hero, range(100, 105), "one of the strongest frames is the hero; which of the equals is chance")
-        shades = [im.getpixel((0, 0))[0] for im, _ in photos.coverage]
+        shades = [im.getpixel((0, 0))[0] for im, *_ in photos.coverage]      # (image, alt, meta, slug, label) since 2026-10-31
         self.assertIn(shades[0], range(100, 105), "the grid: one of each event first, strongest first inside a round")
         self.assertEqual(shades[1:3], [90, 80])
         self.assertEqual(sorted([hero, shades[0], *shades[3:]]), [100, 101, 102, 103, 104], "then the other CPAC frames")
