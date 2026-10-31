@@ -1922,3 +1922,14 @@ Google; the alt text, the caption, the file name and the words around a photo ca
 He chose the order of the rest: a Google Business Profile with reviews (his), search words in the H1s with his line
 kept under them, venue, event-type and FAQ pages one at a time, and links earned from clients, venues and associations
 ("Not crappy ones"; "Not now" to building the list on 2026-10-31).
+
+## 2026-10-31: the home headline is the search phrase; the brothers and the years are the display line under it
+
+Part of the SEO plan Chris chose ("Yes, go"). The biggest words on the page said "Two brothers, every room." and the
+words people search sat only in the title tag and the small kicker. Shown two headlines, he picked A: "Convention
+photographers, Washington, DC." in the three-line display setting. A first version moved his line to the small kicker;
+he asked "Where does it say two brothers now each with 30+ years in the business?", a larger paragraph was not it
+("There is no large lead to see in anything you've shown me"), and he approved the render with a display-type line
+directly under the headline: "Two brothers, every room. More than thirty years each." The small line above goes back to
+the search words. Then: "And Nationwide too. But, that does not have to be in the main heading": the lead paragraph
+ends "in Washington, DC and nationwide." (it said "across the country"); the small line above already said it.
