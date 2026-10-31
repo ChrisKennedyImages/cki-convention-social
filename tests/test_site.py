@@ -146,12 +146,12 @@ class Site(IsolatedCase):
         # now". The services list ends with the selects; instant delivery is the hero's link and its own page, not a row.
         self.assertNotIn("Instant delivery during the event", home)
         self.assertNotIn("Instant delivery</span><span class=\"dot\">", home, "nor in the ticker")
-        self.assertIn('<span class="">Main stage</span><span class="dot">&#9679;</span><span class="o">Selects within the hour</span>', home,
-                      "the ticker says the rows in their order: main stage, then the selects")
+        self.assertIn('<div class="track"><span class="">Main stage</span><span class="dot">', home, "the ticker starts with the first row")
+        self.assertIn('<span class="">Selects within the hour</span><span class="dot">&#9679;</span></div></div>', home, "and ends with the selects")
         rows = re.findall(r'<a href="/coverage/([a-z_]+)/"><span class="mono g">(\d\d)</span>', home[home.index('<section id="coverage"'):])
-        # and the order (2026-10-31): "Start with main stage and then selects... and backstage and green rooms should be the bottom two"
-        self.assertEqual(rows[:2], [("stage", "01"), ("selects", "02")], rows)
-        self.assertEqual(rows[-2:], [("backstage", "08"), ("green_room", "09")], rows)
+        # and the order (2026-10-31): "Start with main stage... backstage and green rooms should be the bottom two", then "keep selects at the end"
+        self.assertEqual(rows[0], ("stage", "01"), rows)
+        self.assertEqual(rows[-3:], [("backstage", "07"), ("green_room", "08"), ("selects", "09")], rows)
         self.assertNotIn("on_site_delivery", [k for k, _ in rows])
         index = (out / "coverage/index.html").read_text()
         self.assertNotIn('href="/coverage/on_site_delivery/"', index, "a page, not a row, on the coverage index too")

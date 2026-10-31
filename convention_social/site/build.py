@@ -535,10 +535,10 @@ def home_body(t: dict, hero: str, frames: list[tuple[str, str, str, str]], stack
     venue_html = "".join(f'<figure style="--ar:{ar}">{img}</figure>' for img, ar in venues[:VENUE_ROWS])
     steps = "".join(f'<div class="rv"><div class="n">{i:02d}</div><h3>{e(h)}</h3><p>{e(p)}</p></div>'
                     for i, (h, p) in enumerate(t["steps"], start=1))
-    # the ticker says the rows in their order (2026-10-31: "Start with main stage and then selects... and backstage and
-    # green rooms should be the bottom two")
-    short = ["Main stage", "Selects within the hour", "Breakouts", "Evening events", "Dinners", "Portraits",
-             "Exhibition halls", "Backstage", "Green rooms"]
+    # the ticker says the rows in their order (2026-10-31: "Start with main stage... backstage and green rooms should be the
+    # bottom two", then "keep selects at the end")
+    short = ["Main stage", "Breakouts", "Evening events", "Dinners", "Portraits", "Exhibition halls", "Backstage",
+             "Green rooms", "Selects within the hour"]
     return f"""
 <section class="hero"><div class="photo"><div class="img">{hero}</div><canvas class="web" aria-hidden="true"></canvas>
 <div class="vf" aria-hidden="true"><i></i><i></i><i></i><i></i></div></div>

@@ -1881,4 +1881,5 @@ offers both as coverage to tick, and the Worker accepts the new key.
 Then: "You also need to change the order. Start with main stage and then selects... and backstage and green rooms
 should be the bottom two." The rows, everywhere they are listed and in the ticker: Main stage and keynotes, Selects within
 the hour, Breakouts and panels, Before, during and evening events, Dinners and receptions, Portraits, Exhibition halls,
-Backstage, Green rooms. The middle keeps the order it had.
+Backstage, Green rooms. The middle keeps the order it had. Then: "I'm sorry, keep selects at the end": Main stage and
+keynotes first, Backstage and Green rooms seventh and eighth, Selects within the hour last.

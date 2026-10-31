@@ -15,14 +15,7 @@
       "title": "Main stage and keynote photography",
       "first": "The keynote is the photograph most events need first. We make it from the room, with the stage, the screens and the audience in one frame.",
       "about": "We photograph the main stage from several positions: wide from the back for the scale of the room, close from the pit for the speaker, and from the side for the audience reacting. Stage lighting is read as it is, never flattened, so the photographs look the way the event felt.",
-      "_order": "2026-10-31, Chris: \"Start with main stage and then selects... and backstage and green rooms should be the bottom two\"; the middle keeps its order; the unlisted delivery page comes last."
-    },
-    {
-      "key": "selects",
-      "label": "Selects within the hour",
-      "title": "Selects within the hour, during the event",
-      "first": "Name the moments before the event: the keynote, the awards, the people on stage. During the event, the selects from those moments are yours within the hour.",
-      "about": "The organizer names the moments before the event and has the selects from each of them within the hour, while the event is still on: for the screens in the hall, the program's social accounts, the press room and the people on stage. The finished set follows after the event. For anything more, ask us when you request a quote."
+      "_order": "2026-10-31, Chris: \"Start with main stage... and backstage and green rooms should be the bottom two\", then \"keep selects at the end\"; the middle keeps its order; the unlisted delivery page comes last."
     },
     {
       "key": "breakouts",
@@ -73,6 +66,13 @@
       "title": "Green room photography",
       "first": "The green room is where speakers wait, prepare and meet. We photograph it with care and without getting in the way.",
       "about": "A green room is a working space. We read the room before we raise a camera, ask before we photograph anyone resting, and keep the images to what the organizer can use: speakers preparing, hosts briefing, the quiet before a keynote."
+    },
+    {
+      "key": "selects",
+      "label": "Selects within the hour",
+      "title": "Selects within the hour, during the event",
+      "first": "Name the moments before the event: the keynote, the awards, the people on stage. During the event, the selects from those moments are yours within the hour.",
+      "about": "The organizer names the moments before the event and has the selects from each of them within the hour, while the event is still on: for the screens in the hall, the program's social accounts, the press room and the people on stage. The finished set follows after the event. For anything more, ask us when you request a quote."
     },
     {
       "key": "on_site_delivery",

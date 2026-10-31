@@ -234,7 +234,7 @@ class Strip(SizesCase):
         self.assertEqual(strip.count('<div class="frame">'), 4)
         self.assertEqual(strip.count('<div class="frame" aria-hidden="true"><a tabindex="-1" href="/coverage/'), 4, "the copies are out of the reader's and the keyboard's way")
         self.assertEqual(re.findall(r'<div class="frame"><a href="([^"]+)">', strip),
-                         ["/coverage/stage/", "/coverage/selects/", "/coverage/breakouts/", "/coverage/evening_events/"],
+                         ["/coverage/stage/", "/coverage/breakouts/", "/coverage/evening_events/", "/coverage/dinners/"],
                          "each frame opens its coverage page (the first four rows, in their 2026-10-31 order)")
         self.assertNotIn('data-speed', strip, "no parallax on the frames")
 
@@ -533,9 +533,8 @@ class CoveragePages(SizesCase):
         pages = build.pick_page_photos(pool)
         ids = {k: [r["id"] for r in v] for k, v in pages.items()}
         self.assertEqual(list(ids), offer.coverage_keys())
-        # the pages are filled in the rows' order (2026-10-31: main stage first, selects second, backstage and green rooms last)
+        # the pages are filled in the rows' order (2026-10-31: main stage first, backstage and green rooms, then the selects last)
         self.assertEqual(ids["stage"], [16, 17, 9, 10, 11, 12], "its own stage shots first, then the panels (one room since 2026-10-29)")
-        self.assertEqual(ids["selects"], [18, 16, 17], "the unused portrait first, then the stage shots the stage page already shows")
         self.assertEqual(ids["breakouts"], [19, 20, 21], "three of its own: enough, so nothing borrowed")
         self.assertEqual(ids["evening_events"], [28, 29, 30, 31, 22, 23], "dinners first, then candids")
         self.assertEqual(ids["dinners"], [28, 29, 30, 31], "four of its own: enough, so nothing borrowed")
@@ -543,6 +542,7 @@ class CoveragePages(SizesCase):
         self.assertEqual(ids["exhibition_hall"], [6, 7, 8, 13, 14, 15], "no expo title among the eight: the page fills from the pool's unused")
         self.assertEqual(ids["backstage"], [1, 2, 3, 4, 5, 6], "six of its own, in the pool's order (all eight were shown above by then)")
         self.assertEqual(ids["green_room"], [1, 2, 3, 4, 5, 6], "the same room again")
+        self.assertEqual(ids["selects"], [16, 17, 18], "the stage shots, then the portrait: all shown above by then, in its kinds' order")
         self.assertEqual(ids["on_site_delivery"], [24, 25, 26, 27, 22, 23], "the unused candids first")
         two = [{"id": 1, "shot_type": "backstage"}, {"id": 2, "shot_type": "backstage"}]
         self.assertEqual({k: [r["id"] for r in v] for k, v in build.pick_page_photos(two).items()}, {k: [1, 2] for k in offer.coverage_keys()},
@@ -561,7 +561,7 @@ class CoveragePages(SizesCase):
         self.assertEqual(list(got.pages), offer.coverage_keys())
         self.assertEqual(got.links, ["/coverage/stage/"] * (len(ids) - 1), "the grid's frames open the page of their kind of shot")
         self.assertTrue(all(len(v) >= build.PAGE_MIN for v in got.pages.values()), {k: len(v) for k, v in got.pages.items()})
-        self.assertEqual(len(got.pages["breakouts"]), build.PAGE_ROWS, "the panels' own page is full")
+        self.assertEqual(len(got.pages["stage"]), build.PAGE_ROWS, "the panels' own page is full (one room with the main stage since 2026-10-29)")
 
 
 class Contact(SizesCase):
