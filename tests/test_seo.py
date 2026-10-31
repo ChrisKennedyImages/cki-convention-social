@@ -181,6 +181,27 @@ class Markup(SeoCase):
 # ------------------------------------------------------------------ the template
 
 class Template(SeoCase):
+    def test_the_photos_the_site_shows_are_written_first_and_the_site_republishes(self):
+        """Chris, 2026-10-31: "SEO is VERY important for this website!" The build notes every library photo it showed
+        (site/build.py SHOWN_KEY); the writer gives those their words before any other, and when it has, stamps the site
+        to republish, so the words reach the page within minutes instead of whenever a photo's turn came."""
+        from convention_social.core import settings
+        from convention_social.site import build, deploy
+        a, b, c = self.photo(), self.photo(shot="main_stage"), self.photo(shot="reception")
+        self.calendar()
+        settings.set(self.conn, build.SHOWN_KEY, json.dumps([c, b]))
+        ids, _ = photo_text.wanted_photos(self.conn)
+        self.assertEqual(ids, [c, b, a], "the site's photos first, in the order the site shows them, then the rest")
+        stats = photo_text.write_all(self.conn, dry_run=True, limit=1)
+        self.assertEqual((stats["written"], stats["shown_written"]), (1, 1))
+        self.assertIsNotNone(self.row(c), "the one write went to a photo on the site")
+        self.assertIsNone(settings.get(self.conn, deploy.PHOTOS_CHANGED_KEY), "a dry run writes internal rows and stamps nothing")
+        stats = photo_text.write_all(self.conn, dry_run=False, client=FakeClaude(), limit=1)
+        self.assertEqual((stats["written"], stats["shown_written"]), (1, 1))
+        self.assertTrue(settings.get(self.conn, deploy.PHOTOS_CHANGED_KEY), "live words for a shown photo: the site republishes")
+        settings.set(self.conn, build.SHOWN_KEY, "not json")
+        self.assertEqual(photo_text.shown_on_site(self.conn), [])
+
     def test_event_photo(self):
         pid = self.photo()
         self.credit(pid, handle="@kat.cos")

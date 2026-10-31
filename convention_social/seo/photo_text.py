@@ -497,8 +497,20 @@ def save(conn: sqlite3.Connection, photo_id: int, fields: dict, model: str, fact
     return slug
 
 
+def shown_on_site(conn: sqlite3.Connection) -> list[int]:
+    """The library photos the last live site build showed (site/build.py SHOWN_KEY), home page first."""
+    from ..core import settings
+    try:
+        return [int(i) for i in json.loads(settings.get(conn, "site.shown_photo_ids") or "[]")]
+    except (ValueError, TypeError):
+        return []
+
+
 def wanted_photos(conn: sqlite3.Connection) -> tuple[list[int], int]:
-    """(photo ids to have text, how many queued photos were left out because they are no longer usable)."""
+    """(photo ids to have text, how many queued photos were left out because they are no longer usable).
+
+    The photos the site shows come first (2026-10-31, Chris: "SEO is VERY important for this website!"; the words reach
+    the page only once a photo has them, and a run writes a limited number), then the rest in id order."""
     eligible = [r["photo_id"] for r in db.rows(conn, "SELECT photo_id FROM final_checks ORDER BY photo_id")
                 if eligibility.is_eligible(conn, r["photo_id"])[0]]
     seen = set(eligible)
@@ -512,7 +524,9 @@ def wanted_photos(conn: sqlite3.Connection) -> tuple[list[int], int]:
                 queued.append(pid)
             else:
                 left_out += 1
-    return eligible + queued, left_out
+    shown = [pid for pid in shown_on_site(conn) if pid in seen]
+    first = set(shown)
+    return shown + [pid for pid in eligible + queued if pid not in first], left_out
 
 
 def pick_writer(conn: sqlite3.Connection, *, dry_run: bool, client=None, agent: str = "seo") -> Optional[ClaudeWriter]:
@@ -550,9 +564,10 @@ def write_all(conn: sqlite3.Connection, cfg: Optional[config.Config] = None, *, 
     writer = pick_writer(conn, dry_run=dry_run, client=client, agent=agent)
     renamed = purge_named(conn)
     ids, left_out = wanted_photos(conn)
+    shown_now = set(shown_on_site(conn))
     stats = {"wanted": len(ids), "written": 0, "claude": 0, "template": 0, "fell_back": 0, "kept": 0, "edited": 0,
              "left_out": left_out, "unsorted": 0, "refused": 0, "stopped": "", "model": writer.model if writer else "template",
-             "renamed": renamed}
+             "renamed": renamed, "shown_written": 0}
     for pid in ids:
         row = db.one(conn, "SELECT model, edited_at FROM photo_seo WHERE photo_id=?", (pid,))
         if row is not None and row["edited_at"]:
@@ -594,6 +609,12 @@ def write_all(conn: sqlite3.Connection, cfg: Optional[config.Config] = None, *, 
         stats["written"] += 1
         stats["template" if model == "template" else "claude"] += 1
         stats["fell_back"] += int(bool(why))
+        if pid in shown_now:
+            stats["shown_written"] += 1
+    if stats["shown_written"] and not dry_run:
+        # the site republishes itself within ten minutes with the new words (site/deploy.py reads this stamp)
+        from ..core import settings
+        settings.set(conn, "site.photos_changed_at", db.utcnow())
     return stats
 
 

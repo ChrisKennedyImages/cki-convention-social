@@ -25,7 +25,8 @@ def run(ctx: runner.Context, *, client=None, transport: Optional[site_check.Tran
     s = photo_text.write_all(ctx.conn, ctx.cfg, dry_run=ctx.dry_run, client=client, agent=ctx.agent)
     text = (f"seo text: {s['written']} written ({s['claude']} by {s['model'] if s['claude'] else 'Claude'}, "
             f"{s['template']} template, {s['fell_back']} fell back), {s['kept']} kept, {s['edited']} edited by Chris, "
-            f"{s['left_out']} queued photos no longer usable, {s['unsorted'] + s['refused']} skipped"
+            f"{s['left_out']} queued photos no longer usable, {s['unsorted'] + s['refused']} skipped, "
+            f"{s['shown_written']} of them on the site now"
             + (f"; stopped: {s['stopped']}" if s["stopped"] else ""))
     if ctx.dry_run:
         site = (f"site check not run in dry run; would GET {len(site_check.PATHS)} pages on {site_check.base_url(ctx.cfg)}: "
