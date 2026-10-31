@@ -142,8 +142,21 @@ class Site(IsolatedCase):
             for word in ("face match", "facematch", "selfie", "scan the code", "scan their badge", "three short fields", "add a selfie"):
                 self.assertNotIn(word, text, (rel, word))
         home = (out / "index.html").read_text()
-        self.assertIn("Instant delivery during the event", home)
-        self.assertIn('<span class="">Instant delivery</span><span class="dot">', home, "the ticker says it the same way")
+        # 2026-10-31, Chris: "the instant delivery doesn't need to be at the bottom service anymore that is the selects option
+        # now". The services list ends with the selects; instant delivery is the hero's link and its own page, not a row.
+        self.assertNotIn("Instant delivery during the event", home)
+        self.assertNotIn("Instant delivery</span><span class=\"dot\">", home, "nor in the ticker")
+        self.assertIn('<div class="track"><span class="">Main stage</span><span class="dot">', home, "the ticker starts with the first row")
+        self.assertIn('<span class="">Selects within the hour</span><span class="dot">&#9679;</span></div></div>', home, "and ends with the selects")
+        rows = re.findall(r'<a href="/coverage/([a-z_]+)/"><span class="mono g">(\d\d)</span>', home[home.index('<section id="coverage"'):])
+        # and the order (2026-10-31): "Start with main stage... backstage and green rooms should be the bottom two", then "keep selects at the end"
+        self.assertEqual(rows[0], ("stage", "01"), rows)
+        self.assertEqual(rows[-3:], [("backstage", "07"), ("green_room", "08"), ("selects", "09")], rows)
+        self.assertNotIn("on_site_delivery", [k for k, _ in rows])
+        index = (out / "coverage/index.html").read_text()
+        self.assertNotIn('href="/coverage/on_site_delivery/"', index, "a page, not a row, on the coverage index too")
+        self.assertIn('href="/coverage/selects/"', index)
+        self.assertIn("yours within the hour", (out / "coverage/selects/index.html").read_text())
         self.assertNotIn("Delivered on site", home)
         # 2026-10-31: the choice, the posting and the staff are said in full on the delivery page; the home page says the
         # choice once, in the hero, and links there
@@ -269,7 +282,7 @@ class Site(IsolatedCase):
         sitemap = (out / "sitemap.xml").read_text()
         locs = re.findall(r"<loc>([^<]+)</loc>", sitemap)
         self.assertEqual(locs, ["https://eventcaliber.com" + p for p in build.PAGES])
-        self.assertEqual(len(locs), 15)
+        self.assertEqual(len(locs), 16)
         self.assertEqual(locs[:3], ["https://eventcaliber.com/", "https://eventcaliber.com/about/", "https://eventcaliber.com/coverage/"])
         self.assertIn("https://eventcaliber.com/coverage/backstage/", locs)
         self.assertIn("https://eventcaliber.com/contact/", locs)

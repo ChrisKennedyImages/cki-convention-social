@@ -39,6 +39,13 @@ def coverage_keys() -> list[str]:
     return [c["key"] for c in load().get("coverage") or []]
 
 
+def listed_coverage() -> list[dict]:
+    """The coverage entries that are rows in a list (the home page, the coverage index, the footer, the rest-of-coverage
+    lists). An entry with "listed": false is a page only: instant delivery since 2026-10-31, the hero's detailed page,
+    while the bottom service is the selects (Chris: "that is the selects option now")."""
+    return [c for c in load().get("coverage") or [] if c.get("listed", True)]
+
+
 def coverage_page(key: str) -> str:
     return f"/coverage/{key}/"
 

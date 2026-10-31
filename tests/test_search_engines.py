@@ -210,15 +210,15 @@ class IndexNow(IsolatedCase):
             return 202, ""
         told, note = indexnow.ping("https://eventcaliber.com", build.PAGES, value="k" * 32, post=post)
         self.assertTrue(told)
-        self.assertIn("IndexNow told about 15 page(s)", note)
+        self.assertIn("IndexNow told about 16 page(s)", note)
         url, body = seen[0]
         self.assertEqual(url, "https://api.indexnow.org/indexnow")
         self.assertEqual(body["host"], "eventcaliber.com")
         self.assertEqual(body["key"], "k" * 32)
         self.assertEqual(body["keyLocation"], f"https://eventcaliber.com/{'k' * 32}.txt")
         self.assertEqual(body["urlList"][:2], ["https://eventcaliber.com/", "https://eventcaliber.com/about/"])
-        self.assertEqual(len(body["urlList"]), 15)
-        self.assertEqual(len(build.PAGES), 15)
+        self.assertEqual(len(body["urlList"]), 16)
+        self.assertEqual(len(build.PAGES), 16)
         told, note = indexnow.ping("https://eventcaliber.com", build.PAGES, value="k" * 32, post=lambda u, b: (422, "key not found"))
         self.assertEqual((told, note), (False, "IndexNow answered 422: key not found"))
 
@@ -264,7 +264,7 @@ class AfterAPublish(deploy_tests.Run):
         st = deploy.read_status()
         self.assertEqual(st["state"], "done")
         self.assertTrue(st["engines_told"])
-        self.assertIn("IndexNow told about 15 page(s)", st["engines"])
+        self.assertIn("IndexNow told about 16 page(s)", st["engines"])
         self.assertIn(st["engines"], self.said)
 
     def test_a_failed_ping_is_a_note_not_a_failed_publish(self):
