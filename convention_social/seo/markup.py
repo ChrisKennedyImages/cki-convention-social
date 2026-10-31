@@ -158,10 +158,12 @@ def jsonld_breadcrumbs(items: list[tuple[str, str]]) -> dict:
             "itemListElement": [{"@type": "ListItem", "position": i, "name": name, "item": url} for i, (name, url) in enumerate(items, start=1)]}
 
 
-def jsonld_image(url: str, creator: str, copyright_holder: str, credit: str) -> dict:
+def jsonld_image(url: str, creator: str, copyright_holder: str, credit: str, use_page: str) -> dict:
     """schema.org ImageObject for one photo: contentUrl, creator (an Organization), copyrightHolder,
-    copyrightNotice and creditText, nothing else. `credit` is the visible credit (the brand, plus a
-    recorded handle when there is one); it must pass the copy rules."""
+    copyrightNotice, creditText, and the two pages Google's image metadata asks for, license and
+    acquireLicensePage, both `use_page` (2026-10-31: Search Console called their absence "non-critical
+    issues"; Chris: point both at Contact, so anyone wanting to use a photo is told to ask). `credit` is
+    the visible credit (the brand, plus a recorded handle when there is one); it must pass the copy rules."""
     return {
         "@context": SCHEMA_CONTEXT,
         "@type": "ImageObject",
@@ -170,6 +172,8 @@ def jsonld_image(url: str, creator: str, copyright_holder: str, credit: str) -> 
         "copyrightHolder": {"@type": "Organization", "name": copyright_holder},
         "copyrightNotice": f"© {copyright_holder}",
         "creditText": public(credit or creator, "image credit"),
+        "license": use_page,
+        "acquireLicensePage": use_page,
     }
 
 
