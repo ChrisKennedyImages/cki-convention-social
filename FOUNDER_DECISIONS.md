@@ -1866,3 +1866,19 @@ style rule\"? It's certainly not my rule!"), so it now lets a dash that follows 
 still flags a dash used as punctuation between words. The word for their event ("meeting", "convention", "conference",
 "show", "gala", else "event") is read off the event's name. The two drafts he read are rewritten in the template by the
 next run; a draft he has edited is his and is left alone. The follow-up note is unchanged.
+
+## 2026-10-31: the bottom service on the main page is the selects, not instant delivery
+
+Chris, on seeing the live home page after #140: "How many times do I have to say or tell you the instant delivery
+doesn't need to be at the bottom service anymore that is the selects option now!!!!!?????" #140 had changed the
+block under the Coverage list and left the list's last row, "Instant delivery during the event", in place. Now the
+Coverage list on the home page, the coverage index and the "rest of the coverage" lists end with "Selects within
+the hour" (offer.json "selects", its own page at /coverage/selects/, stage and portrait photos); the ticker says the
+same. Instant delivery is the hero's sentence and its link, "More about instant delivery", to its detailed page
+(/coverage/on_site_delivery/), which stays as a page and is in no list ("listed": false). The quote form still
+offers both as coverage to tick, and the Worker accepts the new key.
+
+Then: "You also need to change the order. Start with main stage and then selects... and backstage and green rooms
+should be the bottom two." The rows, everywhere they are listed and in the ticker: Main stage and keynotes, Selects within
+the hour, Breakouts and panels, Before, during and evening events, Dinners and receptions, Portraits, Exhibition halls,
+Backstage, Green rooms. The middle keeps the order it had.

@@ -10,18 +10,19 @@
   ],
   "coverage": [
     {
-      "key": "backstage",
-      "label": "Backstage",
-      "title": "Backstage event photography",
-      "first": "We photograph the minutes before the doors open: the wings, the last look at the notes, the crew at work.",
-      "about": "Backstage is where the event is still being made. We work quietly, with the light that is there and the lights we bring, so the speakers and the crew are seen as they are, before the room fills. These are the photographs organizers reach for afterward, when they tell the story of the day."
+      "key": "stage",
+      "label": "Main stage and keynotes",
+      "title": "Main stage and keynote photography",
+      "first": "The keynote is the photograph most events need first. We make it from the room, with the stage, the screens and the audience in one frame.",
+      "about": "We photograph the main stage from several positions: wide from the back for the scale of the room, close from the pit for the speaker, and from the side for the audience reacting. Stage lighting is read as it is, never flattened, so the photographs look the way the event felt.",
+      "_order": "2026-10-31, Chris: \"Start with main stage and then selects... and backstage and green rooms should be the bottom two\"; the middle keeps its order; the unlisted delivery page comes last."
     },
     {
-      "key": "green_room",
-      "label": "Green rooms",
-      "title": "Green room photography",
-      "first": "The green room is where speakers wait, prepare and meet. We photograph it with care and without getting in the way.",
-      "about": "A green room is a working space. We read the room before we raise a camera, ask before we photograph anyone resting, and keep the images to what the organizer can use: speakers preparing, hosts briefing, the quiet before a keynote."
+      "key": "selects",
+      "label": "Selects within the hour",
+      "title": "Selects within the hour, during the event",
+      "first": "Name the moments before the event: the keynote, the awards, the people on stage. During the event, the selects from those moments are yours within the hour.",
+      "about": "The organizer names the moments before the event and has the selects from each of them within the hour, while the event is still on: for the screens in the hall, the program's social accounts, the press room and the people on stage. The finished set follows after the event. For anything more, ask us when you request a quote."
     },
     {
       "key": "breakouts",
@@ -29,13 +30,6 @@
       "title": "Breakout and panel photography",
       "first": "Every breakout and panel is photographed the way the main stage is: the speakers, the room and the exchange between them.",
       "about": "Breakouts run at the same time in different rooms, so the day is planned with you around the schedule. We move between rooms on that plan, and each session comes back with its speakers, the slides where they matter, the audience and the questions."
-    },
-    {
-      "key": "stage",
-      "label": "Main stage and keynotes",
-      "title": "Main stage and keynote photography",
-      "first": "The keynote is the photograph most events need first. We make it from the room, with the stage, the screens and the audience in one frame.",
-      "about": "We photograph the main stage from several positions: wide from the back for the scale of the room, close from the pit for the speaker, and from the side for the audience reacting. Stage lighting is read as it is, never flattened, so the photographs look the way the event felt."
     },
     {
       "key": "evening_events",
@@ -67,11 +61,27 @@
       "about": "Exhibitors want their booth with people at it; organizers want the hall full and alive. We photograph both in a pass through the hall planned with you, and the images are sorted by booth when the exhibitors need them."
     },
     {
+      "key": "backstage",
+      "label": "Backstage",
+      "title": "Backstage event photography",
+      "first": "We photograph the minutes before the doors open: the wings, the last look at the notes, the crew at work.",
+      "about": "Backstage is where the event is still being made. We work quietly, with the light that is there and the lights we bring, so the speakers and the crew are seen as they are, before the room fills. These are the photographs organizers reach for afterward, when they tell the story of the day."
+    },
+    {
+      "key": "green_room",
+      "label": "Green rooms",
+      "title": "Green room photography",
+      "first": "The green room is where speakers wait, prepare and meet. We photograph it with care and without getting in the way.",
+      "about": "A green room is a working space. We read the room before we raise a camera, ask before we photograph anyone resting, and keep the images to what the organizer can use: speakers preparing, hosts briefing, the quiet before a keynote."
+    },
+    {
       "key": "on_site_delivery",
       "label": "Instant delivery during the event",
       "title": "Instant photo delivery during the event",
       "first": "Photos reach the people in them while the event is still on, from every photographer in the room.",
-      "about": "You decide who gets them: all attendees, or your staff only. Attendees post their photos through the whole event, session after session, and the event is seen far beyond the room while it is still happening; speakers have their stage photo before they have left the stage, and your team has what it needs the same hour. Selects within the hour when we know before the event which moments you want; the finished set follows after. For anything more, ask us when you request a quote."
+      "about": "You decide who gets them: all attendees, or your staff only. Attendees post their photos through the whole event, session after session, and the event is seen far beyond the room while it is still happening; speakers have their stage photo before they have left the stage, and your team has what it needs the same hour. Selects within the hour when we know before the event which moments you want; the finished set follows after. For anything more, ask us when you request a quote.",
+      "listed": false,
+      "_listed": "2026-10-31, Chris: the bottom service on the main page is the selects, not instant delivery. This page stays as the detailed page the hero links to; listed false keeps it out of every coverage list."
     }
   ],
   "quote_questions": [

@@ -234,7 +234,8 @@ class Strip(SizesCase):
         self.assertEqual(strip.count('<div class="frame">'), 4)
         self.assertEqual(strip.count('<div class="frame" aria-hidden="true"><a tabindex="-1" href="/coverage/'), 4, "the copies are out of the reader's and the keyboard's way")
         self.assertEqual(re.findall(r'<div class="frame"><a href="([^"]+)">', strip),
-                         ["/coverage/backstage/", "/coverage/green_room/", "/coverage/breakouts/", "/coverage/stage/"], "each frame opens its coverage page")
+                         ["/coverage/stage/", "/coverage/selects/", "/coverage/breakouts/", "/coverage/evening_events/"],
+                         "each frame opens its coverage page (the first four rows, in their 2026-10-31 order)")
         self.assertNotIn('data-speed', strip, "no parallax on the frames")
 
 
@@ -363,7 +364,7 @@ class SmallStuff(SizesCase):
         home = self.page(self.built(), "index.html")
         self.assertEqual(home.count('aria-hidden="true"><div class="track"><span'), 2, "the two tickers of words")
         self.assertEqual(home.count('<div class="ticker'), 3, "and, since 2026-10-16, the logo strip rolls on the ticker's own class")
-        self.assertIn('<div class="ticker" aria-hidden="true"><div class="track"><span class="">Backstage</span>', home)
+        self.assertIn('<div class="ticker" aria-hidden="true"><div class="track"><span class="">Main stage</span>', home, "the first row leads the ticker (2026-10-31)")
 
     def test_who_we_are_is_a_paragraph_and_the_contact_links_fit_their_boxes(self):
         out = self.built()
@@ -464,10 +465,13 @@ class CoveragePages(SizesCase):
     def test_nine_pages_with_the_place_in_the_title_their_photos_and_their_blocks(self):
         """One page per coverage item (Chris, 2026-10-14; the local search playbook: one page per service with the
         place in the title): its title with the place, its plain first sentence, its paragraph, its own photos, the
-        Service, BreadcrumbList and ImageObject blocks, and the other eight pages linked under it."""
+        Service, BreadcrumbList and ImageObject blocks, and the other listed pages linked under it (2026-10-31: ten pages,
+        nine listed; instant delivery is a page and no row)."""
         out = self.built()
         items = offer.load()["coverage"]
-        self.assertEqual(len(items), 9)
+        self.assertEqual(len(items), 10)
+        listed = [c["key"] for c in offer.listed_coverage()]
+        self.assertEqual(listed, [k for k in offer.coverage_keys() if k != "on_site_delivery"])
         for i, c in enumerate(items):
             rel = f"coverage/{c['key']}/index.html"
             page = self.page(out, rel)
@@ -489,12 +493,12 @@ class CoveragePages(SizesCase):
             self.assertEqual([(x["position"], x["name"]) for x in blocks[1]["itemListElement"]], [(1, "Event Caliber"), (2, "Coverage"), (3, c["label"])])
             self.assertEqual(blocks[2]["contentUrl"], f"{BASE}/assets/cover-{c['key']}-0-1600.jpg")
             more = page[page.index('<div class="more">'):page.index("</section>")]
-            self.assertEqual(re.findall(r'<a href="/coverage/([a-z_]+)/">', more), [k for k in offer.coverage_keys() if k != c["key"]], rel)
+            self.assertEqual(re.findall(r'<a href="/coverage/([a-z_]+)/">', more), [k for k in listed if k != c["key"]], rel)
             self.assertIn('<a class="btn fill" href="/book/">Request a quote', page)
             self.assertIn('<a href="/coverage/">Coverage</a></div><h1>', page, "the kicker goes back to the index")
         index = self.page(out, "coverage/index.html")
         self.assertIn("<title>Event photography coverage in Washington, DC | Event Caliber</title>", index)
-        self.assertEqual(re.findall(r'<a href="/coverage/([a-z_]+)/"><span class="mono g">', index), offer.coverage_keys())
+        self.assertEqual(re.findall(r'<a href="/coverage/([a-z_]+)/"><span class="mono g">', index), listed)
         self.assertEqual([b["@type"] for b in blocks_of(index)], ["BreadcrumbList"])
         self.assertEqual(sorted(p.name for p in (out / "assets").glob("cover-*-1600.jpg")), sorted(f"cover-{k}-{j}-1600.jpg" for i, k in enumerate(offer.coverage_keys()) for j in range(2 if i % 2 else 4)))
         self.assertEqual(offer.public_pages(), ("/", "/about/", "/coverage/") + tuple(f"/coverage/{k}/" for k in offer.coverage_keys()) + ("/book/", "/contact/", "/privacy/"))
@@ -529,15 +533,17 @@ class CoveragePages(SizesCase):
         pages = build.pick_page_photos(pool)
         ids = {k: [r["id"] for r in v] for k, v in pages.items()}
         self.assertEqual(list(ids), offer.coverage_keys())
-        self.assertEqual(ids["backstage"], [1, 2, 3, 4, 5, 6], "six of its own, in the pool's order")
-        self.assertEqual(ids["green_room"], [7, 8, 1, 2, 3, 4], "the two left, then the same room again before any other")
-        self.assertEqual(ids["breakouts"], [19, 20, 21], "three of its own: enough, so nothing borrowed")
+        # the pages are filled in the rows' order (2026-10-31: main stage first, selects second, backstage and green rooms last)
         self.assertEqual(ids["stage"], [16, 17, 9, 10, 11, 12], "its own stage shots first, then the panels (one room since 2026-10-29)")
+        self.assertEqual(ids["selects"], [18, 16, 17], "the unused portrait first, then the stage shots the stage page already shows")
+        self.assertEqual(ids["breakouts"], [19, 20, 21], "three of its own: enough, so nothing borrowed")
         self.assertEqual(ids["evening_events"], [28, 29, 30, 31, 22, 23], "dinners first, then candids")
         self.assertEqual(ids["dinners"], [28, 29, 30, 31], "four of its own: enough, so nothing borrowed")
-        self.assertEqual(ids["portraits"], [18, 13, 14, 15, 24, 25], "one portrait is under three: the pool's unused photos fill in")
-        self.assertEqual(ids["exhibition_hall"], [26, 27, 1, 2, 3, 4], "no expo title among the eight: the page fills from the pool")
-        self.assertEqual(ids["on_site_delivery"], [22, 23, 24, 25, 26, 27])
+        self.assertEqual(ids["portraits"], [18, 1, 2, 3, 4, 5], "one portrait is under three: the pool's unused photos fill in")
+        self.assertEqual(ids["exhibition_hall"], [6, 7, 8, 13, 14, 15], "no expo title among the eight: the page fills from the pool's unused")
+        self.assertEqual(ids["backstage"], [1, 2, 3, 4, 5, 6], "six of its own, in the pool's order (all eight were shown above by then)")
+        self.assertEqual(ids["green_room"], [1, 2, 3, 4, 5, 6], "the same room again")
+        self.assertEqual(ids["on_site_delivery"], [24, 25, 26, 27, 22, 23], "the unused candids first")
         two = [{"id": 1, "shot_type": "backstage"}, {"id": 2, "shot_type": "backstage"}]
         self.assertEqual({k: [r["id"] for r in v] for k, v in build.pick_page_photos(two).items()}, {k: [1, 2] for k in offer.coverage_keys()},
                          "two photos in the library: every page shows both")
@@ -611,13 +617,13 @@ class Contact(SizesCase):
 class Footer(SizesCase):
     def test_every_page_every_coverage_item_the_contact_and_the_legal_line(self):
         """The footer was nearly empty (Chris, 2026-10-14). Now, on every page: the company and where it works, the
-        nine coverage links, the pages, the email, the phone and the socials when set (https addresses only), and the
+        listed coverage links, the pages, the email, the phone and the socials when set (https addresses only), and the
         legal line with the year."""
         out = self.built()
         for rel in ("index.html", "about/index.html", "coverage/stage/index.html", "contact/index.html", "404.html"):
             page = self.page(out, rel)
             foot = page[page.index("<footer>"):page.index("</footer>")]
-            self.assertEqual(re.findall(r'<li><a href="/coverage/([a-z_]+)/">', foot), offer.coverage_keys(), rel)
+            self.assertEqual(re.findall(r'<li><a href="/coverage/([a-z_]+)/">', foot), [c["key"] for c in offer.listed_coverage()], rel)
             self.assertIn('<h4>Pages</h4><ul><li><a href="/#work">Work</a></li><li><a href="/about/">About</a></li>'
                           '<li><a href="/contact/">Contact</a></li><li><a href="/book/">Request a quote</a></li><li><a href="/privacy/">Privacy and photo removal</a></li></ul>', foot, rel)
             self.assertIn('<h4>Contact</h4><ul><li><a href="mailto:hello@eventcaliber.com">hello@eventcaliber.com</a></li></ul>', foot, rel)
@@ -651,7 +657,7 @@ class EveryPage(SizesCase):
         description under 160 characters. The build refuses a longer one instead of letting a search engine cut it."""
         out = self.built()
         pages = sorted(out.rglob("*.html"))
-        self.assertEqual(len(pages), 17, "the fifteen public pages, the thank-you page and 404.html")
+        self.assertEqual(len(pages), 18, "the sixteen public pages, the thank-you page and 404.html")
         for p in pages:
             text = p.read_text()
             self.assertEqual(text.count("<h1"), 1, p)
@@ -672,7 +678,7 @@ class EveryPage(SizesCase):
         config.reset()
         with self.assertRaises(build.SiteCopyRefused) as cm:
             self.built()
-        self.assertIn("coverage/backstage/index.html", str(cm.exception))
+        self.assertIn("coverage/stage/index.html", str(cm.exception), "the first coverage page since 2026-10-31")
         self.assertIn("160 at most", str(cm.exception))
         self.assertFalse((self.root / "dist" / "index.html").exists(), "nothing is written when a page is refused")
         bad["coverage"][0]["first"] = "Short."
