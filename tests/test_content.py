@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import os
 import types
+from unittest import mock
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -72,6 +73,32 @@ class Content(IsolatedCase):
 
     def queue(self):
         return db.rows(self.conn, "SELECT * FROM content_queue ORDER BY id")
+
+    def test_draft_now_makes_one_more_post_for_the_day_and_never_stands_in_for_it(self):
+        """Chris, 2026-10-31: the one-touch samples "disappeared"; "Yes, bring it back". Draft now drafts one more post
+        for the day on the morning post's road; it skips the one-a-day gate, is marked as asked for, and the day's own
+        draft is still made (or still said to be made) after it."""
+        from convention_social.core import settings
+        self.assertIn("drafted post", content.draft_one(self.ctx(), self.fetch, now=MONDAY_6AM))
+        self.assertIn("already drafted", content.draft_one(self.ctx(), self.fetch, now=MONDAY_6AM))
+        line = content.draft_one(self.ctx(), self.fetch, now=MONDAY_6AM, extra=True)
+        self.assertIn("drafted post", line)
+        rows = self.queue()
+        self.assertEqual(len(rows), 2)
+        meta = json.loads(rows[1]["rule_report"])
+        self.assertEqual(meta["source"], "draft_now")
+        self.assertEqual(meta["for_day"], json.loads(rows[0]["rule_report"])["for_day"])
+        self.assertNotEqual(json.loads(rows[0]["photo_ids"]), json.loads(rows[1]["photo_ids"]), "other photos: the first draft's are in use")
+        self.assertIn("already drafted", content.draft_one(self.ctx(), self.fetch, now=MONDAY_6AM), "the extra never counts as the day's post")
+        # the run: the press is taken once, the extra is drafted, the day's bookkeeping is left to the morning run
+        content.ask_draft_now(self.conn)
+        self.assertTrue(content.draft_now_asked(self.conn))
+        with mock.patch.object(content, "draft_one", wraps=content.draft_one) as d:
+            line = content.run(self.ctx(), self.fetch)
+        self.assertTrue(line.startswith("Draft now: "), line)
+        self.assertTrue(d.call_args.kwargs.get("extra"), "the run drafted the extra, not the day's post")
+        self.assertFalse(content.draft_now_asked(self.conn), "the press is taken once")
+        self.assertIsNone(settings.get(self.conn, content.LAST_ATTEMPT_KEY), "the morning run's record is not touched")
 
     def test_dry_run_drafts_with_no_paid_call_and_cannot_be_approved_yet(self):
         line = content.draft_one(self.ctx(), self.fetch, now=MONDAY_6AM)

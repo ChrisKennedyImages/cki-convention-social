@@ -167,6 +167,20 @@ class DesignedDrafts(Case):
             self.assertIn(f"http, {label}, {notify.link(f'/queue/{qid}/choose-by-token/{how}')}, method=POST", kw["actions"])
         self.assertEqual(kw["actions"].count("http,"), 3, "three choices, the most ntfy shows")
 
+    def test_draft_now_is_one_press_on_today(self):
+        """Chris, 2026-10-31: "where is the option to 'create sample posts' immediately with a touch? It disappeared";
+        "Yes, bring it back". A Draft now button at the top of To approve; one press records the ask and starts the
+        content agent at once; the page says what happens next."""
+        from convention_social.agents import content
+        page = self.client.get("/").text
+        self.assertIn('<form method="post" action="/today/draft-now" class="inline"><button class="primary small" type="submit">Draft now</button></form>', page)
+        with mock.patch("convention_social.dashboard.app.start_agent") as start:
+            r = self.client.post("/today/draft-now", follow_redirects=False)
+        self.assertEqual((r.status_code, r.headers["location"]), (303, "/?msg=draft_now"))
+        start.assert_called_once_with("content", wait=True)
+        self.assertTrue(content.draft_now_asked(self.conn))
+        self.assertIn("Drafting one more post now, on the same road as the morning one.", self.client.get("/?msg=draft_now").text)
+
     def test_up_to_the_days_count_and_no_more_while_that_many_wait(self):
         self.live()
         a_library(self)

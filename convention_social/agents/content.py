@@ -53,6 +53,7 @@ MAX_TRIES = 5
 # agent again inside the day's window when the reason was passing or the inputs changed
 LAST_ATTEMPT_KEY = "content.last_attempt"
 NO_DRAFT_PINGED_KEY = "content.no_draft_pinged"       # "day|reason": the phone hears each reason once a day
+DRAFT_NOW_KEY = "content.draft_now_asked_at"          # Chris pressed Draft now on Today (2026-10-31); the next run drafts one more
 REEL_STYLE_KEY = "reel.last_style"                     # the style the last reel was given, written the moment it is chosen
 TRANSIENT_WORDS = ("could not run", "could not", "not signed in")
 
@@ -69,6 +70,17 @@ def subject_for(day: date) -> str:
 # The daily draft's own rows: a designed draft, a photo from the phone and Post this are drafted for today as well and
 # carry their `source`; they never stand in for the day's post, nor make a set-aside day look drafted (2026-10-15).
 DAILY = "json_extract(rule_report, '$.source') IS NULL"
+
+
+def ask_draft_now(conn: sqlite3.Connection) -> None:
+    """Draft now on Today (Chris, 2026-10-31: the one-touch samples "disappeared"; "Yes, bring it back"). The press is
+    recorded; the content agent, started at once, drafts one more post for the day on the same road as the morning
+    one, art director and all, and it lands in Needs you for his Approve. It never stands in for the day's post."""
+    settings.set(conn, DRAFT_NOW_KEY, db.utcnow())
+
+
+def draft_now_asked(conn: sqlite3.Connection) -> bool:
+    return bool(settings.get(conn, DRAFT_NOW_KEY))
 
 
 def already_drafted(conn: sqlite3.Connection, day: date) -> bool:
@@ -567,10 +579,12 @@ def redraw(conn: sqlite3.Connection, row, meta: dict, *, agent: str = "content")
 
 
 def draft_one(ctx: runner.Context, fetch: Callable[[dict], bytes], *, now: Optional[datetime] = None,
-              check_client=None, drafter=None, art_client=None, _depth: int = 0) -> str:
+              check_client=None, drafter=None, art_client=None, extra: bool = False, _depth: int = 0) -> str:
+    """`extra`: one more post for the day, asked for with Draft now (2026-10-31); it skips the one-a-day gate and is
+    marked so it never counts as the day's post."""
     from ..render import motion
     day = target_day(ctx.cfg, now)
-    if already_drafted(ctx.conn, day):
+    if not extra and already_drafted(ctx.conn, day):
         today = day - timedelta(days=1)
         if not (set_aside_for(ctx.conn, today) and not already_drafted(ctx.conn, today)):
             return f"a post for {day} is already drafted"
@@ -616,7 +630,10 @@ def draft_one(ctx: runner.Context, fetch: Callable[[dict], bytes], *, now: Optio
         design, chosen = fallback_for(day), chosen[:1]
     try:
         qid, art, line = make_draft(ctx, day, chosen, design, want=want, kind_used=kind_used, asked=asked, track=track,
-                                    drafter=drafter, art_client=art_client, why=use_why(chosen[0][0], len(pool)))
+                                    drafter=drafter, art_client=art_client, why=use_why(chosen[0][0], len(pool)),
+                                    extra_meta={"source": "draft_now"} if extra else None,
+                                    ping=(f"{ctx.cfg.brand_name}: the post you asked for, to approve",
+                                          f"Drafted now, as you asked. Post now, follow the pace, or skip. Tap to see it.") if extra else None)
     except PhotosTaken as e:
         # said, and the watchdog's draft window tries the day again ("could not" is a passing reason)
         return f"the photos for {day} could not be kept: {e}; the day is drafted again"
@@ -625,7 +642,7 @@ def draft_one(ctx: runner.Context, fetch: Callable[[dict], bytes], *, now: Optio
         if _depth + 1 >= MAX_TRIES:
             return f"{line}; no photo passed for {day} after {MAX_TRIES} tries"
         return line + "; " + draft_one(ctx, fetch, now=now, check_client=check_client, drafter=drafter,
-                                       art_client=art_client, _depth=_depth + 1)
+                                       art_client=art_client, extra=extra, _depth=_depth + 1)
     return line
 
 
@@ -785,6 +802,12 @@ def run(ctx: runner.Context, fetch: Optional[Callable[[dict], bytes]] = None) ->
             summary = "could not start: another draft was being made for 15 minutes; tried again within the hour"
         else:
             try:
+                if draft_now_asked(ctx.conn):
+                    # Draft now (2026-10-31): one more post for the day, then nothing else this run; the day's own
+                    # bookkeeping (the watchdog's draft window, the no-draft ping) belongs to the morning run
+                    settings.set(ctx.conn, DRAFT_NOW_KEY, "")
+                    return (f"rewrote the captions of {mended} queued draft(s) that broke a rule; " if mended else "") + \
+                        "Draft now: " + draft_one(ctx, fetch, extra=True)
                 summary = draft_one(ctx, fetch)
             finally:
                 lock.release()

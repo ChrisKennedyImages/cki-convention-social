@@ -53,6 +53,7 @@ section{margin-bottom:28px}
 <section id="needs">
   <div class="today-h"><h1>Needs you</h1>{% if drafts %}<span class="count" title="posts to approve">{{ drafts|length }}</span>{% endif %}</div>
   <p class="muted lede">{{ designed_note }} Nothing goes out until you choose Post now or Follow the pace.</p>
+  <form method="post" action="/today/draft-now" class="inline"><button class="primary small" type="submit">Draft now</button></form>
   {% if auth_state != 'ok' %}<div class="card alert"><strong>Google Drive is {{ 'not signed in yet' if auth_state == 'missing' else 'signed out' }}</strong>
     <div class="alert-msg">No new drafts and no pictures until it is signed in again. Your photos and choices are all still here.</div>
     <form method="post" action="/drive/login" class="inline"><button class="primary" type="submit">Sign in to Drive</button></form></div>{% endif %}
