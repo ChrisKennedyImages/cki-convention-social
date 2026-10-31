@@ -63,6 +63,22 @@ PAGE_ROWS, PAGE_MIN = 6, 3                 # photos on a coverage page: six of i
 LASTMOD_FILE = "lastmod.json"      # DATA_ROOT/site: each page's content hash and the date it last changed
 VERIFICATION_KEY = "GOOGLE_SITE_VERIFICATION"   # the Search Console HTML tag's content value (Keys page)
 WIDTHS = (800, 1600)
+# the booked dates on the quote page (Chris, 2026-10-15: the Availability page was six empty calendars, "a very bad look",
+# and its own tab; redone 2026-10-31). One line under the quote page's opening: the label, then the dates and nothing else,
+# read from GET /api/availability (dates only, never a name; the page keeps only what reads as a date and is not past).
+# Hidden in the page itself, so with nothing booked, no script, or the API down or in error, nothing shows at all. Days in
+# a row read as one run ("Nov 7 to 9"); a year is said only when it is not this one; each run is held together by
+# no-break spaces and its dot stays with it, so a line never starts with a dot. No dash anywhere (ai.copy_rules).
+BOOKED_LINE = r"""<p class="booked" id="booked" hidden><span class="mono c">Dates already booked</span><span class="when" id="booked-when"></span></p>
+<script>(function(){const M=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"],NB="\u00a0";
+const n=new Date(),p=v=>String(v).padStart(2,"0"),today=n.getFullYear()+"-"+p(n.getMonth()+1)+"-"+p(n.getDate());
+const day=s=>Date.UTC(+s.slice(0,4),+s.slice(5,7)-1,+s.slice(8,10))/864e5,mon=s=>M[+s.slice(5,7)-1],dd=s=>+s.slice(8,10);
+function say(a,b){let t=mon(a)+NB+dd(a);if(b!==a)t+=NB+"to"+NB+(b.slice(0,7)===a.slice(0,7)?"":mon(b)+NB)+dd(b);
+return +b.slice(0,4)===n.getFullYear()?t:t+","+NB+b.slice(0,4);}
+function show(booked){const days=[...new Set(booked.filter(d=>/^\d{4}-\d{2}-\d{2}$/.test(d)&&d>=today))].sort();if(!days.length)return;
+const runs=[];for(const d of days){const r=runs[runs.length-1];if(r&&day(d)-day(r[1])===1)r[1]=d;else runs.push([d,d]);}
+document.getElementById("booked-when").textContent=runs.map(r=>say(r[0],r[1])).join(NB+"\u00b7 ");document.getElementById("booked").hidden=false;}
+fetch("/api/availability").then(r=>r.ok?r.json():{}).then(j=>{if(Array.isArray(j.booked))show(j.booked);}).catch(()=>{});})();</script>"""
 
 
 @dataclass
@@ -770,6 +786,7 @@ def build(conn: Optional[sqlite3.Connection], photos: SitePhotos, *, out: Path =
 <section class="page"><div class="kick mono c">Request a quote</div><h1>Tell us about<br><span class="o">your</span> event<b>.</b></h1>
 <p class="g" style="max-width:640px;margin:18px 0 30px">Send the dates, the venue and the rooms that matter, and one of us writes back within 24 hours.
 What moves the quote: the days and hours, the rooms covered at the same time, how many photographers, how fast you need selects, and where the images will be used.</p>
+{BOOKED_LINE}
 <div class="split2"><aside class="side"><div class="mono c">What helps the quote</div><ol>{questions}</ol>
 <p class="mono g" style="margin-top:22px">Every event is quoted on its own.</p></aside>
 <div><div id="err"></div><form class="book" method="post" action="/api/quote">
@@ -815,21 +832,6 @@ book.addEventListener("submit",ev=>{{if(token)return;ev.preventDefault();waiting
 <p class="first">{e(t['thanks'])}</p>
 <p class="g" style="max-width:560px;margin-top:18px">{e(t['thanks_p'])}</p>
 <p style="margin-top:30px"><a class="btn" href="/coverage/">The coverage <span class="arr">&#8599;</span></a> <a class="btn" href="/">Back to the site <span class="arr">&#8599;</span></a></p></section>""")
-    pages["availability/index.html"] = ("Availability", f"Booked dates are marked. Every other date is open to request, in {AREA} or wherever the event is.", """
-<section class="page"><div class="kick mono c">Availability</div><h1>Open<br><span class="o">dates</span><b>.</b></h1>
-<div class="legend mono"><span><i class="b"></i>Booked</span><span><i></i>Open to request</span></div>
-<div class="cal" id="cal"></div><p style="margin-top:50px"><a class="btn fill" href="/book/">Request a quote <span class="arr">&#8599;</span></a></p></section>
-<script>
-const MONTHS=["January","February","March","April","May","June","July","August","September","October","November","December"];
-function draw(booked){const set=new Set(booked),cal=document.getElementById("cal"),t=new Date(),today=t.toISOString().slice(0,10);
-for(let k=0;k<6;k++){const first=new Date(t.getFullYear(),t.getMonth()+k,1),y=first.getFullYear(),m=first.getMonth();
-let h='<div class="month"><h3>'+MONTHS[m]+' '+y+'</h3><div class="days">'+["S","M","T","W","T","F","S"].map(d=>'<span class="h">'+d+'</span>').join("");
-for(let i=0;i<first.getDay();i++)h+='<span class="x"></span>';const n=new Date(y,m+1,0).getDate();
-for(let d=1;d<=n;d++){const iso=y+"-"+String(m+1).padStart(2,"0")+"-"+String(d).padStart(2,"0");
-h+='<span class="'+(set.has(iso)?"b":(iso===today?"t":""))+'" title="'+(set.has(iso)?"Booked":"Open")+'">'+d+'</span>';}
-cal.insertAdjacentHTML("beforeend",h+'</div></div>');}}
-fetch("/api/availability").then(r=>r.json()).then(j=>draw(j.booked||[])).catch(()=>draw([]));
-</script>""")
     pages["privacy/index.html"] = ("Privacy and photo removal", "How quote requests are handled, and how to have a photo taken down.", f"""
 <section class="page"><div class="kick mono c">Privacy</div><h1>Privacy<b>.</b></h1><div class="prose">
 <h3>The quote form</h3><p>What you send through the form is used only to reply to you and to prepare your quote.

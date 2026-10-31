@@ -1,6 +1,6 @@
 """The weekly look at the public site: read-only GETs, one site_checks row per page.
 
-Pages: /, /book/, /availability/, /privacy/ (each must answer 200 with a page
+Pages: every public page, offer.public_pages() (each must answer 200 with a page
 title, a meta description, an h1, alt text on every image, and no noindex
 left over from a preview build), /sitemap.xml (must parse as a sitemap with
 at least one page) and /robots.txt (must name the sitemap and must not shut

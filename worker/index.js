@@ -1,4 +1,4 @@
-// eventcaliber.com: the website, quote requests, the public availability calendar and post images.
+// eventcaliber.com: the website, quote requests, the booked dates the quote page shows, and post images.
 //
 //   GET  /*                     the static site (binding ASSETS, built on the Mini by `bin/ccs site build`)
 //   POST /api/quote             a quote request from the /book/ form: its Turnstile token confirmed with Cloudflare
@@ -6,8 +6,9 @@
 //                               then /thanks/
 //   GET  /api/inquiries         the Mini pulls new requests (Bearer UPLOAD_TOKEN)
 //   POST /api/inquiries/ack     the Mini confirms it has them; they are then deleted here
-//   GET  /api/availability      booked dates only, no names (public)
+//   GET  /api/availability      booked dates only, no names (public): the "Dates already booked" line on /book/
 //   PUT  /api/availability      the Mini replaces the booked dates (Bearer UPLOAD_TOKEN)
+//   GET  /availability/         301 to /book/ (2026-10-31: the Availability page folded into the quote page)
 //   GET  /m/<key>               post images, public ONLY under convention-social/ (binding MEDIA, R2)
 //   PUT  /m/<key>               the Mini uploads a post image or, under private/, the nightly backup
 //   GET  /unsubscribe?t=<token> the opt-out page linked from every outreach email: one button, nothing stored yet
@@ -542,6 +543,9 @@ export default {
       if (www) url.hostname = url.hostname.slice(4);
       return Response.redirect(url.toString(), 301);
     }
+    // the Availability page is gone (2026-10-31): the booked dates are a line on the quote page, so the old address,
+    // in the search engines and in anyone's bookmarks, goes there for good
+    if (/^\/availability(\/.*)?$/.test(url.pathname)) return Response.redirect(`${url.origin}/book/`, 301);
     if (url.pathname.startsWith("/m/")) return media(request, env, url);
     if (url.pathname === "/api/quote") {
       return request.method === "POST" ? quote(request, env) : new Response("method not allowed", { status: 405 });

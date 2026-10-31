@@ -23,7 +23,7 @@ from ..ai import copy_rules
 SITEMAP_NS = "http://www.sitemaps.org/schemas/sitemap/0.9"
 IMAGE_NS = "http://www.google.com/schemas/sitemap-image/1.1"
 SCHEMA_CONTEXT = "https://schema.org"
-DEFAULT_PAGES = ("/", "/about/", "/coverage/", "/book/", "/availability/", "/contact/", "/privacy/")
+DEFAULT_PAGES = ("/", "/about/", "/coverage/", "/book/", "/contact/", "/privacy/")
 ROBOTS_DISALLOW = ("/api/", "/thanks/")
 _ABSOLUTE = re.compile(r"^https?://", re.IGNORECASE)
 

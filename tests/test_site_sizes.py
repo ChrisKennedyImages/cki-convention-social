@@ -124,11 +124,11 @@ class Menu(SizesCase):
         out = self.built()
         for rel, word, tab in (("index.html", "/#work", "/#work"), ("coverage/index.html", "/coverage/", None),
                                ("coverage/backstage/index.html", "/coverage/", None), ("about/index.html", "/about/", "/about/"),
-                               ("availability/index.html", "/availability/", None), ("contact/index.html", "/contact/", "/contact/"),
+                               ("contact/index.html", "/contact/", "/contact/"),
                                ("book/index.html", None, "/book/"), ("privacy/index.html", None, None), ("thanks/index.html", None, None)):
             page = self.page(out, rel)
             nav = re.search(NAV, page, flags=re.S).group(1)
-            self.assertEqual(re.findall(r">([A-Za-z ]+)</a>", nav), ["Work", "Coverage", "About", "Availability", "Contact"], rel)
+            self.assertEqual(re.findall(r">([A-Za-z ]+)</a>", nav), ["Work", "Coverage", "About", "Contact"], rel)
             self.assertEqual(re.findall(r'<a href="([^"]+)" aria-current="page">', nav), [word] if word else [], rel)
             self.assertNotRegex(nav, r"<b>\d\d</b>", "no numbering")
             tabs = re.search(TABS, page, flags=re.S).group(1)
@@ -138,7 +138,7 @@ class Menu(SizesCase):
             self.assertIn('<a href="/book/" class="quote q"', tabs)
             self.assertLess(page.index("</main>"), page.index('<nav class="tabbar"'), "the bar comes after the content, for readers")
         self.assertIn('<a href="/#work" aria-current="page">Work</a><a href="/coverage/">Coverage</a><a href="/about/">About</a>'
-                      '<a href="/availability/">Availability</a><a href="/contact/">Contact</a>', self.page(out, "index.html"))
+                      '<a href="/contact/">Contact</a>', self.page(out, "index.html"))
 
     def test_without_photos_work_leaves_the_menu_and_goes_to_the_coverage_pages_elsewhere(self):
         """A site built before any photo is cleared has no strip, so the menu has no Work word (a dead link otherwise);
@@ -147,7 +147,7 @@ class Menu(SizesCase):
         for rel in ("index.html", "coverage/index.html", "about/index.html"):
             page = self.page(out, rel)
             nav = re.search(NAV, page, flags=re.S).group(1)
-            self.assertEqual(re.findall(r">([A-Za-z ]+)</a>", nav), ["Coverage", "About", "Availability", "Contact"], rel)
+            self.assertEqual(re.findall(r">([A-Za-z ]+)</a>", nav), ["Coverage", "About", "Contact"], rel)
             self.assertNotIn("#work", page, rel)
             self.assertIn('<li><a href="/coverage/">Work</a></li>', page, rel)
             self.assertIn('<a href="/coverage/" class="work"', page, rel)
@@ -497,7 +497,7 @@ class CoveragePages(SizesCase):
         self.assertEqual(re.findall(r'<a href="/coverage/([a-z_]+)/"><span class="mono g">', index), offer.coverage_keys())
         self.assertEqual([b["@type"] for b in blocks_of(index)], ["BreadcrumbList"])
         self.assertEqual(sorted(p.name for p in (out / "assets").glob("cover-*-1600.jpg")), sorted(f"cover-{k}-{j}-1600.jpg" for i, k in enumerate(offer.coverage_keys()) for j in range(2 if i % 2 else 4)))
-        self.assertEqual(offer.public_pages(), ("/", "/about/", "/coverage/") + tuple(f"/coverage/{k}/" for k in offer.coverage_keys()) + ("/book/", "/availability/", "/contact/", "/privacy/"))
+        self.assertEqual(offer.public_pages(), ("/", "/about/", "/coverage/") + tuple(f"/coverage/{k}/" for k in offer.coverage_keys()) + ("/book/", "/contact/", "/privacy/"))
         self.assertEqual(build.PAGES, offer.public_pages())
         self.assertEqual(site_check.HTML_PATHS, build.PAGES, "the outside check reads the same list")
 
@@ -618,7 +618,7 @@ class Footer(SizesCase):
             page = self.page(out, rel)
             foot = page[page.index("<footer>"):page.index("</footer>")]
             self.assertEqual(re.findall(r'<li><a href="/coverage/([a-z_]+)/">', foot), offer.coverage_keys(), rel)
-            self.assertIn('<h4>Pages</h4><ul><li><a href="/#work">Work</a></li><li><a href="/about/">About</a></li><li><a href="/availability/">Availability</a></li>'
+            self.assertIn('<h4>Pages</h4><ul><li><a href="/#work">Work</a></li><li><a href="/about/">About</a></li>'
                           '<li><a href="/contact/">Contact</a></li><li><a href="/book/">Request a quote</a></li><li><a href="/privacy/">Privacy and photo removal</a></li></ul>', foot, rel)
             self.assertIn('<h4>Contact</h4><ul><li><a href="mailto:hello@eventcaliber.com">hello@eventcaliber.com</a></li></ul>', foot, rel)
             self.assertNotIn('rel="me', foot)
@@ -651,7 +651,7 @@ class EveryPage(SizesCase):
         description under 160 characters. The build refuses a longer one instead of letting a search engine cut it."""
         out = self.built()
         pages = sorted(out.rglob("*.html"))
-        self.assertEqual(len(pages), 18)
+        self.assertEqual(len(pages), 17, "the fifteen public pages, the thank-you page and 404.html")
         for p in pages:
             text = p.read_text()
             self.assertEqual(text.count("<h1"), 1, p)
@@ -692,7 +692,7 @@ class Head(SizesCase):
         only when set and sameAs from the socials; the About page has a Person block for each brother."""
         out = self.built()
         for rel in ("index.html", "about/index.html", "coverage/index.html", "coverage/stage/index.html", "contact/index.html",
-                    "book/index.html", "availability/index.html", "privacy/index.html"):
+                    "book/index.html", "privacy/index.html"):
             page = self.page(out, rel)
             canonical = BASE + "/" + rel.replace("index.html", "")
             self.assertIn(f'<link rel="canonical" href="{canonical}"><meta property="og:url" content="{canonical}">', page, rel)

@@ -110,8 +110,8 @@ class BuildWithoutPhotos(IsolatedCase):
         self.assertIn("built without photos", out)
 
     def test_the_menu_links_only_to_sections_that_exist(self):
-        """2026-10-14: the menu is words (Coverage, About, Availability, Contact; `<nav class="mono" aria-label="Pages">`),
-        and Coverage is its own page, so no link points at a /#coverage section any more. Work is in the menu only
+        """2026-10-14: the menu is words (Coverage, About, Contact; `<nav class="mono" aria-label="Pages">`; Availability
+        left it on 2026-10-31), and Coverage is its own page, so no link points at a /#coverage section any more. Work is in the menu only
         while the home page has the strip; without photos the footer and the phone's bar send Work to /coverage/."""
         nav_of = lambda text: re.search(r'<nav class="mono" aria-label="Pages">(.*?)</nav>', text).group(1)
         out = build.build(None, build.SitePhotos(), out=self.root / "dist")
@@ -119,7 +119,7 @@ class BuildWithoutPhotos(IsolatedCase):
             page = (out / rel).read_text()
             nav = nav_of(page)
             self.assertIn('href="/coverage/"', nav)
-            self.assertIn('href="/availability/"', nav)
+            self.assertNotIn("availability", nav)
             self.assertNotIn("#coverage", nav)
             self.assertNotIn("#work", nav)
             self.assertNotIn("#venues", nav)
