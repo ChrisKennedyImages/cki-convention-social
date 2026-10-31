@@ -259,9 +259,14 @@ class Site(IsolatedCase):
         hero = home[home.index('<section class="hero">'):home.index("</section>")]
         for gone in ('id="tc"', "ISO 3200", 'id="fr"', 'class="cross"', 'class="focus"', 'class="hud'):
             self.assertNotIn(gone, home, gone)
-        self.assertIn("<em>Two</em>", hero)
-        self.assertIn("<em>brothers,</em>", hero)
-        self.assertIn("<em>every room<b>.</b></em>", hero)
+        # 2026-10-31: the headline is the search phrase; his line and the years are the display line under it
+        self.assertIn("<em>Convention</em>", hero)
+        self.assertIn("<em>photographers,</em>", hero)
+        self.assertIn("<em>Washington, DC<b>.</b></em>", hero)
+        self.assertIn('<div class="kick mono c">Event and convention photography, Washington, DC and nationwide</div>', hero)
+        self.assertIn('</h1>\n<p class="sub">Two brothers, every room. More than thirty years each.</p>\n<p class="first">', hero,
+                      "the brothers line sits between the headline and the lead, in display type (.hero .sub)")
+        self.assertIn(".hero .sub{font:400 clamp(22px,2.6vw,40px)/1.08 var(--display);text-transform:uppercase", (out / "assets/site.css").read_text())
         self.assertIn("one of us will write back within 24 hours", hero)
         self.assertIn('<div class="vf" aria-hidden="true"><i></i><i></i><i></i><i></i></div>', hero, "the corner marks stay")
         self.assertIn("Who will be at your event", home)

@@ -465,7 +465,11 @@ def copy_text() -> dict:
         "description": (f"{o['company']} photographs conventions, conferences and galas in {AREA} and nationwide. "
                         "Photos reach attendees while the event is on. Request a quote."),
         "kicker": f"Event and convention photography, {AREA} and nationwide",
-        "first": f"{o['company']} photographs conventions, conferences, galas and award dinners in {AREA} and across the country.",
+        # 2026-10-31, SEO: the headline carries the words people search ("convention photographers", the city); his line and
+        # the years, the site's voice since 2026-10-12, are the display line under it ("Where does it say two brothers now each
+        # with 30+ years in the business?"; a paragraph was not it: "There is no large lead to see")
+        "sub": "Two brothers, every room. More than thirty years each.",
+        "first": f"{o['company']} photographs conventions, conferences, galas and award dinners in {AREA} and nationwide.",
         # Chris, 2026-10-12: the site is the two of them, in their own voice; no "fan conventions" on the main page; one of them
         # writes back within 24 hours. 2026-10-30: "Instant delivery needs to be a top priority for getting customers": it leads,
         # as the outcome and the organizer's choice; never the method, never a price, never proof. The hour for selects is not
@@ -573,7 +577,8 @@ def home_body(t: dict, hero: str, frames: list[tuple[str, str, str, str]], stack
 <section class="hero"><div class="photo"><div class="img">{hero}</div><canvas class="web" aria-hidden="true"></canvas>
 <div class="vf" aria-hidden="true"><i></i><i></i><i></i><i></i></div></div>
 <div class="copy"><div class="kick mono c">{e(t['kicker'])}</div>
-<h1 class="mega"><span><em>Two</em></span><span class="o"><em>brothers,</em></span><span><em>every room<b>.</b></em></span></h1>
+<h1 class="mega"><span><em>Convention</em></span><span class="o"><em>photographers,</em></span><span><em>Washington, DC<b>.</b></em></span></h1>
+<p class="sub">{e(t['sub'])}</p>
 <p class="first">{e(t['first'])}</p>
 <div class="row"><p class="lede">{e(t['lede_delivery'])} <a class="c" href="{e(offer.coverage_page('on_site_delivery'))}">More about instant delivery &#8599;</a> {e(t['lede_brothers'])}</p><a class="btn fill" href="/book/">Request a quote <span class="arr">&#8599;</span></a></div></div></section>
 {clients}{_ticker(short)}

@@ -175,8 +175,8 @@ class Hero(SizesCase):
         self.assertIn('loading="eager" fetchpriority="high"', photo)
         copy = hero[hero.index('<div class="copy">'):]
         self.assertIn('<div class="kick mono c">Event and convention photography, Washington, DC and nationwide</div>', copy)
-        self.assertIn('<h1 class="mega"><span><em>Two</em></span><span class="o"><em>brothers,</em></span><span><em>every room<b>.</b></em></span></h1>', copy)
-        self.assertIn('<p class="first">Event Caliber photographs conventions, conferences, galas and award dinners in Washington, DC and across the country.</p>', copy)
+        self.assertIn('<h1 class="mega"><span><em>Convention</em></span><span class="o"><em>photographers,</em></span><span><em>Washington, DC<b>.</b></em></span></h1>', copy)
+        self.assertIn('<p class="first">Event Caliber photographs conventions, conferences, galas and award dinners in Washington, DC and nationwide.</p>', copy)
         self.assertIn('<p class="lede">', copy)
         self.assertIn('<a class="btn fill" href="/book/">Request a quote', copy)
         self.assertEqual(home.count("<h1"), 1)
