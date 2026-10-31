@@ -1906,3 +1906,19 @@ approval would have gone out on Sunday's run. Now the send step looks at the day
 sending_day): on a Saturday or Sunday every approved note is held with the note "Held for Monday: organizer notes go
 out Monday to Friday only" and nothing leaves; Monday's 09:00 run sends them. The Approve message on the dashboard says
 so. Drafting, the address lookup and the opt-out pull still run every day.
+
+## 2026-10-31: every photo on the site says the writer's words; the kind of shot stays its label
+
+Chris: "SEO is VERY important for this website! Should the images have any keyword metadata or the site itself need
+anything else that can get it ranked #1?" Read from the live site: every photo said only the kind of shot, so four
+photos on the Main stage page all read "Main stage", the files were cover-stage-0-1600.jpg, the sitemap's title and
+caption and the words inside each file were the same two words. The weekly writer (seo/photo_text.py) already had a
+unique title, alt text, description and keywords for 269 photos, checked against the names rule and the copy rules,
+editable on the dashboard, and the site build never used them. Now it does (site/build.py words_for): the alt text,
+the file name (the writer's slug), the sitemap title and caption and the metadata inside the file are the writer's
+words; the strip's captions keep the kind of shot; a photo without the writer's text, or whose text no longer passes
+the copy rules, says the kind of shot everywhere, as before. Keywords embedded in a file carry little weight with
+Google; the alt text, the caption, the file name and the words around a photo carry it, so that is where the words go.
+He chose the order of the rest: a Google Business Profile with reviews (his), search words in the H1s with his line
+kept under them, venue, event-type and FAQ pages one at a time, and links earned from clients, venues and associations
+("Not crappy ones"; "Not now" to building the list on 2026-10-31).

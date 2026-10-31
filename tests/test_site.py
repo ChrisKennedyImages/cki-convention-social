@@ -13,6 +13,8 @@ from convention_social.core import config, db
 from convention_social.site import build
 from convention_social.render import meta
 from convention_social.seo import site_check
+from convention_social.core import db
+from convention_social.render.meta import ImageMeta
 from tests._base import IsolatedCase
 from tests._photos import jpeg_bytes
 
@@ -25,6 +27,54 @@ class Site(IsolatedCase):
     def built(self, preview=False, photos=None):
         photos = photos or build.SitePhotos(hero=[(im(), "a")], coverage=[(im(i), "c") for i in range(3)], venues=[(im(9), "v")])
         return build.build(None, photos, out=self.root / "dist", preview=preview)
+
+    def test_photos_say_the_writers_words_and_keep_the_shot_as_their_label(self):
+        """Chris, 2026-10-31: "SEO is VERY important for this website!" Before, every photo said only the kind of shot: alt,
+        file name, sitemap title and caption, the words inside the file. Now a photo with the weekly writer's text says that
+        (seo/photo_text.py, photo_seo); the strip's caption keeps the kind of shot; a photo without text, or whose text no
+        longer passes the copy rules, says the kind of shot everywhere, as before."""
+        from tests.test_wedding import event_photo
+        conn = db.connect()
+        self.addCleanup(conn.close)
+        pid = event_photo(conn, "p1", kind="business", final="business", quality=5)
+        row = {"id": pid, "shot_type": "main_stage", "subject": "event"}
+        self.assertEqual(build.words_for(conn, row), ("Main stage", ImageMeta(title="Main stage", description="Main stage", keywords=build.GENERIC_KEYWORDS), "", "Main stage"))
+        self.assertEqual(build.words_for(None, row)[0], "Main stage")
+        now = db.utcnow()
+        conn.execute("INSERT INTO photo_seo (photo_id, slug, title, alt, description, keywords, model, written_at) VALUES (?,?,?,?,?,?,?,?)",
+                     (pid, "stage-and-panel-878", "Speaker at a business conference", "A speaker at the podium addressing a full ballroom.",
+                      "A speaker presents to a packed ballroom during a business conference.", json.dumps(["event photography", "conference speaker"]), "claude", now))
+        alt, meta, slug, label = build.words_for(conn, row)
+        self.assertEqual((alt, slug, label), ("A speaker at the podium addressing a full ballroom.", "stage-and-panel-878", "Main stage"))
+        self.assertEqual((meta.title, meta.description, tuple(meta.keywords)),
+                         ("Speaker at a business conference", "A speaker presents to a packed ballroom during a business conference.", ("event photography", "conference speaker")))
+        conn.execute("UPDATE photo_seo SET title='Speaker — at the podium' WHERE photo_id=?", (pid,))
+        self.assertEqual(build.words_for(conn, row)[0], "Main stage", "words that fail the copy rules fall back to the kind of shot")
+        # the build: the file is named by the slug, the alt is the writer's, the sitemap and the file carry title and description,
+        # the strip's caption is still the kind of shot
+        page_photo = (im(2), "A panel of four seated speakers on a lit stage.", ImageMeta(title="Panel discussion on the main stage",
+                      description="Four speakers in conversation on a conference stage.", keywords=("event photography",)), "stage-and-panel-884", "Main stage")
+        photos = build.SitePhotos(hero=[(im(), "a")], venues=[(im(9), "v")],
+                                  coverage=[(im(1), alt, meta, "stage-and-panel-878", "Main stage"), (im(3), "c")],
+                                  pages={"stage": [page_photo]})
+        out = self.built(photos=photos)
+        self.assertTrue((out / "assets/stage-and-panel-878-1600.jpg").exists())
+        self.assertTrue((out / "assets/stage-and-panel-884-800.jpg").exists())
+        self.assertTrue((out / "assets/work-1-1600.jpg").exists(), "a photo without a slug keeps the old name")
+        home = (out / "index.html").read_text()
+        self.assertIn('alt="A speaker at the podium addressing a full ballroom."', home)
+        self.assertIn("<span>Main stage</span>", home, "the strip's caption is the kind of shot, not the title")
+        self.assertNotIn("Speaker at a business conference</span>", home)
+        stage = (out / "coverage/stage/index.html").read_text()
+        self.assertIn('src="/assets/stage-and-panel-884-1600.jpg"', stage)
+        self.assertIn('alt="A panel of four seated speakers on a lit stage."', stage)
+        sitemap = (out / "sitemap.xml").read_text()
+        self.assertIn("<image:title>Speaker at a business conference</image:title>", sitemap)
+        self.assertIn("<image:caption>A speaker presents to a packed ballroom during a business conference.</image:caption>", sitemap)
+        self.assertIn("<image:title>Panel discussion on the main stage</image:title>", sitemap)
+        data = (out / "assets/stage-and-panel-878-1600.jpg").read_bytes()
+        self.assertIn(b"Speaker at a business conference", data, "the title is inside the file")
+        self.assertIn(b"conference speaker", data, "and the keywords")
 
     def test_pages_and_form(self):
         out = self.built()

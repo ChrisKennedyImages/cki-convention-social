@@ -307,10 +307,10 @@ def pick_photos(conn: sqlite3.Connection, fetch: Callable[[dict], Image.Image],
         else:
             note("no usable landscape event photo for the hero")
     if hero is not None:
-        out.hero = [(image_of(hero), site_alt(hero))]
+        out.hero = [(image_of(hero), *words_for(conn, hero))]
     # Chris's gallery picks lead the grid (2026-10-29); the grid never shows the hero, so a pick that is the hero is said
     picks, out.grid_note = site_picks(conn, pool, hero_id=hero["id"] if hero is not None else None)
-    return _finish(out, lead_with_picks(picks, pool, hero), venues[:VENUE_ROWS], hero, pool, image_of)
+    return _finish(out, lead_with_picks(picks, pool, hero), venues[:VENUE_ROWS], hero, pool, image_of, lambda r: words_for(conn, r))
 
 
 def coverage_key_for(row: dict) -> str:
@@ -350,15 +350,44 @@ def pick_page_photos(pool: list[dict]) -> dict[str, list[dict]]:
     return pages
 
 
-def _finish(out: SitePhotos, grid: list[dict], rooms: list[dict], hero: Optional[dict], pool: list[dict], image_of) -> SitePhotos:
-    out.coverage = [(image_of(r), site_alt(r)) for r in grid]
+def _finish(out: SitePhotos, grid: list[dict], rooms: list[dict], hero: Optional[dict], pool: list[dict], image_of,
+            words: Callable[[dict], tuple] = lambda r: (site_alt(r),)) -> SitePhotos:
+    """`words(row)` gives what a photo says on the site: (alt[, meta, slug, label]), see words_for."""
+    out.coverage = [(image_of(r), *words(r)) for r in grid]
     out.links = [f"/coverage/{coverage_key_for(r)}/" if coverage_key_for(r) else "/coverage/" for r in grid]
-    out.venues = [(image_of(r), site_alt(r)) for r in rooms]
+    out.venues = [(image_of(r), *words(r)) for r in rooms]
     out.grid_ids = [r["id"] for r in ([hero] if hero is not None else []) + grid + rooms]
     pages = pick_page_photos(pool)
-    out.pages = {key: [(image_of(r), site_alt(r)) for r in picked] for key, picked in pages.items()}
+    out.pages = {key: [(image_of(r), *words(r)) for r in picked] for key, picked in pages.items()}
     out.ids = list(dict.fromkeys(out.grid_ids + [r["id"] for picked in pages.values() for r in picked]))
     return out
+
+
+GENERIC_KEYWORDS = ("event photography", "convention photography")
+
+
+def words_for(conn: Optional[sqlite3.Connection], row: dict) -> tuple[str, ImageMeta, str, str]:
+    """What a photo says on the site: (alt, meta, slug, label).
+
+    The weekly writer's words when the photo has them (seo/photo_text.py, photo_seo: alt text, a title, a description and
+    keywords for the file's own metadata and the sitemap, and a slug for the file name; each checked against the names
+    rule and the copy rules when written, and Chris can edit them on the dashboard). Before 2026-10-31 every photo said
+    only the kind of shot, so four photos on a page all read "Main stage" and the files were cover-stage-0.jpg (Chris:
+    "SEO is VERY important for this website!"). The kind of shot stays as the label: the strip's captions keep it, and
+    a photo without the writer's words, or whose words no longer pass the copy rules, says it everywhere, as before."""
+    label = site_alt(row)
+    generic = ImageMeta(title=label, description=label, keywords=GENERIC_KEYWORDS)
+    seo = db.one(conn, "SELECT slug, title, alt, description, keywords FROM photo_seo WHERE photo_id=?", (row["id"],)) if conn is not None and row.get("id") is not None else None
+    if seo is None:
+        return label, generic, "", label
+    title, alt, description = (seo["title"] or "").strip(), (seo["alt"] or "").strip(), (seo["description"] or "").strip()
+    if not (title and alt and description) or any(not copy_rules.check(t).ok for t in (title, alt, description)):
+        return label, generic, "", label
+    try:
+        keywords = tuple(str(k) for k in json.loads(seo["keywords"] or "[]") if str(k).strip()) or GENERIC_KEYWORDS
+    except ValueError:
+        keywords = GENERIC_KEYWORDS
+    return alt, ImageMeta(title=title, description=description, keywords=keywords), (seo["slug"] or "").strip(), label
 
 
 def site_alt(row: dict) -> str:
@@ -490,11 +519,12 @@ def check_copy(texts) -> None:
 
 
 def _photo(entry):
-    """(image, alt) or (image, alt, meta) -> (image, alt, meta)."""
-    if len(entry) == 3:
-        return entry
-    im, alt = entry
-    return im, alt, ImageMeta(title=alt, description=alt, keywords=("event photography", "convention photography"))
+    """(image, alt[, meta[, slug[, label]]]) -> (image, alt, meta, slug, label); fixtures and older callers pass two or three."""
+    im, alt = entry[0], entry[1]
+    meta = entry[2] if len(entry) > 2 else ImageMeta(title=alt, description=alt, keywords=GENERIC_KEYWORDS)
+    slug = entry[3] if len(entry) > 3 else ""
+    label = entry[4] if len(entry) > 4 else alt
+    return im, alt, meta, slug, label
 
 
 def _ticker(labels: list[str], rev: bool = False) -> str:
@@ -695,16 +725,16 @@ def build(conn: Optional[sqlite3.Connection], photos: SitePhotos, *, out: Path =
     hero, frames, stack, venues = "", [], [], []
     shown: list[tuple[str, str, ImageMeta]] = []          # (published path, alt, meta) for the sitemap and JSON-LD
     if photos.hero:
-        im, alt, m = _photo(photos.hero[0])
+        im, alt, m, _slug, _label = _photo(photos.hero[0])      # the hero file keeps its name: og:image and the preload point at it
         files = save_web(dodge_shadows(im), assets, "hero", m)
         hero = img_tag(files, alt, "100vw", eager=True)
         shown.append((f"/assets/{files[max(files)]}", alt, m))
     for i, entry in enumerate(photos.coverage):
-        im, alt, m = _photo(entry)
-        files = save_web(im, assets, f"work-{i}", m)
+        im, alt, m, slug, label = _photo(entry)
+        files = save_web(im, assets, slug or f"work-{i}", m)             # the file is named by the writer's slug when there is one
         shown.append((f"/assets/{files[max(files)]}", alt, m))
         tag = img_tag(files, alt, "(max-width:760px) 92vw, 62vw")        # a wide frame can be most of the screen: never a soft copy
-        frames.append((tag, (m.title or alt)[:34], photos.links[i] if i < len(photos.links) else "/coverage/", aspect(im)))
+        frames.append((tag, label[:34], photos.links[i] if i < len(photos.links) else "/coverage/", aspect(im)))   # the caption stays the kind of shot
         if i < 3:
             stack.append((tag, aspect(im)))
     # the coverage pages' photos (2026-10-14), each saved once however many pages show it
@@ -713,13 +743,13 @@ def build(conn: Optional[sqlite3.Connection], photos: SitePhotos, *, out: Path =
     for key, entries in photos.pages.items():
         page_files[key] = []
         for j, entry in enumerate(entries):
-            im, alt, m = _photo(entry)
+            im, alt, m, slug, _label = _photo(entry)
             if id(im) not in saved:
-                saved[id(im)] = save_web(im, assets, f"cover-{key}-{j}", m)
+                saved[id(im)] = save_web(im, assets, slug or f"cover-{key}-{j}", m)
             page_files[key].append((saved[id(im)], alt, m, aspect(im)))
     for i, entry in enumerate(photos.venues[:VENUE_ROWS]):
-        im, alt, m = _photo(entry)
-        files = save_web(im, assets, f"venue-{i}", m)
+        im, alt, m, slug, _label = _photo(entry)
+        files = save_web(im, assets, slug or f"venue-{i}", m)
         shown.append((f"/assets/{files[max(files)]}", alt, m))
         venues.append((img_tag(files, alt, "(max-width:760px) 100vw, 50vw"), aspect(im)))
     logos, left_out = client_logos(o)
