@@ -58,6 +58,7 @@ COVERAGE_SHOTS = {
     "evening_events": ("reception", "candid"), "dinners": ("reception",),
     "portraits": ("portrait",), "exhibition_hall": (),               # no expo title in the eight: the page fills from the pool
     "on_site_delivery": ("candid",),
+    "selects": ("main_stage", "portrait"),                       # what an organizer asks for first: the stage and the people
 }
 PAGE_ROWS, PAGE_MIN = 6, 3                 # photos on a coverage page: six of its room; under three, the rest of the pool fills in
 LASTMOD_FILE = "lastmod.json"      # DATA_ROOT/site: each page's content hash and the date it last changed
@@ -505,12 +506,16 @@ def _ticker(labels: list[str], rev: bool = False) -> str:
 
 
 def coverage_rows(coverage: list[dict], skip: str = "") -> str:
-    """The coverage list, each row opening its own page (2026-10-14; it led to the quote form)."""
+    """The coverage list, each row opening its own page (2026-10-14; it led to the quote form). An entry with "listed":
+    false in offer.json is a page, not a row (2026-10-31: instant delivery is the hero's detailed page, and the bottom
+    service is the selects: "the instant delivery doesn't need to be at the bottom service anymore that is the selects
+    option now")."""
     e = html.escape
+    rows = [c for c in coverage if c.get("listed", True)]
     return "".join(
         f'<a href="/coverage/{e(c["key"])}/"><span class="mono g">{i + 1:02d}</span>'
         f'<span class="t">{e(c["label"])}{f"<em>{e(c["note"])}</em>" if c.get("note") else ""}</span><span class="mono">&#8599;</span></a>'
-        for i, c in enumerate(coverage) if c["key"] != skip)
+        for i, c in enumerate(rows) if c["key"] != skip)
 
 
 def home_body(t: dict, hero: str, frames: list[tuple[str, str, str, str]], stack: list[tuple[str, str]], venues: list[tuple[str, str]],
@@ -530,8 +535,10 @@ def home_body(t: dict, hero: str, frames: list[tuple[str, str, str, str]], stack
     venue_html = "".join(f'<figure style="--ar:{ar}">{img}</figure>' for img, ar in venues[:VENUE_ROWS])
     steps = "".join(f'<div class="rv"><div class="n">{i:02d}</div><h3>{e(h)}</h3><p>{e(p)}</p></div>'
                     for i, (h, p) in enumerate(t["steps"], start=1))
-    short = ["Backstage", "Green rooms", "Breakouts", "Main stage", "Evening events", "Dinners", "Portraits",
-             "Exhibition halls", "Instant delivery"]
+    # the ticker says the rows in their order (2026-10-31: "Start with main stage and then selects... and backstage and
+    # green rooms should be the bottom two")
+    short = ["Main stage", "Selects within the hour", "Breakouts", "Evening events", "Dinners", "Portraits",
+             "Exhibition halls", "Backstage", "Green rooms"]
     return f"""
 <section class="hero"><div class="photo"><div class="img">{hero}</div><canvas class="web" aria-hidden="true"></canvas>
 <div class="vf" aria-hidden="true"><i></i><i></i><i></i><i></i></div></div>
@@ -733,7 +740,7 @@ def build(conn: Optional[sqlite3.Connection], photos: SitePhotos, *, out: Path =
     page_og: dict[str, str] = {}
     page_jsonld: dict[str, str] = {}
     page_noindex: set[str] = set()
-    coverage_list = tuple((c["key"], c["label"]) for c in o["coverage"])
+    coverage_list = tuple((c["key"], c["label"]) for c in offer.listed_coverage())      # the footer: rows, not every page
     # the coverage index and one page per coverage item (2026-10-14: every row led to the quote form)
     pages["coverage/index.html"] = (f"Event photography coverage in {AREA}", t["coverage_description"], f"""
 <section class="page cover"><div class="kick mono c">Coverage</div><h1>Every<br><span class="o">room</span><b>.</b></h1>

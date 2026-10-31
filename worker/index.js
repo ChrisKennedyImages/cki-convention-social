@@ -46,7 +46,7 @@ const PRIVATE_PREFIX = "private/";
 const FIELDS = { name: 120, email: 200, phone: 40, organization: 160, event_name: 200, event_kind: 20, start_date: 10,
                  end_date: 10, city: 120, venue: 200, attendance: 40, message: 4000 };
 const COVERAGE = ["backstage", "green_room", "breakouts", "evening_events", "dinners", "portraits", "exhibition_hall",
-                  "on_site_delivery", "stage"];      // portraits and headshots are one thing; so are exhibition halls, vendors and booths (Chris, 2026-10-12)
+                  "on_site_delivery", "stage", "selects"];      // portraits and headshots are one thing; so are exhibition halls, vendors and booths (Chris, 2026-10-12)
 const PER_HOUR = 5;
 const TURNSTILE_VERIFY = "https://challenges.cloudflare.com/turnstile/v0/siteverify";
 const TURNSTILE_HOSTS = ["eventcaliber.com", "www.eventcaliber.com"];   // the widget's domains (site/build.py TURNSTILE_SITE_KEY)
