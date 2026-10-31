@@ -26,6 +26,9 @@ NS = types.SimpleNamespace
 FROM = "hello@eventcaliber.com"
 POSTAL = "PO Box 100, Annapolis, MD 21401"
 DASHES = re.compile(r"[‐-―−]|\s-{1,2}\s")
+MONDAY = datetime(2026, 11, 2, 14, 0, tzinfo=timezone.utc)        # 10:00 in Washington on a Monday
+SATURDAY = datetime(2026, 10, 31, 14, 0, tzinfo=timezone.utc)     # 10:00 on the Saturday Chris asked
+
 FACTS = {"event_name": "Sample Con 2027", "event_kind": "fan", "start_date": "2027-03-05", "end_date": "2027-03-07",
          "city": "Baltimore", "venue": "Convention Center", "organizer": "Sample Events LLC"}
 
@@ -57,6 +60,10 @@ class FakeSite:
 class OutreachCase(IsolatedCase):
     def setUp(self):
         super().setUp()
+        # the weekday gate reads a pinned clock, a Monday, so these tests send on any day of the week (2026-10-31)
+        clock = mock.patch.object(outreach, "now_utc", lambda: MONDAY)
+        clock.start()
+        self.addCleanup(clock.stop)
         for key in ("OUTREACH_DAILY_DRAFTS", "OUTREACH_DAILY_SENDS", "OUTREACH_MODEL", "AI_MONTHLY_CAP_USD", "SITE_BASE_URL"):
             os.environ.pop(key, None)
         os.environ["BRAND_FROM_EMAIL"] = FROM
@@ -342,6 +349,27 @@ class Sending(OutreachCase):
         stats = outreach.send_approved(self.ctx(), opt_outs_synced=True)
         self.assertEqual(stats["redrafted"], 2)
         self.assertEqual((self.status(oid), self.status(other), self.outbox()), ("draft", "draft", []))
+
+    def test_approved_notes_wait_for_a_weekday(self):
+        """Chris, 2026-10-31: "If I approve outreach emails, does that mean they will be sent today? I only want them sent
+        Monday - Friday and not on weekends." On a Saturday or Sunday the approved notes are held with a note and nothing
+        leaves; Monday's run sends them."""
+        oid = self.row()
+        with mock.patch.object(outreach, "now_utc", lambda: SATURDAY):
+            stats = outreach.send_approved(self.ctx(), opt_outs_synced=True)
+            self.assertEqual((stats["weekend"], stats["would_send"]), (1, 0))
+            self.assertEqual((self.status(oid), self.outbox()), ("approved", []))
+            self.assertEqual(db.one(self.conn, "SELECT notes FROM outreach WHERE id=?", (oid,))["notes"], outreach.WEEKEND_NOTE)
+            self.assertIn("held for Monday=1", outreach.run(self.ctx(), api=self.api()))
+            self.assertEqual(self.outbox(), [])
+            sunday = SATURDAY + timedelta(days=1)
+            self.assertFalse(outreach.sending_day(config.get_config(), sunday))
+        self.assertTrue(outreach.sending_day(config.get_config(), MONDAY))
+        # Friday 23:30 in Washington is still Friday there, though Saturday in UTC
+        self.assertTrue(outreach.sending_day(config.get_config(), datetime(2026, 11, 7, 3, 30, tzinfo=timezone.utc)))
+        stats = outreach.send_approved(self.ctx(), opt_outs_synced=True)
+        self.assertEqual((stats["would_send"], stats["weekend"]), (1, 0))
+        self.assertEqual(len(self.outbox()), 1)
 
     def test_daily_send_cap(self):
         for i in range(12):

@@ -1897,3 +1897,12 @@ license and acquireLicensePage. Chris: point both at Contact, so anyone wanting 
 vocabulary; tests/test_banned_words.py). Chris asked "Does this mess with my other suites", was told nothing outside
 this repo is touched, and ruled: allow exactly those two schema.org names, nothing else. Requesting indexing for the
 pages that matter is his, in URL inspection, a few a day.
+
+## 2026-10-31: organizer notes go out Monday to Friday only
+
+Chris, a Saturday: "If I approve outreach emails, does that mean they will be sent today? I only want them sent Monday -
+Friday and not on weekends." The agent fires every day at 09:00 in his zone and had no weekday rule, so a Saturday
+approval would have gone out on Sunday's run. Now the send step looks at the day in his zone first (agents/outreach.py
+sending_day): on a Saturday or Sunday every approved note is held with the note "Held for Monday: organizer notes go
+out Monday to Friday only" and nothing leaves; Monday's 09:00 run sends them. The Approve message on the dashboard says
+so. Drafting, the address lookup and the opt-out pull still run every day.

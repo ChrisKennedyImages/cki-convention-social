@@ -46,12 +46,30 @@ def daily_sends() -> int:
     return _int("OUTREACH_DAILY_SENDS", DEFAULT_DAILY_SENDS)
 
 
+def _tz(cfg: config.Config):
+    try:
+        return ZoneInfo(cfg.timezone)
+    except Exception:  # noqa: BLE001
+        return timezone.utc
+
+
+def now_utc() -> datetime:
+    """The clock the weekday gate reads; tests pin it to a known day."""
+    return datetime.now(timezone.utc)
+
+
+def sending_day(cfg: config.Config, now: datetime | None = None) -> bool:
+    """Monday to Friday in the founder's zone. Chris, 2026-10-31: "I only want them sent Monday - Friday and not on weekends."
+    The agent fires every day at 09:00; on a Saturday or Sunday the approved notes wait, and Monday's run sends them."""
+    return (now or now_utc()).astimezone(_tz(cfg)).weekday() < 5
+
+
+WEEKEND_NOTE = "Held for Monday: organizer notes go out Monday to Friday only."
+
+
 def start_of_today(cfg: config.Config, now: datetime | None = None) -> str:
     """Local midnight (TIMEZONE) as a UTC timestamp in db.utcnow()'s format, for the daily caps."""
-    try:
-        tz = ZoneInfo(cfg.timezone)
-    except Exception:  # noqa: BLE001
-        tz = timezone.utc
+    tz = _tz(cfg)
     local = (now or datetime.now(timezone.utc)).astimezone(tz)
     midnight = datetime.combine(local.date(), time(0, 0), tzinfo=tz)
     return midnight.astimezone(timezone.utc).replace(microsecond=0).isoformat()
@@ -167,7 +185,12 @@ def draft_new(ctx: runner.Context) -> dict:
 
 # ---------------------------------------------------------------------- 3. sends
 def send_approved(ctx: runner.Context, *, opt_outs_synced: bool) -> dict:
-    stats = {"sent": 0, "would_send": 0, "failed": 0, "held": 0, "redrafted": 0, "opted_out": 0, "never": 0, "over_cap": 0}
+    stats = {"sent": 0, "would_send": 0, "failed": 0, "held": 0, "redrafted": 0, "opted_out": 0, "never": 0, "over_cap": 0, "weekend": 0}
+    if not sending_day(ctx.cfg):
+        for row in db.rows(ctx.conn, "SELECT id FROM outreach WHERE status='approved' ORDER BY id"):
+            ctx.conn.execute("UPDATE outreach SET notes=?, updated_at=? WHERE id=?", (WEEKEND_NOTE, db.utcnow(), row["id"]))
+            stats["weekend"] += 1
+        return stats
     used = db.one(ctx.conn, "SELECT COUNT(*) n FROM outreach WHERE status IN ('sent','would_send') AND last_attempt_at >= ?",
                   (start_of_today(ctx.cfg),))["n"]
     room = max(0, daily_sends() - used)
@@ -250,7 +273,7 @@ def run(ctx: runner.Context, api: UnsubscribeAPI | None = None) -> str:
             f"refused={looked['refused']}; drafted={d['drafted']} (rewritten in the template={d['rewritten']}, "
             f"left for tomorrow={d['left_for_tomorrow']}, on do-not-contact={d['skipped_blocked']}, never contacted={d['skipped_never']}); "
             f"sent={s['sent']} would_send={s['would_send']} failed={s['failed']} held={s['held']} back to draft={s['redrafted']} "
-            f"opted out={s['opted_out']} never={s['never']} over the daily cap={s['over_cap']}")
+            f"opted out={s['opted_out']} never={s['never']} over the daily cap={s['over_cap']} held for Monday={s['weekend']}")
 
 
 if __name__ == "__main__":

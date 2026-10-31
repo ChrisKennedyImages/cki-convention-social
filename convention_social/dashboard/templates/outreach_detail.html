@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block body %}
-{% set notes = {'saved': ('Saved.', ''), 'approved': ('Approved. It goes out on the next outreach run (daily at 09:00).', ''),
+{% set notes = {'saved': ('Saved.', ''), 'approved': ('Approved. It goes out on the next outreach run (09:00, Monday to Friday; a weekend approval waits for Monday).', ''),
                 'not_ready': ('Not approved: fix what is listed below first.', 'bad'), 'locked': ('This note can no longer be changed.', 'bad'),
                 'follow_up': ('Follow-up drafted. Edit it, then approve it.', ''), 'no_follow_up': ('No follow-up: ' ~ (follow_up_why or 'not allowed for this note'), 'bad')} %}
 {% if msg in notes %}<div class="msg {{ notes[msg][1] }}">{{ notes[msg][0] }}</div>{% endif %}
