@@ -30,24 +30,6 @@ FACTS = {"event_name": "Sample Con 2027", "event_kind": "fan", "start_date": "20
          "city": "Baltimore", "venue": "Convention Center", "organizer": "Sample Events LLC"}
 
 
-class FakeClaude:
-    def __init__(self, subject="Photography for Sample Con 2027", body=None, stop="end_turn"):
-        self.subject = subject
-        self.body = body if body is not None else (
-            "Hello,\n\nI saw that Sample Con 2027 is coming to Baltimore on March 5. Do you have a photographer lined up yet?\n\n"
-            "I cover portraits, the main stage and the exhibition hall, and can deliver approved images on site.\n\n"
-            "Chris\nEvent Caliber")
-        self.stop = stop
-        self.calls = []
-        self.beta = self
-        self.messages = self
-
-    def create(self, **kw):
-        self.calls.append(kw)
-        t = NS(type="text", text=json.dumps({"subject": self.subject, "body": self.body}))
-        return NS(content=[t], stop_reason=self.stop, model=kw["model"], usage=NS(input_tokens=900, output_tokens=300))
-
-
 class FakeSite:
     """The Worker's opt-out store: GET /api/unsubscribes and POST /api/unsubscribes/ack."""
 
@@ -128,83 +110,39 @@ class Drafting(OutreachCase):
         d = draft.template_first(FACTS)
         self.assertTrue(d.body)
         self.assertEqual(d.subject, "Photography for Sample Con 2027")
-        for words in ("Sample Con 2027", "March 5 to 7, 2027", "Baltimore", "photographer lined up", "Exhibition halls",
-                      "while the event is still on", "kept to your staff", "quote"):
-            self.assertIn(words.lower(), d.body.lower(), words)
+        # Chris, 2026-10-31: "Here is what I want it to say Specifically and this should be the template for all of them."
+        self.assertEqual(d.body, "\n".join([
+            "Hello,", "",
+            "I'm reaching out regarding Sample Con 2027, taking place March 5–7, 2027, in Baltimore.", "",
+            "We're local convention and event photographers offering a unique service: delivering photos to attendees while the "
+            "event is still underway. We can provide this service to all attendees or exclusively to your staff, depending on your preference.", "",
+            "For an event like yours, we can cover keynotes and main-stage presentations, breakout sessions and panels, dinners and "
+            "receptions, and portraits. We also offer flexible coverage before, during, and into the evening to accommodate your event schedule.", "",
+            "Do you already have a photographer lined up for March? If not, I'd love to hear a little about your plans so I can put "
+            "together a quote tailored to your needs.", "",
+            "Chris", "Event Caliber"]))
         for word in ("face match", "facematch", "selfie", "badge", "every photo they are in"):
             self.assertNotIn(word, d.body.lower(), "Chris, 2026-10-12: delivery is a feature, never the name or the steps")
-        self.assertTrue(d.body.endswith("Chris\nEvent Caliber"))
         self.assertTrue(copy_rules.check(d.subject + "\n" + d.body).ok)
         self.assertEqual(compliance.text_problems(d.subject, d.body), [])
-        self.assertIsNone(DASHES.search(d.body + d.subject))
-        self.assertNotIn("-", d.body)                     # not even a hyphen: dates are written in words
+        # his dates carry an en dash; no other dash anywhere (the copy rules refuse a dash used as punctuation)
+        self.assertEqual(re.findall(r"\S*[‐-―−]\S*", d.body + d.subject), ["5–7,"])
+        self.assertEqual(draft.dates_as_chris_writes_them("2027-03-30", "2027-04-02"), "March 30–April 2, 2027")
+        self.assertEqual(draft.dates_as_chris_writes_them("2026-12-31", "2027-01-02"), "December 31, 2026–January 2, 2027")
+        self.assertEqual(draft.dates_as_chris_writes_them("2027-03-11", ""), "March 11, 2027")
+        self.assertEqual(draft.dates_as_chris_writes_them("someday", "2027-03-11"), "")
         self.assertNotRegex(d.body.lower(), r"official|client|\$|price")
+        # the word for their event comes off its name; the month off its first day; nothing is said that is not known
+        self.assertIn("while the meeting is still underway", draft.template_first({"event_name": "AMWA 112th Annual Meeting"}).body)
+        self.assertIn("while the show is still underway", draft.template_first({"event_name": "Small Business Expo"}).body)
+        bare = draft.template_first({"event_name": "Sample Con"}).body
+        self.assertIn("I'm reaching out regarding Sample Con.\n", bare)
+        self.assertIn("Do you already have a photographer lined up? If not,", bare)
+        self.assertEqual(draft.template_first({"event_name": "Expo - Washington, D.C.", "city": "Washington, DC"}).subject,
+                         "Photography for Expo, Washington, D.C.")
         f = draft.template_follow_up(FACTS)
         self.assertEqual(compliance.text_problems(f.subject, f.body), [])
         self.assertIn("Sample Con 2027", f.body)
-
-    def test_claude_draft_call_shape_and_spend(self):
-        os.environ["AI_MONTHLY_CAP_USD"] = "5"
-        config.reset()
-        fake = FakeClaude()
-        d = draft.draft_first(self.conn, FACTS, client=fake)
-        self.assertEqual(d.model, "claude-opus-5")
-        self.assertIn("photographer lined up", d.body)
-        kw = fake.calls[0]
-        self.assertEqual((kw["betas"], kw["fallbacks"], kw["thinking"]), (["server-side-fallback-2026-07-01"], "default", {"type": "adaptive"}))
-        self.assertEqual(kw["output_config"]["format"]["type"], "json_schema")
-        self.assertEqual(kw["output_config"]["effort"], "medium")
-        self.assertIn("Sample Con 2027", kw["messages"][0]["content"])
-        self.assertIn("Exhibition halls", kw["messages"][0]["content"])      # coverage comes from offer.json
-        self.assertGreater(spend.cycle_to_date(self.conn), 0)
-
-    def test_a_draft_that_breaks_a_rule_is_thrown_away(self):
-        os.environ["AI_MONTHLY_CAP_USD"] = "5"
-        config.reset()
-        bad = {"price": "Hello,\nCoverage starts at $900 a day.\nChris\nEvent Caliber",
-               "official": "Hello,\nI was the official photographer of a big show.\nChris\nEvent Caliber",
-               "clients": "Hello,\nOur past clients loved it.\nChris\nEvent Caliber",
-               "covered": "Hello,\nI photographed your event before.\nChris\nEvent Caliber",
-               "promise": "Hello,\nGuaranteed the best shots.\nChris\nEvent Caliber",
-               "link": "Hello,\nSee https://eventcaliber.com for more.\nChris\nEvent Caliber"}
-        for why, body in bad.items():
-            d = draft.draft_first(self.conn, FACTS, client=FakeClaude(body=body))
-            self.assertEqual(d.model, "template", why)
-            self.assertIn("thrown away", d.note, why)
-            self.assertEqual(compliance.text_problems(d.subject, d.body), [], why)
-        d = draft.draft_first(self.conn, FACTS, client=FakeClaude(subject="Re: your show", body=FakeClaude().body))
-        self.assertEqual(d.model, "template")
-        refused = draft.draft_first(self.conn, FACTS, client=FakeClaude(stop="refusal"))
-        self.assertEqual(refused.model, "template")
-
-    def test_dashes_from_the_model_become_commas(self):
-        os.environ["AI_MONTHLY_CAP_USD"] = "5"
-        config.reset()
-        body = "Hello,\nSample Con 2027 — what a weekend. Do you have a photographer lined up yet?\nChris\nEvent Caliber"
-        d = draft.draft_first(self.conn, FACTS, client=FakeClaude(body=body))
-        self.assertEqual(d.model, "claude-opus-5")
-        self.assertIsNone(DASHES.search(d.body))
-
-    def test_an_api_error_costs_one_claude_draft_not_the_run(self):
-        os.environ["AI_MONTHLY_CAP_USD"] = "5"
-        config.reset()
-
-        class Down(FakeClaude):
-            def create(self, **kw):
-                raise ConnectionError("api down")
-        d = draft.draft_first(self.conn, FACTS, client=Down())
-        self.assertEqual(d.model, "template")
-        self.assertIn("ConnectionError", d.note)
-        self.assertEqual(compliance.text_problems(d.subject, d.body), [])
-
-    def test_no_call_at_the_cap(self):
-        os.environ["AI_MONTHLY_CAP_USD"] = "1"
-        config.reset()
-        spend.record(self.conn, "content", "claude-opus-5", 1_000_000, 0)
-        fake = FakeClaude()
-        d = draft.draft_first(self.conn, FACTS, client=fake)
-        self.assertEqual((d.model, fake.calls), ("template", []))
-        self.assertIn("cap", d.note)
 
 
 class Agent(OutreachCase):
@@ -224,6 +162,23 @@ class Agent(OutreachCase):
         outreach.run(self.ctx(dry=False), api=self.api())
         self.assertEqual(self.outbox(), [])
         self.assertEqual(db.one(self.conn, "SELECT COUNT(*) n FROM outreach")["n"], 1)   # one note per prospect per event
+
+    def test_first_notes_claude_wrote_are_rewritten_in_the_template_unless_chris_touched_them(self):
+        now = db.utcnow()
+        common = dict(kind="first", event_key="k", event_name="Sample Con 2027", event_kind="business", start_date="2027-03-05",
+                      end_date="2027-03-07", city="Baltimore", email="press@samplecon.example", subject="Photography for Sample Con 2027",
+                      status="draft", model="claude-opus-5", drafted_at=now, created_at=now)
+        untouched = db.insert(self.conn, "outreach", body="Hello,\n\nI am Chris, a convention and event photographer.\n\nChris\nEvent Caliber",
+                              updated_at=now, token=keys.new_token(), **common)
+        edited = db.insert(self.conn, "outreach", body="Hello,\n\nChris wrote this himself.\n\nChris\nEvent Caliber",
+                           updated_at="2026-10-31T14:00:00+00:00", token=keys.new_token(), **{**common, "email": "other@samplecon.example"})
+        line = outreach.run(self.ctx(), api=self.api())
+        self.assertIn("rewritten in the template=1", line)
+        a = db.one(self.conn, "SELECT body, model, updated_at FROM outreach WHERE id=?", (untouched,))
+        self.assertEqual(a["body"], draft.template_first({"event_name": "Sample Con 2027", "start_date": "2027-03-05", "end_date": "2027-03-07", "city": "Baltimore"}).body)
+        self.assertEqual(a["model"], "template")
+        self.assertEqual(db.one(self.conn, "SELECT body FROM outreach WHERE id=?", (edited,))["body"], "Hello,\n\nChris wrote this himself.\n\nChris\nEvent Caliber")
+        self.assertIn("rewritten in the template=0", outreach.run(self.ctx(), api=self.api()), "once")
 
     def test_daily_draft_cap(self):
         for i in range(7):

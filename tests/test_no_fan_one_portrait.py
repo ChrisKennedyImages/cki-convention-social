@@ -101,8 +101,9 @@ class OnePortrait(IsolatedCase):
         self.assertNotIn("headshot", classify.SHOT_TYPES)
         self.assertIn("a headshot or a posed group", classify.FINAL_SYSTEM)
         self.assertNotIn("headshot", json.dumps(classify.FINAL_SCHEMA))
-        self.assertNotIn("headshots", draft.COVERAGE_BY_KIND["business"])
-        self.assertIn("portraits", draft.COVERAGE_BY_KIND["business"])
+        note = draft.template_first({"event_name": "Sample Con", "event_kind": "business"}).body.lower()
+        self.assertNotIn("headshot", note)
+        self.assertIn("portraits", note)
         self.assertEqual(dict(dashboard.SHOT_CHOICES).get("headshot"), None)
         self.assertEqual(dict(dashboard.SHOT_CHOICES)["portrait"], "Portrait")
 
@@ -140,7 +141,7 @@ class OneHall(IsolatedCase):
             self.assertNotIn(word, photo_text.SHOT_WORDS)
             self.assertNotIn(word, meta.SHOT_WORDS)
             self.assertNotIn(word, seo_plan.ROOM)
-        self.assertNotIn("vendors", draft.COVERAGE_BY_KIND["fan"])
+        self.assertNotIn("vendors", draft.template_first({"event_name": "Fan Con", "event_kind": "fan"}).body.lower())
 
     def test_the_migration_turns_stored_booths_into_the_hall(self):
         from tests.test_wedding import event_photo

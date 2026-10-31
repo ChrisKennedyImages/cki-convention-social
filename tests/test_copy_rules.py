@@ -21,6 +21,9 @@ class CopyRules(unittest.TestCase):
     def test_dashes_are_blocked(self):
         for text in ("Backstage — before the panel.", "Day one – done.", "Calm - then chaos."):
             self.assertIn("dash", [b.rule for b in copy_rules.check(text).blocks], text)
+        # a range is not punctuation: Chris writes dates "March 11–14, 2027" in his outreach template (2026-10-31)
+        for text in ("taking place March 11–14, 2027, in Washington, DC.", "Doors 9–5.", "December 31, 2026–January 2, 2027"):
+            self.assertNotIn("dash", [b.rule for b in copy_rules.check(text).blocks], text)
 
     def test_hyphenated_words_are_fine(self):
         self.assertTrue(copy_rules.check("Well-lit portraits between the sessions.").ok)

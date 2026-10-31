@@ -92,16 +92,25 @@ def _save_draft(ctx: runner.Context, row_id: int, d: draft.OutreachDraft) -> Non
                      (d.subject, d.body, d.model, d.note or None, now, now, row_id))
 
 
-def draft_new(ctx: runner.Context, client=None) -> dict:
-    stats = {"drafted": 0, "claude": 0, "template": 0, "skipped_blocked": 0, "skipped_never": 0, "left_for_tomorrow": 0}
+def retemplate_unapproved(conn) -> int:
+    """2026-10-31: first notes Claude drafted that Chris has not touched are rewritten in his template (draft.py), so what he
+    reads on the Outreach page is the note he asked for. An edited draft (updated since it was drafted) is his and stays."""
+    n = 0
+    for row in db.rows(conn, "SELECT * FROM outreach WHERE kind='first' AND status='draft' AND model NOT IN ('template', 'chris') "
+                            "AND updated_at = drafted_at ORDER BY id"):
+        d = draft.draft_first(row)
+        conn.execute("UPDATE outreach SET subject=?, body=?, model=?, notes=?, updated_at=? WHERE id=?",
+                     (d.subject, d.body, d.model, d.note or None, db.utcnow(), row["id"]))
+        n += 1
+    return n
+
+
+def draft_new(ctx: runner.Context) -> dict:
+    stats = {"drafted": 0, "rewritten": retemplate_unapproved(ctx.conn), "skipped_blocked": 0, "skipped_never": 0, "left_for_tomorrow": 0}
     made_today = db.one(ctx.conn, "SELECT COUNT(*) n FROM outreach WHERE kind='first' AND drafted_at >= ?",
                         (start_of_today(ctx.cfg),))["n"]
     room = max(0, daily_drafts() - made_today)
     today = datetime.now(timezone.utc).date().isoformat()
-
-    def count(d: draft.OutreachDraft):
-        stats["drafted"] += 1
-        stats["template" if d.model == "template" else "claude"] += 1
 
     # prospects Chris added by hand
     for row in db.rows(ctx.conn, "SELECT * FROM outreach WHERE status='queued' ORDER BY id"):
@@ -117,9 +126,9 @@ def draft_new(ctx: runner.Context, client=None) -> dict:
         if room <= 0:
             stats["left_for_tomorrow"] += 1
             continue
-        d = draft.draft_first(ctx.conn, row, client=client, agent=ctx.agent)
+        d = draft.draft_first(row)
         _save_draft(ctx, row["id"], d)
-        count(d)
+        stats["drafted"] += 1
         room -= 1
 
     # scout finds with an organizer email
@@ -144,14 +153,14 @@ def draft_new(ctx: runner.Context, client=None) -> dict:
             continue
         facts = {"event_name": ev["name"], "event_kind": ev["kind"], "start_date": ev["start_date"], "end_date": ev["end_date"],
                  "city": ev["city"], "venue": ev["venue"], "organizer": ev["organizer"]}
-        d = draft.draft_first(ctx.conn, facts, client=client, agent=ctx.agent)
+        d = draft.draft_first(facts)
         now = db.utcnow()
         db.insert(ctx.conn, "outreach", kind="first", scout_event_id=ev["id"], event_key=ev["dedup_key"], event_name=ev["name"],
                   event_kind=ev["kind"], start_date=ev["start_date"], end_date=ev["end_date"], city=ev["city"], venue=ev["venue"],
                   website=ev["website"], organizer=ev["organizer"], email=email, subject=d.subject, body=d.body,
                   status="draft", token=keys.new_token(), model=d.model, notes=d.note or None, drafted_at=now,
                   created_at=now, updated_at=now)
-        count(d)
+        stats["drafted"] += 1
         room -= 1
     return stats
 
@@ -215,7 +224,7 @@ def send_approved(ctx: runner.Context, *, opt_outs_synced: bool) -> dict:
     return stats
 
 
-def run(ctx: runner.Context, api: UnsubscribeAPI | None = None, client=None) -> str:
+def run(ctx: runner.Context, api: UnsubscribeAPI | None = None) -> str:
     api = api or UnsubscribeAPI.from_config()
     synced = False
     if api is None:
@@ -231,14 +240,14 @@ def run(ctx: runner.Context, api: UnsubscribeAPI | None = None, client=None) -> 
     # 2026-10-30: the organizer's address is read off the event's own site first (outreach/emails.py); the scout had found
     # eight events and an address for none, so nothing was ever drafted ("Not one outreach email has been sent")
     looked = emails.lookup_missing(ctx.conn)
-    d = draft_new(ctx, client=client)
+    d = draft_new(ctx)
     if d["drafted"]:
         n = d["drafted"]
         notify.push(f"{ctx.cfg.brand_name}: organizer notes to approve", f"{n} organizer note{'s' if n != 1 else ''} drafted. Tap to read them; nothing leaves without your Approve.",
                     dry_run=ctx.dry_run, priority="default", click=notify.link("/outreach"), conn=ctx.conn, agent=ctx.agent)
     s = send_approved(ctx, opt_outs_synced=synced)
     return (f"{'DRY RUN ' if ctx.dry_run else ''}{opt}; addresses looked for={looked['looked']} found={looked['found']} "
-            f"refused={looked['refused']}; drafted={d['drafted']} (claude={d['claude']} template={d['template']}, "
+            f"refused={looked['refused']}; drafted={d['drafted']} (rewritten in the template={d['rewritten']}, "
             f"left for tomorrow={d['left_for_tomorrow']}, on do-not-contact={d['skipped_blocked']}, never contacted={d['skipped_never']}); "
             f"sent={s['sent']} would_send={s['would_send']} failed={s['failed']} held={s['held']} back to draft={s['redrafted']} "
             f"opted out={s['opted_out']} never={s['never']} over the daily cap={s['over_cap']}")

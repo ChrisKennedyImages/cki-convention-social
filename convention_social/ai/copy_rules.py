@@ -6,7 +6,7 @@ words silently except the dash tidy, which ai.claude.tidy already applies.
 
 Blocks:
   price       any money amount, rate or discount (prices are never published)
-  dash        an en or em dash, or a spaced hyphen used as a dash
+  dash        an en or em dash, or a spaced hyphen, used as punctuation; a dash after a digit is a range and passes
   affiliation "official photographer", "official partner", "sponsored by",
               "affiliated with", "trusted by", "clients include" and the like,
               unless the event is confirmed official (none are, 2026-10-09)
@@ -39,7 +39,9 @@ PRICE = re.compile(
     r"|(?:\b\d+\s?%\s?off\b)|(?:\bdiscount|\bcoupon|\bpromo code|\bsale price|\bstarting at\b|\bstarts at\b|\bonly\s+\$)",
     re.IGNORECASE,
 )
-DASH = re.compile(r"[‐-―−]|\s-{1,2}\s")
+# a dash used as punctuation. One that follows a digit is a range ("March 11–14, 2027", "9–5") and passes: Chris writes
+# dates that way in his outreach template (2026-10-31), and the no-dash rule was never his, it came with the skeleton.
+DASH = re.compile(r"(?<!\d)[‐-―−]|\s-{1,2}\s")
 AFFILIATION = re.compile(
     r"\bofficial\s+(?:photographer|photography|partner|sponsor|media|vendor)"
     r"|\bsponsored\s+by\b|\baffiliated\s+with\b|\bin\s+partnership\s+with\b|\bpartnered\s+with\b|\bendorsed\s+by\b"
@@ -90,7 +92,7 @@ def check(text: str, *, official: bool = False, allow_price: bool = False, names
     if m:
         report.blocks.append(Block("price", f"mentions a price or discount ({m.group(0).strip()!r}); prices are never published"))
     if DASH.search(text):
-        report.blocks.append(Block("dash", "uses a dash; use a comma or a period"))
+        report.blocks.append(Block("dash", "uses a dash as punctuation; use a comma or a period (a range like March 11–14 is fine)"))
     m = AFFILIATION.search(text)
     if m and not official:
         report.blocks.append(Block("affiliation", f"claims a tie to the event ({m.group(0)!r}) that Chris has not confirmed"))

@@ -1838,3 +1838,31 @@ else, never a name, hidden in the page itself so it shows nothing while nothing 
 and when the API is down or answers with an error; days in a row read as one run ("Nov 7 to 9"); the old address
 /availability/ answers 301 to /book/ in the Worker. The API is untouched: GET /api/availability still gives booked dates
 only, the Mini's PUT (the inbox agent) still feeds it, and the quote page's line reads the same API.
+
+## 2026-10-31: the organizer note is Chris's template, every time
+
+Chris read the first two drafts (Claude's, 13:00 UTC run): "I just read it and wasn't really satisfied. Here is what I want
+it to say Specifically and this should be the template for all of them." His text, which every first note now follows
+with the event's name, dates, city and month in their places (outreach/draft.py), Claude no longer writing them:
+
+> Hello,
+>
+> I'm reaching out regarding AMWA's 112th Annual Meeting, taking place March 11–14, 2027, in Washington, DC.
+>
+> We're local convention and event photographers offering a unique service: delivering photos to attendees while the
+> meeting is still underway. We can provide this service to all attendees or exclusively to your staff, depending on
+> your preference.
+>
+> For an event like yours, we can cover keynotes and main-stage presentations, breakout sessions and panels, dinners
+> and receptions, and portraits. We also offer flexible coverage before, during, and into the evening to accommodate
+> your event schedule.
+>
+> Do you already have a photographer lined up for March? If not, I'd love to hear a little about your plans so I can
+> put together a quote tailored to your needs.
+
+His text is followed as written, the en dash in the dates included. The no-dash rule in the copy rules
+(ai/copy_rules.py) had refused it; that rule came with the skeleton on 2026-10-09 and was never his ("What is a \"house
+style rule\"? It's certainly not my rule!"), so it now lets a dash that follows a digit through (a date or time range) and
+still flags a dash used as punctuation between words. The word for their event ("meeting", "convention", "conference",
+"show", "gala", else "event") is read off the event's name. The two drafts he read are rewritten in the template by the
+next run; a draft he has edited is his and is left alone. The follow-up note is unchanged.
