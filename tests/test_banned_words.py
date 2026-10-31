@@ -5,11 +5,17 @@ name is scanned, case-insensitively, for the names, ids, domains, buckets and
 topics of the other suites this one was built beside. The list is stored
 base64-encoded so this file does not trip its own scan. Add to it; never
 remove from it.
+
+One allowance (Chris, 2026-10-31, asked twice and told nothing outside this
+repo is touched): the two schema.org field names Google's image metadata
+asks for, "license" and "acquireLicensePage", pass as whole words. Every
+other form of that word, and every other word on the list, still trips.
 """
 from __future__ import annotations
 
 import base64
 import os
+import re
 import unittest
 from pathlib import Path
 
@@ -37,8 +43,11 @@ def repo_files():
                 yield Path(dirpath) / name
 
 
+ALLOWED = re.compile(r"\b(license|acquirelicensepage)\b")     # the two schema.org names, whole words only
+
+
 def hits_in(text: str) -> list[str]:
-    low = text.lower()
+    low = ALLOWED.sub("", text.lower())
     return [w for w in BANNED if w in low]
 
 
@@ -54,6 +63,13 @@ class BannedWords(unittest.TestCase):
 
     def test_the_scan_catches_a_planted_word(self):
         self.assertTrue(hits_in("xx" + BANNED[0].upper() + "yy"))
+
+    def test_the_two_schema_org_names_pass_and_nothing_near_them_does(self):
+        self.assertEqual(hits_in('"license": "https://x/contact/", "acquireLicensePage": "https://x/contact/"'), [])
+        # the near forms are stored encoded, like the list, so this file does not trip its own scan
+        for near in ("bGljZW5zZWQ=", "bGljZW5zaW5n", "bGljZW5jZQ==", "YWNxdWlyZUxpY2Vuc2VQYWdlcw=="):
+            word = base64.b64decode(near).decode()
+            self.assertTrue(hits_in(word), word)
 
     def test_no_banned_word_anywhere(self):
         found = []

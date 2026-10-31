@@ -766,7 +766,7 @@ def build(conn: Optional[sqlite3.Connection], photos: SitePhotos, *, out: Path =
         blocks = [markup.jsonld_service(c["title"], c["first"], page_url, brand, base + "/", area_served=list(AREA_SERVED),
                                         image=page_og[rel]),
                   markup.jsonld_breadcrumbs([(brand, base + "/"), ("Coverage", base + "/coverage/"), (c["label"], page_url)])]
-        blocks += [markup.jsonld_image(markup.absolute(base, loc), brand, cfg.legal_name, m.credit or brand) for loc, _, m in first_photo]
+        blocks += [markup.jsonld_image(markup.absolute(base, loc), brand, cfg.legal_name, m.credit or brand, markup.absolute(base, "/contact/")) for loc, _, m in first_photo]
         page_jsonld[rel] = "".join(markup.jsonld_script(b) for b in blocks)
     # the contact page (2026-10-14): email and phone, no form (his decision); the quote form for dates
     phone = contact_phone()
@@ -857,7 +857,7 @@ It is never sold or shared. The website holds it only until the booking inbox co
         blocks = [markup.jsonld_business(brand, cfg.legal_name, base + "/", contact_email(), t["description"],
                                          telephone=phone or None, same_as=[url for _, url in socials], area_served=list(AREA_SERVED),
                                          locality="Washington", region="DC", country="US", image=og, logo=f"{base}/assets/mark.svg")]
-        blocks += [markup.jsonld_image(markup.absolute(base, loc), brand, cfg.legal_name, m.credit or brand)
+        blocks += [markup.jsonld_image(markup.absolute(base, loc), brand, cfg.legal_name, m.credit or brand, markup.absolute(base, "/contact/"))
                    for loc, _, m in shown]
         head_extra = "".join(markup.jsonld_script(b) for b in blocks)
     page_jsonld["index.html"] = head_extra

@@ -1883,3 +1883,17 @@ should be the bottom two." The rows, everywhere they are listed and in the ticke
 the hour, Breakouts and panels, Before, during and evening events, Dinners and receptions, Portraits, Exhibition halls,
 Backstage, Green rooms. The middle keeps the order it had. Then: "I'm sorry, keep selects at the end": Main stage and
 keynotes first, Backstage and Green rooms seventh and eighth, Selects within the hour last.
+
+## 2026-10-31: Google Search Console, and a photo's terms live on the Contact page
+
+Chris read Search Console on his phone. eventcaliber.com is a verified property (Cloudflare DNS, 2026-10-12);
+sitemap.xml is submitted, status Success. Page indexing on 10/22: 3 indexed, 14 not, for "Discovered, currently not
+indexed" (Google knows them from the sitemap and has not crawled them yet) and "Alternate page with proper canonical
+tag" (the www, http and slash-less addresses, which point at the apex page): neither a fault on our side, checked the
+same day (every sitemap address answers 200 with its canonical tag; http and www redirect to the apex). The home page
+is on Google. Its image metadata showed "non-critical issues": the two recommended fields our photo blocks lacked,
+license and acquireLicensePage. Chris: point both at Contact, so anyone wanting to use a photo is told to ask
+(seo/markup.py jsonld_image). The word inside those two names is on the repo's banned list (another suite's
+vocabulary; tests/test_banned_words.py). Chris asked "Does this mess with my other suites", was told nothing outside
+this repo is touched, and ruled: allow exactly those two schema.org names, nothing else. Requesting indexing for the
+pages that matter is his, in URL inspection, a few a day.

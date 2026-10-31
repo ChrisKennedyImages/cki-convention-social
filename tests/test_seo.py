@@ -17,7 +17,7 @@ from convention_social.core import auth, config, db, runner
 from convention_social.seo import markup, photo_text, site_check
 from convention_social.site import build
 from tests._fakes import AgentCase, make_ctx
-from tests.test_banned_words import BANNED
+from tests.test_banned_words import BANNED, hits_in
 
 BASE = "https://eventcaliber.com"
 NS = "{http://www.sitemaps.org/schemas/sitemap/0.9}"
@@ -156,19 +156,21 @@ class Markup(SeoCase):
             with self.assertRaises(seo.SeoCopyRefused):
                 seo.jsonld_business("Event Caliber", "CKI, LLC", BASE, "h@e.com", bad)
 
-    def test_image_block_carries_only_the_five_fields(self):
-        data = seo.jsonld_image(f"{BASE}/assets/a.jpg", "Event Caliber", "CKI, LLC", "Event Caliber, @kat.cos")
-        self.assertEqual(sorted(data), ["@context", "@type", "contentUrl", "copyrightHolder", "copyrightNotice", "creator", "creditText"])
+    def test_image_block_carries_the_credit_fields_and_the_two_use_pages(self):
+        data = seo.jsonld_image(f"{BASE}/assets/a.jpg", "Event Caliber", "CKI, LLC", "Event Caliber, @kat.cos", f"{BASE}/contact/")
+        self.assertEqual(sorted(data), ["@context", "@type", "acquireLicensePage", "contentUrl", "copyrightHolder", "copyrightNotice",
+                                        "creator", "creditText", "license"])
+        # 2026-10-31: Google's image metadata wants to know where a photo's terms are and where to ask; Chris: both are Contact
+        self.assertEqual((data["license"], data["acquireLicensePage"]), (f"{BASE}/contact/", f"{BASE}/contact/"))
         self.assertEqual(data["@type"], "ImageObject")
         self.assertEqual(data["creator"], {"@type": "Organization", "name": "Event Caliber"})
         self.assertEqual(data["copyrightHolder"], {"@type": "Organization", "name": "CKI, LLC"})
         self.assertEqual(data["copyrightNotice"], "© CKI, LLC")
         self.assertEqual(data["creditText"], "Event Caliber, @kat.cos")
-        text = json.dumps(data).lower()
         self.assertTrue(BANNED)
-        self.assertEqual([w for w in BANNED if w in text], [])
+        self.assertEqual(hits_in(json.dumps(data)), [], "the scan's own helper: the two schema.org names pass, nothing else")
         with self.assertRaises(seo.SeoCopyRefused):
-            seo.jsonld_image(f"{BASE}/a.jpg", "Event Caliber", "CKI, LLC", "Prints from $20")
+            seo.jsonld_image(f"{BASE}/a.jpg", "Event Caliber", "CKI, LLC", "Prints from $20", f"{BASE}/contact/")
 
     def test_script_tag_cannot_close_early(self):
         tag = seo.jsonld_script({"name": "</script><b>"})
