@@ -182,3 +182,13 @@ class TheGallery(IsolatedCase):
         self.assertEqual(photos.hero[0][0].size, (1600, 1000))
         self.assertEqual(self.shades(photos), [80, 100])
         self.assertEqual(photos.grid_note, f"your Site gallery picks lead the gallery, in your order: photos {mine}")
+        # 2026-10-31: on this path, the one production takes, the gallery photos said only the kind of shot; the writer's
+        # words must reach them here as on the other path
+        self.conn.execute("INSERT INTO photo_seo (photo_id, slug, title, alt, description, keywords, model, written_at) VALUES (?,?,?,?,?,?,?,?)",
+                          (mine, "stage-and-panel-1", "Speaker at a business conference", "A speaker at the podium addressing a full ballroom.",
+                           "A speaker presents to a packed ballroom.", '["event photography"]', "claude", db.utcnow()))
+        photos = build.pick_photos(self.conn, self.fetch)
+        im, alt, meta, slug, label = photos.coverage[0]
+        self.assertEqual((alt, slug, meta.title), ("A speaker at the podium addressing a full ballroom.", "stage-and-panel-1", "Speaker at a business conference"))
+        self.assertEqual(len(photos.coverage[1]), 5, "a photo without text still carries five fields, the kind of shot in each")
+        self.assertEqual(len(photos.hero[0]), 2, "the uploaded hero is not a library photo: its words are the kind of shot")

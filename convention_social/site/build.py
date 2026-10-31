@@ -271,6 +271,7 @@ def pick_photos(conn: sqlite3.Connection, fetch: Callable[[dict], Image.Image],
         return images[r["id"]]
 
     hero = None
+    words = lambda r: words_for(conn, r)      # noqa: E731  what each library photo says on the site, on every path out of here
     from . import hero as upload
     if upload.present():
         # Chris, 2026-10-12: the photo he sent is the hero, full stop; Claude's look only words the alt text and a note
@@ -281,7 +282,7 @@ def pick_photos(conn: sqlite3.Connection, fetch: Callable[[dict], Image.Image],
         out.hero = [(upload.image(), SHOT_WORDS.get(rec.get("shot_type") or "", "Event photography"))]
         out.hero_note = f"{yours} ({why})"
         picks, out.grid_note = site_picks(conn, pool)
-        return _finish(out, lead_with_picks(picks, pool, None), venues[:VENUE_ROWS], None, pool, image_of)
+        return _finish(out, lead_with_picks(picks, pool, None), venues[:VENUE_ROWS], None, pool, image_of, words)
 
     def note(text):
         out.hero_note = (out.hero_note + "; " if out.hero_note else "") + text
@@ -307,10 +308,10 @@ def pick_photos(conn: sqlite3.Connection, fetch: Callable[[dict], Image.Image],
         else:
             note("no usable landscape event photo for the hero")
     if hero is not None:
-        out.hero = [(image_of(hero), *words_for(conn, hero))]
+        out.hero = [(image_of(hero), *words(hero))]
     # Chris's gallery picks lead the grid (2026-10-29); the grid never shows the hero, so a pick that is the hero is said
     picks, out.grid_note = site_picks(conn, pool, hero_id=hero["id"] if hero is not None else None)
-    return _finish(out, lead_with_picks(picks, pool, hero), venues[:VENUE_ROWS], hero, pool, image_of, lambda r: words_for(conn, r))
+    return _finish(out, lead_with_picks(picks, pool, hero), venues[:VENUE_ROWS], hero, pool, image_of, words)
 
 
 def coverage_key_for(row: dict) -> str:
@@ -351,8 +352,10 @@ def pick_page_photos(pool: list[dict]) -> dict[str, list[dict]]:
 
 
 def _finish(out: SitePhotos, grid: list[dict], rooms: list[dict], hero: Optional[dict], pool: list[dict], image_of,
-            words: Callable[[dict], tuple] = lambda r: (site_alt(r),)) -> SitePhotos:
-    """`words(row)` gives what a photo says on the site: (alt[, meta, slug, label]), see words_for."""
+            words: Callable[[dict], tuple]) -> SitePhotos:
+    """`words(row)` gives what a photo says on the site: (alt, meta, slug, label), see words_for. It is required: the
+    first version gave it a default and the path with an uploaded hero, the one production takes, went out without it
+    (2026-10-31: the deployed page still said "Main stage" four times)."""
     out.coverage = [(image_of(r), *words(r)) for r in grid]
     out.links = [f"/coverage/{coverage_key_for(r)}/" if coverage_key_for(r) else "/coverage/" for r in grid]
     out.venues = [(image_of(r), *words(r)) for r in rooms]
