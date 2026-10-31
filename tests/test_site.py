@@ -76,6 +76,19 @@ class Site(IsolatedCase):
         self.assertIn(b"Speaker at a business conference", data, "the title is inside the file")
         self.assertIn(b"conference speaker", data, "and the keywords")
 
+    def test_a_live_build_notes_every_photo_it_showed_for_the_writer(self):
+        """2026-10-31: the build writes the ids of the library photos it showed (home page and coverage pages) to one
+        setting, a note rather than a use, so the weekly writer gives them their words first and the rotation is untouched."""
+        from convention_social.core import settings
+        conn = db.connect()
+        self.addCleanup(conn.close)
+        photos = build.SitePhotos(hero=[(im(), "a")], coverage=[(im(1), "c")], venues=[(im(9), "v")])
+        photos.ids = [31, 7, 12]
+        build.build(conn, photos, out=self.root / "dist")
+        self.assertEqual(json.loads(settings.get(conn, build.SHOWN_KEY)), [31, 7, 12])
+        build.build(conn, photos, out=self.root / "dist-preview", preview=True)
+        self.assertEqual(json.loads(settings.get(conn, build.SHOWN_KEY)), [31, 7, 12], "a preview is a look and notes nothing new")
+
     def test_pages_and_form(self):
         out = self.built()
         for rel in ("index.html", "book/index.html", "thanks/index.html", "privacy/index.html", "404.html",

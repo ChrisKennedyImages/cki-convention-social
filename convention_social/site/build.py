@@ -105,6 +105,7 @@ EVENT_POOL = 20               # eligible event photos the hero is chosen among; 
 HERO_CANDIDATES = 12          # landscape frames looked at (fetched) for the hero's colour and punch
 RECHECKS = 12                 # Claude calls one site build may spend asking what kind of occasion a photo is from
 HERO_KEY = "site.hero_photo_id"   # Chris's own pick for the hero (Photos tab, Approved: Site hero); it wins while it is usable
+SHOWN_KEY = "site.shown_photo_ids"   # JSON list: every library photo the last live build showed (2026-10-31), for the writer
 STAGE = ("main_stage", "stage_panel")
 
 
@@ -942,6 +943,11 @@ It is never sold or shared. The website holds it only until the booking inbox co
         # put every approved photo on the same footing after each build, and the home page would stop rotating.
         from ..library import report
         report.record_use(conn, "site", photos.grid_ids, ref=f"site:{db.utcnow()}")
+    if conn is not None and not preview and photos.ids:
+        # 2026-10-31: every library photo the site shows, home page and coverage pages, so the weekly writer gives them their
+        # words first (seo/photo_text.wanted_photos); a note, not a use, so the rotation is untouched
+        from ..core import settings
+        settings.set(conn, SHOWN_KEY, json.dumps(photos.ids))
     (out / "build.json").write_text(json.dumps({"preview": preview, "hero": len(photos.hero), "coverage": len(photos.coverage),
                                                 "venues": len(photos.venues), "mark": mark_key}))
     return out

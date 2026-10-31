@@ -1936,3 +1936,13 @@ he asked "Where does it say two brothers now each with 30+ years in the business
 directly under the headline: "Two brothers, every room. More than thirty years each." The small line above goes back to
 the search words. Then: "And Nationwide too. But, that does not have to be in the main heading": the lead paragraph
 ends "in Washington, DC and nationwide." (it said "across the country"); the small line above already said it.
+
+## 2026-10-31: the weekly writer gives the site's photos their words first
+
+The live build (18:17 and 20:15 UTC) showed the writer's words on the photos that had them: ten of twelve on the home
+page, thirty-five of fifty-nine on the coverage pages; the rest kept the kind of shot because the weekly writer had not
+reached them (269 of 15,321 postable photos had text, in id order, 300 a run). Chris: "Do it!" Now every live build
+notes the library photos it showed (site/build.py SHOWN_KEY, a note and not a use, so the rotation is untouched), the
+writer takes those first (seo/photo_text.wanted_photos), and when it has written words for a photo the site shows it
+stamps the site to republish, so the words reach the page within minutes. The run's summary says how many of its
+writes were for photos on the site now.
