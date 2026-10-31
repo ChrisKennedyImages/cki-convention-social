@@ -1919,6 +1919,9 @@ the file name (the writer's slug), the sitemap title and caption and the metadat
 words; the strip's captions keep the kind of shot; a photo without the writer's text, or whose text no longer passes
 the copy rules, says the kind of shot everywhere, as before. Keywords embedded in a file carry little weight with
 Google; the alt text, the caption, the file name and the words around a photo carry it, so that is where the words go.
+The first deploy of this (18:17 UTC) changed nothing on the page: the picker has two ways out, and the one production
+takes, with the photo he sent as the hero, went without the words. Fixed the same evening; the words are now required on
+every path, and the test drives the production path.
 He chose the order of the rest: a Google Business Profile with reviews (his), search words in the H1s with his line
 kept under them, venue, event-type and FAQ pages one at a time, and links earned from clients, venues and associations
 ("Not crappy ones"; "Not now" to building the list on 2026-10-31).
