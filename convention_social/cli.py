@@ -368,26 +368,11 @@ def cmd_site(args) -> int:
         from .site import deploy
         return deploy.run(with_check=not args.no_check)
     import io
-    from PIL import Image
-    from .drive import oauth
-    from .drive.api import DriveReader
     from .site import build
     conn = db.connect()
-    try:
-        oauth.access_token(conn)           # fail now, before the build, if the sign-in is dead
-        reader = DriveReader(lambda: oauth.access_token(conn), conn=conn, agent="cli")
-    except oauth.DriveAuthError as e:
-        print(f"{e} Building without photos.")
-        reader = None
-    cache = config.get_config().data_root / "photos"
-    cache.mkdir(parents=True, exist_ok=True)
-
-    def fetch(row):
-        from .agents import content
-        own = content.photo_file(config.get_config(), row)       # a phone photo's own file, else the cache
-        if not own.exists():
-            own.write_bytes(reader.download(row["drive_id"]))
-        return Image.open(io.BytesIO(own.read_bytes()))
+    fetch, why = build.library_fetch(conn, "cli")        # a phone photo's own file, else the cache, else Drive (read only)
+    if fetch is None:
+        print(f"{why} Building without photos.")
 
     def recheck(row, image):
         # Claude's final check, for a photo it has not yet judged for the kind of occasion (a wedding is never used)
@@ -403,7 +388,7 @@ def cmd_site(args) -> int:
 
     has_key = bool(secrets.get_secret("ANTHROPIC_API_KEY"))
     photos = build.pick_photos(conn, fetch, recheck=recheck if has_key else None, look=look if has_key else None) \
-        if reader else build.SitePhotos()
+        if fetch else build.SitePhotos()
     if not photos.hero:
         print("no postable photos yet, so the site is built without photos; they join on the next build "
               "once folders are cleared on the Library page and the final check has passed")

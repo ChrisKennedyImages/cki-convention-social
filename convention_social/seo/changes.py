@@ -23,11 +23,17 @@ sits just off Google's first page for (seo/leads.py). Its life:
              it had, and the site republishes
   skipped    his Skip, before it went live
 
+Part three's kind is "page" (seo/pages.py): a page of its own under /coverage/ for a search people make often that no
+page answers, shown to him as a rendered preview first since it carries photos. A new page has no before: it is judged
+on its own (NEW_PAGE), and when it did not earn its place it is never taken off by itself. Its measure proposes taking it
+down instead, a change of kind "takedown" (seo/pages.py TAKE_DOWN) with the same ping, Approve and Skip; nothing to
+measure there, it is done when the deploy carries it.
+
 One open change (proposed, approved or live) per page, which the database holds too. A page rests eight weeks after its
-last change went live, or after he skipped one, whatever the kind. Each kind is a module in _kind() with problems(conn,
-row), shown(row) and MEASURE (what it is judged on), and its own finder in the weekly run, drafting through ask and
-draft_week here. Part three (new pages from search demand) is the next kind over the same table, the same ping, the same
-approve, measure and put back.
+last change went live, or after he skipped one, whatever the kind. Each kind is a module (or an object) in _kind() with
+problems(conn, row), shown(row), MEASURE (what it is judged on, None for nothing), SAID (how the ping, the answers and
+the brief say it), STATUS_WORDS and PREVIEW (a rendered preview on the dashboard), and its own finder in the weekly run,
+drafting through ask and draft_week here.
 """
 from __future__ import annotations
 
@@ -43,7 +49,7 @@ from ..core import approve_token, config, db, notify, runner, secrets, settings
 from ..site import deploy
 from . import search_console
 
-KINDS = ("title", "lead")
+KINDS = ("title", "lead", "page", "takedown")
 OPEN = ("proposed", "approved", "live")
 ON_SITE = ("approved", "live", "kept")
 REST = timedelta(weeks=8)
@@ -54,6 +60,17 @@ TOKENS = approve_token.Scope("seo_change", "the Search changes page",
                              "The change moved on since that ping (approved, skipped or measured).")
 STATUS_WORDS = {"proposed": "waiting for your Approve", "approved": "approved, going on the site", "live": "live, being measured",
                 "kept": "kept", "reverted": "put back", "skipped": "skipped"}
+# How a change to a page's words is said (parts one and two; a kind with other words has its own SAID): the ping's title
+# after the brand and its last line, the answer to his Approve and Skip, and the morning brief's lines after "Search: ".
+# {page} is the page in his words (named), {Page} the same to start a sentence, {reason} why, {promise} its measure's.
+SAID = {"ping": "new search words to approve",
+        "close": "Approve puts it on the site. It is {promise}.",
+        "approve": "Approved. The new words go on {page} when the site next publishes, in about ten minutes. The change is {promise}.",
+        "skip": "Skipped. {Page} keeps its words, and the agent leaves it alone for eight weeks.",
+        "proposed": "new words proposed for {page}. {reason}",
+        "approved": "you approved the new words for {page}.",
+        "live": "the new words for {page} are on the site, measured for four weeks from now.",
+        "skipped": "you skipped the new words for {page}."}
 
 
 class Refused(ValueError):
@@ -61,15 +78,30 @@ class Refused(ValueError):
 
 
 def _kind(kind: str):
-    """The module that knows a kind of change: problems(conn, row), the reasons it may not go on the site now; shown(row),
-    its before and after as Chris reads them; MEASURE, what it is judged on four weeks after it went live."""
+    """What knows a kind of change: problems(conn, row), the reasons it may not go on the site now; shown(row), its before
+    and after as Chris reads them; MEASURE, what it is judged on once live (None: nothing, it is done as it goes live);
+    SAID, STATUS_WORDS and PREVIEW (module docstring)."""
     if kind == "title":
         from . import titles
         return titles
     if kind == "lead":
         from . import leads
         return leads
+    if kind == "page":
+        from . import pages
+        return pages
+    if kind == "takedown":
+        from . import pages
+        return pages.TAKE_DOWN
     raise ValueError(f"no kind of search change is called {kind!r}")
+
+
+def said_of(row, what: str) -> str:
+    """One of the kind's SAID lines for this change."""
+    judge = measure_of(row)
+    page = named(row["page"])
+    return _kind(row["kind"]).SAID[what].format(page=page, Page=page[:1].upper() + page[1:], reason=row["reason"],
+                                                 promise=judge.PROMISE if judge else "")
 
 
 def _now(now: Optional[datetime]) -> datetime:
@@ -156,8 +188,7 @@ def approve(conn: sqlite3.Connection, cid: int, now: Optional[datetime] = None) 
         return False, f"Change {cid} was decided a moment ago; there is nothing more to do."
     approve_token.spend(conn, cid, TOKENS)
     settings.set(conn, deploy.SEO_CHANGED_KEY, stamp)
-    return True, (f"Approved. The new words go on {named(row['page'])} when the site next publishes, in about ten minutes. The "
-                  f"change is {measure_of(row).PROMISE}.")
+    return True, said_of(row, "approve")
 
 
 def skip(conn: sqlite3.Connection, cid: int, now: Optional[datetime] = None) -> tuple[bool, str]:
@@ -174,7 +205,7 @@ def skip(conn: sqlite3.Connection, cid: int, now: Optional[datetime] = None) -> 
     approve_token.spend(conn, cid, TOKENS)
     if row["status"] == "approved":         # a build may already carry it: the site publishes again without it
         settings.set(conn, deploy.SEO_CHANGED_KEY, stamp)
-    return True, f"Skipped. {named(row['page']).capitalize()} keeps its words, and the agent leaves it alone for eight weeks."
+    return True, said_of(row, "skip")
 
 
 def decide_by_token(conn: sqlite3.Connection, cid: int, token: str, how: str) -> tuple[bool, str]:
@@ -190,7 +221,17 @@ def decide_by_token(conn: sqlite3.Connection, cid: int, token: str, how: str) ->
 
 # ------------------------------------------------------------------ live, measured, kept or put back
 
-class ClickRate:
+class Measure:
+    """What a kind of change is judged on, once it is live: AFTER it went live it is looked at weekly; numbers() in a kept
+    window, verdict() on them against the baseline, words() for Chris; PROMISE, what his Approve says of it."""
+    AFTER = MEASURE_AFTER
+
+    def numbers_words(self, n: Optional[dict]) -> str:
+        """A window's numbers in words, for the Search changes page."""
+        return numbers_words(n)
+
+
+class ClickRate(Measure):
     """Part one's measure, for a change to how a page shows in a search result (its title and description): the page's
     own click rate over every search. Shown at least MIN_SHOWINGS times since it went live: put back when the rate fell
     by DROP or more (relative), else kept. Fewer showings say nothing yet: measured again next week."""
@@ -225,7 +266,7 @@ class ClickRate:
                 f"({span(since['start'], since['end'])}), fewer than {self.MIN_SHOWINGS}: measured again next week.")
 
 
-class Place:
+class Place(Measure):
     """Part two's measure, for a change made for one search (a lead sentence, seo/leads.py): the page's average place in
     Google for that search (seo_changes.search). Shown for it at least MIN_SHOWINGS times since it went live: kept at the
     same place or better, put back DROP places lower or more; lower by less, or fewer showings: measured again next
@@ -267,11 +308,68 @@ class Place:
                 "again next week.")
 
 
-CLICK_RATE, PLACE = ClickRate(), Place()
+class NewPage(Measure):
+    """Part three's measure, for a page a search change added (seo/pages.py). A new page has no before, so it is judged
+    on its own: the searches it was made for (seo_changes.queries) and the new page's average place in Google for them.
+    AFTER it went live (56 days of numbers and Search Console's 3-day lag), with at least MIN_SHOWINGS showings of those
+    searches on any page of the site in the newest window: kept when Google showed the new page for them at PLACE_MAX or
+    better; otherwise "down". Fewer showings: measured again next week, and "down" once LONGEST of numbers are in. "down"
+    is never done by itself: a page coming off the site is a visible change, so taking it down is proposed to Chris
+    (measure, a change of kind "takedown")."""
+    AFTER = timedelta(days=59)
+    MIN_SHOWINGS = 50
+    PLACE_MAX = 20.0
+    LONGEST = timedelta(weeks=16)
+    PROMISE = ("measured for eight weeks; if Google does not show it for its searches at an average place of 20 or better, "
+               "taking it down comes to you to approve")
+
+    def numbers(self, conn: sqlite3.Connection, win: tuple[str, str], row, cfg=None) -> dict:
+        """Its searches' numbers on every page of the site; "position" and "page_impressions" are the new page's own for
+        them; "days", the days of numbers since it went live."""
+        searches = [q["query"] for q in _loads(row["queries"], [])]
+        own = search_console.search_numbers(conn, win, searches, search_console.page_url(row["page"], cfg))
+        days = (date.fromisoformat(win[1]) - _day(row["live_at"])).days if row["live_at"] else 0
+        return {**search_console.search_numbers(conn, win, searches), "position": own["position"],
+                "page_impressions": own["impressions"], "days": days}
+
+    def verdict(self, base: dict, since: dict) -> tuple[Optional[str], float]:
+        """("kept" | "down" | None, the new page's average place for its searches)."""
+        if since["impressions"] < self.MIN_SHOWINGS:
+            return ("down" if since["days"] >= self.LONGEST.days else None), 0.0
+        if since["page_impressions"] and since["position"] <= self.PLACE_MAX:
+            return "kept", since["position"]
+        return "down", since["position"]
+
+    def words(self, row, verdict: Optional[str], base: dict, since: dict, change: float) -> str:
+        page, when, shown = named(row["page"]), span(since["start"], since["end"]), since["impressions"]
+        more = len(_loads(row["queries"], [])) - 1
+        searches = f'"{row["search"]}"' + (f" and {more} search{'es' if more > 1 else ''} like it" if more > 0 else "")
+        if verdict == "kept":
+            return (f"The new page {page} stays: Google showed it for {searches} at an average place of {since['position']:g} "
+                    f"in {since['page_impressions']} of their {shown} showings from {when}.")
+        if verdict == "down" and shown < self.MIN_SHOWINGS:
+            return (f"The new page {page} is not earning its place: {searches} was shown {shown} times from {when}, fewer than "
+                    f"{self.MIN_SHOWINGS} sixteen weeks after it went live. Taking it down is proposed to you.")
+        if verdict == "down":
+            where = f"at an average place of {since['position']:g}" if since["page_impressions"] else "nowhere"
+            return (f"The new page {page} did not reach Google's first two pages: for {searches}, shown {shown} times from "
+                    f"{when}, Google showed it {where}. Taking it down is proposed to you.")
+        return (f"{page.capitalize()}: {searches} was shown {shown} times from {when}, fewer than {self.MIN_SHOWINGS}: "
+                "measured again next week.")
+
+    def numbers_words(self, n: Optional[dict]) -> str:
+        if not n or not n.get("start"):
+            return ""
+        return (f"its searches were shown {n['impressions']} times from {span(n['start'], n['end'])}"
+                + (f", this page at an average place of {n['position']:g}" if n.get("page_impressions") else ", never on this page"))
 
 
-def measure_of(row):
-    """What a change is judged on: its kind's MEASURE (CLICK_RATE or PLACE)."""
+CLICK_RATE, PLACE, NEW_PAGE = ClickRate(), Place(), NewPage()
+
+
+def measure_of(row) -> Optional[Measure]:
+    """What a change is judged on: its kind's MEASURE (CLICK_RATE, PLACE or NEW_PAGE); None for a change with nothing to
+    measure (a page taken down)."""
     return _kind(row["kind"]).MEASURE
 
 
@@ -286,25 +384,36 @@ def baseline(conn: sqlite3.Connection, row, live_day: date, cfg=None) -> dict:
 
 def went_live(conn: sqlite3.Connection, now: Optional[datetime] = None, cfg=None) -> list[str]:
     """After a deploy succeeded (site/deploy.run): the approved changes its build laid (BUILT_KEY) are live from now,
-    each with its baseline and the day it is measured. The pages they are on."""
+    each with its baseline and the day it is measured (its measure's AFTER); one with nothing to measure (a page taken
+    down) is done now. The pages they are on."""
     t = _now(now)
     stamp, went = _iso(t), []
     for cid in _loads(settings.get(conn, BUILT_KEY), []):
         row = get(conn, int(cid))
         if row is None or row["status"] != "approved":
             continue
-        if conn.execute("UPDATE seo_changes SET status='live', live_at=?, measure_after=?, baseline=?, updated_at=? "
-                        "WHERE id=? AND status='approved'",
-                        (stamp, _iso(t + MEASURE_AFTER), json.dumps(baseline(conn, row, t.date(), cfg)), stamp,
-                         row["id"])).rowcount:
+        judge = measure_of(row)
+        if judge is None:
+            done = conn.execute("UPDATE seo_changes SET status='kept', live_at=?, verdict_at=?, result=?, updated_at=? "
+                                "WHERE id=? AND status='approved'",
+                                (stamp, stamp, json.dumps({"at": stamp, "verdict": "kept", "words": said_of(row, "done")}), stamp,
+                                 row["id"])).rowcount
+        else:
+            done = conn.execute("UPDATE seo_changes SET status='live', live_at=?, measure_after=?, baseline=?, updated_at=? "
+                                "WHERE id=? AND status='approved'",
+                                (stamp, _iso(t + judge.AFTER), json.dumps(baseline(conn, row, t.date(), cfg)), stamp,
+                                 row["id"])).rowcount
+        if done:
             went.append(row["page"])
     return went
 
 
 def measure(conn: sqlite3.Connection, now: Optional[datetime] = None, cfg=None) -> list[dict]:
-    """The weekly look at every live change MEASURE_AFTER old: the numbers its kind is judged on (measure_of) in the
-    newest kept window that starts on or after the day it went live, against its baseline. Kept, put back (the site
-    republishes), or measured again next week. One {"id", "page", "verdict", "words"} per change looked at."""
+    """The weekly look at every live change its measure's AFTER old: the numbers its kind is judged on (measure_of) in
+    the newest kept window that starts on or after the day it went live, against its baseline. Kept, put back (the site
+    republishes), or measured again next week; a new page that did not earn its place ("down") stays on the site, its
+    measuring ends, and taking it down is proposed and pinged to Chris (Chris, 2026-11-01: removing a page is a visible
+    change, his Skip or Approve). One {"id", "page", "verdict", "words"} per change looked at."""
     t = _now(now)
     stamp, out = _iso(t), []
     for row in db.rows(conn, "SELECT * FROM seo_changes WHERE status='live' AND measure_after <= ? ORDER BY id", (stamp,)):
@@ -319,7 +428,13 @@ def measure(conn: sqlite3.Connection, now: Optional[datetime] = None, cfg=None) 
             verdict, change = judge.verdict(base, since)
             words = judge.words(row, verdict, base, since, change)
             result = {"at": stamp, **since, "change": change, "verdict": verdict, "words": words}
-        if verdict:
+        if verdict == "down":
+            conn.execute("UPDATE seo_changes SET status='kept', verdict_at=?, result=?, updated_at=? WHERE id=? AND status='live'",
+                         (stamp, json.dumps(result), stamp, row["id"]))
+            down = propose(conn, kind="takedown", page=row["page"], before={"title": _loads(row["after"], {}).get("title", "")},
+                           after={"removed": True}, queries=_loads(row["queries"], []), search=row["search"], reason=words, now=t)
+            ping(conn, down, dry_run=False)
+        elif verdict:
             conn.execute("UPDATE seo_changes SET status=?, verdict_at=?, result=?, updated_at=? WHERE id=? AND status='live'",
                          (verdict, stamp, json.dumps(result), stamp, row["id"]))
             if verdict == "reverted":
@@ -404,32 +519,47 @@ def draft_week(conn: sqlite3.Connection, found: list[dict], draft: Callable[[obj
 
 # ------------------------------------------------------------------ telling Chris
 
-def actions(cid: int, token: str) -> str:
-    """The ping's buttons: Approve and Skip (one token; the first used spends it), and Open."""
+def actions(cid: int, token: str, view: Optional[tuple[str, str]] = None) -> str:
+    """The ping's buttons: Approve and Skip (one token; the first used spends it), and `view` (label, dashboard path):
+    Open, the change on the Search changes page, unless its kind has a preview to see first (view_of)."""
+    label, path = view or ("Open", f"{PAGE}#c{cid}")
     return "; ".join((notify.token_action(f"{PAGE}/{cid}/by-token/approve", token, "Approve"),
                       notify.token_action(f"{PAGE}/{cid}/by-token/skip", token, "Skip"),
-                      f"view, Open, {notify.link(f'{PAGE}#c{cid}')}"))
+                      f"view, {label}, {notify.link(path)}"))
+
+
+def preview_path(cid: int) -> str:
+    """The dashboard page that shows a proposed new page as the site would (seo/pages.py preview)."""
+    return f"{PAGE}/{cid}/preview"
+
+
+def view_of(row) -> tuple[str, str]:
+    """Where the ping opens: the rendered preview for a kind that has one (a new page carries photos: Chris, 2026-11-01,
+    sees it before he taps Approve), else the change on the Search changes page."""
+    return ("Preview", preview_path(row["id"])) if _kind(row["kind"]).PREVIEW else ("Open", f"{PAGE}#c{row['id']}")
 
 
 def shown(row) -> list[tuple[str, str, str]]:
-    """(what, before, after) for each thing the change alters, as Chris reads it; the first is the headline."""
+    """(what, before, after) for each thing the change alters, as Chris reads it; the first is the headline. A thing
+    with no before (a new page's) is said once."""
     return _kind(row["kind"]).shown(row)
 
 
 def ping_words(row) -> tuple[str, str]:
     lines = [f"{named(row['page']).capitalize()}: {row['reason']}", ""]
     for label, before, after in shown(row):
-        lines += [f"{label} now: {before}", f"{label} new: {after}", ""]
-    lines.append(f"Approve puts it on the site. It is {measure_of(row).PROMISE}.")
-    return f"{config.get_config().brand_name}: new search words to approve", "\n".join(lines)
+        lines += ([f"{label} now: {before}", f"{label} new: {after}"] if before else [f"{label}: {after}"]) + [""]
+    lines.append(said_of(row, "close"))
+    return f"{config.get_config().brand_name}: {said_of(row, 'ping')}", "\n".join(lines)
 
 
 def ping(conn: sqlite3.Connection, cid: int, *, dry_run: bool, agent: str = "seo") -> str:
     """The proposal on his phone, with its signed Approve and Skip. What happened to the push."""
     row = get(conn, cid)
     title, message = ping_words(row)
-    return notify.push_result(title, message, dry_run=dry_run, priority="default", click=notify.link(f"{PAGE}#c{cid}"),
-                              conn=conn, agent=agent, actions=actions(cid, approve_token.issue(conn, row, scope=TOKENS)))
+    view = view_of(row)
+    return notify.push_result(title, message, dry_run=dry_run, priority="default", click=notify.link(view[1]),
+                              conn=conn, agent=agent, actions=actions(cid, approve_token.issue(conn, row, scope=TOKENS), view))
 
 
 def waiting(conn: sqlite3.Connection) -> int:
@@ -451,13 +581,13 @@ def brief(conn: sqlite3.Connection, since: datetime) -> tuple[list[str], list[st
     for r in db.rows(conn, "SELECT * FROM seo_changes WHERE proposed_at >= ? OR approved_at >= ? OR live_at >= ? OR verdict_at >= ? "
                            "OR status='live' ORDER BY id", (s, s, s, s)):
         if r["proposed_at"] >= s:
-            done.append(f"Search: new words proposed for {named(r['page'])}. {r['reason']}")
+            done.append(f"Search: {said_of(r, 'proposed')}")
         if (r["approved_at"] or "") >= s:
-            done.append(f"Search: you approved the new words for {named(r['page'])}.")
-        if (r["live_at"] or "") >= s:
-            done.append(f"Search: the new words for {named(r['page'])} are on the site, measured for four weeks from now.")
+            done.append(f"Search: {said_of(r, 'approved')}")
+        if (r["live_at"] or "") >= s and r["verdict_at"] != r["live_at"]:      # one done as it went live is said by its verdict
+            done.append(f"Search: {said_of(r, 'live')}")
         if (r["verdict_at"] or "") >= s:
-            done.append(f"Search: you skipped the new words for {named(r['page'])}." if r["status"] == "skipped"
+            done.append(f"Search: {said_of(r, 'skipped')}" if r["status"] == "skipped"
                         else f"Search: {_loads(r['result'], {}).get('words', '')}")
         result = _loads(r["result"], {})
         if r["status"] == "live" and result.get("at", "") >= s and not result.get("verdict"):
@@ -474,12 +604,14 @@ def numbers_words(n: Optional[dict]) -> str:
 
 
 def describe(row) -> dict:
-    """A change as Chris reads it: the words before and after, why, its searches (or the one it was made for), where it
-    stands, its numbers."""
-    base = _loads(row["baseline"], None)
+    """A change as Chris reads it: the words before and after (and what it sets, "words"), why, its searches (or the one
+    it was made for), where it stands, its numbers, and its preview when its kind has one."""
+    kind, judge = _kind(row["kind"]), measure_of(row)
     return {**dict(row), "name": named(row["page"]).capitalize(), "shown": shown(row), "queries": _loads(row["queries"], []),
-            "status_words": STATUS_WORDS[row["status"]], "url": search_console.page_url(row["page"]),
-            "baseline_words": numbers_words(base), "result": _loads(row["result"], None)}
+            "words": _loads(row["after"], {}), "status_words": kind.STATUS_WORDS[row["status"]],
+            "url": search_console.page_url(row["page"]), "preview": preview_path(row["id"]) if kind.PREVIEW else "",
+            "baseline_words": judge.numbers_words(_loads(row["baseline"], None)) if judge else "",
+            "result": _loads(row["result"], None)}
 
 
 def view(conn: sqlite3.Connection, limit: int = 60) -> list[dict]:

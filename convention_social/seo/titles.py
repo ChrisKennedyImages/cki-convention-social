@@ -27,6 +27,7 @@ from . import changes, search_console
 
 KIND = "title"
 MEASURE = changes.CLICK_RATE
+SAID, STATUS_WORDS, PREVIEW = changes.SAID, changes.STATUS_WORDS, False     # new words, said as every change to words is
 MODEL = "claude-opus-5"
 MIN_SHOWINGS = 100           # a page shown fewer times in the window says too little to judge its words
 WEAK = 0.5                   # below half the click rate its place usually gets
@@ -66,7 +67,7 @@ def expected_ctr(position: float) -> Optional[float]:
 
 def weak_pages(conn: sqlite3.Connection, win: tuple[str, str], cfg=None) -> list[dict]:
     """The site's public pages in a kept window whose words lose the click, the most clicks missing first."""
-    paths = {search_console.page_url(p, cfg): p for p in offer.public_pages()}
+    paths = {search_console.page_url(p, cfg): p for p in build.public_pages(conn)}
     out = []
     for r in search_console.page_totals(conn, win):
         path, usual = paths.get(r["page"]), expected_ctr(r["position"])

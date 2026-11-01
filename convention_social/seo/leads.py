@@ -28,7 +28,6 @@ import json
 import re
 import sqlite3
 
-from .. import offer
 from ..ai import names as ai_names
 from ..core import config
 from ..site import build
@@ -36,6 +35,7 @@ from . import changes, photo_text, search_console, titles
 
 KIND = "lead"
 MEASURE = changes.PLACE
+SAID, STATUS_WORDS, PREVIEW = changes.SAID, changes.STATUS_WORDS, False     # new words, said as every change to words is
 MODEL = "claude-opus-5"      # part one's model (seo/titles.py)
 PLACE_FROM, PLACE_TO = 8, 20  # an average place at the foot of Google's first page or just past it
 MIN_SHOWINGS = 30            # a search shown fewer times on a page in the window says too little
@@ -64,7 +64,7 @@ def near_misses(conn: sqlite3.Connection, win: tuple[str, str], cfg=None) -> tup
     """The near misses in a kept window, one a page (its most shown search), the most shown first; and how many more in
     that range were left out, by why: "words" (a search public words may not use), "no lead" (a page with no lead)."""
     cfg = cfg or config.get_config()
-    paths = {search_console.page_url(p, cfg): p for p in offer.public_pages()}
+    paths = {search_console.page_url(p, cfg): p for p in build.public_pages(conn)}
     words = build.site_words(conn)
     known = ai_names.public_names(conn)
     found: dict[str, dict] = {}

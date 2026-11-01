@@ -9,6 +9,8 @@
 //   GET  /api/availability      booked dates only, no names (public): the "Dates already booked" line on /book/
 //   PUT  /api/availability      the Mini replaces the booked dates (Bearer UPLOAD_TOKEN)
 //   GET  /availability/         301 to /book/ (2026-10-31: the Availability page folded into the quote page)
+//   GET  /coverage/<page>/      a page the SEO agent added and Chris took down (2026-11-01, seo/pages.py): 301 to /coverage/;
+//                               the build lists those addresses in /removed-pages.json (site/build.py REMOVED_FILE)
 //   GET  /m/<key>               post images, public ONLY under convention-social/ (binding MEDIA, R2)
 //   PUT  /m/<key>               the Mini uploads a post image or, under private/, the nightly backup
 //   GET  /unsubscribe?t=<token> the opt-out page linked from every outreach email: one button, nothing stored yet
@@ -530,6 +532,20 @@ async function media(request, env, url) {
   return new Response("method not allowed", { status: 405 });
 }
 
+// a page the SEO agent added and Chris later took down (2026-11-01): its address, in the search engines and in anyone's
+// bookmarks, goes to the coverage index for good. Only an address the site no longer answers (the assets say 404) and the
+// build lists in REMOVED_FILE, so a page that exists is always served and a mistyped address still says not found.
+const REMOVED_FILE = "/removed-pages.json";
+async function site(request, env, url) {
+  const answer = await env.ASSETS.fetch(request);
+  if (answer.status !== 404 || !["GET", "HEAD"].includes(request.method)) return answer;
+  const listed = await env.ASSETS.fetch(new Request(`${url.origin}${REMOVED_FILE}`));
+  if (!listed.ok) return answer;
+  const pages = await listed.json().then((j) => j && j.pages, () => null);
+  const page = url.pathname.replace(/index\.html$/, "").replace(/\/?$/, "/");
+  return Array.isArray(pages) && pages.includes(page) ? Response.redirect(`${url.origin}/coverage/`, 301) : answer;
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -567,7 +583,7 @@ export default {
     if (url.pathname === "/upload" || url.pathname === "/upload/" || url.pathname === "/upload/manifest.webmanifest") return uploadPage(request, env, url);
     if (url.pathname === "/api/sends" || url.pathname.startsWith("/api/sends/")) return sends(request, env, url);
     if (url.pathname.startsWith("/api/")) return new Response("not found", { status: 404 });
-    return env.ASSETS ? env.ASSETS.fetch(request) : new Response("not found", { status: 404 });
+    return env.ASSETS ? site(request, env, url) : new Response("not found", { status: 404 });
   },
   async scheduled(controller, env, ctx) {
     await watch(env);

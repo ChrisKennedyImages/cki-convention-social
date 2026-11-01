@@ -749,8 +749,10 @@ class TheWorker(SizesCase):
         assets = config[config.index('"assets": {'):config.index("},", config.index('"assets": {'))]
         self.assertIn('"run_worker_first": true', assets)
         self.assertIn('"binding": "ASSETS"', assets)
-        self.assertIn("return env.ASSETS ? env.ASSETS.fetch(request) : new Response(\"not found\", { status: 404 });", body,
+        self.assertIn("return env.ASSETS ? site(request, env, url) : new Response(\"not found\", { status: 404 });", body,
                       "the Worker still serves the site from the assets binding")
+        self.assertIn("const answer = await env.ASSETS.fetch(request);", js[js.index("async function site("):],
+                      "the site's own answer first; a page taken down (2026-11-01) only where the site has none")
         node = shutil.which("node")
         self.assertTrue(node, "node is needed to run the Worker's own test (the Mini and CI have it)")
         run = subprocess.run([node, str(REPO / "tests/worker_test.mjs")], capture_output=True, text=True, timeout=120, cwd=str(REPO))

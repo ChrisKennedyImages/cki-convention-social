@@ -17,8 +17,11 @@
    put back; then the pages whose title and description lose the click get
    new words from Claude (seo/titles.py, part one), and the pages just off
    Google's first page for a search get their lead sentence reworded for it
-   (seo/leads.py, part two), at most two of each a week, each proposed to
-   Chris with a ping and changed on the site only on his Approve.
+   (seo/leads.py, part two), at most two of each a week; then a search
+   people make often that no page answers gets a page of its own (seo/pages.py,
+   part three), at most one a week, rendered on the dashboard first. Each is
+   proposed to Chris with a ping and changed on the site only on his Approve;
+   a new page that does not earn its place is proposed for taking down.
 
 Nothing here publishes, uploads or sends anything without his Approve; a put
 back (step 4) returns a page to the words it had before.
@@ -28,7 +31,7 @@ from __future__ import annotations
 from typing import Optional
 
 from ..core import runner
-from ..seo import changes, leads, photo_text, search_console, site_check, titles
+from ..seo import changes, leads, pages, photo_text, search_console, site_check, titles
 
 
 def run(ctx: runner.Context, *, client=None, transport: Optional[site_check.Transport] = None,
@@ -70,13 +73,15 @@ def run(ctx: runner.Context, *, client=None, transport: Optional[site_check.Tran
 
 
 def search_changes(ctx: runner.Context, client=None) -> str:
-    """Chris, 2026-11-01: "shouldn't we have it do it all. Why wouldn't we?" The changes live 31 days are measured first
-    (kept, or put back with the site republishing), then this week's weak pages (part one) and near misses (part two)
-    are drafted and proposed, one open change a page whatever its kind."""
+    """Chris, 2026-11-01: "shouldn't we have it do it all. Why wouldn't we?" The live changes due are measured first
+    (kept, put back with the site republishing, or, for a new page that did not earn its place, its taking down
+    proposed), then this week's weak pages (part one), near misses (part two) and searches with no page of their own
+    (part three) are drafted and proposed, one open change a page whatever its kind."""
     measured = [m["words"] for m in changes.measure(ctx.conn, cfg=ctx.cfg)]
     titled = titles.propose_week(ctx.conn, ctx.cfg, client=client, agent=ctx.agent)
     near = leads.propose_week(ctx.conn, ctx.cfg, client=client, agent=ctx.agent)
-    return "search changes: " + " ".join(measured + [f"New words: {titled}.", f"Near misses: {near}.",
+    demand = pages.propose_week(ctx.conn, ctx.cfg, client=client, agent=ctx.agent)
+    return "search changes: " + " ".join(measured + [f"New words: {titled}.", f"Near misses: {near}.", f"New pages: {demand}.",
                                                      f"Standing: {changes.standing(ctx.conn)}."])
 
 

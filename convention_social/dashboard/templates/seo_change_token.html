@@ -5,8 +5,10 @@
   <strong>{{ c.name }}</strong>
   {% if c.search %}<p class="muted">For the search "{{ c.search }}"</p>{% endif %}
   {% for label, before, after in c.shown %}
-  <p><span class="muted">{{ label }} now</span><br>{{ before }}<br><span class="muted">{{ label }} new</span><br>{{ after }}</p>
+  {% if before %}<p><span class="muted">{{ label }} now</span><br>{{ before }}<br><span class="muted">{{ label }} new</span><br>{{ after }}</p>
+  {% else %}<p><span class="muted">{{ label }}</span><br>{{ after }}</p>{% endif %}
   {% endfor %}
+  {% if c.preview %}<p><a href="{{ c.preview }}">See the page first</a>, as the site would show it.</p>{% endif %}
   {% if c.status != 'proposed' %}
   <p>This change is {{ c.status_words }}; there is nothing to choose here. <a href="/seo/changes#c{{ c.id }}">Open it</a>.</p>
   {% elif token %}

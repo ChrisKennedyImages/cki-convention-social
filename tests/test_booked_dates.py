@@ -152,7 +152,7 @@ class BookedDates(IsolatedCase):
         self.assertIn(route, body)
         self.assertLess(body.index('if (www || (url.protocol === "http:" && !local))'), body.index(route))
         self.assertLess(body.index(route), body.index('if (url.pathname === "/api/availability") return availability(request, env);'))
-        self.assertLess(body.index(route), body.index("return env.ASSETS ? env.ASSETS.fetch(request)"))
+        self.assertLess(body.index(route), body.index("return env.ASSETS ? site(request, env, url)"))
         test = (REPO / "tests/worker_test.mjs").read_text()
         self.assertIn("answers 301 to /book/", test)
         self.assertTrue(self.node, "node is needed to run the Worker's own test (the Mini and CI have it)")

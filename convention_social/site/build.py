@@ -18,7 +18,10 @@ Each page's title, description and lead sentence are written in one place (page_
 A search change Chris approved (seo/changes.py, 2026-11-01: a title and description,
 or a lead sentence) is laid over them by with_seo_changes, still through the copy rules,
 the names rule and the lengths; one that no longer passes is left off with a note, and
-the page keeps its own words.
+the page keeps its own words. A page a search change adds (seo/pages.py, part three) is
+built like the coverage pages offer.json lists, after them in the coverage lists and
+never on the home page's; one taken down is left out, and the Worker sends its address
+to the coverage index (REMOVED_FILE).
 """
 from __future__ import annotations
 
@@ -70,6 +73,13 @@ COVERAGE_SHOTS = {
     "selects": ("main_stage", "portrait"),                       # what an organizer asks for first: the stage and the people
 }
 PAGE_ROWS, PAGE_MIN = 6, 3                 # photos on a coverage page: six of its room; under three, the rest of the pool fills in
+SHOT_KINDS = tuple(dict.fromkeys(shot for shots in COVERAGE_SHOTS.values() for shot in shots))   # every kind a page may show
+# a page a search change adds (2026-11-01, seo/pages.py): a new address under /coverage/, its heading (its row in the
+# coverage lists, like the labels offer.json gives, the longest 33), one or two paragraphs (the site's own run 189 to 326),
+# one to three kinds of photo
+ADDED_PATH = re.compile(r"/coverage/([a-z0-9]+(?:-[a-z0-9]+)*)/")
+HEADING_MAX, PARAGRAPH_MAX, PARAGRAPHS_MAX, SHOTS_MAX = 35, 350, 2, 3
+REMOVED_FILE = "removed-pages.json"     # the addresses of pages taken down: the Worker sends them to /coverage/ (worker/index.js)
 LASTMOD_FILE = "lastmod.json"      # DATA_ROOT/site: each page's content hash and the date it last changed
 VERIFICATION_KEY = "GOOGLE_SITE_VERIFICATION"   # the Search Console HTML tag's content value (Keys page)
 WIDTHS = (800, 1600)
@@ -223,6 +233,36 @@ def lead_with_picks(picks: list[dict], pool: list[dict], hero: Optional[dict]) -
     return (picks + pick_grid([r for r in pool if r["id"] not in skip]))[:COVERAGE_ROWS]
 
 
+def strength_order(r: dict) -> tuple:
+    """The library's photos for the site, best first: a known conference or convention before an unknown kind, then the
+    strongest frame (sharp, lit, a moment), then the widest."""
+    from ..library import report
+    return (0 if r["event_kind"] in ("fan", "business") else 1, -report.strength(r), -(r["width"] or 0))
+
+
+def library_rows(conn: sqlite3.Connection, keep: Optional[set] = None) -> list[dict]:
+    """The library's sorted event and building photos, one row per picture (one_per_picture; an id in `keep` stands for
+    its picture), the least recently used first on any surface (the rotation, 2026-10-14), strength_order among equals."""
+    from ..library import report
+    rows = db.rows(conn, """
+        SELECT p.*, c.subject, c.quality, c.sharp, c.light, c.moment, c.event_kind, c.shot_type, c.convention_name, c.summary
+        FROM photos p JOIN classifications c ON c.photo_id=p.id WHERE p.trashed=0 AND c.subject IN ('event','architecture')
+        ORDER BY COALESCE(c.quality,0) DESC, p.width DESC LIMIT 600""")
+    rows = sorted((dict(r) for r in rows), key=strength_order)
+    # the same picture under two ids is one photo, and its use under any id counts (2026-10-14: "same picked twice")
+    rows, last = one_per_picture(rows, report.last_uses(conn), keep=keep)
+    # the rotation (2026-10-14): the least recently used first, on any surface, so each publish shows photos the posts
+    # and the last build did not; the strength order above only breaks ties, and equal frames come by chance
+    return report.rotate(conn, rows, last=last, alike=strength_order)
+
+
+def page_pool(conn: sqlite3.Connection) -> list[dict]:
+    """Every usable event photo, least recently used first: the pool the coverage pages draw from (pick_photos), for a
+    preview of a page a search change proposes (seo/pages.py). Nothing is paid for here: a photo Claude has not yet judged
+    for its kind of occasion waits, as it does in any build without the key."""
+    return [r for r in library_rows(conn) if r["subject"] == "event" and eligibility.is_eligible(conn, r["id"])[0]]
+
+
 def pick_photos(conn: sqlite3.Connection, fetch: Callable[[dict], Image.Image],
                 recheck: Optional[Callable[[dict, Image.Image], Optional[dict]]] = None,
                 look: Optional[Callable[[bytes], Optional[dict]]] = None) -> SitePhotos:
@@ -235,21 +275,10 @@ def pick_photos(conn: sqlite3.Connection, fetch: Callable[[dict], Image.Image],
     events, so no one event is the first thing on everything. `recheck` gives Claude's final check to a
     photo it has not yet judged for its kind, up to RECHECKS per build; without it such a photo waits."""
     from ..core import settings
-    from ..library import report
-    rows = db.rows(conn, """
-        SELECT p.*, c.subject, c.quality, c.sharp, c.light, c.moment, c.event_kind, c.shot_type, c.convention_name, c.summary
-        FROM photos p JOIN classifications c ON c.photo_id=p.id WHERE p.trashed=0 AND c.subject IN ('event','architecture')
-        ORDER BY COALESCE(c.quality,0) DESC, p.width DESC LIMIT 600""")
-    def order(r):
-        return (0 if r["event_kind"] in ("fan", "business") else 1, -report.strength(r), -(r["width"] or 0))
-    rows = sorted((dict(r) for r in rows), key=order)
     chosen = settings.get(conn, HERO_KEY)
     chosen_id = int(chosen) if chosen and str(chosen).isdigit() else None
-    # the same picture under two ids is one photo, and its use under any id counts (2026-10-14: "same picked twice")
-    rows, last = one_per_picture(rows, report.last_uses(conn), keep={chosen_id} if chosen_id is not None else None)
-    # the rotation (2026-10-14): the least recently used first, on any surface, so each publish shows photos the posts
-    # and the last build did not; the strength order above only breaks ties, and equal frames come by chance
-    rows = report.rotate(conn, rows, last=last, alike=order)
+    rows = library_rows(conn, keep={chosen_id} if chosen_id is not None else None)
+    added = [(p["key"], tuple(p["shots"])) for p in added_pages(conn)]     # the pages search changes added (2026-11-01)
     out, images, rechecks = SitePhotos(), {}, 0
     events: list[dict] = []
     venues: list[dict] = []
@@ -292,7 +321,7 @@ def pick_photos(conn: sqlite3.Connection, fetch: Callable[[dict], Image.Image],
         out.hero = [(upload.image(), SHOT_WORDS.get(rec.get("shot_type") or "", "Event photography"))]
         out.hero_note = f"{yours} ({why})"
         picks, out.grid_note = site_picks(conn, pool)
-        return _finish(out, lead_with_picks(picks, pool, None), venues[:VENUE_ROWS], None, pool, image_of, words)
+        return _finish(out, lead_with_picks(picks, pool, None), venues[:VENUE_ROWS], None, pool, image_of, words, added)
 
     def note(text):
         out.hero_note = (out.hero_note + "; " if out.hero_note else "") + text
@@ -321,7 +350,7 @@ def pick_photos(conn: sqlite3.Connection, fetch: Callable[[dict], Image.Image],
         out.hero = [(image_of(hero), *words(hero))]
     # Chris's gallery picks lead the grid (2026-10-29); the grid never shows the hero, so a pick that is the hero is said
     picks, out.grid_note = site_picks(conn, pool, hero_id=hero["id"] if hero is not None else None)
-    return _finish(out, lead_with_picks(picks, pool, hero), venues[:VENUE_ROWS], hero, pool, image_of, words)
+    return _finish(out, lead_with_picks(picks, pool, hero), venues[:VENUE_ROWS], hero, pool, image_of, words, added)
 
 
 def coverage_key_for(row: dict) -> str:
@@ -339,38 +368,45 @@ def coverage_key_for(row: dict) -> str:
     return ""
 
 
-def pick_page_photos(pool: list[dict]) -> dict[str, list[dict]]:
-    """The photos of each coverage page (2026-10-14): up to PAGE_ROWS of its own kind of room, in the pool's order
-    (least recently used first), each photo on one page before any page repeats one; a room with fewer than
-    PAGE_MIN photos is filled from the rest of the pool, so a page is never empty while the library has photos."""
+def pick_room(pool: list[dict], shots: tuple, taken: set) -> list[dict]:
+    """The photos of one coverage page (2026-10-14): up to PAGE_ROWS of its kinds of shot, its first kind before the kinds
+    it borrows, in the pool's order (least recently used first), photos no page has `taken` before those another page
+    shows; under PAGE_MIN of its own, the rest of the pool fills in, so a page is never empty while the library has photos."""
+    fit = [r for r in pool if (r.get("shot_type") or "") in shots]
+    fit.sort(key=lambda r: shots.index(r["shot_type"]))        # the room's own kind of shot before the kinds it borrows (a stable sort: the pool's order within a kind)
+    pick = [r for r in fit if r["id"] not in taken][:PAGE_ROWS]
+    if len(pick) < PAGE_ROWS:
+        pick += [r for r in fit if r not in pick][:PAGE_ROWS - len(pick)]           # the same room again before another room
+    if len(pick) < PAGE_MIN:
+        pick += [r for r in pool if r not in pick and r["id"] not in taken][:PAGE_ROWS - len(pick)]
+    if len(pick) < PAGE_MIN:
+        pick += [r for r in pool if r not in pick][:PAGE_ROWS - len(pick)]
+    return pick
+
+
+def pick_page_photos(pool: list[dict], added: list[tuple[str, tuple]] = ()) -> dict[str, list[dict]]:
+    """The photos of each coverage page (pick_room), the pages offer.json lists in its order, then the pages search
+    changes added (`added`: (key, kinds of shot) each, 2026-11-01), each photo on one page before any page repeats one."""
     pages: dict[str, list[dict]] = {}
     taken: set[int] = set()
-    for key in offer.coverage_keys():
-        shots = COVERAGE_SHOTS.get(key, ())
-        fit = [r for r in pool if (r.get("shot_type") or "") in shots]
-        fit.sort(key=lambda r: shots.index(r["shot_type"]))        # the room's own kind of shot before the kinds it borrows (a stable sort: the pool's order within a kind)
-        pick = [r for r in fit if r["id"] not in taken][:PAGE_ROWS]
-        if len(pick) < PAGE_ROWS:
-            pick += [r for r in fit if r not in pick][:PAGE_ROWS - len(pick)]           # the same room again before another room
-        if len(pick) < PAGE_MIN:
-            pick += [r for r in pool if r not in pick and r["id"] not in taken][:PAGE_ROWS - len(pick)]
-        if len(pick) < PAGE_MIN:
-            pick += [r for r in pool if r not in pick][:PAGE_ROWS - len(pick)]
+    for key, shots in [(k, COVERAGE_SHOTS.get(k, ())) for k in offer.coverage_keys()] + list(added):
+        pick = pick_room(pool, tuple(shots), taken)
         taken.update(r["id"] for r in pick)
         pages[key] = pick
     return pages
 
 
 def _finish(out: SitePhotos, grid: list[dict], rooms: list[dict], hero: Optional[dict], pool: list[dict], image_of,
-            words: Callable[[dict], tuple]) -> SitePhotos:
+            words: Callable[[dict], tuple], added: list[tuple[str, tuple]]) -> SitePhotos:
     """`words(row)` gives what a photo says on the site: (alt, meta, slug, label), see words_for. It is required: the
     first version gave it a default and the path with an uploaded hero, the one production takes, went out without it
-    (2026-10-31: the deployed page still said "Main stage" four times)."""
+    (2026-10-31: the deployed page still said "Main stage" four times). `added`: the pages search changes added, each
+    (key, kinds of shot), required on every path for the same reason."""
     out.coverage = [(image_of(r), *words(r)) for r in grid]
     out.links = [f"/coverage/{coverage_key_for(r)}/" if coverage_key_for(r) else "/coverage/" for r in grid]
     out.venues = [(image_of(r), *words(r)) for r in rooms]
     out.grid_ids = [r["id"] for r in ([hero] if hero is not None else []) + grid + rooms]
-    pages = pick_page_photos(pool)
+    pages = pick_page_photos(pool, added)
     out.pages = {key: [(image_of(r), *words(r)) for r in picked] for key, picked in pages.items()}
     out.ids = list(dict.fromkeys(out.grid_ids + [r["id"] for picked in pages.values() for r in picked]))
     return out
@@ -611,19 +647,64 @@ def change_problems(rel: str, words: dict[str, str], fields, brand: str, names) 
     return why
 
 
+def added_page_problems(path: str, page: dict, brand: str, names) -> list[str]:
+    """Why a page a search change adds (seo/pages.py) may not stand on the site, in plain words; [] when it may: a new
+    address under /coverage/; its title and description (words_problems) and its lead (lead_problems); its heading, its
+    name (what it offers, the Service a search engine reads) and its one or two paragraphs by the copy rules, the names
+    rule and their lengths; and one to three kinds of photo the site shows (SHOT_KINDS)."""
+    why = [] if ADDED_PATH.fullmatch(path) else [f"{path} is not a new address under /coverage/"]
+    why += words_problems(rel_of(path), page.get("title", ""), page.get("description", ""), brand, names)
+    why += lead_problems(page.get("lead", ""), names)
+    paragraphs = page.get("paragraphs")
+    if not isinstance(paragraphs, list) or not 1 <= len(paragraphs) <= PARAGRAPHS_MAX:
+        why.append(f"it needs one or two paragraphs, not {len(paragraphs) if isinstance(paragraphs, list) else 'none'}")
+        paragraphs = []
+    for what, text, most in ([("heading", page.get("heading"), HEADING_MAX), ("name", page.get("name"), TITLE_MAX)]
+                             + [(f"paragraph {i}", t, PARAGRAPH_MAX) for i, t in enumerate(paragraphs, start=1)]):
+        if not isinstance(text, str) or not text.strip():
+            why.append(f"the {what} is empty")
+            continue
+        why += [f"the {what} {b.message}" for b in copy_rules.check(text, names=names).blocks]
+        if len(text) > most:
+            why.append(f"the {what} is {len(text)} characters, {most} at most")
+    shots = page.get("shots")
+    if (not isinstance(shots, list) or not 1 <= len(shots) <= SHOTS_MAX or len(set(map(str, shots))) != len(shots)
+            or any(shot not in SHOT_KINDS for shot in shots)):
+        why.append(f"its photos must be one to {SHOTS_MAX} of the kinds the site shows ({', '.join(SHOT_KINDS)})")
+    return why
+
+
 def with_seo_changes(conn: sqlite3.Connection, words: dict[str, dict[str, str]],
                      brand: str) -> tuple[dict[str, dict[str, str]], list[int], dict[int, str]]:
     """The pages' words with the search changes Chris approved laid over them (seo/changes.py: approved, live or kept,
     every kind, oldest first): (the words, the changes laid, and why for each change left off). A change is laid only
     while the page still says what it replaced (an older change on the same page counts) and its words pass
-    change_problems today; otherwise the page keeps the words it has."""
+    change_problems today; otherwise the page keeps the words it has. A new page (kind "page") is added at an address
+    the site does not have while it passes added_page_problems; a page taken down (kind "takedown") leaves, and only a
+    page a search change added can."""
     out = {rel: dict(w) for rel, w in words.items()}
     names = ai_names.public_names(conn)
-    laid, left_off = [], {}
+    laid, left_off, added = [], {}, set()
     for ch in seo_changes.on_site(conn):
         rel = rel_of(ch["page"])
         before, after = json.loads(ch["before"]), json.loads(ch["after"])
-        if rel not in out:
+        if ch["kind"] == "page":
+            if rel in out:
+                left_off[ch["id"]] = f"the site already has a page at {ch['page']}"
+            elif why := added_page_problems(ch["page"], after, brand, names):
+                left_off[ch["id"]] = f"its words no longer pass: {'; '.join(why)}"
+            else:
+                out[rel] = {f: after[f] for f in ("title", "description", "lead")}
+                added.add(rel)
+                laid.append(ch["id"])
+        elif ch["kind"] == "takedown":
+            if rel in out and rel not in added:
+                left_off[ch["id"]] = f"{ch['page']} is not a page a search change added"
+            else:
+                out.pop(rel, None)
+                added.discard(rel)
+                laid.append(ch["id"])
+        elif rel not in out:
             left_off[ch["id"]] = f"the site no longer has the page {ch['page']}"
         elif any(out[rel].get(f) != v for f, v in before.items()):
             left_off[ch["id"]] = f"{ch['page']} no longer has the words it replaced"
@@ -639,6 +720,35 @@ def site_words(conn: sqlite3.Connection) -> dict[str, dict[str, str]]:
     """Every page's words (page_words) as the next live build writes them: its own, with the approved changes."""
     brand = config.get_config().brand_name
     return with_seo_changes(conn, page_words(offer.load(), copy_text(), brand), brand)[0]
+
+
+def seo_pages(conn: sqlite3.Connection, words: dict[str, dict[str, str]], laid: list[int]) -> tuple[list[dict], list[str]]:
+    """From with_seo_changes' words and the changes it laid: the pages search changes added that the site carries, in
+    the order he approved them, each what its change sets (heading, name, title, description, lead, paragraphs, shots)
+    with its "key" (the last part of its address), "path" and "rel"; and the addresses taken down, for the Worker."""
+    added, removed = [], []
+    for ch in seo_changes.on_site(conn):
+        rel = rel_of(ch["page"])
+        if ch["id"] not in laid:
+            continue
+        if ch["kind"] == "page" and rel in words:
+            added.append({**json.loads(ch["after"]), "key": ADDED_PATH.fullmatch(ch["page"]).group(1), "path": ch["page"], "rel": rel})
+        elif ch["kind"] == "takedown" and rel not in words:
+            removed.append(ch["page"])
+    return added, removed
+
+
+def added_pages(conn: sqlite3.Connection) -> list[dict]:
+    """The pages search changes added that the next live build carries (seo_pages)."""
+    brand = config.get_config().brand_name
+    words, laid, _ = with_seo_changes(conn, page_words(offer.load(), copy_text(), brand), brand)
+    return seo_pages(conn, words, laid)[0]
+
+
+def public_pages(conn: sqlite3.Connection) -> tuple[str, ...]:
+    """Every public page: the ones offer.json makes (PAGES, in sitemap order), then the pages search changes added. The
+    sitemap, IndexNow, the outside check, Google's index check and the search changes' finders read this list."""
+    return PAGES + tuple(p["path"] for p in added_pages(conn))
 
 
 def _photo(entry):
@@ -658,17 +768,35 @@ def _ticker(labels: list[str], rev: bool = False) -> str:
     return f'<div class="ticker{" rev" if rev else ""}" aria-hidden="true"><div class="track">{run}{run}</div></div>'
 
 
-def coverage_rows(coverage: list[dict], skip: str = "") -> str:
+def coverage_rows(coverage: list[dict], skip: str = "", added: list[dict] = ()) -> str:
     """The coverage list, each row opening its own page (2026-10-14; it led to the quote form). An entry with "listed":
     false in offer.json is a page, not a row (2026-10-31: instant delivery is the hero's detailed page, and the bottom
     service is the selects: "the instant delivery doesn't need to be at the bottom service anymore that is the selects
-    option now")."""
+    option now"). `added`: the pages search changes added ({"key", "label"} each, 2026-11-01), after the listed rows so
+    the order Chris set stands; the home page's list never passes them."""
     e = html.escape
-    rows = [c for c in coverage if c.get("listed", True)]
+    rows = [c for c in coverage if c.get("listed", True)] + list(added)
     return "".join(
         f'<a href="/coverage/{e(c["key"])}/"><span class="mono g">{i + 1:02d}</span>'
         f'<span class="t">{e(c["label"])}{f"<em>{e(c["note"])}</em>" if c.get("note") else ""}</span><span class="mono">&#8599;</span></a>'
         for i, c in enumerate(rows) if c["key"] != skip)
+
+
+def coverage_body(label: str, lead: str, paragraphs: list[str], photos: list, rows: str) -> str:
+    """A coverage page (2026-10-14), one template for the pages offer.json lists and the pages search changes add
+    (2026-11-01, seo/pages.py): the label as its headline, the lead sentence, its paragraphs, its photos (`photos`: (the
+    saved widths, alt, meta, shape) each, every one in its own shape), the quote button and the rest of the coverage
+    (`rows`, coverage_rows)."""
+    e = html.escape
+    figures = "".join(f'<figure style="--ar:{ar}">{img_tag(files, alt, "(max-width:760px) 50vw, (max-width:1100px) 50vw, 33vw")}</figure>'
+                      for files, alt, _m, ar in photos)
+    prose = "".join(f"<p>{e(p)}</p>" for p in paragraphs)
+    return f"""
+<section class="page cover"><div class="kick mono c"><a href="/coverage/">Coverage</a></div><h1>{e(label)}<b>.</b></h1>
+<p class="first">{e(lead)}</p><div class="prose">{prose}</div>
+{f'<div class="grid">{figures}</div>' if figures else ''}
+<p style="margin-top:50px"><a class="btn fill" href="/book/">Request a quote <span class="arr">&#8599;</span></a></p>
+<div class="more"><div class="kick mono c">The rest of the coverage</div><div class="list">{rows}</div></div></section>"""
 
 
 def home_body(t: dict, lead: str, hero: str, frames: list[tuple[str, str, str, str]], stack: list[tuple[str, str]],
@@ -819,6 +947,22 @@ def mark_file(mark_key: str, brand: str) -> str:
     return marks.mark(mark_key, brand, light="#0A0A0B", size=64, word=False).replace("<svg ", '<svg xmlns="http://www.w3.org/2000/svg" ', 1)
 
 
+def site_assets(assets: Path, brand: str, at: str = "/assets/") -> tuple[str, str]:
+    """The files every page uses, written into `assets`: the fonts, the stylesheet, the script and the mark. `at`: where
+    they are served, when not at /assets/ (a preview on the dashboard). (the mark's key, the mark for the page header)"""
+    (assets / "fonts").mkdir(parents=True)
+    for name in ("Michroma-Regular.ttf", "JetBrainsMono-Medium.ttf", "InterTight-Light.ttf", "InterTight-Regular.ttf",
+                 "InterTight-SemiBold.ttf", "Unbounded-ExtraBold.ttf"):
+        src = fonts._find(name)
+        if src:
+            shutil.copyfile(src, assets / "fonts" / name)
+    (assets / "site.css").write_text(theme.CSS.replace("/assets/", at))
+    (assets / "site.js").write_text(theme.JS)
+    mark_key = (config.getenv("BRAND_MARK") or "aperture").lower()       # Chris chose Aperture, 2026-10-10
+    (assets / "mark.svg").write_text(mark_file(mark_key, brand))
+    return mark_key, marks.mark(mark_key, brand, size=40)
+
+
 def build(conn: Optional[sqlite3.Connection], photos: SitePhotos, *, out: Path = DIST, preview: bool = False,
           head_extra: str = "") -> Path:
     o = offer.load()
@@ -835,17 +979,7 @@ def build(conn: Optional[sqlite3.Connection], photos: SitePhotos, *, out: Path =
     if out.exists():
         shutil.rmtree(out)
     assets = out / "assets"
-    (assets / "fonts").mkdir(parents=True)
-    for name in ("Michroma-Regular.ttf", "JetBrainsMono-Medium.ttf", "InterTight-Light.ttf", "InterTight-Regular.ttf",
-                 "InterTight-SemiBold.ttf", "Unbounded-ExtraBold.ttf"):
-        src = fonts._find(name)
-        if src:
-            shutil.copyfile(src, assets / "fonts" / name)
-    (assets / "site.css").write_text(theme.CSS)
-    (assets / "site.js").write_text(theme.JS)
-    mark_key = (config.getenv("BRAND_MARK") or "aperture").lower()       # Chris chose Aperture, 2026-10-10
-    (assets / "mark.svg").write_text(mark_file(mark_key, brand))
-    mark_svg = marks.mark(mark_key, brand, size=40)
+    mark_key, mark_svg = site_assets(assets, brand)
     e = html.escape
     hero, frames, stack, venues = "", [], [], []
     shown: list[tuple[str, str, ImageMeta]] = []          # (published path, alt, meta) for the sitemap and JSON-LD
@@ -891,9 +1025,11 @@ def build(conn: Optional[sqlite3.Connection], photos: SitePhotos, *, out: Path =
         runner.record_error_once(conn, "site", "client_logos", "Logos left off the home page: " + "; ".join(left_out) + ".")
     base = f"https://{cfg.brand_domain}"
     words = page_words(o, t, brand)
-    laid, not_laid = [], {}
+    laid, not_laid, added, removed = [], {}, [], []
     if conn is not None:
         words, laid, not_laid = with_seo_changes(conn, words, brand)       # the search changes Chris approved (2026-11-01)
+        added, removed = seo_pages(conn, words, laid)
+    rows_after = [{"key": p["key"], "label": p["heading"]} for p in added]   # the added pages, after the listed rows
     def head(rel: str) -> tuple[str, str]:
         return words[rel]["title"], words[rel]["description"]
     pages = {"index.html": (*head("index.html"), home_body(t, words["index.html"]["lead"], hero, frames, stack, venues, strip))}
@@ -907,24 +1043,24 @@ def build(conn: Optional[sqlite3.Connection], photos: SitePhotos, *, out: Path =
 <section class="page cover"><div class="kick mono c">Coverage</div><h1>Every<br><span class="o">room</span><b>.</b></h1>
 <p class="first">{e(words['coverage/index.html']['lead'])}</p>
 <p class="g" style="max-width:640px;margin:18px 0 0">{e(t['coverage_p'])}</p>
-<div class="list" style="margin-top:50px">{coverage_rows(o['coverage'])}</div>
+<div class="list" style="margin-top:50px">{coverage_rows(o['coverage'], added=rows_after)}</div>
 <p style="margin-top:50px"><a class="btn fill" href="/book/">Request a quote <span class="arr">&#8599;</span></a></p></section>""")
     page_jsonld["coverage/index.html"] = markup.jsonld_script(markup.jsonld_breadcrumbs([(brand, base + "/"), ("Coverage", base + "/coverage/")]))
-    for c in o["coverage"]:
+    # one page per coverage item, then the pages search changes added (2026-11-01), each built the same way: its label,
+    # its lead, its paragraphs, its photos, the rest of the coverage, and its Service, BreadcrumbList and photo blocks
+    cover = ([{"key": c["key"], "label": c["label"], "service": c["title"], "summary": c["first"], "paragraphs": [c["about"]]}
+              for c in o["coverage"]]
+             + [{"key": p["key"], "label": p["heading"], "service": p["name"], "summary": words[p["rel"]]["description"],
+                 "paragraphs": p["paragraphs"]} for p in added])
+    for c in cover:
         rel = f"coverage/{c['key']}/index.html"
-        figures = "".join(f'<figure style="--ar:{ar}">{img_tag(files, alt, "(max-width:760px) 50vw, (max-width:1100px) 50vw, 33vw")}</figure>'
-                          for files, alt, m, ar in page_files.get(c["key"], []))
-        pages[rel] = (*head(rel), f"""
-<section class="page cover"><div class="kick mono c"><a href="/coverage/">Coverage</a></div><h1>{e(c['label'])}<b>.</b></h1>
-<p class="first">{e(words[rel]['lead'])}</p><div class="prose"><p>{e(c['about'])}</p></div>
-{f'<div class="grid">{figures}</div>' if figures else ''}
-<p style="margin-top:50px"><a class="btn fill" href="/book/">Request a quote <span class="arr">&#8599;</span></a></p>
-<div class="more"><div class="kick mono c">The rest of the coverage</div><div class="list">{coverage_rows(o['coverage'], skip=c['key'])}</div></div></section>""")
+        pages[rel] = (*head(rel), coverage_body(c["label"], words[rel]["lead"], c["paragraphs"], page_files.get(c["key"], []),
+                                                coverage_rows(o["coverage"], skip=c["key"], added=rows_after)))
         page_shown["/" + rel.replace("index.html", "")] = [(f"/assets/{files[max(files)]}", alt, m) for files, alt, m, _ in page_files.get(c["key"], [])]
         first_photo = page_shown["/" + rel.replace("index.html", "")]
         page_og[rel] = (base + first_photo[0][0]) if first_photo else ""
         page_url = f"{base}/coverage/{c['key']}/"
-        blocks = [markup.jsonld_service(c["title"], c["first"], page_url, brand, base + "/", area_served=list(AREA_SERVED),
+        blocks = [markup.jsonld_service(c["service"], c["summary"], page_url, brand, base + "/", area_served=list(AREA_SERVED),
                                         image=page_og[rel]),
                   markup.jsonld_breadcrumbs([(brand, base + "/"), ("Coverage", base + "/coverage/"), (c["label"], page_url)])]
         blocks += [markup.jsonld_image(markup.absolute(base, loc), brand, cfg.legal_name, m.credit or brand, markup.absolute(base, "/contact/")) for loc, _, m in first_photo]
@@ -1047,12 +1183,15 @@ It is never sold or shared. The website holds it only until the booking inbox co
     if verification_name and not preview:
         # the HTML file method: Search Console reads this file at the root, with this one line in it
         (out / verification_name).write_text(f"google-site-verification: {verification_name}\n")
-    rels = {p: rel_of(p) for p in PAGES}
+    listed = PAGES + tuple(p["path"] for p in added)        # every public page (public_pages): the added ones too
+    rels = {p: rel_of(p) for p in listed}
     (out / "sitemap.xml").write_text(markup.sitemap_xml(
-        base, list(PAGES),
+        base, list(listed),
         {page: [{"loc": loc, "title": m.title or alt, "caption": m.description or alt} for loc, alt, m in entries]
          for page, entries in page_shown.items() if entries},
         lastmod=page_dates(out, rels, preview=preview)))
+    # the pages Chris took down (2026-11-01): their addresses answer 301 to the coverage index, from the Worker
+    (out / REMOVED_FILE).write_text(json.dumps({"pages": removed}))
     if not preview and indexnow.key():
         indexnow.write_key_file(out, indexnow.key())        # /<key>.txt: the proof the IndexNow pings are ours
     if conn is not None and not preview and photos.grid_ids:
@@ -1078,3 +1217,56 @@ It is never sold or shared. The website holds it only until the booking inbox co
     (out / "build.json").write_text(json.dumps({"preview": preview, "hero": len(photos.hero), "coverage": len(photos.coverage),
                                                 "venues": len(photos.venues), "mark": mark_key}))
     return out
+
+
+def library_fetch(conn: sqlite3.Connection, agent: str) -> tuple[Optional[Callable[[dict], Image.Image]], str]:
+    """(fetch, "") where fetch(row) gives a library photo's pixels for the site: its own file (a phone photo) or the copy
+    cached under the data root, else downloaded from Drive (read only) into that cache; (None, why) when Drive's sign-in
+    cannot be used."""
+    from ..agents import content
+    from ..drive import oauth
+    from ..drive.api import DriveReader
+    try:
+        oauth.access_token(conn)           # fail now, before any photo is asked for, if the sign-in is dead
+        reader = DriveReader(lambda: oauth.access_token(conn), conn=conn, agent=agent)
+    except oauth.DriveAuthError as e:
+        return None, str(e)
+    cfg = config.get_config()
+    (cfg.data_root / "photos").mkdir(parents=True, exist_ok=True)
+
+    def fetch(row: dict) -> Image.Image:
+        own = content.photo_file(cfg, row)
+        if not own.exists():
+            own.write_bytes(reader.download(row["drive_id"]))
+        return Image.open(io.BytesIO(own.read_bytes()))
+    return fetch, ""
+
+
+def page_preview(conn: sqlite3.Connection, path: str, page: dict, photos: list, out: Path, at: str) -> Path:
+    """A page a search change proposes (seo/pages.py), as the site would show it, for Chris to see before he taps
+    Approve (2026-11-01: "with a rendered preview first since a new page carries photos"). Written into `out`, never
+    into site/dist and never published: the coverage page template (coverage_body) with the site's own stylesheet,
+    script, fonts and mark, PREVIEW-stamped and noindex like every preview build; `photos` are its photos (image, alt[,
+    meta, slug, label] each). The coverage lists are the site's, with this page after the listed rows as it would stand.
+    The site's asset addresses (/assets/...) are written under `at`, where the dashboard serves them. The page file."""
+    o, cfg = offer.load(), config.get_config()
+    brand, e = cfg.brand_name, html.escape
+    if out.exists():
+        shutil.rmtree(out)
+    assets = out / "assets"
+    _, mark_svg = site_assets(assets, brand, at)
+    key = ADDED_PATH.fullmatch(path).group(1)
+    shown = []
+    for j, entry in enumerate(photos):
+        im, alt, m, slug, _label = _photo(entry)
+        shown.append((save_web(im, assets, slug or f"cover-{key}-{j}", m), alt, m, aspect(im)))
+    rows = [{"key": p["key"], "label": p["heading"]} for p in added_pages(conn)] + [{"key": key, "label": page["heading"]}]
+    body = coverage_body(page["heading"], page["lead"], page["paragraphs"], shown, coverage_rows(o["coverage"], skip=key, added=rows))
+    phone, socials = contact_phone(), social_links()
+    text = theme.shell(title=e(full_title(rel_of(path), page["title"], brand)), description=e(page["description"]), body=body,
+                       mark_svg=mark_svg, brand=e(brand), legal=e(cfg.legal_name), email=e(contact_email()), preview=True,
+                       canonical=f"https://{cfg.brand_domain}{path}", path=path, phone=e(phone),
+                       socials=tuple((e(a), e(b)) for a, b in socials),
+                       coverage=tuple((e(c["key"]), e(c["label"])) for c in offer.listed_coverage()), area_line=e(AREA_LINE))
+    (out / "index.html").write_text(text.replace("/assets/", at), encoding="utf-8")
+    return out / "index.html"
