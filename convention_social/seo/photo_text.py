@@ -566,9 +566,20 @@ def purge_named(conn: sqlite3.Connection) -> int:
     return gone
 
 
+def searchable(query: str, brand: str, known) -> str:
+    """A search as public words may use it (lower case, single spaces), or "" when they may not: only trade and place
+    words (SEARCH_VOCAB), never the brand's own name, passing the copy rules and the names gate (`known`,
+    ai/names.public_names). The writer's photo text (search_words) and a near miss's lead (seo/leads.py) both ask this."""
+    q = " ".join(str(query).lower().split())
+    tokens = re.findall(r"[a-z0-9'’]+", q)
+    if not tokens or brand.lower() in q or len(q) > KEYWORD_MAX_LEN or not all(t in SEARCH_VOCAB for t in tokens):
+        return ""
+    return q if copy_rules.check(q, names=known).ok else ""
+
+
 def search_words(conn: sqlite3.Connection) -> tuple[str, ...]:
-    """The searches people found the site with in the newest kept window, most shown first, that are made only of trade
-    and place words (SEARCH_VOCAB), never the brand's own name, and pass the copy rules and the names gate."""
+    """The searches people found the site with in the newest kept window, most shown first, that public words may use
+    (searchable)."""
     from . import search_console
     try:
         win = search_console.latest_window(conn)
@@ -576,17 +587,14 @@ def search_words(conn: sqlite3.Connection) -> tuple[str, ...]:
         return ()
     if win is None:
         return ()
-    brand = config.get_config().brand_name.lower()
+    brand = config.get_config().brand_name
     known = ai_names.public_names(conn)
     out: list[str] = []
     for r in db.rows(conn, "SELECT query, SUM(impressions) AS shown FROM search_console_rows WHERE start_date=? AND end_date=? "
                            "AND query != ? GROUP BY query HAVING shown >= ? ORDER BY shown DESC, query",
                      (*win, search_console.TOTAL, SEARCH_MIN_SHOWN)):
-        q = " ".join(str(r["query"]).lower().split())
-        tokens = re.findall(r"[a-z0-9'’]+", q)
-        if not tokens or brand in q or len(q) > KEYWORD_MAX_LEN or not all(t in SEARCH_VOCAB for t in tokens):
-            continue
-        if not copy_rules.check(q, names=known).ok:
+        q = searchable(r["query"], brand, known)
+        if not q:
             continue
         out.append(q)
         if len(out) >= SEARCH_WORDS_MAX:

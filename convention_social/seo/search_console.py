@@ -17,7 +17,8 @@ this is private mail to Chris and never public copy.
 
 2026-11-01 (Chris: "shouldn't we have it do it all. Why wouldn't we?"): the read also keeps, for the current window,
 every page's own numbers and the numbers of every search on every page (table search_console_rows), so the SEO agent
-can find the pages whose words lose clicks and measure what its changes did (seo/changes.py, seo/titles.py).
+can find the pages whose words lose clicks (seo/titles.py) or that sit just off the first page for a search
+(seo/leads.py), and measure what its changes did (seo/changes.py).
 """
 from __future__ import annotations
 
@@ -294,10 +295,11 @@ def _numbers(start: str, end: str, clicks: int, impressions: int, position: floa
             "ctr": round(clicks / impressions, 4) if impressions else 0.0, "position": round(position, 1)}
 
 
-def page_numbers(conn: sqlite3.Connection, win: tuple[str, str], url: str) -> dict:
-    """A page's own numbers in a kept window; a page Google did not list was shown nowhere, so its numbers are nought."""
+def page_numbers(conn: sqlite3.Connection, win: tuple[str, str], url: str, query: str = TOTAL) -> dict:
+    """A page's own numbers in a kept window, or one search's on it; a page (or a search on it) Google did not list was
+    shown nowhere, so its numbers are nought."""
     row = db.one(conn, "SELECT clicks, impressions, position FROM search_console_rows "
-                       "WHERE start_date=? AND end_date=? AND page=? AND query=?", (*win, url, TOTAL))
+                       "WHERE start_date=? AND end_date=? AND page=? AND query=?", (*win, url, query))
     return _numbers(*win, *(tuple(row) if row else (0, 0, 0.0)))
 
 
@@ -306,6 +308,13 @@ def page_totals(conn: sqlite3.Connection, win: tuple[str, str]) -> list[dict]:
     return [{"page": r["page"], **_numbers(*win, r["clicks"], r["impressions"], r["position"])}
             for r in db.rows(conn, "SELECT page, clicks, impressions, position FROM search_console_rows "
                                    "WHERE start_date=? AND end_date=? AND query=? ORDER BY impressions DESC, page", (*win, TOTAL))]
+
+
+def every_search(conn: sqlite3.Connection, win: tuple[str, str]) -> list[dict]:
+    """Every search on every page in a kept window, with the page's address and its numbers, most shown first."""
+    return [{"page": r["page"], "query": r["query"], **_numbers(*win, r["clicks"], r["impressions"], r["position"])}
+            for r in db.rows(conn, "SELECT page, query, clicks, impressions, position FROM search_console_rows WHERE start_date=? "
+                                   "AND end_date=? AND query != ? ORDER BY impressions DESC, page, query", (*win, TOTAL))]
 
 
 def searches(conn: sqlite3.Connection, win: tuple[str, str], url: str, limit: int = 10) -> list[dict]:

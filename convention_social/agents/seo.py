@@ -12,11 +12,13 @@
    run only says what it would check.
 3. Search Console (seo/search_console.py), live only: the last 28 days for
    the morning brief, and every page's numbers kept for the window.
-4. Search changes (2026-11-01, seo/changes.py and seo/titles.py), live only
-   and only after this week's read: every change live for 31 days is
-   measured and kept or put back; then the pages whose title and description
-   lose the click get new words from Claude, at most two a week, each
-   proposed to Chris with a ping and changed on the site only on his Approve.
+4. Search changes (2026-11-01, seo/changes.py), live only and only after
+   this week's read: every change live for 31 days is measured and kept or
+   put back; then the pages whose title and description lose the click get
+   new words from Claude (seo/titles.py, part one), and the pages just off
+   Google's first page for a search get their lead sentence reworded for it
+   (seo/leads.py, part two), at most two of each a week, each proposed to
+   Chris with a ping and changed on the site only on his Approve.
 
 Nothing here publishes, uploads or sends anything without his Approve; a put
 back (step 4) returns a page to the words it had before.
@@ -26,11 +28,12 @@ from __future__ import annotations
 from typing import Optional
 
 from ..core import runner
-from ..seo import changes, photo_text, search_console, site_check, titles
+from ..seo import changes, leads, photo_text, search_console, site_check, titles
 
 
 def run(ctx: runner.Context, *, client=None, transport: Optional[site_check.Transport] = None,
-        console: Optional[search_console.Transport] = None, title_client=None) -> str:
+        console: Optional[search_console.Transport] = None, changes_client=None) -> str:
+    """`client` writes the photos' search text; `changes_client` drafts the search changes (tests pass fakes)."""
     s = photo_text.write_all(ctx.conn, ctx.cfg, dry_run=ctx.dry_run, client=client, agent=ctx.agent)
     text = (f"seo text: {s['written']} written ({s['claude']} by {s['model'] if s['claude'] else 'Claude'}, "
             f"{s['template']} template, {s['fell_back']} fell back), {s['kept']} kept, {s['edited']} edited by Chris, "
@@ -55,7 +58,7 @@ def run(ctx: runner.Context, *, client=None, transport: Optional[site_check.Tran
             google = f"Search Console not read: {e}"
             loop = "search changes: nothing measured or proposed without this week's numbers"
         else:
-            loop = search_changes(ctx, title_client)
+            loop = search_changes(ctx, changes_client)
             # 2026-11-01, part five: which pages Google has in its index, named in the brief when one is missing
             try:
                 google += " " + search_console.index_line(search_console.index_check(ctx.conn, ctx.cfg, transport=console))
@@ -68,10 +71,13 @@ def run(ctx: runner.Context, *, client=None, transport: Optional[site_check.Tran
 
 def search_changes(ctx: runner.Context, client=None) -> str:
     """Chris, 2026-11-01: "shouldn't we have it do it all. Why wouldn't we?" The changes live 31 days are measured first
-    (kept, or put back with the site republishing), then this week's weak pages are drafted and proposed."""
+    (kept, or put back with the site republishing), then this week's weak pages (part one) and near misses (part two)
+    are drafted and proposed, one open change a page whatever its kind."""
     measured = [m["words"] for m in changes.measure(ctx.conn, cfg=ctx.cfg)]
-    proposed = titles.propose_week(ctx.conn, ctx.cfg, client=client, agent=ctx.agent)
-    return "search changes: " + " ".join(measured + [f"New words: {proposed}.", f"Standing: {changes.standing(ctx.conn)}."])
+    titled = titles.propose_week(ctx.conn, ctx.cfg, client=client, agent=ctx.agent)
+    near = leads.propose_week(ctx.conn, ctx.cfg, client=client, agent=ctx.agent)
+    return "search changes: " + " ".join(measured + [f"New words: {titled}.", f"Near misses: {near}.",
+                                                     f"Standing: {changes.standing(ctx.conn)}."])
 
 
 if __name__ == "__main__":

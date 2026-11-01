@@ -8,6 +8,11 @@
 .serp .u{font-size:13px;color:#2f6b3a;word-break:break-all}
 .serp .t{font-size:18px;line-height:1.3;color:#1a0dab;margin:3px 0 4px}
 .serp .d{font-size:14px;line-height:1.45;color:#4d5156}
+.lead{border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:10px 0 0;background:#fff}
+.lead.new{border-color:#9db6f2;background:#f5f8ff}
+.lead .lab{font-size:12px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);margin-bottom:4px}
+.lead .u{font-size:13px;color:#2f6b3a;word-break:break-all}
+.lead p{font-size:16px;line-height:1.45;margin:4px 0 0}
 .change .why{margin:8px 0 0;font-size:15px}
 .change details{margin-top:10px}
 .change details table{font-size:14px}
@@ -17,23 +22,35 @@
 {% set was = {'proposed': 'In Google now', 'approved': 'In Google now', 'skipped': 'In Google now'} %}
 {% set new = {'proposed': 'Proposed', 'approved': 'Approved', 'live': 'On the site now', 'kept': 'On the site now',
               'reverted': 'Tried, then put back', 'skipped': 'Proposed, skipped'} %}
+{% set on_page = {'proposed': 'On the page now', 'approved': 'On the page now', 'skipped': 'On the page now'} %}
 {% if msg %}<div class="msg">{{ msg }}</div>{% endif %}
 {% if bad %}<div class="msg bad">{{ bad }}</div>{% endif %}
 <a class="back" href="/seo">&larr; Search</a>
 <h1>Search changes</h1>
 <div class="card muted">Every Monday the SEO agent reads Google's numbers. A page shown often but rarely clicked gets new words for
-  its search result, at most two pages a week. Nothing on the site changes until you approve. Then the new words are measured for
-  four weeks and put back by themselves if fewer people click.{% if dry_run %} The SEO agent is in practice run, so it proposes nothing.{% endif %}</div>
-{% if not items %}<div class="card muted">No changes yet. The first come after a Monday read finds a page that loses its clicks.</div>{% endif %}
+  its search result; a page just off Google's first page for a search gets its lead sentence reworded to work that search in. At
+  most two of each a week. Nothing on the site changes until you approve. Then each change is measured for four weeks and put back
+  by itself if it did worse: fewer clicks for new words, a lower place for that search for a new lead.{% if dry_run %} The SEO agent
+  is in practice run, so it proposes nothing.{% endif %}</div>
+{% if not items %}<div class="card muted">No changes yet. The first come after a Monday read finds a page that loses its clicks or sits
+  just off the first page.</div>{% endif %}
 {% for c in items %}
 <article class="card change" id="c{{ c.id }}">
   <div class="row"><strong>{{ c.name }}</strong><span class="badge {{ badge[c.status] }}" style="margin-left:auto">{{ c.status_words }}</span></div>
   <p class="why">{{ c.reason }}</p>
+  {% if c.kind == 'title' %}
   <div class="serp"><div class="lab">{{ was.get(c.status, 'Before') }}</div><div class="u">{{ c.url }}</div>
     {% for label, before, after in c.shown %}<div class="{{ 't' if loop.first else 'd' }}">{{ before }}</div>{% endfor %}</div>
   <div class="serp new"><div class="lab">{{ new[c.status] }}</div><div class="u">{{ c.url }}</div>
     {% for label, before, after in c.shown %}<div class="{{ 't' if loop.first else 'd' }}">{{ after }}</div>{% endfor %}</div>
-  {% if c.queries %}<details{{ ' open' if c.status == 'proposed' else '' }}><summary>What people searched ({{ c.queries|length }})</summary>
+  {% else %}
+  <div class="lead"><div class="lab">{{ on_page.get(c.status, 'Before') }}</div><div class="u">{{ c.url }}</div>
+    {% for label, before, after in c.shown %}<p>{{ before }}</p>{% endfor %}</div>
+  <div class="lead new"><div class="lab">{{ new[c.status] }}</div><div class="u">{{ c.url }}</div>
+    {% for label, before, after in c.shown %}<p>{{ after }}</p>{% endfor %}</div>
+  {% endif %}
+  {% if c.queries %}<details{{ ' open' if c.status == 'proposed' else '' }}>
+    <summary>{% if c.search %}The search it is for{% else %}What people searched ({{ c.queries|length }}){% endif %}</summary>
     <table><tr><th>Search</th><th>Shown</th><th>Clicked</th><th>Place</th></tr>
     {% for q in c.queries %}<tr><td>{{ q.query }}</td><td>{{ q.impressions }}</td><td>{{ q.clicks }}</td><td>{{ q.position }}</td></tr>{% endfor %}
     </table></details>{% endif %}
@@ -48,7 +65,7 @@
   <form method="post" action="/seo/changes/{{ c.id }}/skip"><button class="small" type="submit">Take it back</button></form>
   {% elif c.status == 'live' %}
   <p class="muted after">On the site since {{ c.live_at|local }}; measured from {{ c.measure_after|local }}.
-    {% if c.baseline_words %}Before: {{ c.baseline_words }}.{% endif %}</p>
+    {% if c.baseline_words %}Before{% if c.search %}, for "{{ c.search }}"{% endif %}: {{ c.baseline_words }}.{% endif %}</p>
   {% if c.result and c.result.words %}<p class="muted">{{ c.result.words }}</p>{% endif %}
   {% elif c.status in ('kept', 'reverted') %}
   <p class="after">{{ c.result.words if c.result else '' }}</p>
