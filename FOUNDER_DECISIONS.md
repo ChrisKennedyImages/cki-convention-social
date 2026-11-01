@@ -1977,3 +1977,14 @@ the kind of shot. The red-team audit of 2026-10-16 had seen the symptom in capti
 for a kind of event or a room are never names (PLAIN_WORDS); the folder guess and the model's reading drop them; the
 stored ones are cleared (migration 0088). A real name that contains one ("C.A.S.E. Gala", "ACU Awards") is still a name,
 and CPAC, ACU and every other name stay banned exactly as before.
+
+## 2026-10-31: Search Console numbers in the morning brief, free
+
+Chris, on SEO tools: "I'm not paying anyone $129 a month! Can't you mimic or reverse engineer what they do?" What a
+paid tool sells is its own crawl of the web; nothing here can rebuild it. The free parts that matter come from Google
+itself, and he chose "Search Console in the digest". Every Monday the SEO agent reads the last 28 days from the
+Search Console API (clicks, how often the site was shown, its average place, the top searches and pages) against the
+28 days before, and the next morning brief carries one line (seo/search_console.py). It is a sign-in of its own with
+one read-only permission (webmasters.readonly), its own token file, on the Drive page with the same paste-back; the
+Drive sign-in stays drive.readonly and untouched. The Google Cloud project needs the Search Console API enabled and
+that scope added once (docs/SETUP.md 8a). Searches can name events or people; the brief is private mail.

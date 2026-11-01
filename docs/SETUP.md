@@ -201,6 +201,19 @@ makes an IndexNow key (Keys page, Search engines), the site hosts it at
 Website card on the Photos page says whether they heard. Bing Webmaster Tools
 can also import the Search Console property if you want its reports.
 
+**Search Console numbers in the morning brief (2026-10-31).** Every Monday the
+SEO agent reads what people searched to find the site over the last 28 days
+(clicks, how often it was shown, its average place, the top searches and
+pages) and the brief after it carries one line. It needs a sign-in of its own,
+read only; the Drive sign-in is not touched. Once, in the Google Cloud project
+from step 2 (console.cloud.google.com, signed in as chriskimages@gmail.com):
+
+1. APIs and services, Library: enable **Google Search Console API**.
+2. Google Auth Platform, Data access: Add scope, search `webmasters.readonly`,
+   tick `.../auth/webmasters.readonly`, Update, Save.
+3. Dashboard, Drive page, Google Search Console: **Sign in to Search Console**,
+   approve, and paste the address of the page Google sends you to, as for Drive.
+
 Organizer emails (the Outreach agent) need the opt-out table too. It is in
 `worker/schema.sql`, which the go-live script applies on every run; it only
 adds what is missing. Every organizer email

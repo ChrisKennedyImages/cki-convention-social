@@ -1574,6 +1574,7 @@ def create_app() -> FastAPI:
     @app.get("/drive", response_class=HTMLResponse)
     def drive(request: Request, user: str = Depends(require_user), conn=Depends(conn_dep), msg: str = ""):
         from ..drive import oauth
+        from ..seo import search_console
         from ..library import report
         renders = sorted((config.get_config().data_root / "renders").glob("library-report-*.html"))
         # 2026-10-14: the galleries shared with this account, by whom (a name only)
@@ -1584,7 +1585,11 @@ def create_app() -> FastAPI:
                       sharers=sorted({r["shared_by"] for r in shared}),
                       report_name=renders[-1].name if renders else "", msg=msg,
                       pending=oauth.pending_login(conn) is not None, client_set=oauth.client_config() is not None,
-                      unmatched=settings.get(conn, "credits.unmatched") or "")
+                      unmatched=settings.get(conn, "credits.unmatched") or "",
+                      gsc_state=settings.get(conn, search_console.STATE_KEY) or "missing",
+                      gsc_detail=settings.get(conn, search_console.STATE_DETAIL_KEY) or "",
+                      gsc_pending=search_console.pending_login(conn) is not None,
+                      gsc_last=search_console.fresh_line(conn, hours=24 * 8))
 
     @app.post("/drive/login")
     def drive_login(user: str = Depends(require_user), conn=Depends(conn_dep)):
@@ -1610,6 +1615,29 @@ def create_app() -> FastAPI:
             return RedirectResponse("/drive?msg=" + quote_plus(f"Google did not complete the sign-in ({type(e).__name__}: {str(e)[:160]}). Try again."),
                                     status_code=303)
         return RedirectResponse("/drive?msg=signed_in", status_code=303)
+
+    @app.post("/search-console/login")
+    def search_console_login(user: str = Depends(require_user), conn=Depends(conn_dep)):
+        """Chris, 2026-10-31: "Search Console in the digest". Its own sign-in, read only (webmasters.readonly), on the
+        Drive page with the same paste-back; the Drive sign-in is not touched."""
+        from ..seo import search_console
+        try:
+            url = search_console.start_login(conn)
+        except search_console.SearchConsoleError as e:
+            return RedirectResponse("/drive?msg=" + quote_plus(str(e)), status_code=303)
+        return RedirectResponse(url, status_code=303)
+
+    @app.post("/search-console/login/finish")
+    def search_console_login_finish(user: str = Depends(require_user), conn=Depends(conn_dep), address: str = Form("")):
+        from ..seo import search_console
+        try:
+            search_console.finish_login(conn, address)
+        except search_console.SearchConsoleError as e:
+            return RedirectResponse("/drive?msg=" + quote_plus(str(e)), status_code=303)
+        except Exception as e:  # noqa: BLE001  Google refused the code, the network: said on the page, nothing saved
+            return RedirectResponse("/drive?msg=" + quote_plus(f"Google did not complete the Search Console sign-in ({type(e).__name__}: {str(e)[:160]}). Try again."),
+                                    status_code=303)
+        return RedirectResponse("/drive?msg=gsc_signed_in", status_code=303)
 
     @app.get("/drive/report/{name}")
     def drive_report(name: str, user: str = Depends(require_user)):
