@@ -61,6 +61,8 @@ class Google:
 
     def __call__(self, method, url, body, headers):
         self.calls.append((method, url, body, headers))
+        if url == gsc.INSPECT_API:          # the weekly index check (part five, 2026-11-01): every page in the index
+            return 200, {"inspectionResult": {"indexStatusResult": {"verdict": "PASS", "coverageState": "Submitted and indexed"}}}
         if url.endswith("/sites"):
             return 200, {"siteEntry": self.sites}
         dims = (body or {}).get("dimensions")

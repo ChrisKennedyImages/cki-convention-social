@@ -2034,3 +2034,15 @@ drop. Part one is the pages whose title and description lose the click (seo/titl
 
 Parts two (near-miss wording) and three (new pages from search demand) follow in their own pull requests, as new kinds
 of change over the same table, the same ping, approve, measure and put back.
+
+## 2026-11-01: SEO parts four and five, the searchers' words and the indexing watch
+
+Chris asked for all five ("All 3, but aren't there 5"). Four: the photo writer is told what people search to find the
+site, from the Search Console rows part one keeps, and may use a phrase where it truly describes the photo
+(seo/photo_text.py search_words). Only searches made entirely of trade and place words are used (SEARCH_VOCAB), never
+the brand's own name, never a search with a name in it, shown at least five times; a search can carry a person's or an
+event's name the names gate has never seen, so anything else is left out whatever it is. When that set changes, the
+photos the site shows are written once more in it; a photo Chris edited never is. Five: every week Google is asked
+which public pages it has in its index (URL Inspection, the same read-only sign-in), and the morning brief names any it
+does not, with Google's reason, and says where to ask for them (Search Console, URL inspection, Request indexing).
+No tap for either: four steers the writer that already fills in the photo words, five is a report.

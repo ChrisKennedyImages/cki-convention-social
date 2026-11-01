@@ -35,6 +35,10 @@ from ..drive import oauth as google        # the client, the loopback address an
 
 SCOPES = ("https://www.googleapis.com/auth/webmasters.readonly",)
 API = "https://www.googleapis.com/webmasters/v3"
+# 2026-11-01, SEO part five: whether Google has each page in its index (URL Inspection; webmasters.readonly is enough;
+# 2,000 a day and 600 a minute per site, against the site's sixteen pages a week)
+INSPECT_API = "https://searchconsole.googleapis.com/v1/urlInspection/index:inspect"
+INDEX_KEY = "search_console.index"               # JSON: the last check, for the brief
 STATE_KEY = "search_console.auth_state"         # ok | expired | missing
 STATE_DETAIL_KEY = "search_console.auth_detail"
 PENDING_KEY = "search_console.login_pending"
@@ -183,6 +187,14 @@ def property_for(sites: list[dict], domain: str) -> Optional[str]:
     return next((u for u in urls if domain in u), None)
 
 
+def site_property(transport: Transport, token: str, cfg) -> str:
+    domain = (cfg.brand_domain or "").strip().lower()
+    prop = property_for(_call(transport, token, "GET", "/sites").get("siteEntry") or [], domain)
+    if prop is None:
+        raise SearchConsoleError(f"this Google account holds no Search Console property for {domain}")
+    return prop
+
+
 def window(today: date, days: int = WINDOW_DAYS) -> tuple[date, date]:
     end = today - timedelta(days=LAG_DAYS)
     return end - timedelta(days=days - 1), end
@@ -217,10 +229,7 @@ def read(conn: sqlite3.Connection, cfg=None, *, transport: Optional[Transport] =
     cfg = cfg or config.get_config()
     transport = transport or _requests_transport
     token = token or access_token(conn)
-    domain = (cfg.brand_domain or "").strip().lower()
-    prop = property_for(_call(transport, token, "GET", "/sites").get("siteEntry") or [], domain)
-    if prop is None:
-        raise SearchConsoleError(f"this Google account holds no Search Console property for {domain}")
+    prop = site_property(transport, token, cfg)
     today = today or datetime.now(timezone.utc).date()
     start, end = window(today)
     before = (start - timedelta(days=WINDOW_DAYS), start - timedelta(days=1))
@@ -333,3 +342,56 @@ def fresh_line(conn: sqlite3.Connection, now: Optional[datetime] = None, hours: 
     if (now or datetime.now(timezone.utc)) - at > timedelta(hours=hours):
         return ""
     return line(r)
+
+
+# ------------------------------------------------------------------ the indexing watch (part five)
+
+def inspect(transport: Transport, token: str, prop: str, url: str) -> dict:
+    """Google's index status for one address: verdict (PASS is in the index), its coverage words, the last crawl."""
+    status, data = transport("POST", INSPECT_API, {"inspectionUrl": url, "siteUrl": prop, "languageCode": "en-US"},
+                             {"Authorization": "Bearer " + token})
+    if status != 200 or not isinstance(data, dict):
+        message = ((data or {}).get("error") or {}).get("message", "") if isinstance(data, dict) else ""
+        raise SearchConsoleError(f"the index check answered {status}{': ' + message[:160] if message else ''}")
+    r = (data.get("inspectionResult") or {}).get("indexStatusResult") or {}
+    return {"verdict": r.get("verdict") or "VERDICT_UNSPECIFIED", "coverage": r.get("coverageState") or "",
+            "last_crawl": r.get("lastCrawlTime") or "", "fetch": r.get("pageFetchState") or ""}
+
+
+def index_check(conn: sqlite3.Connection, cfg=None, *, transport: Optional[Transport] = None, token: Optional[str] = None) -> dict:
+    """Every public page asked once (offer.public_pages), kept for the brief. Raises SearchConsoleError when it cannot."""
+    from .. import offer
+    cfg = cfg or config.get_config()
+    transport = transport or _requests_transport
+    token = token or access_token(conn)
+    prop = site_property(transport, token, cfg)
+    pages = [{"path": path, **inspect(transport, token, prop, page_url(path, cfg))} for path in offer.public_pages()]
+    out = {"at": db.utcnow(), "pages": pages}
+    settings.set(conn, INDEX_KEY, json.dumps(out))
+    return out
+
+
+def index_line(r: dict) -> str:
+    """'Google has 9 of 16 pages in its index. Not yet: /coverage/selects/ (Discovered - currently not indexed); ...'"""
+    pages = r.get("pages") or []
+    out = [p for p in pages if p.get("verdict") != "PASS"]
+    head = f"Google has {len(pages) - len(out)} of {len(pages)} pages in its index."
+    if not out:
+        return head
+    named = "; ".join(f"{p['path']} ({p.get('coverage') or 'not known yet'})" for p in out[:6])
+    more = f"; and {len(out) - 6} more" if len(out) > 6 else ""
+    return f"{head} Not yet: {named}{more}. Search Console, URL inspection, Request indexing asks Google for them."
+
+
+def fresh_index_line(conn: sqlite3.Connection, now: Optional[datetime] = None, hours: int = 30) -> str:
+    """The index line when the last check is from the past `hours`, else ''."""
+    try:
+        r = json.loads(settings.get(conn, INDEX_KEY) or "null")
+        at = datetime.fromisoformat(r["at"])
+    except (TypeError, ValueError, KeyError):
+        return ""
+    if at.tzinfo is None:
+        at = at.replace(tzinfo=timezone.utc)
+    if (now or datetime.now(timezone.utc)) - at > timedelta(hours=hours):
+        return ""
+    return index_line(r)

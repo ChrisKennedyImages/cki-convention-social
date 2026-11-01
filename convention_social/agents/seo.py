@@ -36,6 +36,7 @@ def run(ctx: runner.Context, *, client=None, transport: Optional[site_check.Tran
             f"{s['template']} template, {s['fell_back']} fell back), {s['kept']} kept, {s['edited']} edited by Chris, "
             f"{s['left_out']} queued photos no longer usable, {s['unsorted'] + s['refused']} skipped, "
             f"{s['shown_written']} of them on the site now"
+            + (f", {s['refreshed']} rewritten in the words people search" if s.get("refreshed") else "")
             + (f"; stopped: {s['stopped']}" if s["stopped"] else ""))
     if ctx.dry_run:
         site = (f"site check not run in dry run; would GET {len(site_check.PATHS)} pages on {site_check.base_url(ctx.cfg)}: "
@@ -55,6 +56,13 @@ def run(ctx: runner.Context, *, client=None, transport: Optional[site_check.Tran
             loop = "search changes: nothing measured or proposed without this week's numbers"
         else:
             loop = search_changes(ctx, title_client)
+            # 2026-11-01, part five: which pages Google has in its index, named in the brief when one is missing
+            try:
+                google += " " + search_console.index_line(search_console.index_check(ctx.conn, ctx.cfg, transport=console))
+            except search_console.SearchConsoleError as e:
+                google += f" The index check did not run: {e}"
+            except Exception as e:  # noqa: BLE001  the network: the week's numbers and changes are already done; said, tried next week
+                google += f" The index check did not run ({type(e).__name__})."
     return f"{'DRY RUN ' if ctx.dry_run else ''}{text}; {site}; {google}; {loop}"
 
 
