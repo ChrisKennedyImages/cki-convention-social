@@ -579,7 +579,7 @@ def buffer_state(conn) -> dict:
     same_org = not chosen or cached.get("organizationId") == chosen
     linked = {r["service"]: dict(r) for r in db.rows(conn, "SELECT * FROM channels ORDER BY id")}
     return {"key": bool(secrets.get_secret("BUFFER_API_KEY")), "orgs": _setting_json(conn, "buffer.organizations", []),
-            "org": chosen, "found": (cached.get("channels") or []) if same_org else [],
+            "org": chosen, "found": [{**c, "refused": buffer_payloads.channel_refusal(c)} for c in (cached.get("channels") or [])] if same_org else [],
             "fetched_at": cached.get("fetched_at") if same_org else None, "linked": linked,
             "linked_ids": {r["buffer_channel_id"] for r in linked.values()},
             "boards": _setting_json(conn, "buffer.pinterest_boards", []), "board": config.getenv("PINTEREST_BOARD_ID", "") or "",
@@ -1792,8 +1792,10 @@ def create_app() -> FastAPI:
     @app.post("/buffer/link")
     def buffer_link(user: str = Depends(require_user), conn=Depends(conn_dep), channel_id: str = Form(...)):
         ch = next((c for c in buffer_state(conn)["found"] if c.get("id") == channel_id), None)
-        if ch is None or ch.get("service") not in buffer_payloads.NETWORKS:
+        if ch is None:
             return back("That channel is not one Buffer listed for this suite. Tap Find channels.")
+        if ch["refused"]:
+            return back(f"Not linked: {ch['refused']}.")
         name = ch.get("displayName") or ch.get("name") or channel_id
         conn.execute("DELETE FROM channels WHERE service=? OR buffer_channel_id=?", (ch["service"], channel_id))
         db.insert(conn, "channels", buffer_channel_id=channel_id, service=ch["service"], display_name=name,

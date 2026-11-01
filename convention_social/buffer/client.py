@@ -36,9 +36,12 @@ query Organizations {
   account { organizations { id name } }
 }
 """
+# type (ChannelType: account | business | channel | group | page | profile) and externalLink (the channel's own address) were
+# read from the live schema on 2026-11-01: a LinkedIn channel is used only when it is a profile, and the Buffer page shows
+# each channel's address so Chris can tell his own profile from a company page before Use.
 Q_CHANNELS = """
 query Channels($input: ChannelsInput!) {
-  channels(input: $input) { id name service displayName isDisconnected isLocked isQueuePaused }
+  channels(input: $input) { id name service displayName type externalLink isDisconnected isLocked isQueuePaused }
 }
 """
 # Pinterest boards live on the channel (ChannelMetadata union -> PinterestMetadata.boards).

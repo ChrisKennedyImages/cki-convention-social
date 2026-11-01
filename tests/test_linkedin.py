@@ -12,12 +12,17 @@ from pathlib import Path
 from unittest import mock
 from zoneinfo import ZoneInfo
 
+from fastapi.testclient import TestClient
+
 from convention_social.agents import art_director, pacing, publisher
 from convention_social.ai import claude, copy_rules, seo_plan
 from convention_social.buffer import payloads
-from convention_social.core import config, db
+from convention_social.buffer.client import BufferClient
+from convention_social.core import auth, config, db
+from convention_social.dashboard import app as app_module
+from convention_social.dashboard.app import COOKIE, create_app, make_token
 from convention_social.render.motion import LINKEDIN_CARD
-from tests._fakes import AgentCase, add_channels, add_photo, add_post, all_eligible, make_ctx, write_render
+from tests._fakes import AgentCase, FakeBuffer, add_channels, add_photo, add_post, all_eligible, make_ctx, write_render
 
 NY = ZoneInfo("America/New_York")
 FRIDAY_8AM = datetime(2026, 10, 9, 12, 0, tzinfo=timezone.utc)      # 08:00 New York, a Friday
@@ -230,3 +235,49 @@ class Card(AgentCase):
         self.assertEqual(seen, [["a.jpg", "p.jpg"]])
         self.assertEqual(verdict["verdict"], "pass")
         self.assertEqual(out, paths, "the card still goes out with the draft")
+
+
+class Channel(AgentCase):
+    """Buffer lists two LinkedIn channels on his key: his profile and another company's page. Only the profile can be put
+    in Use, and the page shows each channel's own address so he can confirm it is his before the tap."""
+
+    def setUp(self):
+        super().setUp()
+        os.environ["DASHBOARD_PASSWORD_HASH"] = auth.hash_password("correct horse")
+        os.environ["BUFFER_API_KEY"] = "test-key"
+        config.reset()
+        self.conn = self.connect()
+        self.fake = FakeBuffer(channels=[("instagram", "ch-ig", "eventcaliber"), ("linkedin", "ch-li", "Chris Kennedy", "profile"),
+                                         ("linkedin", "ch-li-page", "Some Company", "page")])
+        patcher = mock.patch.object(app_module, "buffer_client",
+                                    lambda conn: BufferClient("test-key", conn=conn, transport=self.fake, agent="dashboard"))
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.client = TestClient(create_app())
+        self.client.cookies.set(COOKIE, make_token("chris"))
+
+    def post(self, url, **data):
+        r = self.client.post(url, data=data, follow_redirects=False)
+        self.assertEqual(r.status_code, 303)
+        return self.client.get(r.headers["location"]).text
+
+    def linked(self):
+        return {r["service"]: r["buffer_channel_id"] for r in db.rows(self.conn, "SELECT * FROM channels")}
+
+    def test_the_refusal_rule(self):
+        self.assertEqual(payloads.channel_refusal({"service": "linkedin", "type": "profile"}), "")
+        self.assertIn("not your own profile", payloads.channel_refusal({"service": "linkedin", "type": "page"}))
+        self.assertIn("not your own profile", payloads.channel_refusal({"service": "linkedin"}), "no type read: refused, never assumed")
+        self.assertEqual(payloads.channel_refusal({"service": "facebook", "type": "page"}), "", "a Facebook Page is what Facebook is")
+        self.assertEqual(payloads.channel_refusal({"service": "tiktok", "type": "account"}), "not a network this suite posts to")
+
+    def test_only_his_profile_can_be_put_in_use(self):
+        page = self.post("/buffer/find")
+        self.assertIn("Found 3 channel(s) in Buffer.", page)
+        self.assertIn("https://linkedin.example/ChrisKennedy", page, "the channel's own address, for him to confirm")
+        self.assertEqual(page.count("Use for LinkedIn"), 1, "one Use button: the profile; the page gets none")
+        self.assertIn("a LinkedIn page, not your own profile", page)
+        self.assertIn("Not linked: a LinkedIn page, not your own profile", self.post("/buffer/link", channel_id="ch-li-page"))
+        self.assertEqual(self.linked(), {})
+        self.assertIn("LinkedIn posts go to Chris Kennedy.", self.post("/buffer/link", channel_id="ch-li"))
+        self.assertEqual(self.linked(), {"linkedin": "ch-li"})

@@ -2177,6 +2177,12 @@ linkedin.com/in/chriskennedyimages, through the same Buffer account (Buffer list
   on the Keys page, after Use on his own LinkedIn channel on the Buffer page (never the other LinkedIn channel that key
   sees). Every post still waits for his Approve. From the first run after this lands every draft carries a LinkedIn
   caption and a LinkedIn tick on the draft page, which he can untick.
+- **His profile only.** Buffer lists two LinkedIn channels on that key: his profile (LinkedIn, Chris Kennedy, type
+  profile, id 6a5aa2b080cc80cdcad334c1, linkedin.com/in/chriskennedyimages) and another company's page (type page,
+  locked). The Buffer page refuses Use on a LinkedIn channel that is not a profile (Buffer's ChannelType, read from the
+  live schema) and shows each channel's own address beside its name, so he confirms his profile with the one tap that
+  links it; nothing links by itself (2026-10-11), so no channel id is pinned anywhere. A locked or disconnected channel
+  is never posted to even when linked.
 - **One photo per post:** the hero alone on the single card at 4:5 (render_paths "linkedin"), the way Pinterest has it at
   2:3; a reel day gives LinkedIn the hero still, not the video. The art director does not look at it a second time (the
   4:5 or the 2:3 shows the same crop). The card went to him as two rendered sample posts before anything was wired

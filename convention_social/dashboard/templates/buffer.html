@@ -44,8 +44,8 @@
 <div class="card" style="margin-top:12px"><strong>Channels in Buffer</strong>
   <div class="muted">Tap Use only on this company's own accounts. Nothing is linked by itself.</div>
   {% for c in b.found %}
-  <div class="line"><span>{{ c.service|network }}: {{ c.displayName or c.name }}{% if c.isDisconnected %} <span class="badge failed">disconnected</span>{% endif %}{% if c.isLocked %} <span class="badge failed">locked</span>{% endif %}</span>
-    {% if c.service not in b.networks %}<span class="muted">not used here</span>
+  <div class="line"><span>{{ c.service|network }}: {{ c.displayName or c.name }}{% if c.externalLink %} <span class="muted">{{ c.externalLink }}</span>{% endif %}{% if c.isDisconnected %} <span class="badge failed">disconnected</span>{% endif %}{% if c.isLocked %} <span class="badge failed">locked</span>{% endif %}</span>
+    {% if c.refused %}<span class="muted">{{ c.refused }}</span>
     {% elif c.id in b.linked_ids %}<form method="post" action="/buffer/unlink" class="inline"><input type="hidden" name="service" value="{{ c.service }}"><span class="badge ok">in use</span> <button class="small" type="submit">Stop</button></form>
     {% else %}<form method="post" action="/buffer/link" class="inline"><input type="hidden" name="channel_id" value="{{ c.id }}"><button class="small" type="submit">Use for {{ c.service|network }}</button></form>{% endif %}
   </div>

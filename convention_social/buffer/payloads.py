@@ -55,6 +55,7 @@ from ..core import config
 NETWORKS = ("instagram", "facebook", "pinterest", "linkedin")
 NAMES = {"instagram": "Instagram", "facebook": "Facebook", "pinterest": "Pinterest", "linkedin": "LinkedIn"}
 ONE_IMAGE = ("pinterest", "linkedin")   # one image per post: a pin (more was never verified), a LinkedIn post (2026-11-01)
+LINKEDIN_CHANNEL_TYPE = "profile"       # ChannelType in the live schema (2026-11-01): account | business | channel | group | page | profile
 PIN_TITLE_MAX = 100          # Pinterest's own title limit
 INSTAGRAM_IMAGE_TYPE = "post"   # one photo or a carousel of several; Instagram takes post, story or reel
 
@@ -84,6 +85,16 @@ def posting_networks() -> tuple[str, ...]:
     raw = config.getenv(POSTING_KEY, "") or ""
     picked = tuple(n for n in (w.strip().lower() for w in raw.split(",")) if n in NETWORKS)
     return picked or POSTING_DEFAULT
+
+
+def channel_refusal(channel: dict) -> str:
+    """Why this Buffer channel is not one the suite links, or "": a service it does not post to, or a LinkedIn channel that
+    is not a profile (2026-11-01: the lane is Chris's own profile; the company page the same key sees is never used)."""
+    if channel.get("service") not in NETWORKS:
+        return "not a network this suite posts to"
+    if channel.get("service") == "linkedin" and channel.get("type") != LINKEDIN_CHANNEL_TYPE:
+        return f"a LinkedIn {channel.get('type') or 'channel'}, not your own profile; LinkedIn posts go to your profile only"
+    return ""
 
 
 def name_of(network: str) -> str:
