@@ -13,8 +13,9 @@ Which searches, from the newest Search Console window kept (seo/search_console.p
   photography, photos), the places served (PLACES) and the small words (in, near me, best); every one of those must be a
   word offer.json names its kinds of event and its coverage with, or a kind of shot the coverage pages show
   (site/build.COVERAGE_SHOTS). Portraits are headshots, and exhibition halls are vendors and booths (Chris, 2026-10-12).
-  Anything else, a fan convention, a wedding, a kind of event offer.json does not name, or a place not served, is
-  never proposed. A search that asks for the business as a whole ("event photographer dc") is the home page's;
+  Anything else, a wedding, any kind of event offer.json does not name (the conventions it never advertises, his ruling
+  of 2026-10-12, included), or a place not served, is never proposed. A search that asks for the business as a whole
+  ("event photographer dc") is the home page's;
 - never for a venue (VENUE): a venue page needs the venue's name, and names are his to decide (2026-10-11), so a search
   for a hotel, a ballroom or a convention center is left out and counted, waiting for his ruling;
 - that no page answers: the page Google showed it on most is the home page, or sits at an average place worse than
