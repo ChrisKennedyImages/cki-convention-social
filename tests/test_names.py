@@ -53,6 +53,39 @@ class Gate(IsolatedCase):
             self.assertIn(n, known)
         self.assertNotIn("unknown", known, "a placeholder is not a name")
 
+    def test_plain_event_words_are_never_names_and_real_names_still_are(self):
+        """2026-10-31: the sorter stored "reception", "receptions", "conventions", "awards", "Gala" as event names, and the
+        gate refused every reception photo's words, the template's included. Plain words are not names; a real name that
+        contains one still is; the folder guess and the model's reading both drop them; the migration clears the same list."""
+        import re as _re
+        from pathlib import Path
+        from convention_social.library import classify, heuristics
+        from convention_social.seo import photo_text
+        conn = db.connect()
+        now = db.utcnow()
+        for i, n in enumerate(("reception", "Receptions", "conventions", "Gala", "C.A.S.E. Gala", "ACU Awards", "Awards 2019")):
+            pid = db.insert(conn, "photos", drive_id=f"w{i}", name=f"w{i}", first_seen_at=now, last_seen_at=now)
+            db.insert(conn, "classifications", photo_id=pid, method="folder", convention_name=n, classified_at=now)
+        known = {k.lower() for k in names.public_names(conn)}
+        conn.close()
+        for plain in ("reception", "receptions", "conventions", "gala", "awards"):
+            self.assertNotIn(plain, known, plain)
+        for real in ("c.a.s.e. gala", "acu awards"):
+            self.assertIn(real, known, real)
+        self.assertFalse(names.is_name("Awards 2019"))
+        self.assertTrue(names.is_name("Liberty Summit 2025"))
+        self.assertEqual(heuristics.guess("My Drive/Receptions/2019").event_name, "")
+        self.assertEqual(heuristics.guess("My Drive/Liberty Summit Reception 2025").event_name, "Liberty Summit Reception")
+        self.assertIsNone(classify.event_name_seen("Reception"))
+        self.assertEqual(classify.event_name_seen("Liberty Summit"), "Liberty Summit")
+        sql = (Path(classify.__file__).resolve().parents[1] / "core/migrations/0088_plain_words_are_not_event_names.sql").read_text()
+        self.assertEqual(set(_re.findall(r"'([^']+)'", sql.split("IN (", 1)[1])), names.NOT_NAMES, "the migration clears exactly the words the gate ignores")
+        # and a reception photo's words now pass the gate (they were refused, the template's included)
+        f = photo_text.PhotoFacts(photo_id=1, subject="event", shot_type="reception", event_name="", event_kind="business",
+                                  year="2022", city="", view="", summary="Guests at a reception.", handles=(), brand="Event Caliber",
+                                  names=tuple(names.public_names(db.connect())))
+        self.assertEqual(photo_text.problems(photo_text.template(f), f), [])
+
     def test_names_are_found_however_they_are_written(self):
         known = ["Conservative Political Action Conference", "Liberty Summit", "CPAC", "ACU", "Jordan Example"]
         for text in ("Backstage at CPAC.", "#CPAC2025", "#cpacphotos", "the cpac stage", "ACU staff", "On stage at the Liberty Summit",

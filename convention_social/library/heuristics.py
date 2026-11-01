@@ -13,6 +13,8 @@ import re
 from dataclasses import dataclass
 from typing import Optional
 
+from ..ai import names
+
 FAN_WORDS = ("comic", "comicon", "comic-con", "anime", "cosplay", "otakon", "katsucon", "gaming", "game con",
              "fan expo", "fanexpo", "dragon con", "dragoncon", "awesome con", "awesomecon", "megacon", "furry",
              "sci-fi", "scifi", "horror con", "toy", "manga")
@@ -93,4 +95,6 @@ def guess(path: str, taken_at: Optional[str] = None) -> FolderGuess:
     name = YEAR.sub("", name)
     name = re.sub(r"(?i)\b(selects?|final|finals|photos?|images?|edited|exports?|jpe?gs?|immediate release|website)\b", "", name)
     name = TIDY.sub(" ", name).strip(" -_,.")
+    if not names.is_name(name):
+        name = ""                 # a "Receptions" folder is a kind of event, not an event's name (2026-10-31)
     return FolderGuess(is_event=is_event, event_kind=kind, event_name=name, year=year, subject=subject)

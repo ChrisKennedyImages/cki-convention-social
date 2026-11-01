@@ -1966,3 +1966,14 @@ Asked to keep one or set a number: "Two a day". The second times, Eastern, as pr
 first time stays the learner's. Two posts on one network are never closer than three hours: when the learner brings
 the first time within three hours of the second, the second moves to three hours before the first. Today's schedule
 says both times. Drafting is unchanged; Draft now (the same evening) adds a draft on demand.
+
+## 2026-10-31: plain event words are not names
+
+After the writer ran for the site's photos (51 of 58 had words), the last seven were all reception photos, refused
+every time, the template's words included. The sorter had stored plain words as event names, mostly from folder names:
+"reception" 24, "receptions" 26, "conventions" 33, "awards", "Gala", "volunteer". The public-names gate (ai/names.py,
+Chris's 2026-10-11 rule that no public word names an event or a person) then banned the word "reception", which is
+the kind of shot. The red-team audit of 2026-10-16 had seen the symptom in captions. Chris: "Yes, fix it". Plain words
+for a kind of event or a room are never names (PLAIN_WORDS); the folder guess and the model's reading drop them; the
+stored ones are cleared (migration 0088). A real name that contains one ("C.A.S.E. Gala", "ACU Awards") is still a name,
+and CPAC, ACU and every other name stay banned exactly as before.

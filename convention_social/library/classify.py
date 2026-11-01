@@ -30,7 +30,7 @@ from typing import Callable, Optional
 
 from PIL import Image, ImageOps
 
-from ..ai import spend
+from ..ai import names, spend
 from ..core import config, db, secrets
 from . import heuristics
 
@@ -377,7 +377,7 @@ def event_name_seen(value) -> Optional[str]:
     report.best counted each junk string as its own event, defeating the per event cap.
     """
     name = str(value or "").strip()
-    return None if name.lower() in NO_NAME else name
+    return None if name.lower() in NO_NAME or not names.is_name(name) else name
 
 
 def _score_1_5(value) -> Optional[int]:
