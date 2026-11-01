@@ -14,10 +14,11 @@ an official role. The one list of organizations is the logo strip under the hero
 (Chris, 2026-10-15: "should we add the companies we have worked for on the
 website? like their logos"), off until he turns it on in offer.json.
 
-Each page's title and description are written in one place (page_words). A search
-change Chris approved (seo/changes.py, 2026-11-01) is laid over them by
-with_seo_changes, still through the copy rules, the names rule and the lengths; one
-that no longer passes is left off with a note, and the page keeps its own words.
+Each page's title, description and lead sentence are written in one place (page_words).
+A search change Chris approved (seo/changes.py, 2026-11-01: a title and description,
+or a lead sentence) is laid over them by with_seo_changes, still through the copy rules,
+the names rule and the lengths; one that no longer passes is left off with a note, and
+the page keeps its own words.
 """
 from __future__ import annotations
 
@@ -58,6 +59,7 @@ AREA = "Washington, DC"                                                   # wher
 AREA_SERVED = ("Washington, DC", "Maryland", "Virginia", "United States")
 AREA_LINE = "Based in Washington, DC. Serving DC, Maryland and Virginia, and travelling nationwide."
 TITLE_MAX, DESCRIPTION_MAX = 75, 160       # what a search result shows whole; a longer one stops the build (said, never silently cut)
+LEAD_MAX = 200     # a lead sentence a search change writes: one or two plain sentences (the longest of the site's own is 180)
 # which kinds of shot a coverage page shows (2026-10-14): the library's own shot words, by the room the page is about
 COVERAGE_SHOTS = {
     "backstage": ("backstage",), "green_room": ("backstage",),
@@ -538,24 +540,27 @@ def rel_of(path: str) -> str:
     return "index.html" if path == "/" else path.strip("/") + "/index.html"
 
 
-def page_words(o: dict, t: dict, brand: str) -> dict[str, tuple[str, str]]:
-    """Every page's own title and description, by the file it is written to. The build adds " | brand" after every
-    title but the home page's (full_title)."""
-    words = {"index.html": (t["title"], t["description"]),
-             "coverage/index.html": (f"Event photography coverage in {AREA}", t["coverage_description"])}
+def page_words(o: dict, t: dict, brand: str) -> dict[str, dict[str, str]]:
+    """Every page's own words, by the file it is written to: its "title" and "description" (the build adds " | brand"
+    after every title but the home page's, full_title) and, on a page that opens with one, its "lead" sentence (the
+    <p class="first"> under the headline)."""
+    def page(title: str, description: str, lead: Optional[str] = None) -> dict[str, str]:
+        return {"title": title, "description": description, **({"lead": lead} if lead is not None else {})}
+    words = {"index.html": page(t["title"], t["description"], t["first"]),
+             "coverage/index.html": page(f"Event photography coverage in {AREA}", t["coverage_description"], t["coverage_first"])}
     for c in o["coverage"]:
-        words[f"coverage/{c['key']}/index.html"] = (f"{c['title']}, {AREA}", c["first"])
-    words["contact/index.html"] = ("Contact us", f"Email or call {brand}, event and convention photographers based in {AREA}. "
-                                                 "One of us writes back within 24 hours.")
-    words["book/index.html"] = ("Request a quote for event photography",
-                                f"Send the dates, the venue and the rooms that matter. One of us writes back within 24 hours "
-                                f"with a quote, in {AREA} or wherever your event is.")
-    words["about/index.html"] = ("About us: two brothers, event photographers",
-                                 f"Chris and Nic Kennedy, brothers, more than thirty years each behind the camera, based in {AREA} "
-                                 "and travelling nationwide.")
-    words["thanks/index.html"] = ("Thank you", "Your request is in.")
-    words["privacy/index.html"] = ("Privacy and photo removal", "How quote requests are handled, and how to have a photo taken down.")
-    words["404.html"] = ("Not found", "Not found.")
+        words[f"coverage/{c['key']}/index.html"] = page(f"{c['title']}, {AREA}", c["first"], c["first"])
+    words["contact/index.html"] = page("Contact us", f"Email or call {brand}, event and convention photographers based in {AREA}. "
+                                                     "One of us writes back within 24 hours.", t["contact_first"])
+    words["book/index.html"] = page("Request a quote for event photography",
+                                    f"Send the dates, the venue and the rooms that matter. One of us writes back within 24 hours "
+                                    f"with a quote, in {AREA} or wherever your event is.")
+    words["about/index.html"] = page("About us: two brothers, event photographers",
+                                     f"Chris and Nic Kennedy, brothers, more than thirty years each behind the camera, based in {AREA} "
+                                     "and travelling nationwide.")
+    words["thanks/index.html"] = page("Thank you", "Your request is in.", t["thanks"])
+    words["privacy/index.html"] = page("Privacy and photo removal", "How quote requests are handled, and how to have a photo taken down.")
+    words["404.html"] = page("Not found", "Not found.", t["not_found"])
     return words
 
 
@@ -584,32 +589,54 @@ def words_problems(rel: str, title: str, description: str, brand: str, names) ->
     return why
 
 
-def with_seo_changes(conn: sqlite3.Connection, words: dict[str, tuple[str, str]],
-                     brand: str) -> tuple[dict[str, tuple[str, str]], list[int], dict[int, str]]:
-    """The pages' words with the title changes Chris approved laid over them (seo/changes.py: approved, live or kept,
-    oldest first): (the words, the changes laid, and why for each change left off). A change is laid only while the page still
-    says what it replaced (an older change on the same page counts) and its words pass words_problems today; otherwise
-    the page keeps the words it has."""
-    out = dict(words)
+def lead_problems(lead: str, names) -> list[str]:
+    """Why a lead sentence a search change writes may not stand on a page, in plain words; [] when it may: the copy rules
+    (no price, no dash, no claim, no official role or client), the names rule and its length."""
+    if not (lead or "").strip():
+        return ["the lead is empty"]
+    why = [f"the lead {b.message}" for b in copy_rules.check(lead, names=names).blocks]
+    if len(lead) > LEAD_MAX:
+        why.append(f"the lead is {len(lead)} characters, {LEAD_MAX} at most")
+    return why
+
+
+def change_problems(rel: str, words: dict[str, str], fields, brand: str, names) -> list[str]:
+    """Why a page's words, with a change laid, may not stand: each field the change sets (`fields`) by its own rule, the
+    title and description by words_problems, the lead by lead_problems."""
+    why = []
+    if {"title", "description"} & set(fields):
+        why += words_problems(rel, words.get("title", ""), words.get("description", ""), brand, names)
+    if "lead" in fields:
+        why += lead_problems(words.get("lead", ""), names)
+    return why
+
+
+def with_seo_changes(conn: sqlite3.Connection, words: dict[str, dict[str, str]],
+                     brand: str) -> tuple[dict[str, dict[str, str]], list[int], dict[int, str]]:
+    """The pages' words with the search changes Chris approved laid over them (seo/changes.py: approved, live or kept,
+    every kind, oldest first): (the words, the changes laid, and why for each change left off). A change is laid only
+    while the page still says what it replaced (an older change on the same page counts) and its words pass
+    change_problems today; otherwise the page keeps the words it has."""
+    out = {rel: dict(w) for rel, w in words.items()}
     names = ai_names.public_names(conn)
     laid, left_off = [], {}
-    for ch in seo_changes.on_site(conn, "title"):
+    for ch in seo_changes.on_site(conn):
         rel = rel_of(ch["page"])
         before, after = json.loads(ch["before"]), json.loads(ch["after"])
         if rel not in out:
             left_off[ch["id"]] = f"the site no longer has the page {ch['page']}"
-        elif (before.get("title"), before.get("description")) != out[rel]:
+        elif any(out[rel].get(f) != v for f, v in before.items()):
             left_off[ch["id"]] = f"{ch['page']} no longer has the words it replaced"
-        elif why := words_problems(rel, after.get("title", ""), after.get("description", ""), brand, names):
+        elif why := change_problems(rel, {**out[rel], **after}, after, brand, names):
             left_off[ch["id"]] = f"its words no longer pass: {'; '.join(why)}"
         else:
-            out[rel] = (after["title"], after["description"])
+            out[rel].update(after)
             laid.append(ch["id"])
     return out, laid, left_off
 
 
-def site_words(conn: sqlite3.Connection) -> dict[str, tuple[str, str]]:
-    """Every page's title and description as the next live build writes them: its own, with the approved changes."""
+def site_words(conn: sqlite3.Connection) -> dict[str, dict[str, str]]:
+    """Every page's words (page_words) as the next live build writes them: its own, with the approved changes."""
     brand = config.get_config().brand_name
     return with_seo_changes(conn, page_words(offer.load(), copy_text(), brand), brand)[0]
 
@@ -644,11 +671,12 @@ def coverage_rows(coverage: list[dict], skip: str = "") -> str:
         for i, c in enumerate(rows) if c["key"] != skip)
 
 
-def home_body(t: dict, hero: str, frames: list[tuple[str, str, str, str]], stack: list[tuple[str, str]], venues: list[tuple[str, str]],
-              clients: str = "") -> str:
-    """`frames`: (img tag, caption, the coverage page it opens, the photo's shape); `stack`: (img tag, shape); `venues`:
-    (img tag, label, shape). The shape (--ar) gives every frame the photo's own proportions, so nothing is cropped.
-    `clients`: the logo strip under the hero (clients_body), or nothing."""
+def home_body(t: dict, lead: str, hero: str, frames: list[tuple[str, str, str, str]], stack: list[tuple[str, str]],
+              venues: list[tuple[str, str]], clients: str = "") -> str:
+    """`lead`: the sentence under the headline (page_words, with any approved search change). `frames`: (img tag,
+    caption, the coverage page it opens, the photo's shape); `stack`: (img tag, shape); `venues`: (img tag, label,
+    shape). The shape (--ar) gives every frame the photo's own proportions, so nothing is cropped. `clients`: the logo
+    strip under the hero (clients_body), or nothing."""
     e = html.escape
     coverage = offer.load()["coverage"]
     rows = coverage_rows(coverage)
@@ -671,7 +699,7 @@ def home_body(t: dict, hero: str, frames: list[tuple[str, str, str, str]], stack
 <div class="copy"><div class="kick mono c">{e(t['kicker'])}</div>
 <h1 class="mega"><span><em>Convention</em></span><span class="o"><em>photographers,</em></span><span><em>Washington, DC<b>.</b></em></span></h1>
 <p class="sub">{e(t['sub'])}</p>
-<p class="first">{e(t['first'])}</p>
+<p class="first">{e(lead)}</p>
 <div class="row"><p class="lede">{e(t['lede_delivery'])} <a class="c" href="{e(offer.coverage_page('on_site_delivery'))}">More about instant delivery &#8599;</a> {e(t['lede_brothers'])}</p><a class="btn fill" href="/book/">Request a quote <span class="arr">&#8599;</span></a></div></div></section>
 {clients}{_ticker(short)}
 <section id="coverage" class="index"><div class="head rv"><div><div class="kick mono c">Coverage</div>
@@ -866,16 +894,18 @@ def build(conn: Optional[sqlite3.Connection], photos: SitePhotos, *, out: Path =
     laid, not_laid = [], {}
     if conn is not None:
         words, laid, not_laid = with_seo_changes(conn, words, brand)       # the search changes Chris approved (2026-11-01)
-    pages = {"index.html": (*words["index.html"], home_body(t, hero, frames, stack, venues, strip))}
+    def head(rel: str) -> tuple[str, str]:
+        return words[rel]["title"], words[rel]["description"]
+    pages = {"index.html": (*head("index.html"), home_body(t, words["index.html"]["lead"], hero, frames, stack, venues, strip))}
     page_shown: dict[str, list[tuple[str, str, ImageMeta]]] = {"/": list(shown)}     # per page, for the sitemap and the image blocks
     page_og: dict[str, str] = {}
     page_jsonld: dict[str, str] = {}
     page_noindex: set[str] = set()
     coverage_list = tuple((c["key"], c["label"]) for c in offer.listed_coverage())      # the footer: rows, not every page
     # the coverage index and one page per coverage item (2026-10-14: every row led to the quote form)
-    pages["coverage/index.html"] = (*words["coverage/index.html"], f"""
+    pages["coverage/index.html"] = (*head("coverage/index.html"), f"""
 <section class="page cover"><div class="kick mono c">Coverage</div><h1>Every<br><span class="o">room</span><b>.</b></h1>
-<p class="first">{e(t['coverage_first'])}</p>
+<p class="first">{e(words['coverage/index.html']['lead'])}</p>
 <p class="g" style="max-width:640px;margin:18px 0 0">{e(t['coverage_p'])}</p>
 <div class="list" style="margin-top:50px">{coverage_rows(o['coverage'])}</div>
 <p style="margin-top:50px"><a class="btn fill" href="/book/">Request a quote <span class="arr">&#8599;</span></a></p></section>""")
@@ -884,9 +914,9 @@ def build(conn: Optional[sqlite3.Connection], photos: SitePhotos, *, out: Path =
         rel = f"coverage/{c['key']}/index.html"
         figures = "".join(f'<figure style="--ar:{ar}">{img_tag(files, alt, "(max-width:760px) 50vw, (max-width:1100px) 50vw, 33vw")}</figure>'
                           for files, alt, m, ar in page_files.get(c["key"], []))
-        pages[rel] = (*words[rel], f"""
+        pages[rel] = (*head(rel), f"""
 <section class="page cover"><div class="kick mono c"><a href="/coverage/">Coverage</a></div><h1>{e(c['label'])}<b>.</b></h1>
-<p class="first">{e(c['first'])}</p><div class="prose"><p>{e(c['about'])}</p></div>
+<p class="first">{e(words[rel]['lead'])}</p><div class="prose"><p>{e(c['about'])}</p></div>
 {f'<div class="grid">{figures}</div>' if figures else ''}
 <p style="margin-top:50px"><a class="btn fill" href="/book/">Request a quote <span class="arr">&#8599;</span></a></p>
 <div class="more"><div class="kick mono c">The rest of the coverage</div><div class="list">{coverage_rows(o['coverage'], skip=c['key'])}</div></div></section>""")
@@ -901,9 +931,9 @@ def build(conn: Optional[sqlite3.Connection], photos: SitePhotos, *, out: Path =
         page_jsonld[rel] = "".join(markup.jsonld_script(b) for b in blocks)
     # the contact page (2026-10-14): email and phone, no form (his decision); the quote form for dates
     phone = contact_phone()
-    pages["contact/index.html"] = (*words["contact/index.html"], f"""
+    pages["contact/index.html"] = (*head("contact/index.html"), f"""
 <section class="page contact"><div class="kick mono c">Contact</div><h1>Get in<br><span class="o">touch</span><b>.</b></h1>
-<p class="first">{e(t['contact_first'])}</p>
+<p class="first">{e(words['contact/index.html']['lead'])}</p>
 <div class="hand"><div><div class="mono c">Email</div><a class="l" href="mailto:{e(contact_email())}">{e(contact_email())}</a></div>
 {f'<div><div class="mono c">Phone</div><a class="l" href="{theme.tel_href(phone)}">{e(phone)}</a></div>' if phone else ''}</div>
 <p class="g" style="max-width:640px;margin-top:30px">{e(t['contact_p'])}</p>
@@ -919,7 +949,7 @@ def build(conn: Optional[sqlite3.Connection], photos: SitePhotos, *, out: Path =
                  'data-expired-callback="checkExpired" data-error-callback="checkFailed"></div>'
                  f'<noscript><p class="mono g" style="margin-bottom:22px">This form needs JavaScript. Without it, email us at {mail_link}.</p></noscript>')
     questions = "".join(f"<li>{e(q)}</li>" for q in (o.get("quote_questions") or [])[:4])
-    pages["book/index.html"] = (*words["book/index.html"], f"""
+    pages["book/index.html"] = (*head("book/index.html"), f"""
 <section class="page"><div class="kick mono c">Request a quote</div><h1>Tell us about<br><span class="o">your</span> event<b>.</b></h1>
 <p class="g" style="max-width:640px;margin:18px 0 30px">Send the dates, the venue and the rooms that matter, and one of us writes back within 24 hours.
 What moves the quote: the days and hours, the rooms covered at the same time, how many photographers, how fast you need selects, and where the images will be used.</p>
@@ -957,26 +987,26 @@ book.addEventListener("submit",ev=>{{if(token)return;ev.preventDefault();waiting
 <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer onerror="checkFailed()"></script>""")
     about_photos = "".join(f'<figure style="--ar:{ar}">{img}</figure>' for img, _, _, ar in frames[:2])
     about_paras = "".join(f"<p>{e(p)}</p>" for p in t["about"].split("\n\n"))
-    pages["about/index.html"] = (*words["about/index.html"], f"""
+    pages["about/index.html"] = (*head("about/index.html"), f"""
 <section class="page cover"><div class="kick mono c">About</div><h1>Two<br><span class="o">brothers</span><b>.</b></h1>
 <div class="prose" style="max-width:640px;margin-top:30px">{about_paras}
 <h3>Who will be at your event</h3><p>{e(t['who'])}</p><p>References available on request.</p></div>
 {f'<div class="grid" style="margin-top:50px">{about_photos}</div>' if about_photos else ''}
 <p style="margin-top:50px"><a class="btn fill" href="/book/">Request a quote <span class="arr">&#8599;</span></a></p></section>""")
-    pages["thanks/index.html"] = (*words["thanks/index.html"], f"""<section class="page">
+    pages["thanks/index.html"] = (*head("thanks/index.html"), f"""<section class="page">
 <div class="kick mono c">Request received</div><h1>Thank<br><span class="o">you</span><b>.</b></h1>
-<p class="first">{e(t['thanks'])}</p>
+<p class="first">{e(words['thanks/index.html']['lead'])}</p>
 <p class="g" style="max-width:560px;margin-top:18px">{e(t['thanks_p'])}</p>
 <p style="margin-top:30px"><a class="btn" href="/coverage/">The coverage <span class="arr">&#8599;</span></a> <a class="btn" href="/">Back to the site <span class="arr">&#8599;</span></a></p></section>""")
-    pages["privacy/index.html"] = (*words["privacy/index.html"], f"""
+    pages["privacy/index.html"] = (*head("privacy/index.html"), f"""
 <section class="page"><div class="kick mono c">Privacy</div><h1>Privacy<b>.</b></h1><div class="prose">
 <h3>The quote form</h3><p>What you send through the form is used only to reply to you and to prepare your quote.
 It is never sold or shared. The website holds it only until the booking inbox collects it, which it does every ten minutes.</p>
 <h3>Photos of you</h3><p>If you appear in a photo shared by {e(brand)} and want it taken down, email
 <a class="c" href="mailto:{e(contact_email())}">{e(contact_email())}</a> with a link to it. It comes down, and it stays out of anything shared after that.</p>
 <h3>Who we are</h3><p>{e(t['who_we_are'].format(email=contact_email()))}</p></div></section>""")
-    pages["404.html"] = (*words["404.html"], f"""<section class="page"><div class="kick mono c">Out of frame</div>
-<h1>Not<br><span class="o">found</span><b>.</b></h1><p class="first">{e(t['not_found'])}</p>
+    pages["404.html"] = (*head("404.html"), f"""<section class="page"><div class="kick mono c">Out of frame</div>
+<h1>Not<br><span class="o">found</span><b>.</b></h1><p class="first">{e(words['404.html']['lead'])}</p>
 <p style="margin-top:30px"><a class="btn" href="/">Back to the site <span class="arr">&#8599;</span></a> <a class="btn" href="/coverage/">The coverage <span class="arr">&#8599;</span></a> <a class="btn" href="/contact/">Contact <span class="arr">&#8599;</span></a></p></section>""")
     og = f"{base}/assets/hero-1600.jpg" if hero else ""
     preload = ", ".join(f"/assets/hero-{w}.jpg {w}w" for w in WIDTHS) if hero else ""

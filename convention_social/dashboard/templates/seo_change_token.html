@@ -3,6 +3,7 @@
 <h1>Search change {{ c.id }}</h1>
 <div class="card">
   <strong>{{ c.name }}</strong>
+  {% if c.search %}<p class="muted">For the search "{{ c.search }}"</p>{% endif %}
   {% for label, before, after in c.shown %}
   <p><span class="muted">{{ label }} now</span><br>{{ before }}<br><span class="muted">{{ label }} new</span><br>{{ after }}</p>
   {% endfor %}

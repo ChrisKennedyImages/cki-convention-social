@@ -68,7 +68,7 @@ def needs(conn: sqlite3.Connection) -> list[tuple[str, str]]:
         out.append((f"{scout} upcoming event(s) the scout found for you to look at.", "/scout"))
     search = _count(conn, "SELECT COUNT(*) FROM seo_changes WHERE status='proposed'")      # 2026-11-01, seo/changes.py
     if search:
-        out.append((f"{search} search change(s) waiting for your Approve: new words for a page that loses clicks.", "/seo/changes"))
+        out.append((f"{search} search change(s) waiting for your Approve: new words to help a page in Google search.", "/seo/changes"))
     drive = settings.get(conn, "drive.auth_state") or "missing"
     if drive in ("expired", "missing"):
         out.append(("Google Drive is " + ("signed out. Sign in again." if drive == "expired" else "not signed in yet."), "/drive"))

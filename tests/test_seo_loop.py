@@ -81,7 +81,8 @@ class LoopCase(AgentCase):
         return tuple(d.isoformat() for d in win)
 
     def own(self, path: str) -> tuple[str, str]:
-        return build.site_words(self.conn)[build.rel_of(path)]
+        words = build.site_words(self.conn)[build.rel_of(path)]
+        return words["title"], words["description"]
 
     def proposal(self, path=STAGE, title=NEW_TITLE, description=NEW_DESCRIPTION, **kw) -> int:
         before_title, before_description = self.own(path)
@@ -374,7 +375,7 @@ class Approving(LoopCase):
 
     def test_today_and_the_brief_say_a_change_waits(self):
         self.proposal()
-        self.assertIn(("1 search change(s) waiting for your Approve: new words for a page that loses clicks.", "/seo/changes"),
+        self.assertIn(("1 search change(s) waiting for your Approve: new words to help a page in Google search.", "/seo/changes"),
                       chief.needs(self.conn))
         self.signed_in()
         self.assertIn('href="/seo/changes"', self.client.get("/").text)
@@ -431,7 +432,7 @@ class Building(LoopCase):
         self.set(second, status="approved")
         words, laid, off = build.with_seo_changes(self.conn, build.page_words(build.offer.load(), build.copy_text(), brand), brand)
         self.assertEqual((laid, off), ([first, second], {}))
-        self.assertEqual(words["coverage/stage/index.html"][0], "Keynote and main stage photographers, Washington, DC")
+        self.assertEqual(words["coverage/stage/index.html"]["title"], "Keynote and main stage photographers, Washington, DC")
         self.set(first, status="reverted")
         words, laid, off = build.with_seo_changes(self.conn, build.page_words(build.offer.load(), build.copy_text(), brand), brand)
         self.assertEqual(laid, [])
@@ -529,7 +530,7 @@ class Telling(LoopCase):
         self.assertIn(f"Search: you approved the new words for {BREAKOUTS}.", b["done"])
         self.assertIn(f"Search: The new words on {DINNERS} stay: 3.0% of 400 showings clicked.", b["done"])
         self.assertIn("Search: The new words on /coverage/portraits/ were put back.", b["done"])
-        self.assertIn(("1 search change(s) waiting for your Approve: new words for a page that loses clicks.", "/seo/changes"), b["needs"])
+        self.assertIn(("1 search change(s) waiting for your Approve: new words to help a page in Google search.", "/seo/changes"), b["needs"])
         self.assertEqual(changes.brief(self.conn, now + timedelta(hours=1)), ([], []), "only what happened since the last brief")
         self.assertEqual(proposed, 1)
 
@@ -548,7 +549,7 @@ class Telling(LoopCase):
     def test_a_dry_run_reads_nothing_pays_nothing_and_proposes_nothing(self):
         self.weak_stage()
         fake, google = FakeClaude(), mock.Mock()
-        line = seo_agent.run(make_ctx(self.conn, agent="seo", dry_run=True), console=google, title_client=fake)
+        line = seo_agent.run(make_ctx(self.conn, agent="seo", dry_run=True), console=google, changes_client=fake)
         self.assertIn("search changes: none in dry run (nothing read, measured, paid for or proposed)", line)
         self.assertEqual((fake.calls, google.call_count, self.spent(), self.pings), ([], 0, [], []))
         self.assertEqual(db.one(self.conn, "SELECT COUNT(*) n FROM seo_changes")["n"], 0)
@@ -571,7 +572,7 @@ class Telling(LoopCase):
         fake = FakeClaude({"title": "Breakout and panel photographers in Washington, DC", "description": NEW_DESCRIPTION})
         with mock.patch.object(search_console, "access_token", return_value="tok"), \
                 mock.patch.object(seo_agent.site_check, "run_check", return_value={"checked": 1, "failed": 0}):
-            line = seo_agent.run(make_ctx(self.conn, agent="seo", dry_run=False), console=google, title_client=fake)
+            line = seo_agent.run(make_ctx(self.conn, agent="seo", dry_run=False), console=google, changes_client=fake)
         self.assertIn(f"search changes: The new words on {STAGE} stay", line)
         self.assertIn(f"New words: {BREAKOUTS}: proposed (change {due + 1}), ping sent.", line)
         self.assertIn("Standing: 1 waiting for your Approve.", line)

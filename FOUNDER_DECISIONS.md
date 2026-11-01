@@ -2046,3 +2046,32 @@ photos the site shows are written once more in it; a photo Chris edited never is
 which public pages it has in its index (URL Inspection, the same read-only sign-in), and the morning brief names any it
 does not, with Google's reason, and says where to ask for them (Search Console, URL inspection, Request indexing).
 No tap for either: four steers the writer that already fills in the photo words, five is a report.
+
+## 2026-11-01: the SEO loop, part two: near misses, one tap from his phone
+
+Chris, on the Search Console numbers: "shouldn't we have it do it all. Why wouldn't we?", and for every change to the
+site's words, "One tap from my phone". Part two is the searches a page sits just off Google's first page for
+(seo/leads.py over seo/changes.py):
+
+- A near miss: in the newest kept 28-day window, a search a public page was shown for at least 30 times at an average
+  place from 8 to 20. Only on a page that opens with a lead sentence (the home page, the coverage index, each coverage
+  page, Contact), and only a search made entirely of trade and place words (part four's SEARCH_VOCAB), never the
+  brand's own name, never a name the names gate knows; a search can carry a name the gate has never seen, so anything
+  else is left out, whatever it is. One search a page, its most shown; the most shown first; at most two a week.
+- Claude rewords that page's lead sentence (the line under the headline) from the page's own words so it works the
+  search's words in, the way a person writes them, under the AI cap. Every draft is checked before it is proposed: the
+  copy rules (no price, no dash, no claim, no official role, no client), the names rule (never an event or a person,
+  even when the search names one), at most 200 characters, no name and no number the page does not already say, and
+  more of the search's words than the lead had, losing none. A draft that fails is dropped with the reason in the
+  agent's summary, never proposed. A dry run reads nothing, pays nothing, proposes nothing.
+- It is part one's change with a new kind ("lead"): the same ping, with the sentence before and after and the search
+  with its numbers, Approve and Skip; the same Search changes page; one open change a page and eight weeks of rest,
+  whatever the kind (a page with a title change open gets no lead, and the other way round). The build lays an
+  approved lead over the page's own in the same one place as titles (site/build.with_seo_changes), only while the page
+  still opens with the sentence it replaced; its description stays as it is.
+- A lead change is judged on the search it was made for, not on clicks: 31 days after it went live, with at least 30
+  showings for that search on that page since, it is kept at the same average place or better and put back by itself
+  (the site republishes) two places lower or more; anything between, or fewer showings, is measured again next week.
+  The morning brief says which, with the numbers.
+
+Part three (new pages from search demand) follows in its own pull request, the next kind over the same table.
