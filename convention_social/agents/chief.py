@@ -3,9 +3,11 @@
 The crew's work in one place, ordered by what only Chris can do:
 
   Needs you     posts waiting for Approve, quote requests waiting for a reply,
-                outreach drafts, new events the scout found, anything broken
-                that an agent cannot fix (a dead Drive sign-in, a disconnected
-                channel), and the Art director's turned-back drafts.
+                outreach drafts, anything broken that an agent cannot fix (a
+                dead Drive sign-in, a disconnected channel), and the Art
+                director's turned-back drafts. The scout's finds are not a line
+                of their own (Chris, 2026-11-01): each one three months or more
+                out becomes an outreach draft by itself.
   Done          what was posted, replies sent, photos sorted, what the
                 learner changed.
   Watching      spend against the cap, agents that missed a run, notes from
@@ -63,9 +65,6 @@ def needs(conn: sqlite3.Connection) -> list[tuple[str, str]]:
     outreach = _count(conn, "SELECT COUNT(*) FROM outreach WHERE status='draft'")
     if outreach:
         out.append((f"{outreach} organizer email(s) drafted for your Approve.", "/outreach"))
-    scout = _count(conn, "SELECT COUNT(*) FROM scout_events WHERE status='new'")
-    if scout:
-        out.append((f"{scout} upcoming event(s) the scout found for you to look at.", "/scout"))
     search = _count(conn, "SELECT COUNT(*) FROM seo_changes WHERE status='proposed'")      # 2026-11-01, seo/changes.py
     if search:
         out.append((f"{search} search change(s) waiting for your Approve: the site's words or pages, for Google search.", "/seo/changes"))

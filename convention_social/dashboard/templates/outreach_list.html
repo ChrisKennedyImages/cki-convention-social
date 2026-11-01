@@ -15,7 +15,7 @@
   {% if not cfg_ok.address %}<div class="rule block">No postal address: nothing can be approved or sent. Set BRAND_POSTAL_ADDRESS on the <a href="/keys">Keys</a> page.</div>{% endif %}
 </div>
 {% endif %}
-{% for title, rows, empty in [('Drafts', drafts, 'No drafts. The outreach agent drafts up to ' ~ daily_drafts ~ ' a day from scout finds that have an organizer email, and from prospects you add below.'),
+{% for title, rows, empty in [('Drafts', drafts, 'No drafts. The outreach agent drafts up to ' ~ daily_drafts ~ ' a day, one for every event the scout found three months or more out once its organizer\'s address and dates are found, and from prospects you add below.'),
                               ('Approved, waiting to send', approved, 'None.'), ('Sent', sent, 'None yet.'), ('Rejected and opted out', closed, 'None.')] %}
 <h2>{{ title }}</h2>
 {% if not rows %}<div class="card muted">{{ empty }}</div>{% endif %}

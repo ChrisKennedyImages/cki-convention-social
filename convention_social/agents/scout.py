@@ -1,31 +1,38 @@
-"""Scout agent (weekly, Sunday 07:00): upcoming conventions and conferences for Chris to consider.
+"""Scout agent (weekly, Sunday 07:00): upcoming conventions and conferences, each one a note to its organizer.
 
 1. Reads the region from SCOUT_REGION (free text, set on the Keys page) and
-   the horizon from SCOUT_MONTHS (default 9). With no region it does nothing
-   and says so.
+   the horizon from SCOUT_MONTHS (default 9). Blank means the default region.
 2. Live only: one Claude research call with web search (outreach/research.py),
    under the monthly AI cap. Research has no outward effect but it costs
    money, so a dry run makes no call and only says what it would search.
-3. Keeps only what a source backs (research.vet: no source URL, no row; an
+3. Searches only events that start three calendar months or more from today
+   (earliest_start; Chris, 2026-11-01: "the events need to be at least 3
+   months out"), up to the horizon.
+4. Keeps only what a source backs (research.vet: no source URL, no row; an
    organizer email only when printed on the event's own site; dates only
    when real) and stores each event once in scout_events (status new),
    de-duplicated by normalized name and start date, and skipping anything
    already on the calendar. CPAC, the ACU and their affiliates are never
    stored (outreach/compliance.never_contact; Chris, 2026-10-13).
-Nothing reaches the calendar until Chris presses "Add to calendar" on the
-dashboard's Scout page, and then with attending and official unticked.
+No ping: every event three months or more out becomes a draft by itself once
+the outreach agent has read a person's address and the dates off its own site
+(agents/outreach.py), and the outreach ping says so. Nothing reaches the
+calendar until Chris presses "Add to calendar" on the Scout page, and then
+with attending and official unticked.
 """
 from __future__ import annotations
 
 import json
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from ..ai import spend
-from ..core import config, db, notify, runner, secrets
+from ..core import config, db, runner, secrets
 from ..outreach import compliance, keys, research
 
 DEFAULT_MONTHS = 9
+# Chris, 2026-11-01: "I would rather them all just be converted to drafts and the events need to be at least 3 months out."
+LEAD_MONTHS = 3
 
 
 DEFAULT_REGION = "Washington DC, Maryland and Virginia"      # Chris, 2026-10-13: the scout armed, around Washington DC
@@ -44,11 +51,13 @@ def months() -> int:
     return min(max(n, 1), 24)
 
 
-def local_today(cfg: config.Config) -> date:
+def local_today(cfg: config.Config, now: datetime | None = None) -> date:
+    """Today in the founder's zone (TIMEZONE); `now` is the caller's clock (the outreach agent's, pinned in tests)."""
+    now = now or datetime.now(timezone.utc)
     try:
-        return datetime.now(ZoneInfo(cfg.timezone)).date()
+        return now.astimezone(ZoneInfo(cfg.timezone)).date()
     except Exception:  # noqa: BLE001 — a bad TIMEZONE setting must not stop the run
-        return datetime.now().date()
+        return now.astimezone().date()
 
 
 def horizon(today: date, n_months: int) -> date:
@@ -60,6 +69,13 @@ def horizon(today: date, n_months: int) -> date:
         except ValueError:
             continue
     return today + timedelta(days=30 * n_months)
+
+
+def earliest_start(today: date) -> date:
+    """The first day an event may start and still get a note: three calendar months after today in the founder's zone
+    (1 November -> 1 February; 30 November -> 28 February). The scout searches from it, drafting takes only events
+    dated on or after it, and an approved note whose event is now nearer is not sent (agents/outreach.py)."""
+    return horizon(today, LEAD_MONTHS)
 
 
 def known_names(conn) -> list[str]:
@@ -105,8 +121,11 @@ def run(ctx: runner.Context, client=None) -> str:
     if not where:
         return "SCOUT_REGION is not set: add the region to search (for example Washington DC, Maryland, Virginia) on the Keys page. Nothing searched."
     today = local_today(ctx.cfg)
-    until = horizon(today, months())
-    plan = f"{where}, events starting {today.isoformat()} to {until.isoformat()}"
+    earliest, until = earliest_start(today), horizon(today, months())
+    if until <= earliest:
+        return (f"SCOUT_MONTHS={months()} ends on {until.isoformat()}, before {earliest.isoformat()}, three months out: "
+                f"nothing searched. Set it to more than {LEAD_MONTHS} on the Keys page.")
+    plan = f"{where}, events starting {earliest.isoformat()} to {until.isoformat()}"
     if ctx.dry_run:
         return f"DRY RUN: would search {plan}. A dry run makes no paid research call; switch scout to live on the Agents page."
     if (config.getenv("AI_MODEL") or "").lower() == "template":
@@ -118,18 +137,15 @@ def run(ctx: runner.Context, client=None) -> str:
     if client is None:
         import anthropic
         client = anthropic.Anthropic(api_key=secrets.get_secret("ANTHROPIC_API_KEY"))
-    res = research.research(ctx.conn, client, region=where, today=today, horizon=until, known=known_names(ctx.conn),
-                            agent=ctx.agent)
+    res = research.research(ctx.conn, client, region=where, today=today, earliest=earliest, horizon=until,
+                            known=known_names(ctx.conn), agent=ctx.agent)
     if res.search_errors:
         runner.record_error(ctx.conn, ctx.agent, "web_search", "web search returned errors: " + ", ".join(res.search_errors[:5]))
     if res.refused:
         return f"the model declined the research for {plan}; nothing stored ({res.calls} call(s), {res.searches} search(es))."
-    kept, dropped = research.vet(res, today=today, horizon=until)
+    kept, dropped = research.vet(res, today=today, earliest=earliest, horizon=until)
     calendar = on_calendar(ctx.conn)
     new = sum(1 for ev in kept if store(ctx.conn, ev, res.model, calendar))
-    if new:
-        notify.push(f"{ctx.cfg.brand_name}: the scout found events", f"{new} new event{'s' if new != 1 else ''} around {where}. Tap to see them.",
-                    dry_run=ctx.dry_run, priority="default", click=notify.link("/scout"), conn=ctx.conn, agent=ctx.agent)
     with_email = sum(1 for ev in kept if ev["organizer_email"])
     gone = ", ".join(f"{k.replace('_', ' ')} {v}" for k, v in dropped.items() if v) or "none"
     notes = [n for n in (res.stopped, "structured by a second call" if res.structured else "",

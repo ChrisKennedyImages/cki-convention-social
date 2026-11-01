@@ -1,8 +1,11 @@
 """Dashboard pages for the scout and outreach. app.py calls `register(app, require_user, conn_dep, render)`.
 
-Scout: what the weekly scout found; "Add to calendar" puts an event on the
-calendar with attending and official unticked (Chris ticks attending himself;
-official only on his word), "Dismiss" hides it for good.
+Scout: what the weekly scout found. Every event three months or more out
+becomes an organizer note by itself once its address and dates are read off
+its own site (Chris, 2026-11-01); each card says where it stands. "Add to
+calendar" puts an event on the calendar with attending and official unticked
+(Chris ticks attending himself; official only on his word), "Dismiss" hides
+it for good.
 
 Outreach: drafts, approved, sent. Chris edits a note, then Approves or
 Rejects it; Approve is refused while outreach.compliance finds a problem.
@@ -40,7 +43,11 @@ def register(app, require_user, conn_dep, render) -> None:
         show = show if show in ("new", "added", "dismissed", "all") else "new"
         where, params = ("1=1", ()) if show == "all" else ("status=?", (show,))
         rows = db.rows(conn, f"SELECT * FROM scout_events WHERE {where} ORDER BY COALESCE(start_date,'9999'), id LIMIT 300", params)
-        items = [{**dict(r), "source_list": json.loads(r["sources"] or "[]"),
+        earliest = outreach_agent.earliest_start(config.get_config()).isoformat()
+        notes = {r["scout_event_id"]: dict(r) for r in db.rows(
+            conn, "SELECT id, scout_event_id, email, status FROM outreach WHERE kind='first' AND scout_event_id IS NOT NULL ORDER BY id")}
+        items = [{**dict(r), "source_list": json.loads(r["sources"] or "[]"), "note": notes.get(r["id"]),
+                  "soon": bool(r["start_date"] and r["start_date"] < earliest),
                   "dates": keys.dates_in_words(r["start_date"], r["end_date"])} for r in rows if not compliance.never_for_event(r)]
         counts = {r["status"]: r["n"] for r in db.rows(conn, "SELECT status, COUNT(*) n FROM scout_events GROUP BY status")}
         last = db.one(conn, "SELECT * FROM agent_runs WHERE agent='scout' ORDER BY id DESC LIMIT 1")

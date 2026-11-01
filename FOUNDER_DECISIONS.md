@@ -2123,3 +2123,45 @@ new page carries photos". Part three (seo/pages.py over seo/changes.py):
   it in /removed-pages.json); Skip keeps it.
 - The morning brief and the SEO agent's summary say what was proposed, approved, put live, kept, proposed for taking
   down and taken down.
+
+## 2026-11-01: every event three months out becomes a draft; a person's address; the dates read off the event's page
+
+Chris, on the morning brief's scout line: "What do I get outreach for upcoming events? I would rather them all just be
+converted to drafts and the events need to be at least 3 months out." Asked what to do where no organizer email is found:
+"Scrape other avenues to find their actual emails. Go look at my [other suite's] repo and use how it scrapes and searches
+for the actual emails when they find a info@ or contact@…. Read only, do not touch anything in the repo" (the other suite
+is named in his message; its name is kept out of this repo; it was only read). Asked about events found without dates (the
+three-month rule cannot be checked, the note's first line names the dates, and the scout never searches a known event
+again), he chose "Look up their dates": "When the agent reads an event's site for an email, it also reads the dates (a
+small Claude read, well under a cent each, through the AI budget). A draft comes only once dates are found and are 3+
+months out."
+
+- **Three months out, one day for everything** (agents/scout.earliest_start): three calendar months after today in his
+  zone (1 November gives 1 February; 30 November gives 28 February). The scout searches from that day to SCOUT_MONTHS.
+  Drafting takes only events whose start date is known and on or after it. The send step checks again: an approved first
+  note whose event is now nearer is not sent and is closed (rejected, "Not sent: the event starts ..., under three months
+  away"), so it never goes. A waiting draft that breaks the rule (dated under three months away, or a scouted event whose
+  dates were looked for and not found) is taken out of the drafts with the reason; one whose dates are found stays, its
+  first line written again with them (one he edited keeps his words). A prospect he adds by hand may be undated, his own
+  call; a dated one under three months away is not drafted. A follow-up is not held by the rule.
+- **No asking.** The morning brief's "N upcoming event(s) the scout found for you to look at." and the scout's own ping
+  are gone. The outreach ping ("organizer notes to approve") is how he hears, at the daily draft cap's pace
+  (OUTREACH_DAILY_DRAFTS). The Scout page stays, Add to calendar and Dismiss with it, and says every event three months or
+  more out becomes a draft on its own once its address and dates are found; each card says where its event stands.
+- **A person's address first** (outreach/emails.py), the other suite's way written for events: the addresses a page hides
+  are read (Cloudflare's protection decoded, mailto links unquoted, %40 read as @) and junk is dropped; a named person's
+  address on the event's or organizer's own domain outranks any shared inbox (info@, contact@, hello@, register@,
+  registration@, events@, press@ ..., an event's own inbox like gacinfo@, a mailbox with the organization's name like
+  mylegion@); a shared inbox is kept only when no person turns up on the usual pages and the site's own contact, staff,
+  team, people, leadership, press and about pages they link to (same host only). **Several people named: the first whose
+  name and title on the page say events, meetings, conference, sponsorship, exhibits, partnerships or marketing;
+  otherwise the first one found.** The own-domain rule, do not contact, one request a second, the fetch budget and
+  leaving a refusing server alone all stand.
+- **A second look.** An event the earlier walk left with a shared inbox, or with no address, is walked once more; a
+  person's address found takes the shared inbox's place and the waiting draft follows it. An event with a note approved
+  or sent is never looked at again, and an approved note is never touched.
+- **The dates, read** (outreach/dates.py): an event with an address and no dates has its own page read once by
+  claude-haiku-4-5, the cheapest model the suite already uses, through the AI cap and on the ledger like every call. The
+  dates are kept only when the words the model quotes are on the page exactly as written and name those days (the year,
+  the month, the day) and the start has not passed; otherwise no dates and a plain note. No read in a dry run, with
+  AI_MODEL=template, or once the cap is reached (then a later run reads it).

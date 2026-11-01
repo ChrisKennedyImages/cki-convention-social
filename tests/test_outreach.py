@@ -12,7 +12,7 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi.testclient import TestClient
 
-from convention_social.agents import outreach
+from convention_social.agents import outreach, scout
 from convention_social.ai import copy_rules, spend
 from convention_social.core import auth, config, db, runner
 from convention_social.dashboard import scout_outreach_routes
@@ -70,7 +70,7 @@ class OutreachCase(IsolatedCase):
         os.environ["BRAND_POSTAL_ADDRESS"] = POSTAL
         config.reset()
         self.conn = db.connect()
-        self.today = datetime.now(timezone.utc).date()
+        self.today = MONDAY.date()            # the agent's pinned clock: event dates are counted from it (the three-month rule)
 
     def tearDown(self):
         self.conn.close()
@@ -86,7 +86,7 @@ class OutreachCase(IsolatedCase):
     def day(self, n):
         return (self.today + timedelta(days=n)).isoformat()
 
-    def scout_event(self, name="Sample Con 2027", email="press@samplecon.example", start=40, status="new", kind="fan"):
+    def scout_event(self, name="Sample Con 2027", email="press@samplecon.example", start=120, status="new", kind="fan"):
         now = db.utcnow()
         start_date = self.day(start) if start is not None else None
         return db.insert(self.conn, "scout_events", dedup_key=keys.event_key(name, start_date), name_key=keys.name_key(name),
@@ -189,7 +189,7 @@ class Agent(OutreachCase):
 
     def test_daily_draft_cap(self):
         for i in range(7):
-            self.scout_event(name=f"Con {i}", email=f"press{i}@con{i}.example", start=30 + i)
+            self.scout_event(name=f"Con {i}", email=f"press{i}@con{i}.example", start=100 + i)
         line = outreach.run(self.ctx(), api=self.api())
         self.assertIn("drafted=5", line)
         self.assertIn("left for tomorrow=2", line)
@@ -236,6 +236,114 @@ class Agent(OutreachCase):
         self.assertIn("Hand Con", r["body"])
 
 
+# ---------------------------------------------------------------------- three months out, everywhere
+class ThreeMonths(OutreachCase):
+    """Chris, 2026-11-01: "I would rather them all just be converted to drafts and the events need to be at least 3 months
+    out." One day for the scout, the drafts and the send: three calendar months after today in his zone."""
+
+    def edge(self):
+        """Days from the pinned Monday to the first day that still gets a note."""
+        return (scout.earliest_start(self.today) - self.today).days
+
+    def test_every_event_dated_three_months_out_is_drafted_and_no_other(self):
+        self.assertEqual(outreach.earliest_start(config.get_config()), scout.earliest_start(self.today))
+        on_the_day = self.scout_event(name="On The Day Con", email="press@ontheday.example", start=self.edge())
+        later = self.scout_event(name="Later Con", email="press@later.example", start=self.edge() + 60)
+        self.scout_event(name="Day Before Con", email="press@daybefore.example", start=self.edge() - 1)
+        self.scout_event(name="Soon Con", email="press@soon.example", start=30)
+        self.scout_event(name="Undated Con", email="press@undated.example", start=None)
+        line = outreach.run(self.ctx(), api=self.api())
+        drafted = {r["scout_event_id"] for r in db.rows(self.conn, "SELECT scout_event_id FROM outreach WHERE status='draft'")}
+        self.assertEqual(drafted, {on_the_day, later}, line)
+        self.assertIn(f"events three months or more out from {scout.earliest_start(self.today).isoformat()}", line)
+
+    def test_a_prospect_added_by_hand_for_an_event_under_three_months_away_is_not_drafted(self):
+        now = db.utcnow()
+        soon = db.insert(self.conn, "outreach", event_key=keys.event_key("Hand Con", self.day(20)), event_name="Hand Con",
+                         start_date=self.day(20), email="a@hand.example", status="queued", token=keys.new_token(), created_at=now, updated_at=now)
+        undated = db.insert(self.conn, "outreach", event_key=keys.event_key("Open Con", None), event_name="Open Con",
+                            email="b@open.example", status="queued", token=keys.new_token(), created_at=now, updated_at=now)
+        line = outreach.run(self.ctx(), api=self.api())
+        r = db.one(self.conn, "SELECT * FROM outreach WHERE id=?", (soon,))
+        self.assertEqual(r["status"], "rejected", line)
+        self.assertIn("Not drafted: the event starts", r["notes"])
+        self.assertIn("under three months away", r["notes"])
+        self.assertEqual(self.status(undated), "draft", "an undated prospect Chris added himself is his own call")
+
+    def test_an_approved_note_whose_event_is_now_too_near_is_not_sent_and_never_goes(self):
+        oid = self.row()                                                 # approved, for an event on 2027-03-05
+        five_weeks_on = MONDAY + timedelta(days=35)                      # Monday 7 December: three months out is 7 March
+        with mock.patch.object(outreach, "now_utc", lambda: five_weeks_on):
+            stats = outreach.send_approved(self.ctx(), opt_outs_synced=True)
+            self.assertEqual((stats["too_soon"], stats["would_send"]), (1, 0))
+            r = db.one(self.conn, "SELECT * FROM outreach WHERE id=?", (oid,))
+            self.assertEqual(r["status"], "rejected")
+            self.assertEqual(r["notes"], "Not sent: the event starts March 5, 2027, under three months away. "
+                                         "Organizer notes go only for events three months or more away (Chris, 2026-11-01).")
+            self.assertEqual(outreach.send_approved(self.ctx(), opt_outs_synced=True)["would_send"], 0, "and it never goes")
+        self.assertEqual(self.outbox(), [])
+        self.assertEqual(self.status(oid), "rejected")
+
+    def test_an_approved_note_for_a_scouted_event_with_no_dates_is_not_sent(self):
+        ev = self.scout_event(start=None)
+        now = db.utcnow()
+        oid = db.insert(self.conn, "outreach", kind="first", scout_event_id=ev, event_key=keys.event_key("Sample Con 2027", None),
+                        event_name="Sample Con 2027", email="press@samplecon.example", subject="Photography for Sample Con 2027",
+                        body=draft.template_first({"event_name": "Sample Con 2027"}).body, status="approved", token=keys.new_token(),
+                        model="template", drafted_at=now, approved_at=now, created_at=now, updated_at=now)
+        stats = outreach.send_approved(self.ctx(), opt_outs_synced=True)
+        self.assertEqual((stats["too_soon"], self.status(oid), self.outbox()), (1, "rejected", []))
+        self.assertIn("the event's dates were not found on its site", db.one(self.conn, "SELECT notes FROM outreach WHERE id=?", (oid,))["notes"])
+
+    def test_drafts_that_break_the_rule_are_taken_out_unless_their_dates_are_found(self):
+        def waiting_draft(ev_id, email):
+            ev, now = db.one(self.conn, "SELECT * FROM scout_events WHERE id=?", (ev_id,)), db.utcnow()
+            d = draft.template_first({"event_name": ev["name"], "start_date": ev["start_date"], "city": ev["city"]})
+            return db.insert(self.conn, "outreach", kind="first", scout_event_id=ev_id, event_key=ev["dedup_key"], event_name=ev["name"],
+                             start_date=ev["start_date"], end_date=ev["end_date"], city=ev["city"], website=ev["website"], email=email,
+                             subject=d.subject, body=d.body, status="draft", token=keys.new_token(), model="template",
+                             drafted_at=now, created_at=now, updated_at=now)
+        undated_read = self.scout_event(name="Read Con", email="info@read.example", start=None)
+        soon = self.scout_event(name="Soon Con", email="info@soon.example", start=40)
+        unread = self.scout_event(name="Unread Con", email="info@unread.example", start=None)
+        found = self.scout_event(name="Found Con", email="info@found.example", start=None)
+        now = db.utcnow()
+        self.conn.execute("UPDATE scout_events SET dates_checked_at=?, dates_note='no dates on https://read.example' WHERE id=?", (now, undated_read))
+        a, b, c, d = (waiting_draft(undated_read, "info@read.example"), waiting_draft(soon, "info@soon.example"),
+                      waiting_draft(unread, "info@unread.example"), waiting_draft(found, "info@found.example"))
+        # the lookup found Found Con's dates on its site: well past three months
+        self.conn.execute("UPDATE scout_events SET start_date=?, end_date=?, dates_checked_at=?, dates_note=? WHERE id=?",
+                          (self.day(150), self.day(152), now, 'read off https://found.example: "..."', found))
+        stats = outreach.follow_events(self.ctx(), scout.earliest_start(self.today))
+        self.assertEqual((stats["withdrawn"], stats["redated"], stats["waiting"]), (2, 1, 1))
+        ra, rb = (db.one(self.conn, "SELECT * FROM outreach WHERE id=?", (i,)) for i in (a, b))
+        self.assertEqual((ra["status"], rb["status"]), ("rejected", "rejected"))
+        self.assertEqual(ra["notes"], "Taken out of the drafts: the event's dates were not found on its site. "
+                                      "Organizer notes go only for events three months or more away (Chris, 2026-11-01).")
+        self.assertIn("under three months away", rb["notes"])
+        rc = db.one(self.conn, "SELECT * FROM outreach WHERE id=?", (c,))
+        self.assertEqual(rc["status"], "draft", "its dates are still to be read (the cap, or the API): it waits")
+        self.assertIn("Waiting for the event's dates", rc["notes"])
+        rd = db.one(self.conn, "SELECT * FROM outreach WHERE id=?", (d,))
+        self.assertEqual((rd["status"], rd["start_date"], rd["end_date"]), ("draft", self.day(150), self.day(152)))
+        self.assertIn(draft.dates_as_chris_writes_them(self.day(150), self.day(152)), rd["body"], "the note's first line names the dates")
+        self.assertEqual(rd["drafted_at"], rd["updated_at"])
+
+    def test_dates_found_for_a_draft_chris_edited_keep_his_words(self):
+        ev = self.scout_event(name="Edited Con", email="info@edited.example", start=None)
+        now = db.utcnow()
+        oid = db.insert(self.conn, "outreach", kind="first", scout_event_id=ev, event_key=keys.event_key("Edited Con", None),
+                        event_name="Edited Con", email="info@edited.example", subject="Photography for Edited Con",
+                        body="Hello,\nMy own words.\nChris", status="draft", token=keys.new_token(), model="template",
+                        drafted_at="2026-11-01T10:00:00+00:00", created_at=now, updated_at="2026-11-01T11:00:00+00:00")
+        self.conn.execute("UPDATE scout_events SET start_date=?, dates_checked_at=? WHERE id=?", (self.day(140), now, ev))
+        outreach.follow_events(self.ctx(), scout.earliest_start(self.today))
+        r = db.one(self.conn, "SELECT * FROM outreach WHERE id=?", (oid,))
+        self.assertEqual((r["status"], r["body"], r["start_date"]), ("draft", "Hello,\nMy own words.\nChris", self.day(140)))
+        self.assertIn("Your words are kept as you wrote them.", r["notes"])
+        self.assertEqual(r["drafted_at"], "2026-11-01T10:00:00+00:00", "still his edit")
+
+
 # ---------------------------------------------------------------------- never CPAC, never the ACU
 class NeverContacted(OutreachCase):
     """Chris, 2026-10-13: "never outreach to CPAC or the ACU or any affiliates! NEVER and that's a hard rule."
@@ -258,7 +366,7 @@ class NeverContacted(OutreachCase):
 
     def test_scout_finds_and_hand_prospects_are_never_drafted(self):
         self.scout_event(name="CPAC 2027", email="press@samplecon.example")
-        self.scout_event(name="Sample Con 2027", email="press@samplecon.example", start=50)
+        self.scout_event(name="Sample Con 2027", email="press@samplecon.example", start=150)
         now = db.utcnow()
         hand = db.insert(self.conn, "outreach", event_key=keys.event_key("Hand Con", None), event_name="Hand Con", email="press@cpac.org",
                          status="queued", token=keys.new_token(), created_at=now, updated_at=now)

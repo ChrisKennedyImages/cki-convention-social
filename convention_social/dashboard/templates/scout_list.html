@@ -2,13 +2,15 @@
 {% block body %}
 {% set notes = {'added': ('On the calendar, with attending and official unticked.', ''), 'dismissed': ('Dismissed.', ''),
                 'already': ('That one is already on the calendar.', ''),
-                'started': ('Searching now. New finds show here in a few minutes, and your phone gets a ping.', ''),
+                'started': ('Searching now. New finds show here in a few minutes; each one three months or more out becomes a draft on its own.', ''),
                 'never': ('CPAC, the ACU and their affiliates are never listed or contacted. That is a hard rule, in the code.', 'bad')} %}
 {% if msg in notes %}<div class="msg {{ notes[msg][1] }}">{{ notes[msg][0] }}</div>{% endif %}
 <h1>Scout</h1>
 <div class="card muted">
-  Every Sunday the scout searches <strong>{{ region }}</strong> for conventions and conferences in the next {{ months }} months
-  (change the region on the <a href="/keys">Keys</a> page, Scout and outreach). Only events a source backs are kept; an organizer email shows only when it is printed on the event's own site.
+  Every Sunday the scout searches <strong>{{ region }}</strong> for conventions and conferences starting 3 to {{ months }} months from now
+  (change the region on the <a href="/keys">Keys</a> page, Scout and outreach). Only events a source backs are kept.
+  Every event three months or more out becomes an organizer note on its own, in <a href="/outreach">Drafts</a>, once its organizer's address
+  and its dates are found on the event's own site, a person's address before a shared inbox like info@. Nothing leaves without your Approve.
   {% if last %}<br>Last run: {{ last.started_at[:16].replace('T',' ') }} UTC, {{ last.summary or '' }}{% endif %}
   <form method="post" action="/scout/run" class="row" style="margin-top:8px"><button class="small" type="submit">Search now</button></form>
 </div>
@@ -25,7 +27,12 @@
   <div class="muted">{{ e.dates or 'dates not found' }}{% if e.city %} · {{ e.city }}{% endif %}{% if e.venue %} · {{ e.venue }}{% endif %}</div>
   {% if e.website %}<div><a href="{{ e.website }}" rel="noopener noreferrer" target="_blank">{{ e.website }}</a></div>{% endif %}
   {% if e.organizer or e.organizer_email %}<div class="muted">Organizer: {{ e.organizer or '' }}{% if e.organizer_email %} · {{ e.organizer_email }} (from <a href="{{ e.email_source_url }}" rel="noopener noreferrer" target="_blank">their site</a>){% endif %}</div>{% endif %}
-  {% if not e.organizer_email %}<div class="muted">No email yet{% if e.email_note %}: {{ e.email_note }}{% elif e.website %}: their site is read for one on the next outreach run{% endif %}.</div>{% endif %}
+  {% if not e.organizer_email %}<div class="muted">No email yet{% if e.email_note %}: {{ e.email_note }}{% elif e.website %}: their site is read for one on the next outreach run{% endif %}.</div>
+  {% elif e.email_note %}<div class="muted">{{ e.email_note[:1]|upper }}{{ e.email_note[1:] }}.</div>{% endif %}
+  {% if e.soon %}<div class="muted">Under three months away: no organizer note.</div>
+  {% elif not e.start_date %}<div class="muted">No dates yet{% if e.dates_note %}: {{ e.dates_note }}{% endif %}. A note is drafted once dates three months or more out are found.</div>
+  {% elif e.dates_note %}<div class="muted">Dates {{ e.dates_note }}.</div>{% endif %}
+  {% if e.note %}<div><a href="/outreach/{{ e.note.id }}">Organizer note to {{ e.note.email }}: {{ e.note.status.replace('_', ' ') }}</a></div>{% endif %}
   <div class="muted">Sources:{% for s in e.source_list %} <a href="{{ s }}" rel="noopener noreferrer" target="_blank">{{ loop.index }}</a>{% endfor %}</div>
   <div class="row" style="margin-top:8px">
     {% if e.status != 'added' %}<form method="post" action="/scout/{{ e.id }}/add" class="inline"><button class="primary small" type="submit">Add to calendar</button></form>{% endif %}
