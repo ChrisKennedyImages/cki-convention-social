@@ -50,7 +50,7 @@ from datetime import date, datetime, time, timedelta, timezone
 from typing import Optional
 from zoneinfo import ZoneInfo
 
-from ..buffer import metrics
+from ..buffer import metrics, payloads
 from ..buffer.client import BufferClient
 from ..core import config, db, runner, settings
 
@@ -134,7 +134,7 @@ def _json(value, default):
 
 
 def label(network: str) -> str:
-    return network.capitalize()
+    return payloads.name_of(network)
 
 
 def when_words(times: dict[str, int]) -> str:
@@ -506,6 +506,8 @@ def learn(conn: sqlite3.Connection, cfg: config.Config, now: datetime) -> Sugges
     before_times = applied_times(conn)
     times, detail, sentences, moves = {}, {"times": {}}, [], 0
     for network, base in pacing.times_table().items():
+        if None in base:
+            continue        # a network that never posts on one kind of day (LinkedIn at weekends, 2026-11-01) keeps its hour
         mine = [o for o in obs if o.network == network]
         entry, d, sentence, moved = decide_time(network, mine, base, before_times.get(network), now)
         times[network] = entry
@@ -573,6 +575,12 @@ def dashboard_view(conn: sqlite3.Connection) -> dict:
     monday, saturday = date(2026, 10, 5), date(2026, 10, 10)      # any weekday and any weekend day
     networks = []
     for network, (wd, we) in pacing.times_table().items():
+        if we is None:
+            # a network that never posts at weekends (LinkedIn, 2026-11-01): its hour is not learned; the page says what stands
+            stands = f"{words(of_time(wd))} weekdays only"
+            networks.append({"network": network, "start": stands, "in_use": stands, "applied": "", "suggested": "not learned",
+                             "best_hour": None, "posts": 0})
+            continue
         start = {"weekday": of_time(wd), "weekend": of_time(we)}
         now_used = {"weekday": of_time(post_time_for(conn, network, wd, monday)),
                     "weekend": of_time(post_time_for(conn, network, we, saturday))}

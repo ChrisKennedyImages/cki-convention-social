@@ -156,7 +156,7 @@ class OnTheDraftPage(Mend):
         self.assertIn("Captions rewritten by the suite (template", page)      # no copy of the photo here: the template wrote
         self.assertNotIn("includes portraits", page)
         self.assertNotIn('class="rule block"', page)
-        self.assertEqual(page.count('class="rule ok">passes'), 3)
+        self.assertEqual(page.count('class="rule ok">passes'), 4)      # one badge per network, LinkedIn's too (2026-11-01)
         self.assertTrue(all(copy_rules.check(t, social=True).ok for t in json.loads(self.row(qid)["caption"]).values()))
         page = self.client.get(f"/queue/{qid}").text
         self.assertNotIn("Nothing to fix.", page, "once mended it just passes")
@@ -223,7 +223,7 @@ class TheCard(Mend):
         mend = content.mend_captions(self.conn, self.row(qid), drafter=Writer([CLEAN]))
         self.assertEqual(mend["card"], "card drawn again with today's words")
         paths = json.loads(self.row(qid)["render_paths"])
-        self.assertEqual(sorted(paths), ["2:3", "4:5"])
+        self.assertEqual(sorted(paths), ["2:3", "4:5", "linkedin"])
         for files in paths.values():
             for f in files:
                 self.assertNotEqual(f, str(old))

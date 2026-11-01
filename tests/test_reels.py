@@ -356,7 +356,7 @@ class Saturday(IsolatedCase):
                          "only when the final check confirmed it (2026-10-15), the rest say EVENT PHOTOGRAPHY")
         self.assertIn(ids[0], (self.ids["e1"],) if rooms[0] == "EVENT PHOTOGRAPHY" else (self.ids["s1"], self.ids["s2"]),
                       "the hero is a strongest frame; s1 and s2 are equal, so which leads is chance (2026-10-23)")
-        self.assertEqual(sorted(renders), ["2:3", "9:16", "cover", "stills"])
+        self.assertEqual(sorted(renders), ["2:3", "9:16", "cover", "linkedin", "stills"])
         self.assertTrue(renders["9:16"][0].endswith(f"-{kind}.mp4"))
         self.assertEqual(Path(renders["cover"][0]).name, f"{kind}-{reels3d.COVER_MS[kind]:05d}.jpg", "the cover is the frame Instagram shows")
         self.assertEqual(len(ids), len(rooms))
@@ -367,7 +367,7 @@ class Saturday(IsolatedCase):
         _, meta_, renders, ids = self.last()
         self.assertEqual((meta_["design"], meta_["design_wanted"], len(ids)), ("scan", "scan", 1))   # Friday select, Sunday poster
         self.assertEqual(self.reels, [])
-        self.assertEqual(sorted(renders), ["2:3", "4:5"])
+        self.assertEqual(sorted(renders), ["2:3", "4:5", "linkedin"])
 
     def test_a_reel_that_cannot_be_made_is_a_carousel_of_the_same_photos_and_says_why(self):
         self.with_music()

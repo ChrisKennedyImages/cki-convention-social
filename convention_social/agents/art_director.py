@@ -37,6 +37,7 @@ from PIL import Image
 from ..ai import claude as claude_mod
 from ..ai import spend
 from ..core import config, runner, secrets
+from ..render.motion import LINKEDIN_CARD
 
 MODEL = "claude-opus-5"
 MAX_REDOS = 2
@@ -132,7 +133,8 @@ def direct(conn: sqlite3.Connection, render: Callable[[tuple], dict], *, brief: 
         return paths, {"verdict": "not reviewed", "notes": "Dry run: the art director did not look.", "rounds": 0}
     rounds, last = 0, None
     while True:
-        files = [Path(p) for ps in paths.values() for p in ps if Path(p).suffix.lower() in STILLS][:max_files]
+        # the LinkedIn card is the hero card again (the 4:5 or the 2:3 shows the same crop): not looked at twice
+        files = [Path(p) for key, ps in paths.items() if key != LINKEDIN_CARD for p in ps if Path(p).suffix.lower() in STILLS][:max_files]
         verdict = look(conn, files, brief=brief(paths), client=client, agent=agent)
         rounds += 1
         if verdict is None:

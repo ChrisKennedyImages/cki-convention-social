@@ -49,6 +49,7 @@ from PIL import Image, ImageOps, UnidentifiedImageError
 
 from .. import storage
 from ..ai import names
+from ..buffer import payloads
 from ..core import approve_token, config, db, notify, runner, settings
 from ..library import classify, eligibility
 
@@ -244,7 +245,7 @@ def plain(why: str) -> str:
     why = (why or "no reason recorded").strip().rstrip(".")
     why = re.sub(r"shows personal details: ([a-z_, ]+)",
                  lambda m: "it shows " + " and ".join(DETAIL_WORDS.get(d.strip(), d.strip().replace("_", " ")) for d in m.group(1).split(",")), why)
-    why = re.sub(r"\b(instagram|facebook|pinterest)\b", lambda m: m.group(1).capitalize(), why)
+    why = re.sub(r"\b(instagram|facebook|pinterest|linkedin)\b", lambda m: payloads.name_of(m.group(1)), why)
     return why[0].lower() + why[1:] if why.startswith(("The ", "Today's ")) else why
 
 
@@ -353,14 +354,13 @@ def draft_send(ctx: runner.Context, send, *, check_client=None, drafter=None, ar
 
 
 def where_words(row) -> str:
-    """The networks the post goes to, in words: its targets the suite posts to (POST_NETWORKS when the code has it)."""
-    from ..buffer import payloads
-    on = payloads.posting_networks() if hasattr(payloads, "posting_networks") else payloads.NETWORKS
+    """The networks the post goes to, in words: its targets the suite posts to (POST_NETWORKS)."""
+    on = payloads.posting_networks()
     try:
         nets = [n for n in json.loads(row["targets"] or "[]") if n in on]
     except ValueError:
         nets = []
-    names = [n.capitalize() for n in nets] or ["Instagram"]
+    names = [payloads.name_of(n) for n in nets] or ["Instagram"]
     return names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1]
 
 

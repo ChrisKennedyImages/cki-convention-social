@@ -21,9 +21,9 @@ class Client(AgentCase):
         fake = FakeBuffer()
         chans = BufferClient("test-key", conn=conn, transport=fake).channels()
         self.assertTrue(chans)
-        self.assertEqual([c["service"] for c in chans], ["instagram", "facebook", "pinterest"])
+        self.assertEqual([c["service"] for c in chans], ["instagram", "facebook", "pinterest", "linkedin"])
         self.assertEqual(len(fake.calls), 2)  # organizations + channels
-        self.assertEqual(len(BufferClient("test-key", conn=conn, transport=fake).channels()), 3)
+        self.assertEqual(len(BufferClient("test-key", conn=conn, transport=fake).channels()), 4)
         self.assertEqual(len(fake.calls), 2, "the cache served the second lookup")
         self.assertEqual(db.one(conn, "SELECT COUNT(*) n FROM api_usage WHERE provider='buffer'")["n"], 2)
 

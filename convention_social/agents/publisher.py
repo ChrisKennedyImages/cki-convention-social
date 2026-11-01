@@ -3,14 +3,14 @@
 Ready = content_queue status 'approved' (Chris pressed Approve on the
 dashboard). Before anything leaves, the door re-checks the row (see door()).
 For each targeted network there must be a connected row in `channels`
-(service = instagram | facebook | pinterest); a pin also needs
+(service = instagram | facebook | pinterest | linkedin); a pin also needs
 PINTEREST_BOARD_ID. Each network gets its own time from pacing.py unless
 Chris chose one on the draft. Media: the rendered design for the network's
 aspect (render_paths {aspect: [paths]}: instagram and facebook 4:5,
-pinterest 2:3), else the photo's own local copy. A reel (render_paths "9:16"
+pinterest 2:3, linkedin the hero's own 4:5 card under "linkedin"), else the photo's own local copy. A reel (render_paths "9:16"
 holds an mp4, "cover" its cover) goes to Instagram and Facebook as a video
 post whose fields are read from Buffer's live schema first
-(BufferClient.video_asset_fields); Pinterest still gets the 2:3 card.
+(BufferClient.video_asset_fields); Pinterest and LinkedIn still get their cards.
 
 Dry run (the default): the exact payloads are stored on the row, status
 becomes 'would_publish', nothing is uploaded or sent. Live: media uploaded,
@@ -31,12 +31,14 @@ from ..ai import copy_rules, names
 from ..buffer import budget, media, payloads
 from ..buffer.client import BufferBudgetExceeded, BufferClient, BufferError, BufferRateLimited, BufferUnknownOutcome
 from ..core import config, db, notify, runner, settings
+from ..render.motion import LINKEDIN_CARD
 from . import pacing
 
 READY_SQL = "SELECT * FROM content_queue WHERE status = 'approved' ORDER BY COALESCE(approved_at, created_at), id"
 TERMINAL_OK = {"sent"}
 TERMINAL_BAD = {"error"}
-ASPECT_FOR = {"instagram": "4:5", "facebook": "4:5", "pinterest": "2:3"}
+# the render_paths key each network posts: LinkedIn the hero alone on its 4:5 card (2026-11-01, one photo per post)
+ASPECT_FOR = {"instagram": "4:5", "facebook": "4:5", "pinterest": "2:3", "linkedin": LINKEDIN_CARD}
 POSTABLE_SUFFIXES = {".jpg", ".jpeg", ".png"}
 VIDEO_ASPECT = "9:16"
 # A dry run asks Buffer nothing: it builds the reel with the fields last read from Buffer (the Buffer
@@ -832,7 +834,7 @@ def posted(ctx: runner.Context, row, nets: list[str]) -> None:
     ctx.conn.execute("UPDATE content_queue SET status='published', published_at=?, updated_at=? WHERE id=?", (now, now, row["id"]))
     links = {h["service"]: h["external_link"] for h in db.rows(ctx.conn, "SELECT service, external_link FROM post_history WHERE queue_id=?",
                                                               (row["id"],)) if h["external_link"]}
-    live = next((links[n] for n in ("instagram", "facebook", "pinterest") if links.get(n)), next(iter(links.values()), None))
+    live = next((links[n] for n in payloads.NETWORKS if links.get(n)), next(iter(links.values()), None))
     meta = _json(row["rule_report"], {})
     if instant_format(row) == "story":
         # an instant photo's Story is up (2026-10-15): open it, Also post to the feed with one tap, the dashboard
@@ -847,7 +849,7 @@ def posted(ctx: runner.Context, row, nets: list[str]) -> None:
     if isinstance(meta, dict) and meta.get("source") in ("share", "team"):
         # Post to Event Caliber (2026-10-15): his send was his approval, so the ping is where it lives and how it comes down
         page = notify.link(f"/queue/{row['id']}")
-        where = " and ".join(n.capitalize() for n in nets)
+        where = " and ".join(payloads.name_of(n) for n in nets)
         notify.push(f"{ctx.cfg.brand_name}: your photo is on {where}",
                     f"Post {row['id']}, the photo you sent, is on {where}. Tap to open it. To take it down, open it there, "
                     "tap the three dots, then Delete. The dashboard has the post too.",

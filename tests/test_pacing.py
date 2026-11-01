@@ -18,7 +18,7 @@ FRIDAY, SATURDAY, MONDAY = date(2026, 10, 9), date(2026, 10, 10), date(2026, 10,
 class Times(AgentCase):
     def test_founder_defaults(self):
         table = pacing.times_table()
-        self.assertEqual(set(table), {"instagram", "facebook", "pinterest"})
+        self.assertEqual(set(table), {"instagram", "facebook", "pinterest", "linkedin"})
         self.assertEqual(pacing.time_for("instagram", FRIDAY).strftime("%H:%M"), "11:30")
         self.assertEqual(pacing.time_for("instagram", SATURDAY).strftime("%H:%M"), "10:00")
         self.assertEqual(pacing.time_for("facebook", MONDAY).strftime("%H:%M"), "09:30")

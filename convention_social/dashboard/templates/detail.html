@@ -81,9 +81,9 @@
 <form method="post" action="/queue/{{ item.id }}/save" class="card" id="edit">
   <h2>Captions and where it goes</h2>
   {% for n in networks %}
-  <label class="row" style="min-height:44px;margin:6px 0 2px"><input type="checkbox" name="target_{{ n }}" {{ 'checked' if n in item.targets else '' }} style="width:24px;height:24px"> {{ n|capitalize }}
+  <label class="row" style="min-height:44px;margin:6px 0 2px"><input type="checkbox" name="target_{{ n }}" {{ 'checked' if n in item.targets else '' }} style="width:24px;height:24px"> {{ n|network }}
     {% if item.reports[n].ok %}<span class="rule ok">passes</span>{% else %}<span class="rule block">{{ item.reports[n].blocks[0].message }}</span>{% endif %}
-    {% if n not in networks_on %}<span class="muted">switched off: posts go to {{ networks_on|map('capitalize')|join(', ') }} only (Keys page, Posting)</span>{% endif %}</label>
+    {% if n not in networks_on %}<span class="muted">switched off: posts go to {{ networks_on|map('network')|join(', ') }} only (Keys page, Posting)</span>{% endif %}</label>
   <textarea name="caption_{{ n }}">{{ item.captions.get(n, '') }}</textarea>
   {% endfor %}
   <label>Post time (leave blank: Post now or the pace decides)</label>

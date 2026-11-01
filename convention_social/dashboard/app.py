@@ -40,11 +40,13 @@ from ..buffer.client import BufferBudgetExceeded, BufferClient, BufferError, Buf
 from ..core import access, approve_token, auth, config, db, runner, secrets, settings, state_io
 from .. import music
 from ..library import eligibility, report
+from ..render.motion import LINKEDIN_CARD
 from . import alerts
 from . import today as today_view
 
 TEMPLATES = Jinja2Templates(directory=str(Path(__file__).with_name("templates")))
 TEMPLATES.env.filters["local"] = today_view.local_words       # a stored UTC time in his own words and time zone
+TEMPLATES.env.filters["network"] = buffer_payloads.name_of    # a network as it writes its own name (LinkedIn, never Linkedin)
 COOKIE = "ccs_session"
 SESSION_DAYS = 30
 QUEUE_STATUSES = ("draft", "approved", "would_publish", "scheduled", "published", "failed", "rejected")
@@ -276,7 +278,8 @@ def queue_view(conn, row) -> dict:
             "music": music.credit(conn, meta.get("music")),          # the track the reel was made with, named under its player
             "instant_format": meta.get("format", "") if meta.get("instant") else "",   # an instant photo's Story or feed post (2026-10-15)
             "renders": {a: list(range(1, len(ps) + 1)) for a, ps in renders.items()
-                        if a not in NOT_THUMBS and (a != "2:3" or "pinterest" in on)}}     # the pin card only while Pinterest is on
+                        if a not in NOT_THUMBS and (a != "2:3" or "pinterest" in on)
+                        and (a != LINKEDIN_CARD or "linkedin" in on)}}     # the pin card only while Pinterest is on, the LinkedIn card while LinkedIn is
 
 
 MEDIA_TYPES = {".mp4": "video/mp4", ".png": "image/png"}
@@ -1797,7 +1800,7 @@ def create_app() -> FastAPI:
                   connected=0 if ch.get("isDisconnected") or ch.get("isLocked") else 1, last_checked_at=db.utcnow())
         if ch["service"] == "pinterest":
             settings.set(conn, "buffer.pinterest_boards", "[]")
-        return back(f"{ch['service'].capitalize()} posts go to {name}.")
+        return back(f"{buffer_payloads.name_of(ch['service'])} posts go to {name}.")
 
     @app.post("/buffer/unlink")
     def buffer_unlink(user: str = Depends(require_user), conn=Depends(conn_dep), service: str = Form(...)):
@@ -1879,8 +1882,8 @@ def create_app() -> FastAPI:
                         f("PINTEREST_BOARD_ID", "Pinterest board id"), f("PINTEREST_LINK", "Page a pin opens (blank: the quote page)")]},
             {"title": "Posting", "note": "Blank keeps the default. Times are local. Post times: one per network (facebook=09:30) or "
                                          "weekdays/weekends (instagram=11:30/10:00); the building day is the weekday for building photos.",
-             "fields": [f("POST_NETWORKS", "Networks posts go to, comma separated (blank: instagram only; add facebook or pinterest once connected)"),
-                        f("POST_TIMES", "Post times (default instagram 11:30 weekdays and 10:00 weekends, facebook 09:30, pinterest 20:30)"),
+             "fields": [f("POST_NETWORKS", "Networks posts go to, comma separated (blank: instagram only; add facebook, pinterest or linkedin once connected)"),
+                        f("POST_TIMES", "Post times (default instagram 11:30 weekdays and 10:00 weekends, facebook 09:30, pinterest 20:30, linkedin 09:00 weekdays only)"),
                         f("BUILDING_WEEKDAY", "Building day (default wednesday)"), f("VARIETY_DAYS", "No same event or person twice inside, days (default 14)"),
                         f("PHOTO_REPEAT_DAYS", "A photo sits out after it airs, days (default 180)"),
                         f("TIMEZONE", "Time zone (default America/New_York)"), f("DIGEST_HOUR", "Morning brief hour (default 7)")]},

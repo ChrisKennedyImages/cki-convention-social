@@ -58,8 +58,8 @@ class Page(IsolatedCase):
 
     def test_find_lists_the_channels_and_links_none_by_itself(self):
         page = self.post("/buffer/find")
-        self.assertIn("Found 3 channel(s) in Buffer.", page)
-        for svc in ("Instagram", "Facebook", "Pinterest"):
+        self.assertIn("Found 4 channel(s) in Buffer.", page)
+        for svc in ("Instagram", "Facebook", "Pinterest", "LinkedIn"):     # LinkedIn as it writes its name (2026-11-01)
             self.assertIn(f"Use for {svc}", page)
         self.assertEqual(self.linked(), {}, "nothing is linked until Chris taps Use")
 

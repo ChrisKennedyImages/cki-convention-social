@@ -1,13 +1,15 @@
-"""When an approved post goes out: two posts a day per network, at that network's two times (one a day until
-2026-10-31; Chris: "Two a day").
+"""When an approved post goes out: a network has as many posts a day as it has times that day. Instagram, Facebook
+and Pinterest have two (one a day until 2026-10-31; Chris: "Two a day"); LinkedIn has one on weekdays and none at
+weekends (2026-11-01, his own profile).
 
 Starting times, local to TIMEZONE (Eastern by default; FOUNDER_DECISIONS.md
 2026-10-09, from general industry data, not this account's own numbers):
 Instagram 11:30 on weekdays and 10:00 on weekends, Facebook 09:30, Pinterest
-20:30. POST_TIMES overrides any of them, e.g.
-"instagram=11:30,facebook=09:30,pinterest=20:30" (that time every day) or
-"instagram=11:30/10:00" (weekdays/weekends). Unknown networks and unreadable
-times in POST_TIMES are ignored and the default stands.
+20:30, LinkedIn 09:00 on weekdays only. POST_TIMES overrides any of them, e.g.
+"instagram=11:30,facebook=09:30,pinterest=20:30" (that time every day the network
+posts on: "linkedin=08:30" keeps its weekends off) or "instagram=11:30/10:00"
+(weekdays/weekends; "linkedin=08:30/10:00" posts at weekends too). Unknown networks
+and unreadable times in POST_TIMES are ignored and the default stands.
 
 The second time of the day (SECOND_TIMES, Chris's "Yes, those times"): Instagram
 17:30 on weekdays and 16:00 on weekends, Facebook 15:30, Pinterest 14:30. When
@@ -15,8 +17,8 @@ the first time (the learner's, which moves) comes within MIN_GAP of the second,
 the second moves to MIN_GAP before the first, so two posts never land together.
 
 A post with no time chosen takes, for each network it targets, the first open
-slot from today on: a day with fewer than SLOTS_PER_DAY posts out or queued on
-that network, at a slot of that day no post is within MIN_GAP of, at least LEAD
+slot from today on: a day with fewer posts out or queued on that network than
+it has times, at a slot of that day no post is within MIN_GAP of, at least LEAD
 from now. A time Chris sets on the draft always wins, for every network on it.
 """
 from __future__ import annotations
@@ -26,13 +28,16 @@ from datetime import date, datetime, time, timedelta, timezone
 from typing import Optional
 from zoneinfo import ZoneInfo
 
+from ..buffer import payloads
 from ..core import config, db
 from . import learner
 
-DEFAULT_TIMES: dict[str, tuple[time, time]] = {      # network: (weekdays, weekends)
+DEFAULT_TIMES: dict[str, tuple[time, Optional[time]]] = {      # network: (weekdays, weekends); None: no post that kind of day
     "instagram": (time(11, 30), time(10, 0)),
     "facebook": (time(9, 30), time(9, 30)),
     "pinterest": (time(20, 30), time(20, 30)),
+    # 2026-11-01: Chris's own LinkedIn profile, weekday mornings only, one a day (general industry data, not his numbers)
+    "linkedin": (time(9, 0), None),
 }
 # 2026-10-31, Chris: "Two a day"; the second times he approved ("Yes, those times"), Eastern, (weekdays, weekends)
 SECOND_TIMES: dict[str, tuple[time, time]] = {
@@ -40,7 +45,6 @@ SECOND_TIMES: dict[str, tuple[time, time]] = {
     "facebook": (time(15, 30), time(15, 30)),
     "pinterest": (time(14, 30), time(14, 30)),
 }
-SLOTS_PER_DAY = 2
 MIN_GAP = timedelta(hours=3)          # two posts on one network are never closer than this
 FALLBACK_TIME = time(12, 0)
 LEAD = timedelta(minutes=30)
@@ -68,9 +72,15 @@ def founder_times() -> dict[str, tuple[time, time]]:
             continue
         weekday_s, slash, weekend_s = value.partition("/")
         weekday = parse_clock(weekday_s)
-        weekend = parse_clock(weekend_s) if slash else weekday
-        if weekday and weekend:
-            table[net] = (weekday, weekend)
+        if weekday is None:
+            continue
+        if slash:
+            weekend = parse_clock(weekend_s)
+            if weekend is None:
+                continue
+        else:
+            weekend = weekday if DEFAULT_TIMES[net][1] is not None else None   # one time: every day the network posts on
+        table[net] = (weekday, weekend)
     return table
 
 
@@ -78,12 +88,13 @@ def set_by_founder(network: str) -> bool:
     return network in founder_times()
 
 
-def times_table() -> dict[str, tuple[time, time]]:
+def times_table() -> dict[str, tuple[time, Optional[time]]]:
     """The defaults with POST_TIMES applied."""
     return {**DEFAULT_TIMES, **founder_times()}
 
 
-def time_for(network: str, day: date) -> time:
+def time_for(network: str, day: date) -> Optional[time]:
+    """The day's first time on this network; None on a kind of day it does not post (LinkedIn at weekends)."""
     weekday, weekend = times_table().get(network, (FALLBACK_TIME, FALLBACK_TIME))
     return weekend if day.weekday() >= 5 else weekday
 
@@ -98,8 +109,12 @@ def second_time_for(network: str, day: date) -> Optional[time]:
 
 def day_slots(conn, network: str, day: date, tz: ZoneInfo) -> list[datetime]:
     """The day's slots on this network, in time order: the first time (the learner's) and the second, which moves to
-    MIN_GAP before the first when the learner has brought the first within MIN_GAP of it."""
-    first = datetime.combine(day, learner.post_time_for(conn, network, time_for(network, day), day), tz)
+    MIN_GAP before the first when the learner has brought the first within MIN_GAP of it. None on a day the network
+    does not post."""
+    first_t = time_for(network, day)
+    if first_t is None:
+        return []
+    first = datetime.combine(day, learner.post_time_for(conn, network, first_t, day), tz)
     second_t = second_time_for(network, day)
     if second_t is None:
         return [first]
@@ -115,15 +130,17 @@ def _clock(t: time) -> str:
 
 def describe() -> str:
     """'Instagram 11:30 am and 5:30 pm weekdays, 10:00 am and 4:00 pm weekends. Facebook 9:30 am and 3:30 pm.
-    Pinterest 2:30 pm and 8:30 pm.' for the dashboard (the starting times, before the learner moves the first)."""
+    Pinterest 2:30 pm and 8:30 pm. LinkedIn 9:00 am weekdays.' for the dashboard (the starting times, before the
+    learner moves the first)."""
     parts = []
     for net, (weekday, weekend) in times_table().items():
         second = SECOND_TIMES.get(net)
         def both(first: time, other: Optional[time]) -> str:
             return " and ".join(_clock(t) for t in sorted(x for x in (first, other) if x is not None))
-        wd, we = both(weekday, second[0] if second else None), both(weekend, second[1] if second else None)
-        when = wd if wd == we else f"{wd} weekdays, {we} weekends"
-        parts.append(f"{net.capitalize()} {when}.")
+        wd = both(weekday, second[0] if second else None)
+        we = both(weekend, second[1] if second else None) if weekend else ""
+        when = wd if wd == we else (f"{wd} weekdays, {we} weekends" if we else f"{wd} weekdays")
+        parts.append(f"{payloads.name_of(net)} {when}.")
     return " ".join(parts)
 
 
@@ -193,9 +210,10 @@ def next_slot(conn, network: str, now: Optional[datetime] = None, cfg: Optional[
     for i in range(HORIZON_DAYS):
         day = first + timedelta(days=i)
         used = taken.get(day, [])
-        if len(used) >= SLOTS_PER_DAY:
+        slots = day_slots(conn, network, day, tz)
+        if len(used) >= len(slots):          # full: as many posts a day as the network has times (none on a day it has none)
             continue
-        for slot in day_slots(conn, network, day, tz):
+        for slot in slots:
             if slot > local_now + LEAD and not any(abs(slot - u) < MIN_GAP for u in used):
                 return slot
     return None

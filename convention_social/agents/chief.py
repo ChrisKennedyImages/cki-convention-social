@@ -29,6 +29,7 @@ from typing import Optional
 
 from ..ai import claude as claude_mod
 from ..ai import copy_rules, spend
+from ..buffer import payloads
 from ..core import config, db, mail, notify, runner, settings
 from . import watchdog
 
@@ -85,7 +86,7 @@ def gather(ctx: runner.Context, now: datetime) -> dict:
     needs_list = needs(conn)
     for c in d["channels"]:
         if not c["connected"]:
-            needs_list.append((f"{c['service'].capitalize()} is disconnected in Buffer. Reconnect it there.", "/buffer"))
+            needs_list.append((f"{payloads.name_of(c['service'])} is disconnected in Buffer. Reconnect it there.", "/buffer"))
     done = []
     if d["published"]:
         done.append(f"Posted {len(d['published'])} time(s): " + ", ".join(sorted({p['service'] for p in d['published']})) + ".")

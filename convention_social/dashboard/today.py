@@ -15,6 +15,7 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 from zoneinfo import ZoneInfo
 
+from ..buffer import payloads
 from ..core import config, db, settings
 from . import alerts
 
@@ -185,16 +186,19 @@ def schedule(conn: sqlite3.Connection, now: Optional[datetime] = None) -> dict:
                 f"{clock(datetime.combine(saturday, we))} on weekends")
     for net in alerts.networks_on():
         if learner.exploring(conn, net, "weekday") or learner.exploring(conn, net, "weekend"):
-            times.append(f"{net.capitalize()} is trying {learner.candidate_words(net)} until each slot has "
+            times.append(f"{payloads.name_of(net)} is trying {learner.candidate_words(net)} until each slot has "
                          f"{learner.MIN_BUCKET} posts with numbers, then keeps the best" + second(net))
             continue
         weekday, weekend = pacing.times_table().get(net, (pacing.FALLBACK_TIME, pacing.FALLBACK_TIME))
         wd = learner.post_time_for(conn, net, weekday, monday)
-        we = learner.post_time_for(conn, net, weekend, saturday)
-        same = wd == we
-        when = (f"{clock(datetime.combine(monday, wd))} every day" if same else
-                f"{clock(datetime.combine(monday, wd))} on weekdays and {clock(datetime.combine(saturday, we))} on weekends")
-        times.append(f"{net.capitalize()} posts go out at {when}" + second(net))
+        we = learner.post_time_for(conn, net, weekend, saturday) if weekend else None     # LinkedIn: no weekend post (2026-11-01)
+        if we is None:
+            when = f"{clock(datetime.combine(monday, wd))} on weekdays, never at weekends"
+        elif wd == we:
+            when = f"{clock(datetime.combine(monday, wd))} every day"
+        else:
+            when = f"{clock(datetime.combine(monday, wd))} on weekdays and {clock(datetime.combine(saturday, we))} on weekends"
+        times.append(f"{payloads.name_of(net)} posts go out at {when}" + second(net))
     has_music = music.current(conn) is not None
     words = {"single": "single photo"}         # every other design is called by its own name
     days = []

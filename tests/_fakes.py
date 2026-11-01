@@ -18,7 +18,7 @@ from convention_social.core import config, db, logs, runner
 from tests._base import IsolatedCase
 from tests._photos import jpeg_bytes
 
-CHANNEL_IDS = {"instagram": "ch-ig", "facebook": "ch-fb", "pinterest": "ch-pin"}
+CHANNEL_IDS = {"instagram": "ch-ig", "facebook": "ch-fb", "pinterest": "ch-pin", "linkedin": "ch-li"}
 
 
 def field(name, type_name, required=False, kind="INPUT_OBJECT", description=None):
@@ -230,7 +230,8 @@ def write_render(folder: Path, name: str) -> str:
 
 CLEAN = {"instagram": "Backstage before the keynote. Request a quote for your event.\n\n#eventphotography",
          "facebook": "Backstage before the keynote. Request a quote for your event.",
-         "pinterest": "Backstage before the keynote, calm and ready. #eventphotography #conventionphotography"}
+         "pinterest": "Backstage before the keynote, calm and ready. #eventphotography #conventionphotography",
+         "linkedin": "Backstage before the keynote. I was in the room before the doors opened. Request a quote for your event.\n\n#eventphotography"}
 
 
 def add_post(conn, photo_ids, targets=("instagram", "facebook", "pinterest"), *, captions=None, status="approved",

@@ -319,6 +319,7 @@ class Dashboard(IsolatedCase):
         q = self.draft()
         page = c.get(f"/queue/{q}").text
         self.assertIn('<button form="edit" class="primary" type="submit" name="do" value="now">Post now</button>', page)
+        self.assertIn("> LinkedIn", page, "the draft page offers LinkedIn, named as it writes its name (2026-11-01)")
         self.assertIn('<button form="edit" class="ok" type="submit" name="do" value="pace">Follow the pace</button>', page)
         words = "Green room before the keynote, calm and ready. Request a quote for your event."
         data = {"caption_instagram": words, "caption_facebook": words, "caption_pinterest": words, "do": "approve"}

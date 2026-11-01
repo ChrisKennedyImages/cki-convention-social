@@ -2165,3 +2165,32 @@ months out."
   dates are kept only when the words the model quotes are on the page exactly as written and name those days (the year,
   the month, the day) and the start has not passed; otherwise no dates and a plain note. No read in a dry run, with
   AI_MODEL=template, or once the cap is reached (then a later run reads it).
+
+## 2026-11-01: a LinkedIn lane, on Chris's own profile
+
+Chris, after his personal LinkedIn went back to photography on 1 November (the headline, About, the Event Caliber
+experience, the banner and Services; four months of another venture's posts deleted): steady photography posts there
+next, a couple a week, with no "I'm back" announcement. There is no company page: the channel is his own profile,
+linkedin.com/in/chriskennedyimages, through the same Buffer account (Buffer lists it as LinkedIn, Chris Kennedy).
+
+- **The lane ships off**, like Facebook and Pinterest since 2026-10-15: it comes on by adding linkedin to POST_NETWORKS
+  on the Keys page, after Use on his own LinkedIn channel on the Buffer page (never the other LinkedIn channel that key
+  sees). Every post still waits for his Approve. From the first run after this lands every draft carries a LinkedIn
+  caption and a LinkedIn tick on the draft page, which he can untick.
+- **One photo per post:** the hero alone on the single card at 4:5 (render_paths "linkedin"), the way Pinterest has it at
+  2:3; a reel day gives LinkedIn the hero still, not the video. The art director does not look at it a second time (the
+  4:5 or the 2:3 shows the same crop). The card went to him as two rendered sample posts before anything was wired
+  (audit/2026-11-01-linkedin-lane/ in the template folder).
+- **One post a day at most, 9:00 am Eastern on weekdays and none at weekends** (agents/pacing.py: a network has as
+  many posts a day as it has times that day; LinkedIn has one, and a time he chooses on a draft counts as that day's).
+  The hour is general industry data, not his numbers, like the 2026-10-09 times, and the learner does not move it;
+  POST_TIMES overrides it ("linkedin=08:30" keeps weekends off; "linkedin=08:30/10:00" posts at weekends too). How many
+  a week is his approvals' count: nothing in the code holds it to his "a couple a week".
+- **The caption is in his voice:** first person singular, the photographer on his own profile, two or three short
+  paragraphs kept as paragraphs, the search phrase in a first sentence under 200 characters (what LinkedIn shows before
+  "see more"), the quote link, three hashtags; the same gate as every caption (no dash as punctuation, no event or
+  person named, no price, nothing about services or delivery; ai/copy_rules.py, ai/seo_plan.py).
+- **Buffer's live schema, read 2026-11-01:** a LinkedIn post's metadata fields (annotations, firstComment,
+  linkAttachment) are all optional and none is sent; the channel service is linkedin. No post has gone through this
+  code to LinkedIn yet: before leaving the lane on, one real test post with the publisher live, confirmed on his
+  profile (buffer/payloads.py, the note before arming).

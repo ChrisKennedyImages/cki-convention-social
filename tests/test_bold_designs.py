@@ -300,7 +300,7 @@ class Drafts(Drafting):
             self.assertEqual(meta_["design"], design)
             self.assertEqual(len(ids), bold.DESIGNS[design].takes if design != "select" else min(6, len(ids)))
             self.assertGreaterEqual(len(ids), bold.DESIGNS[design].needs)
-            self.assertEqual(sorted(renders), ["2:3", "4:5"])
+            self.assertEqual(sorted(renders), ["2:3", "4:5", "linkedin"])
             for aspect, size in (("4:5", (1080, 1350)), ("2:3", (1000, 1500))):
                 with Image.open(renders[aspect][0]) as im:
                     self.assertEqual(im.size, size, (design, aspect))

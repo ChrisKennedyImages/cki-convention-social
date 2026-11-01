@@ -22,7 +22,7 @@
 <table>
   <tr><th>Network</th><th>Starting time</th><th>In use now</th><th>Suggested</th></tr>
   {% for n in networks %}
-  <tr><td><strong>{{ n.network|capitalize }}</strong></td><td>{{ n.start }}</td><td>{{ n.in_use }}</td>
+  <tr><td><strong>{{ n.network|network }}</strong></td><td>{{ n.start }}</td><td>{{ n.in_use }}</td>
       <td>{{ n.suggested or 'nothing yet' }}{% if n.posts %}<div class="muted">{{ n.posts }} posts{% if n.best_hour is not none %}, best hour {{ n.best_hour }}:00{% endif %}</div>{% endif %}</td></tr>
   {% endfor %}
 </table>
