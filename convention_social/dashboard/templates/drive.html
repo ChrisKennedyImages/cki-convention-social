@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block body %}
 <h1>Google Drive</h1>
-{% if msg == 'signed_in' %}<div class="msg">Signed in, read only. The next scan reads the library.</div>{% elif msg %}<div class="msg bad">{{ msg }}</div>{% endif %}
+{% if msg == 'signed_in' %}<div class="msg">Signed in, read only. The next scan reads the library.</div>{% elif msg == 'gsc_signed_in' %}<div class="msg">Search Console is signed in, read only. Its numbers come in the morning brief after the Monday SEO run.</div>{% elif msg %}<div class="msg bad">{{ msg }}</div>{% endif %}
 <div class="card">
   <div class="row"><strong>Sign-in</strong><span class="badge {{ 'ok' if state == 'ok' else 'blocked' }}">{{ {'ok':'signed in, read only','expired':'expired','missing':'not signed in'}.get(state, state) }}</span></div>
   <div class="muted">{{ detail }}</div>
@@ -11,6 +11,21 @@
   <form method="post" action="/drive/login" class="row"><button class="primary" type="submit">{{ 'Sign in again' if state == 'ok' else 'Sign in to Google Drive' }}</button></form>
   {% if pending %}
   <form method="post" action="/drive/login/finish" style="margin-top:12px">
+    <label>Paste the address of the page Google sent you to (it starts with 127.0.0.1)</label>
+    <input type="text" name="address" autocomplete="off" inputmode="url" placeholder="127.0.0.1:4611/?state=...&code=...">
+    <div class="row" style="margin-top:8px"><button class="ok" type="submit">Finish signing in</button></div>
+  </form>
+  {% endif %}
+  {% endif %}
+</div>
+<div class="card">
+  <div class="row"><strong>Google Search Console</strong><span class="badge {{ 'ok' if gsc_state == 'ok' else 'blocked' }}">{{ {'ok':'signed in, read only','expired':'expired','missing':'not signed in'}.get(gsc_state, gsc_state) }}</span></div>
+  <div class="muted">What people searched to find eventcaliber.com, read every Monday and put in the next morning brief. A sign-in of its own with one permission, read-only Search Console; the Drive sign-in above is not touched.</div>
+  {% if gsc_last %}<p>{{ gsc_last }}</p>{% endif %}
+  {% if client_set %}
+  <form method="post" action="/search-console/login" class="row" style="margin-top:8px"><button class="primary" type="submit">{{ 'Sign in again' if gsc_state == 'ok' else 'Sign in to Search Console' }}</button></form>
+  {% if gsc_pending %}
+  <form method="post" action="/search-console/login/finish" style="margin-top:12px">
     <label>Paste the address of the page Google sent you to (it starts with 127.0.0.1)</label>
     <input type="text" name="address" autocomplete="off" inputmode="url" placeholder="127.0.0.1:4611/?state=...&code=...">
     <div class="row" style="margin-top:8px"><button class="ok" type="submit">Finish signing in</button></div>

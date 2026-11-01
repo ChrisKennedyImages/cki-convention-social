@@ -18,10 +18,11 @@ from __future__ import annotations
 from typing import Optional
 
 from ..core import runner
-from ..seo import photo_text, site_check
+from ..seo import photo_text, search_console, site_check
 
 
-def run(ctx: runner.Context, *, client=None, transport: Optional[site_check.Transport] = None) -> str:
+def run(ctx: runner.Context, *, client=None, transport: Optional[site_check.Transport] = None,
+        console: Optional[search_console.Transport] = None) -> str:
     s = photo_text.write_all(ctx.conn, ctx.cfg, dry_run=ctx.dry_run, client=client, agent=ctx.agent)
     text = (f"seo text: {s['written']} written ({s['claude']} by {s['model'] if s['claude'] else 'Claude'}, "
             f"{s['template']} template, {s['fell_back']} fell back), {s['kept']} kept, {s['edited']} edited by Chris, "
@@ -34,7 +35,15 @@ def run(ctx: runner.Context, *, client=None, transport: Optional[site_check.Tran
     else:
         res = site_check.run_check(ctx.conn, ctx.cfg, transport=transport, run_id=ctx.run_id, agent=ctx.agent)
         site = f"site check: {res['checked'] - res['failed']} of {res['checked']} pages ok"
-    return f"{'DRY RUN ' if ctx.dry_run else ''}{text}; {site}"
+    # 2026-10-31, Chris chose "Search Console in the digest": Google's own numbers, read weekly, in the next brief
+    if ctx.dry_run:
+        google = "Search Console not read in dry run"
+    else:
+        try:
+            google = search_console.line(search_console.read(ctx.conn, ctx.cfg, transport=console))
+        except search_console.SearchConsoleError as e:
+            google = f"Search Console not read: {e}"
+    return f"{'DRY RUN ' if ctx.dry_run else ''}{text}; {site}; {google}"
 
 
 if __name__ == "__main__":

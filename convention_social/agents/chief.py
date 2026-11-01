@@ -99,6 +99,10 @@ def gather(ctx: runner.Context, now: datetime) -> dict:
     if learner:
         done.append(f"Learner: {learner}")
     watching = [f"AI spend ${d['ai_mtd']:.2f} of the ${d['ai_cap']:.2f} monthly cap."]
+    from ..seo import search_console
+    google = search_console.fresh_line(conn, now)          # the weekly read, in the morning brief after it (2026-10-31)
+    if google:
+        watching.append(google)
     for a in d["agents"]:
         if a["built"] and a["last"] and a["last"]["ok"] == 0:
             watching.append(f"The {a['name']} agent's last run failed: {(a['last']['summary'] or '')[:100]}")
