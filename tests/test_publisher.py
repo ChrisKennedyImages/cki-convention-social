@@ -67,10 +67,11 @@ class DryRun(PublisherCase):
         self.assertEqual(fb["metadata"], {"facebook": {"type": "post"}})
         self.assertEqual(pin["metadata"]["pinterest"]["boardServiceId"], "board-123")
         self.assertEqual(pin["metadata"]["pinterest"]["title"], "Backstage before the keynote, calm and ready.")
-        # each network at its own time, one per day: 11:30, 09:30 and 20:30 New York
+        # each network at its first open slot: 12:00 (Instagram tries its slots), 09:30 and 14:30 New York (Pinterest's
+        # second time, 2026-10-31, comes before its 20:30)
         self.assertEqual((ig["mode"], ig["dueAt"]), ("customScheduled", "2026-10-09T16:00:00Z"))
         self.assertEqual(fb["dueAt"], "2026-10-09T13:30:00Z")
-        self.assertEqual(pin["dueAt"], "2026-10-10T00:30:00Z")
+        self.assertEqual(pin["dueAt"], "2026-10-09T18:30:00Z")
         # rendered designs: 4:5 to Instagram and Facebook, 2:3 to Pinterest, at the URL a live run would upload to
         self.assertEqual(ig["assets"], [{"image": {"url": f"{media.PLACEHOLDER_BASE}/convention-social/cards/{qid}-45-1.jpg"}}])
         self.assertEqual(fb["assets"], ig["assets"])
@@ -95,16 +96,17 @@ class DryRun(PublisherCase):
         self.assertTrue(payload)
         self.assertEqual({p["dueAt"] for p in payload.values()}, {"2026-10-12T18:00:00Z"})
 
-    def test_a_second_post_takes_the_next_day_on_each_network(self):
+    def test_a_second_post_takes_the_days_second_slot_on_each_network(self):
+        """Two a day (Chris, 2026-10-31): the second post goes out the same day, at each network's other time."""
         _, first = self.rendered_post(seed=1)
         _, second = self.rendered_post(seed=2)
         stats = self.publish(make_ctx(self.conn))
         self.assertEqual(stats["would_publish"], 2)
         payload = json.loads(self.row(second)["payload"])
         self.assertTrue(payload)
-        self.assertEqual(payload["instagram"]["dueAt"], "2026-10-11T01:00:00Z")   # Saturday 10:00, the weekend time
-        self.assertEqual(payload["facebook"]["dueAt"], "2026-10-10T13:30:00Z")
-        self.assertEqual(payload["pinterest"]["dueAt"], "2026-10-11T00:30:00Z")
+        self.assertEqual(payload["instagram"]["dueAt"], "2026-10-09T21:30:00Z")   # Friday 5:30 pm New York
+        self.assertEqual(payload["facebook"]["dueAt"], "2026-10-09T19:30:00Z")    # Friday 3:30 pm
+        self.assertEqual(payload["pinterest"]["dueAt"], "2026-10-10T00:30:00Z")   # Friday 8:30 pm
 
     def test_a_draft_for_monday_goes_out_monday_on_every_network(self):
         _, qid = self.rendered_post()
@@ -113,7 +115,7 @@ class DryRun(PublisherCase):
         payload = json.loads(self.row(qid)["payload"])
         self.assertEqual(payload["instagram"]["dueAt"], "2026-10-12T16:00:00Z")
         self.assertEqual(payload["facebook"]["dueAt"], "2026-10-12T13:30:00Z")
-        self.assertEqual(payload["pinterest"]["dueAt"], "2026-10-13T00:30:00Z")
+        self.assertEqual(payload["pinterest"]["dueAt"], "2026-10-12T18:30:00Z")
         _, other = self.rendered_post(seed=2)
         self.conn.execute("UPDATE content_queue SET rule_report=? WHERE id=?", (json.dumps({"for_day": "turned back"}), other))
         self.assertEqual(self.publish(make_ctx(self.conn))["would_publish"], 1)

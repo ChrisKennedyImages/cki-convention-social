@@ -174,10 +174,19 @@ def schedule(conn: sqlite3.Connection, now: Optional[datetime] = None) -> dict:
     monday = t.date() + timedelta(days=(7 - t.weekday()) % 7 or 7)
     saturday = monday + timedelta(days=5)
     times = []
+    def second(net: str) -> str:
+        """2026-10-31, two a day: the day's second post, in words (the second slot moves only when the first comes close)."""
+        wd, we = pacing.second_time_for(net, monday), pacing.second_time_for(net, saturday)
+        if wd is None:
+            return ""
+        if wd == we:
+            return f", and a second post at {clock(datetime.combine(monday, wd))} every day"
+        return (f", and a second post at {clock(datetime.combine(monday, wd))} on weekdays and "
+                f"{clock(datetime.combine(saturday, we))} on weekends")
     for net in alerts.networks_on():
         if learner.exploring(conn, net, "weekday") or learner.exploring(conn, net, "weekend"):
             times.append(f"{net.capitalize()} is trying {learner.candidate_words(net)} until each slot has "
-                         f"{learner.MIN_BUCKET} posts with numbers, then keeps the best")
+                         f"{learner.MIN_BUCKET} posts with numbers, then keeps the best" + second(net))
             continue
         weekday, weekend = pacing.times_table().get(net, (pacing.FALLBACK_TIME, pacing.FALLBACK_TIME))
         wd = learner.post_time_for(conn, net, weekday, monday)
@@ -185,7 +194,7 @@ def schedule(conn: sqlite3.Connection, now: Optional[datetime] = None) -> dict:
         same = wd == we
         when = (f"{clock(datetime.combine(monday, wd))} every day" if same else
                 f"{clock(datetime.combine(monday, wd))} on weekdays and {clock(datetime.combine(saturday, we))} on weekends")
-        times.append(f"{net.capitalize()} posts go out at {when}")
+        times.append(f"{net.capitalize()} posts go out at {when}" + second(net))
     has_music = music.current(conn) is not None
     words = {"single": "single photo"}         # every other design is called by its own name
     days = []

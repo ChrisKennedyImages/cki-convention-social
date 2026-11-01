@@ -1955,3 +1955,14 @@ one. "Yes, bring it back." A Draft now button at the top of To approve: one pres
 content agent at once; it drafts one more post for the day on the morning post's road, final check and art director
 and all, marked as asked for so it never stands in for the day's own post, and it lands in Needs you with a ping.
 Nothing goes out without his Approve. In practice run it drafts a practice post, as the morning run would.
+
+## 2026-10-31: two posts a day on each network
+
+Chris: "why is it only creating 1 post a day at most?" Read from the code and the records: drafts were not the limit
+(the morning run and the designed lane made 24 drafts in the last seven days), the posting slots were: pacing gave each
+network one time a day (the cadence ruled on 2026-10-09), so approved posts queued one a day and seven sat waiting.
+Asked to keep one or set a number: "Two a day". The second times, Eastern, as proposed: "Yes, those times": Instagram
+5:30 pm on weekdays and 4:00 pm at weekends, Facebook 3:30 pm, Pinterest 2:30 pm (agents/pacing.py SECOND_TIMES). The
+first time stays the learner's. Two posts on one network are never closer than three hours: when the learner brings
+the first time within three hours of the second, the second moves to three hours before the first. Today's schedule
+says both times. Drafting is unchanged; Draft now (the same evening) adds a draft on demand.
