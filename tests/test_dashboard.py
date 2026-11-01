@@ -901,17 +901,21 @@ class Dashboard(IsolatedCase):
         r = c.post(f"/library/photo/{pid}/clearance", data={"state": "inherit", "back": "//elsewhere.example/x"}, follow_redirects=False)
         self.assertEqual(r.headers["location"], "/library")
 
-    def test_four_tabs_and_every_page_one_tap_from_its_section(self):
+    def test_five_tabs_and_every_page_one_tap_from_its_section(self):
         c = self.signed_in()
-        # 2026-10-15: More became Settings
+        # 2026-10-15: More became Settings; 2026-11-01: Outreach is a tab of its own ("for easier access")
         for path, tab, chip in (("/", "Today", "Today"), ("/library?view=folders", "Photos", "Folders"), ("/calendar", "Bookings", "Calendar"),
+                                ("/outreach", "Outreach", "Drafts"), ("/scout", "Outreach", "Scout"),
+                                ("/outreach/donotcontact", "Outreach", "Do not contact"),
                                 ("/agents", "Settings", "Agents"), ("/keys", "Settings", "Keys"), ("/settings", "Settings", None)):
             page = c.get(path).text
             tabs = re.findall(r'<nav>(.*?)</nav>', page, flags=re.S)[0]
-            self.assertEqual(re.findall(r">([A-Za-z]+)</a>", tabs), ["Today", "Photos", "Bookings", "Settings"], path)
+            self.assertEqual(re.findall(r">([A-Za-z]+)</a>", tabs), ["Today", "Photos", "Bookings", "Outreach", "Settings"], path)
             self.assertIn(f'class="on">{tab}</a>', tabs, path)
             if chip:
                 self.assertRegex(page, rf'<div class="chips">.*class="on">{chip}</a>', path)
+                lit = re.findall(r'class="on">([^<]+)</a>', re.search(r'<div class="chips">(.*?)</div>', page, re.S).group(1))
+                self.assertEqual(lit, [chip], f"one chip lit on {path}")
 
     def test_everything_live_in_one_tap_and_back(self):
         """Chris, 2026-10-11: "Everything should be live now too so we can see the damn thing work!" """
