@@ -17,6 +17,9 @@
 .change details{margin-top:10px}
 .change details table{font-size:14px}
 .change .after{margin:10px 0 0}
+.page-new .prose p{font-size:15px;line-height:1.5;margin:8px 0 0;color:#333}
+.page-new .shots{font-size:13px;color:var(--muted);margin:8px 0 0}
+.see{display:block;text-align:center;margin:12px 0 0;padding:12px;border-radius:10px;border:1px solid #9db6f2;background:#f5f8ff;font-weight:700;text-decoration:none}
 </style>
 {% set badge = {'proposed': 'draft', 'approved': 'approved', 'live': 'published', 'kept': 'ok', 'reverted': 'failed', 'skipped': 'rejected'} %}
 {% set was = {'proposed': 'In Google now', 'approved': 'In Google now', 'skipped': 'In Google now'} %}
@@ -30,15 +33,30 @@
 <div class="card muted">Every Monday the SEO agent reads Google's numbers. A page shown often but rarely clicked gets new words for
   its search result; a page just off Google's first page for a search gets its lead sentence reworded to work that search in. At
   most two of each a week. Nothing on the site changes until you approve. Then each change is measured for four weeks and put back
-  by itself if it did worse: fewer clicks for new words, a lower place for that search for a new lead.{% if dry_run %} The SEO agent
-  is in practice run, so it proposes nothing.{% endif %}</div>
+  by itself if it did worse: fewer clicks for new words, a lower place for that search for a new lead. A search people make often
+  that no page answers gets a page of its own, at most one a week, and you see the page first; a new page is measured for eight
+  weeks, and if Google does not show it, taking it down comes to you.{% if dry_run %} The SEO agent is in practice run, so it
+  proposes nothing.{% endif %}</div>
 {% if not items %}<div class="card muted">No changes yet. The first come after a Monday read finds a page that loses its clicks or sits
   just off the first page.</div>{% endif %}
 {% for c in items %}
 <article class="card change" id="c{{ c.id }}">
   <div class="row"><strong>{{ c.name }}</strong><span class="badge {{ badge[c.status] }}" style="margin-left:auto">{{ c.status_words }}</span></div>
   <p class="why">{{ c.reason }}</p>
-  {% if c.kind == 'title' %}
+  {% if c.kind == 'page' %}
+  <div class="serp new"><div class="lab">{{ new[c.status] }}: a new page</div><div class="u">{{ c.url }}</div>
+    {% for label, before, after in c.shown[:2] %}<div class="{{ 't' if loop.first else 'd' }}">{{ after }}</div>{% endfor %}</div>
+  <div class="lead new page-new"><div class="lab">{{ c.words.heading }}</div><p>{{ c.words.lead }}</p>
+    <div class="prose">{% for p in c.words.paragraphs %}<p>{{ p }}</p>{% endfor %}</div>
+    <p class="shots">Photos: {{ c.shown[3][2] }}. After the listed pages in the coverage lists, never on the home page's.</p></div>
+  {% if c.status in ('live', 'kept') %}<a class="see" href="{{ c.url }}">Open the page on the site</a>
+  {% else %}<a class="see" href="{{ c.preview }}">See the page first</a>{% endif %}
+  {% elif c.kind == 'takedown' %}
+  <div class="lead"><div class="lab">{{ 'On the site now' if c.status in ('proposed', 'approved', 'skipped') else 'Was on the site' }}</div>
+    <div class="u">{{ c.url }}</div><p>{{ c.shown[0][2] }}</p></div>
+  <div class="lead new"><div class="lab">{{ 'Proposed' if c.status == 'proposed' else c.status_words|capitalize }}</div>
+    <p>Taken off the site; its address sends visitors to the coverage page.</p></div>
+  {% elif c.kind == 'title' %}
   <div class="serp"><div class="lab">{{ was.get(c.status, 'Before') }}</div><div class="u">{{ c.url }}</div>
     {% for label, before, after in c.shown %}<div class="{{ 't' if loop.first else 'd' }}">{{ before }}</div>{% endfor %}</div>
   <div class="serp new"><div class="lab">{{ new[c.status] }}</div><div class="u">{{ c.url }}</div>
@@ -50,7 +68,7 @@
     {% for label, before, after in c.shown %}<p>{{ after }}</p>{% endfor %}</div>
   {% endif %}
   {% if c.queries %}<details{{ ' open' if c.status == 'proposed' else '' }}>
-    <summary>{% if c.search %}The search it is for{% else %}What people searched ({{ c.queries|length }}){% endif %}</summary>
+    <summary>{% if c.search and c.queries|length == 1 %}The search it is for{% elif c.search %}The searches it is for ({{ c.queries|length }}){% else %}What people searched ({{ c.queries|length }}){% endif %}</summary>
     <table><tr><th>Search</th><th>Shown</th><th>Clicked</th><th>Place</th></tr>
     {% for q in c.queries %}<tr><td>{{ q.query }}</td><td>{{ q.impressions }}</td><td>{{ q.clicks }}</td><td>{{ q.position }}</td></tr>{% endfor %}
     </table></details>{% endif %}

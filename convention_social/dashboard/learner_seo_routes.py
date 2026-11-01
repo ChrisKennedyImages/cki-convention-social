@@ -9,6 +9,9 @@ GET  /seo/changes      the search changes (seo/changes.py, 2026-11-01): each pro
 POST /seo/changes/{id}/approve | /skip                   his decision on the page
 GET  /seo/changes/{id}/by-token/{approve|skip}           from the ping, a page with the buttons; decides nothing
 POST /seo/changes/{id}/by-token/{approve|skip}           the ping's one tap: the signed single-use token in the body
+GET  /seo/changes/{id}/preview                           a proposed new page as the site would show it (seo/pages.py, part
+                                                         three): signed in only, noindex, never published
+GET  /seo/changes/{id}/preview/assets/{name}             that preview's stylesheet, fonts, mark and photos
 """
 from __future__ import annotations
 
@@ -16,11 +19,11 @@ import json
 from urllib.parse import quote
 
 from fastapi import Depends, Form, HTTPException, Request
-from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse, RedirectResponse
 
 from ..agents import learner
 from ..core import db, settings
-from ..seo import changes, photo_text, site_check
+from ..seo import changes, pages, photo_text, site_check
 from .team_routes import token_of
 
 SEO_ROWS = 300
@@ -80,6 +83,27 @@ def register(app, require_user, conn_dep, render) -> None:
             raise HTTPException(404)
         ok, words = changes.decide_by_token(conn, cid, await token_of(request), how)
         return PlainTextResponse(words, status_code=200 if ok else 409)
+
+    @app.get("/seo/changes/{cid}/preview", response_class=HTMLResponse)
+    def seo_change_preview(cid: int, user: str = Depends(require_user), conn=Depends(conn_dep)):
+        """Chris, 2026-11-01: a new page comes to him "with a rendered preview first since a new page carries photos". The
+        page as the site would show it, built once with real approved photos of its kinds; noindex in the page and in
+        the answer; never in site/dist, so never in the sitemap or on the site."""
+        row = changes.get(conn, cid)
+        if row is None or row["kind"] != pages.KIND:
+            raise HTTPException(404)
+        try:
+            page = pages.preview(conn, cid)
+        except pages.PreviewError as e:
+            return RedirectResponse(f"/seo/changes?bad={quote(f'No preview of {row['page']} yet: {e}.')}#c{cid}", status_code=303)
+        return HTMLResponse(page.read_text(encoding="utf-8"), headers={"X-Robots-Tag": "noindex, nofollow"})
+
+    @app.get("/seo/changes/{cid}/preview/assets/{name:path}")
+    def seo_change_preview_asset(cid: int, name: str, user: str = Depends(require_user)):
+        path = pages.preview_asset(cid, name)
+        if path is None:
+            raise HTTPException(404)
+        return FileResponse(path, headers={"X-Robots-Tag": "noindex, nofollow"})
 
     @app.post("/seo/{photo_id}")
     def seo_edit(photo_id: int, user: str = Depends(require_user), conn=Depends(conn_dep), alt: str = Form(...),

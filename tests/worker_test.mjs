@@ -184,6 +184,33 @@ for (const path of ["/availabilityx/", "/book/availability/"]) {
   ok(r.status === 200 && (await r.text()) === "site", `${path} is not the old page`);
 }
 
+// a page the SEO agent added and Chris took down (2026-11-01): the build lists its address in /removed-pages.json and the
+// site no longer has it, so it answers 301 to the coverage index for good, with or without the slash; a page the site has,
+// and an address the list does not name, are left to the site (a mistyped one still says not found)
+const removedSite = { DB: env.DB, MEDIA: env.MEDIA, ASSETS: { fetch: async (req) => {
+  const path = new URL(req.url).pathname;
+  if (path === "/removed-pages.json") return Response.json({ pages: ["/coverage/gala/"] });
+  if (path === "/coverage/stage/") return new Response("stage page");
+  return new Response("not found page", { status: 404 });
+} } };
+for (const path of ["/coverage/gala/", "/coverage/gala", "/coverage/gala/index.html"]) {
+  r = await worker.fetch(new Request(`${base}${path}`), removedSite);
+  ok(r.status === 301 && r.headers.get("location") === `${base}/coverage/`, `${path}, taken down, answers 301 to /coverage/`);
+}
+r = await worker.fetch(new Request(`${base}/coverage/gala/`, { method: "HEAD" }), removedSite);
+ok(r.status === 301, "a HEAD too");
+r = await worker.fetch(new Request(`${base}/coverage/galas/`), removedSite);
+ok(r.status === 404 && (await r.text()) === "not found page", "an address the list does not name still says not found");
+r = await worker.fetch(new Request(`${base}/coverage/stage/`), removedSite);
+ok(r.status === 200 && (await r.text()) === "stage page", "a page the site has is served, whatever the list says");
+r = await worker.fetch(new Request(`${base}/coverage/gala/`, { method: "POST" }), removedSite);
+ok(r.status === 404, "only a read is sent on");
+const noList = { ...removedSite, ASSETS: { fetch: async () => new Response("not found page", { status: 404 }) } };
+r = await worker.fetch(new Request(`${base}/coverage/gala/`), noList);
+ok(r.status === 404, "no list (a site built before part three): not found, as before");
+r = await worker.fetch(new Request("https://www.eventcaliber.com/coverage/gala/"), removedSite);
+ok(r.status === 301 && r.headers.get("location") === "https://eventcaliber.com/coverage/gala/", "www. to the apex first, then to /coverage/");
+
 // media and the site
 r = await worker.fetch(new Request(`${base}/m/private/backups/x.gz`), env);
 ok(r.status === 404, "private never served");

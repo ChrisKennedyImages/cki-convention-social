@@ -2075,3 +2075,51 @@ site's words, "One tap from my phone". Part two is the searches a page sits just
   The morning brief says which, with the numbers.
 
 Part three (new pages from search demand) follows in its own pull request, the next kind over the same table.
+
+## 2026-11-01: the SEO loop, part three: pages from real demand, a preview first
+
+Chris, on the Search Console numbers: "shouldn't we have it do it all. Why wouldn't we?", every change "One tap from my
+phone", and for new pages: "Pages from real demand: searches you appear for with no page built for them: new venue or
+event-type pages proposed, ranked by how often people search", each coming to him "with a rendered preview first since a
+new page carries photos". Part three (seo/pages.py over seo/changes.py):
+
+- Which searches, from the newest kept 28-day window (weekly, live only, after parts one and two): shown at least 20
+  times in all, added up over the pages Google showed it on; made only of trade and place words (part four's rule),
+  never the brand's own name, never a name the names gate knows; and no page answers it: the page Google showed it on
+  most is the home page, or sits at an average place worse than 20, and no public page's title carries what it asks for.
+- Only what the business offers. What a search asks for is its words less the trade's own (photographer, photography,
+  photos), the places served and the small words (in, near me, best); every one must be a word offer.json uses for its
+  kinds of event or its coverage, or one of the kinds of shot the coverage pages show. Portraits are headshots and
+  exhibition halls are vendors and booths (his rulings of 2026-10-12). A fan convention, a wedding, a kind of event the
+  offer does not name or a place not served is never proposed; a search for the business as a whole ("event
+  photographer dc") is the home page's.
+- Searches that ask for the same thing are one page: "conference photographer dc" and "dc conference photographers" are
+  one, their showings added up. The most shown first; at most one proposal a week; never an address the site has, or had
+  and took down.
+- **Venue pages wait for his decision.** A venue page needs the venue's name, and no public word names an event, a
+  company or a person (2026-10-11); a venue's name has not been ruled on. Searches for a hotel, a ballroom or a convention
+  center are left out and counted in the SEO agent's summary ("for a venue, waiting for you"), until he says.
+- The page: a new address under /coverage/ named from the searched words (/coverage/conference/), a heading (its row in
+  the coverage lists, at most 35 characters), a title that is its name and the place like every coverage page's
+  ("Conference photography, Washington, DC", 75 with " | Event Caliber"), a description (160), a lead sentence (200), one
+  or two short paragraphs (350 each) and one to three kinds of photo. Claude writes it under the AI cap, from the offer
+  and told to promise nothing it does not say; every draft is checked before it is proposed: the copy rules (no price,
+  no dash, no claim or promise they know, no official role, no client), the names gate, the lengths, no name or number
+  the site does not already say, and a title that carries what was searched for. A draft that fails is dropped with the
+  reason. A dry run reads nothing, pays nothing and proposes nothing.
+- The preview first: the ping carries Preview, Approve and Skip, and the Search changes card "See the page first". Both
+  open the page as the site would show it: the coverage page template, the site's own stylesheet, real approved photos of
+  its kinds, stamped Preview, noindex, under the data root and never published or in the sitemap, signed in only.
+- On Approve the site republishes with the page built like a coverage page: listed after the listed rows in the coverage
+  index and in every page's "rest of the coverage", never on the home page's list (his order of 2026-10-31 stands) and not
+  in the footer; it joins the public pages, the sitemap, IndexNow, the outside check, Google's index check and the
+  Service, BreadcrumbList and photo blocks. Only while its words still pass; otherwise it is left off with a note on the
+  Errors page.
+- A new page has no before, so it is judged on its own: 59 days after it went live (56 days of numbers and Google's
+  three-day lag), with at least 50 showings of its searches in the newest window, it is kept when Google shows it for them
+  at an average place of 20 or better. Otherwise, or with under 50 showings still once sixteen weeks of numbers are in,
+  taking it down is proposed to him, Skip or Approve like any change; it is never taken down by itself. On Approve it
+  leaves the site, the lists and the sitemap, and its address answers 301 to /coverage/ from the Worker (the build lists
+  it in /removed-pages.json); Skip keeps it.
+- The morning brief and the SEO agent's summary say what was proposed, approved, put live, kept, proposed for taking
+  down and taken down.

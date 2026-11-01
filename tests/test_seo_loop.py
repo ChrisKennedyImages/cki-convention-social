@@ -375,7 +375,7 @@ class Approving(LoopCase):
 
     def test_today_and_the_brief_say_a_change_waits(self):
         self.proposal()
-        self.assertIn(("1 search change(s) waiting for your Approve: new words to help a page in Google search.", "/seo/changes"),
+        self.assertIn(("1 search change(s) waiting for your Approve: the site's words or pages, for Google search.", "/seo/changes"),
                       chief.needs(self.conn))
         self.signed_in()
         self.assertIn('href="/seo/changes"', self.client.get("/").text)
@@ -530,7 +530,7 @@ class Telling(LoopCase):
         self.assertIn(f"Search: you approved the new words for {BREAKOUTS}.", b["done"])
         self.assertIn(f"Search: The new words on {DINNERS} stay: 3.0% of 400 showings clicked.", b["done"])
         self.assertIn("Search: The new words on /coverage/portraits/ were put back.", b["done"])
-        self.assertIn(("1 search change(s) waiting for your Approve: new words to help a page in Google search.", "/seo/changes"), b["needs"])
+        self.assertIn(("1 search change(s) waiting for your Approve: the site's words or pages, for Google search.", "/seo/changes"), b["needs"])
         self.assertEqual(changes.brief(self.conn, now + timedelta(hours=1)), ([], []), "only what happened since the last brief")
         self.assertEqual(proposed, 1)
 

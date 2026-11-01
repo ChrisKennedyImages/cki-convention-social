@@ -284,10 +284,16 @@ def check(wait: float = CHECK_WAIT, *, sleep: Optional[Callable[[float], None]] 
     a few minutes to get its certificate). Writes nothing. Returns (all passed, the PASS/FAIL lines)."""
     from ..booking import remote
     from ..seo import site_check
+    from ..site import build as site_build
     sleep = sleep or time.sleep
     deadline = time.monotonic() + max(0.0, wait)
+    conn = db.connect()
+    try:
+        pages = site_build.public_pages(conn)       # the pages search changes added too (2026-11-01)
+    finally:
+        conn.close()
     while True:
-        results = site_check.check_all()
+        results = site_check.check_all(pages=pages)
         api_ok, api_note = True, ""
         site = remote.SiteAPI.from_config()
         if site is None:
@@ -372,7 +378,7 @@ def run(*, repo: Optional[Path] = None, conn=None, say: Callable[[str], None] = 
         went = changes.went_live(conn)              # the search changes this build carried are on the site now
         if went:
             say(f"search changes live: {', '.join(went)}")
-        told, engines = tell_engines()            # the site is live either way; the card says whether they heard
+        told, engines = tell_engines(conn)        # the site is live either way; the card says whether they heard
         say(engines)
         write_status("done", f"live on {head[:7]}" + (f"; hero: {hero}" if hero else ""), commit=head, hero=hero,
                      engines=engines, engines_told=told)
@@ -388,13 +394,14 @@ def run(*, repo: Optional[Path] = None, conn=None, say: Callable[[str], None] = 
             conn.close()
 
 
-def tell_engines(post=None) -> tuple[bool, str]:
-    """After a publish: the IndexNow engines hear which pages to read again. Google is not in that
-    protocol; it reads the sitemap (its lastmod dates are true) once Search Console knows the site."""
+def tell_engines(conn, post=None) -> tuple[bool, str]:
+    """After a publish: the IndexNow engines hear which pages to read again (site/build.public_pages: a page a search
+    change added too). Google is not in that protocol; it reads the sitemap (its lastmod dates are true) once Search
+    Console knows the site."""
     from ..seo import indexnow
     from ..site import build as site_build
     cfg = config.get_config()
-    return indexnow.ping(f"https://{cfg.brand_domain}", site_build.PAGES, post=post)
+    return indexnow.ping(f"https://{cfg.brand_domain}", site_build.public_pages(conn), post=post)
 
 
 def _failed(conn, head: str, say: Callable[[str], None], what: str, detail: str) -> int:

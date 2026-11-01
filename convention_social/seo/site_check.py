@@ -1,6 +1,7 @@
 """The weekly look at the public site: read-only GETs, one site_checks row per page.
 
-Pages: every public page, offer.public_pages() (each must answer 200 with a page
+Pages: every public page, offer.public_pages() and, in the weekly check, the pages
+search changes added (site/build.public_pages) (each must answer 200 with a page
 title, a meta description, an h1, alt text on every image, and no noindex
 left over from a preview build), /sitemap.xml (must parse as a sitemap with
 at least one page) and /robots.txt (must name the sitemap and must not shut
@@ -22,7 +23,8 @@ from .. import offer
 from ..core import config, db, runner
 
 HTML_PATHS = offer.public_pages()          # every public page (2026-10-14): the coverage pages and Contact included
-PATHS = HTML_PATHS + ("/sitemap.xml", "/robots.txt")
+FILES = ("/sitemap.xml", "/robots.txt")
+PATHS = HTML_PATHS + FILES
 USER_AGENT = "cki-convention-social/0.1 (weekly site check)"
 TIMEOUT = 20
 
@@ -182,9 +184,11 @@ def _flag(value) -> Optional[int]:
     return None if value is None else int(bool(value))
 
 
-def check_all(cfg: Optional[config.Config] = None, *, transport: Optional[Transport] = None) -> list[dict]:
+def check_all(cfg: Optional[config.Config] = None, *, transport: Optional[Transport] = None,
+              pages: tuple[str, ...] = HTML_PATHS) -> list[dict]:
     """GET every page once and judge it; writes nothing (`ccs site check` retries this while a new
-    domain comes up). Each result: path, url, status, ok, problems and the per-check flags."""
+    domain comes up). `pages`: the public pages (the weekly check passes site/build.public_pages, which
+    has a page a search change added too). Each result: path, url, status, ok, problems and the per-check flags."""
     cfg = cfg or config.get_config()
     transport = transport or requests_transport
     from . import indexnow
@@ -193,7 +197,7 @@ def check_all(cfg: Optional[config.Config] = None, *, transport: Optional[Transp
     expected_tag, verification_name = site_build.verification_value(), site_build.verification_file()
     verification_path = "/" + verification_name if verification_name else ""
     results = []
-    for path in PATHS + ((key_file,) if key_file else ()) + ((verification_path,) if verification_path else ()):
+    for path in pages + FILES + ((key_file,) if key_file else ()) + ((verification_path,) if verification_path else ()):
         url = base_url(cfg) + path
         try:
             status, text = transport(url)
@@ -222,8 +226,9 @@ def check_all(cfg: Optional[config.Config] = None, *, transport: Optional[Transp
 def run_check(conn: sqlite3.Connection, cfg: Optional[config.Config] = None, *, transport: Optional[Transport] = None,
               run_id: Optional[int] = None, agent: str = "seo") -> dict:
     """GET every page once, store a row each, and an errors row for each page that fails."""
+    from ..site import build as site_build
     checked_at = db.utcnow()
-    results = check_all(cfg, transport=transport)
+    results = check_all(cfg, transport=transport, pages=site_build.public_pages(conn))
     for r in results:
         db.insert(conn, "site_checks", run_id=run_id, checked_at=checked_at, path=r["path"], url=r["url"],
                   status_code=r["status"], ok=int(r["ok"]), title_ok=_flag(r["title_ok"]),

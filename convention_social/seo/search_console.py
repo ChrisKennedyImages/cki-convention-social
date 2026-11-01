@@ -18,7 +18,7 @@ this is private mail to Chris and never public copy.
 2026-11-01 (Chris: "shouldn't we have it do it all. Why wouldn't we?"): the read also keeps, for the current window,
 every page's own numbers and the numbers of every search on every page (table search_console_rows), so the SEO agent
 can find the pages whose words lose clicks (seo/titles.py) or that sit just off the first page for a search
-(seo/leads.py), and measure what its changes did (seo/changes.py).
+(seo/leads.py), and the searches no page answers (seo/pages.py), and measure what its changes did (seo/changes.py).
 """
 from __future__ import annotations
 
@@ -317,6 +317,18 @@ def every_search(conn: sqlite3.Connection, win: tuple[str, str]) -> list[dict]:
                                    "AND end_date=? AND query != ? ORDER BY impressions DESC, page, query", (*win, TOTAL))]
 
 
+def search_numbers(conn: sqlite3.Connection, win: tuple[str, str], queries: list[str], url: Optional[str] = None) -> dict:
+    """Some searches' numbers together in a kept window: on every page of the site, or on one page (`url`); the place is
+    the average over their showings (nought when they were shown nowhere)."""
+    if not queries:
+        return _numbers(*win, 0, 0, 0.0)
+    where = f"start_date=? AND end_date=? AND query IN ({','.join('?' * len(queries))})" + (" AND page=?" if url else "")
+    row = db.one(conn, f"SELECT COALESCE(SUM(clicks), 0) AS c, COALESCE(SUM(impressions), 0) AS i, "
+                       f"COALESCE(SUM(position * impressions), 0) AS p FROM search_console_rows WHERE {where}",
+                 (*win, *queries, *((url,) if url else ())))
+    return _numbers(*win, int(row["c"]), int(row["i"]), row["p"] / row["i"] if row["i"] else 0.0)
+
+
 def searches(conn: sqlite3.Connection, win: tuple[str, str], url: str, limit: int = 10) -> list[dict]:
     """The searches a page was shown for in a kept window, most shown first."""
     return [{"query": r["query"], "clicks": r["clicks"], "impressions": r["impressions"], "position": round(r["position"], 1)}
@@ -368,13 +380,14 @@ def inspect(transport: Transport, token: str, prop: str, url: str) -> dict:
 
 
 def index_check(conn: sqlite3.Connection, cfg=None, *, transport: Optional[Transport] = None, token: Optional[str] = None) -> dict:
-    """Every public page asked once (offer.public_pages), kept for the brief. Raises SearchConsoleError when it cannot."""
-    from .. import offer
+    """Every public page asked once (site/build.public_pages: a page a search change added too), kept for the brief.
+    Raises SearchConsoleError when it cannot."""
+    from ..site import build
     cfg = cfg or config.get_config()
     transport = transport or _requests_transport
     token = token or access_token(conn)
     prop = site_property(transport, token, cfg)
-    pages = [{"path": path, **inspect(transport, token, prop, page_url(path, cfg))} for path in offer.public_pages()]
+    pages = [{"path": path, **inspect(transport, token, prop, page_url(path, cfg))} for path in build.public_pages(conn)]
     out = {"at": db.utcnow(), "pages": pages}
     settings.set(conn, INDEX_KEY, json.dumps(out))
     return out
