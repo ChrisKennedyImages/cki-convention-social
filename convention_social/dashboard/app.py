@@ -268,6 +268,7 @@ def queue_view(conn, row) -> dict:
         link = f"Pull post #{int(held.get('post') or 0)} back"
         held_html = Markup(escape(row["last_error"])).replace(link, Markup(f'<a href="/queue/{int(held["post"])}">{link}</a>'))
     return {**dict(row), "art": art, "captions": captions, "targets": targets, "reports": reports, "official": official,
+            "skipped": meta.get("skipped") if isinstance(meta.get("skipped"), dict) else {},   # {network: why it is not sent} (2026-11-01)
             "held_html": held_html, "held_post": int(held["post"]) if held_html else None,
             **({"last_error": None} if released else {}),
             "design_name": DESIGN_WORDS.get(meta.get("design") or "", meta.get("design") or ""),

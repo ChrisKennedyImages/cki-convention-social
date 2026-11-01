@@ -327,6 +327,7 @@ def mend_captions(conn: sqlite3.Connection, row, *, drafter=None, agent: str = "
         drafter = claude.get_drafter(conn, agent=agent) if photo is not None and photo.exists() else claude.TemplateDrafter()
     # the cap, a refusal, the API: the template stands in and the record says so (write_captions)
     fixed, alt, record, writer = write_captions(drafter, facts, photo or Path("none"), known_names, conn=conn, agent=agent)
+    fixed = {n: t for n, t in fixed.items() if n in captions}      # a network the draft never had (LinkedIn skipped) stays out
     reports = {n: copy_rules.check(t, names=known_names, social=True).as_dict() for n, t in fixed.items()}
     mend = {"at": db.utcnow(), "by": writer, "fixed": broken, "was": {n: captions[n] for n in broken}}
     # the card comes from the same day as the captions: drawn again with today's words where the photos are here
@@ -458,10 +459,11 @@ def middle_first(items: list, hero) -> list:
 
 
 def make_renderer(conn: sqlite3.Connection, agent: str, *, design: str, rows: list, hero: dict, images: dict, day: date,
-                  track, out_dir: Path, seo, reel_style: Optional[str] = None) -> tuple[Callable[[tuple], dict], list]:
+                  track, out_dir: Path, seo, reel_style: Optional[str] = None, linkedin: bool = True) -> tuple[Callable[[tuple], dict], list]:
     """The day's design on its photos, as `render(focus) -> {aspect: [paths]}` for the art director, and the
     list a failed reel is written to (the same photos then go out as a carousel). Shared by the fresh draft
-    and the mend, so a redrawn card is the same card the day would have made."""
+    and the mend, so a redrawn card is the same card the day would have made. `linkedin` False: no LinkedIn card
+    (the hero's main subject is a recognisable public figure, 2026-11-01)."""
     from ..render import bold, design_samples, motion, reels3d
     words = confirmed_rooms(conn, [r["id"] for r in rows])
     kicker = kicker_for(hero).upper()
@@ -474,7 +476,7 @@ def make_renderer(conn: sqlite3.Connection, agent: str, *, design: str, rows: li
     reel_failed: list[str] = []
     # every design carries the hero alone on the single card twice over: at 2:3 for Pinterest and at 4:5 for LinkedIn
     # (render_paths "linkedin"; 2026-11-01, one photo per post there)
-    hero_cards = ("2:3", motion.LINKEDIN_CARD)
+    hero_cards = ("2:3", motion.LINKEDIN_CARD) if linkedin else ("2:3",)
     card_aspect = {motion.LINKEDIN_CARD: "4:5"}
 
     def single(focus, cards=("4:5", *hero_cards)):
@@ -489,7 +491,7 @@ def make_renderer(conn: sqlite3.Connection, agent: str, *, design: str, rows: li
         if design in bold.DESIGNS:
             # the four bold designs (2026-10-15), each with its own 2:3 card for Pinterest; the hero first, the photos whole
             return {**{a: [str(bold.post(design, shots, copy, out=out_dir / f"{tag}-{a.replace(':', '')}.jpg", aspect=a, meta=seo))]
-                       for a in ("4:5", "2:3")}, **single(focus, (motion.LINKEDIN_CARD,))}
+                       for a in ("4:5", "2:3")}, **(single(focus, (motion.LINKEDIN_CARD,)) if linkedin else {})}
         if design == "reel" and not reel_failed:
             # Instagram and Facebook get the reel (render_paths "9:16"), with its cover; Pinterest the
             # hero as a 2:3 card and LinkedIn the hero still; the art director looks at the cover and the stills, never the mp4
@@ -570,7 +572,8 @@ def redraw(conn: sqlite3.Connection, row, meta: dict, *, agent: str = "content")
     out_dir = cfg.data_root / "renders" / "posts" / day.isoformat()
     out_dir.mkdir(parents=True, exist_ok=True)
     render, reel_failed = make_renderer(conn, agent, design=design, rows=rows, hero=hero, images=images, day=day, track=track,
-                                        out_dir=out_dir, seo=image_meta.for_photo(conn, hero), reel_style=style)
+                                        out_dir=out_dir, seo=image_meta.for_photo(conn, hero), reel_style=style,
+                                        linkedin=not hero.get("public_figure"))
     art = meta.get("art") or {}
     focus = tuple(art["focus"]) if isinstance(art.get("focus"), list) and len(art["focus"]) == 2 else (0.5, 0.42)
     paths = render(focus)
@@ -583,7 +586,7 @@ def redraw(conn: sqlite3.Connection, row, meta: dict, *, agent: str = "content")
 
 
 def draft_one(ctx: runner.Context, fetch: Callable[[dict], bytes], *, now: Optional[datetime] = None,
-              check_client=None, drafter=None, art_client=None, extra: bool = False, _depth: int = 0) -> str:
+              check_client=None, drafter=None, art_client=None, figure_client=None, extra: bool = False, _depth: int = 0) -> str:
     """`extra`: one more post for the day, asked for with Draft now (2026-10-31); it skips the one-a-day gate and is
     marked so it never counts as the day's post."""
     from ..render import motion
@@ -634,7 +637,7 @@ def draft_one(ctx: runner.Context, fetch: Callable[[dict], bytes], *, now: Optio
         design, chosen = fallback_for(day), chosen[:1]
     try:
         qid, art, line = make_draft(ctx, day, chosen, design, want=want, kind_used=kind_used, asked=asked, track=track,
-                                    drafter=drafter, art_client=art_client, why=use_why(chosen[0][0], len(pool)),
+                                    drafter=drafter, art_client=art_client, figure_client=figure_client, why=use_why(chosen[0][0], len(pool)),
                                     extra_meta={"source": "draft_now"} if extra else None,
                                     ping=(f"{ctx.cfg.brand_name}: the post you asked for, to approve",
                                           f"Drafted now, as you asked. Post now, follow the pace, or skip. Tap to see it.") if extra else None)
@@ -646,7 +649,7 @@ def draft_one(ctx: runner.Context, fetch: Callable[[dict], bytes], *, now: Optio
         if _depth + 1 >= MAX_TRIES:
             return f"{line}; no photo passed for {day} after {MAX_TRIES} tries"
         return line + "; " + draft_one(ctx, fetch, now=now, check_client=check_client, drafter=drafter,
-                                       art_client=art_client, extra=extra, _depth=_depth + 1)
+                                       art_client=art_client, figure_client=figure_client, extra=extra, _depth=_depth + 1)
     return line
 
 
@@ -659,8 +662,8 @@ def photo_file(cfg, row) -> Path:
 
 
 def make_draft(ctx: runner.Context, day: date, chosen: list[tuple[dict, bytes]], design: str, *, want: str, kind_used: str,
-               asked: str, track, drafter=None, art_client=None, why: str = "", note: str = "", extra_meta: Optional[dict] = None,
-               ping: Optional[tuple[str, str]] = None, quiet: bool = False) -> tuple[int, dict, str]:
+               asked: str, track, drafter=None, art_client=None, figure_client=None, why: str = "", note: str = "",
+               extra_meta: Optional[dict] = None, ping: Optional[tuple[str, str]] = None, quiet: bool = False) -> tuple[int, dict, str]:
     """One draft from photos already chosen and checked: the captions, the design, the art director, the queue row and
     the ping. (queue id, the art director's verdict, the run line). The daily draft (draft_one) and a photo sent from
     the phone (agents/phone.py) both end here. A turned-back draft is kept as a rejected row and said in the line.
@@ -674,6 +677,12 @@ def make_draft(ctx: runner.Context, day: date, chosen: list[tuple[dict, bytes]],
             cache.write_bytes(data)
         ctx.conn.execute("UPDATE photos SET local_path=? WHERE id=?", (str(cache), row["id"]))
     hero = chosen[0][0]
+    # Chris, 2026-11-01: LinkedIn posts avoid photos whose main subject is a recognisable public figure. The art director judges
+    # the hero once (stored on the photo; none in a dry run): judged so, the draft has no LinkedIn caption, card or tick, and
+    # the draft page says why. Not judged yet: the publisher holds LinkedIn until it is (publisher.linkedin_hold).
+    figure = None if ctx.dry_run else art_director.public_figure(ctx.conn, hero["id"], chosen[0][1], client=figure_client, agent=ctx.agent)
+    targets = [n for n in TARGETS if not (n == "linkedin" and figure)]
+    skipped = {"linkedin": art_director.FIGURE_SKIP} if figure else {}
     facts = claude.PostFacts(brand_name=ctx.cfg.brand_name, event_kind=hero.get("event_kind") or "unknown",
                              shot_type=hero.get("shot_type") or "", subject=hero["subject"],
                              quote_link=f"{ctx.cfg.brand_domain}/book" if ctx.cfg.brand_domain else "", note=note)
@@ -684,13 +693,14 @@ def make_draft(ctx: runner.Context, day: date, chosen: list[tuple[dict, bytes]],
     facts.plan = plan
     captions, alt, seo_record, writer = write_captions(drafter, facts, photo_file(ctx.cfg, hero), known_names, conn=ctx.conn,
                                                        agent=ctx.agent)
+    captions = {n: t for n, t in captions.items() if n in targets}
     reports = {n: copy_rules.check(t, names=known_names, social=True).as_dict() for n, t in captions.items()}
     images = {r["id"]: Image.open(io.BytesIO(d)) for r, d in chosen}
     out_dir = ctx.cfg.data_root / "renders" / "posts" / day.isoformat()
     seo = image_meta.for_photo(ctx.conn, hero)
     style = reel_style(ctx.conn) if design == "reel" else None
     render, reel_failed = make_renderer(ctx.conn, ctx.agent, design=design, rows=[r for r, _ in chosen], hero=hero, images=images,
-                                        day=day, track=track, out_dir=out_dir, seo=seo, reel_style=style)
+                                        day=day, track=track, out_dir=out_dir, seo=seo, reel_style=style, linkedin="linkedin" in targets)
     render_paths, art = art_director.direct(ctx.conn, render, brief=lambda paths: brief_for(design, style, paths),
                                             dry_run=ctx.dry_run, client=art_client, agent=ctx.agent,
                                             allow_redo=design == "single", max_files=4)
@@ -701,18 +711,19 @@ def make_draft(ctx: runner.Context, day: date, chosen: list[tuple[dict, bytes]],
     if art.get("verdict") == "reject":
         # the photos do not hold up: they sit out like used ones
         now_r = db.utcnow()
-        qid_r = db.insert(ctx.conn, "content_queue", kind="photo", photo_ids=json.dumps(photo_ids), targets=json.dumps(list(TARGETS)),
+        qid_r = db.insert(ctx.conn, "content_queue", kind="photo", photo_ids=json.dumps(photo_ids), targets=json.dumps(targets),
                           caption=json.dumps(captions), render_paths=json.dumps(render_paths), status="rejected",
                           last_error=f"Art director: {art.get('notes', '')}",
                           rule_report=json.dumps({"for_day": "turned back", "art": art, "subject": hero["subject"], "design": design,
-                                                  **reel_meta, **(extra_meta or {})}),
+                                                  **reel_meta, **({"skipped": skipped} if skipped else {}), **(extra_meta or {})}),
                           created_at=now_r, updated_at=now_r)
         report.record_use(ctx.conn, "post", photo_ids, ref=f"post:{qid_r}")
         return qid_r, art, f"art director turned back photo {hero['id']}: {art.get('notes', '')}"
     people = [c for r, _ in chosen for c in (r["credit"] or "").split()]
     meta = {"for_day": day.isoformat(), "subject": hero["subject"], "event": hero.get("convention_name") or "",
             "people": people, "model": writer, "rules": reports, "wanted": want, "art": art, "design": design,
-            "design_wanted": asked, "seo": seo_record, "alt_text": alt, **reel_meta, **(extra_meta or {})}
+            "design_wanted": asked, "seo": seo_record, "alt_text": alt, **reel_meta, **({"skipped": skipped} if skipped else {}),
+            **(extra_meta or {})}
     if reel_failed:
         meta["reel_failed"] = reel_failed[0]
     now_s = db.utcnow()
@@ -726,7 +737,7 @@ def make_draft(ctx: runner.Context, day: date, chosen: list[tuple[dict, bytes]],
         if began:
             ctx.conn.execute("ROLLBACK")
         raise PhotosTaken(*held)
-    qid = db.insert(ctx.conn, "content_queue", kind="photo", photo_ids=json.dumps(photo_ids), targets=json.dumps(list(TARGETS)),
+    qid = db.insert(ctx.conn, "content_queue", kind="photo", photo_ids=json.dumps(photo_ids), targets=json.dumps(targets),
                     caption=json.dumps(captions), render_paths=json.dumps(render_paths), rule_report=json.dumps(meta),
                     created_at=now_s, updated_at=now_s)
     # the rotation's memory: every photo on this draft was used now (a dry-run draft too: approved in dry run, it goes
@@ -744,6 +755,7 @@ def make_draft(ctx: runner.Context, day: date, chosen: list[tuple[dict, bytes]],
                     agent=ctx.agent, **ping_extras(ctx.conn, {"id": qid, "updated_at": now_s}, art))
     fell = (f", the reel could not be made ({reel_failed[0]})" if reel_failed
             else f", {asked} wanted but too few photos passed" if asked != design else "")
+    fell += ", LinkedIn skipped (a public figure)" if skipped else ""
     line = (f"{'DRY RUN ' if ctx.dry_run else ''}drafted post #{qid} for {day} ({kind_used}"
             f"{', instead of ' + want if kind_used != want else ''}): {design} with {len(photo_ids)} photo(s){fell}, "
             f"photo {hero['id']} first{' (' + why + ')' if why else ''}, captions by {writer} for \"{plan.primary}\", "

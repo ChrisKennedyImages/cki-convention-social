@@ -32,7 +32,7 @@ from ..buffer import budget, media, payloads
 from ..buffer.client import BufferBudgetExceeded, BufferClient, BufferError, BufferRateLimited, BufferUnknownOutcome
 from ..core import config, db, notify, runner, settings
 from ..render.motion import LINKEDIN_CARD
-from . import pacing
+from . import art_director, pacing
 
 READY_SQL = "SELECT * FROM content_queue WHERE status = 'approved' ORDER BY COALESCE(approved_at, created_at), id"
 TERMINAL_OK = {"sent"}
@@ -528,10 +528,28 @@ def reel_urls(row, fields: list[dict], *, live: bool, uploader=None) -> str:
 
 # ------------------------------------------------------------------ publishing
 
-def usable_networks(ctx: runner.Context, row) -> tuple[dict[str, dict], dict[str, str]]:
-    """({network: channel row} that can go, {network: why not} for the rest). A network switched off on the Keys
-    page (POST_NETWORKS; Instagram only by default, 2026-10-15) is left out quietly: no channel is expected for it."""
-    active, skipped = {}, {}
+def linkedin_hold(ctx: runner.Context, row, figure_client=None) -> Optional[str]:
+    """Why this post does not go to LinkedIn, or None. Chris, 2026-11-01: LinkedIn posts avoid photos whose main subject is
+    a recognisable public figure. The hero photo's judgement (photos.public_figure, the art director's one look) decides; a
+    photo not judged yet is judged here once when the run is live and the till allows, else LinkedIn waits. Fails closed."""
+    ids = photo_ids_of(row) or []
+    photo = db.one(ctx.conn, "SELECT id, public_figure, local_path FROM photos WHERE id=?", (ids[0],)) if ids else None
+    if photo is None:
+        return "no photo to judge for a public figure"
+    verdict = None if photo["public_figure"] is None else bool(photo["public_figure"])
+    if verdict is None and not ctx.dry_run and photo["local_path"] and Path(photo["local_path"]).is_file():
+        verdict = art_director.public_figure(ctx.conn, photo["id"], Path(photo["local_path"]), client=figure_client, agent=ctx.agent)
+    if verdict is None:
+        return art_director.FIGURE_WAIT
+    return art_director.FIGURE_SKIP if verdict else None
+
+
+def usable_networks(ctx: runner.Context, row, figure_client=None) -> tuple[dict[str, dict], dict[str, str], dict[str, str]]:
+    """({network: channel row} that can go, {network: why not} for the rest, {network: why a rule holds it}). A network
+    switched off on the Keys page (POST_NETWORKS; Instagram only by default, 2026-10-15) is left out quietly: no channel is
+    expected for it. A hold (LinkedIn on a photo judged a public figure, or not judged yet; 2026-11-01) is said on the
+    draft page, never recorded as a fault."""
+    active, skipped, held = {}, {}, {}
     on = payloads.posting_networks()
     for net in targets_of(row):
         if net not in payloads.NETWORKS:
@@ -546,8 +564,13 @@ def usable_networks(ctx: runner.Context, row) -> tuple[dict[str, dict], dict[str
         if net == "pinterest" and not payloads.pinterest_board_id():
             skipped[net] = "PINTEREST_BOARD_ID is not set"
             continue
+        if net == "linkedin":
+            why = linkedin_hold(ctx, row, figure_client)
+            if why:
+                held[net] = why
+                continue
         active[net] = ch
-    return active, skipped
+    return active, skipped, held
 
 
 def alt_text_of(row) -> str:
@@ -588,7 +611,7 @@ def build_all(ctx: runner.Context, row, channels: dict[str, dict], when: dict[st
 
 
 def publish_ready(ctx: runner.Context, client: Optional[BufferClient] = None, uploader=None,
-                  now: Optional[datetime] = None) -> dict:
+                  now: Optional[datetime] = None, figure_client=None) -> dict:
     live = not ctx.dry_run
     stats = {"would_publish": 0, "scheduled": 0, "failed": 0, "turned_back": 0, "held": 0, "skipped_networks": 0}
     rows = db.rows(ctx.conn, READY_SQL)
@@ -688,12 +711,15 @@ def publish_ready(ctx: runner.Context, client: Optional[BufferClient] = None, up
                             priority="default", click=notify.link(f"/queue/{row['id']}"), conn=ctx.conn, agent=ctx.agent)
                 stats["held"] += 1
                 continue
-        channels, skipped = usable_networks(ctx, row)
+        channels, skipped, held = usable_networks(ctx, row, figure_client)
         if fmt == "story":
             skipped.update({n: "a Story goes to Instagram only" for n in channels if n != "instagram"})
             channels = {n: ch for n, ch in channels.items() if n == "instagram"}
-        stats["skipped_networks"] += len(skipped)
-        skip_note = ("Not sent to " + "; ".join(f"{n} ({why})" for n, why in skipped.items()) + ".") if skipped else None
+        stats["skipped_networks"] += len(skipped) + len(held)
+        not_sent = {**skipped, **held}
+        skip_note = ("Not sent to " + "; ".join(f"{n} ({why})" for n, why in not_sent.items()) + ".") if not_sent else None
+        if held:
+            _set_meta(ctx.conn, row, skipped=held)          # the draft page says why (2026-11-01); a hold is no fault
         if not channels:
             _set_last_error(ctx.conn, row, NO_CHANNELS + (" " + skip_note if skip_note else ""))
             record_once(ctx.conn, ctx.agent, "no_channel", f"post {row['id']}: {NO_CHANNELS}")     # said once, not per run

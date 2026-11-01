@@ -72,6 +72,8 @@ class Switch(AgentCase):
         config.reset()
         add_channels(self.conn, "instagram", "linkedin")
         qid = self.post()
+        # 2026-11-01: a photo goes to LinkedIn only once judged not to show a public figure (tests/test_public_figure.py)
+        self.conn.execute("UPDATE photos SET public_figure=0")
         publisher.publish_ready(make_ctx(self.conn), now=FRIDAY_8AM)
         payload = json.loads(self.row(qid)["payload"])
         self.assertEqual(set(payload), {"instagram", "linkedin"})

@@ -2200,3 +2200,20 @@ linkedin.com/in/chriskennedyimages, through the same Buffer account (Buffer list
   linkAttachment) are all optional and none is sent; the channel service is linkedin. No post has gone through this
   code to LinkedIn yet: before leaving the lane on, one real test post with the publisher live, confirmed on his
   profile (buffer/payloads.py, the note before arming).
+
+## 2026-11-01: LinkedIn posts avoid photos whose main subject is a recognisable public figure
+
+Chris, on the two LinkedIn sample posts: "Yes, merge" (#160). And: "LinkedIn posts avoid photos whose main subject is a
+recognisable public figure; Instagram stays as it is." The second sample's photo (a reception, three guests, the woman in
+the centre) is the case in point and must not go to LinkedIn.
+
+- **Judged once, by looking, never by a name.** The art director looks at the hero photo once and says whether its main
+  subject is a recognisable public figure (agents/art_director.public_figure: one Claude look through the AI till, told
+  to name no one; nothing compares names). The answer is stored on the photo (photos.public_figure, with when) and never
+  asked again.
+- **A photo judged a public figure:** the draft carries no LinkedIn caption and no LinkedIn card, its LinkedIn box is
+  unticked, and the draft page says why ("not sent: the photo's main subject is a recognisable public figure"). The
+  publisher never sends it to LinkedIn, ticked or not.
+- **A photo not judged yet** (a dry-run draft, the cap reached, no key, the API down): LinkedIn waits. The publisher asks
+  once when it can (live, with budget); until then the post goes out without LinkedIn and the draft page says so.
+- Instagram, Facebook and Pinterest are untouched.
