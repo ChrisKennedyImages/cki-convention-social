@@ -44,7 +44,8 @@ KEYS_FOR = 3600          # seconds Cloudflare's signing keys are kept before the
 REFETCH_AFTER = 60       # an unknown key id reads them again, at most this often
 LEEWAY = 60              # seconds of clock difference allowed on exp and nbf
 # the paths the outside check asks for: the start, the login, the token paths a ping opens, the updater's check
-OUTSIDE_PATHS = ("/", "/login", "/queue/0/approve-by-token", "/queue/0/choose-by-token/now", "/media/card/0/x.jpg", "/healthz")
+OUTSIDE_PATHS = ("/", "/login", "/queue/0/approve-by-token", "/queue/0/choose-by-token/now", "/seo/changes/0/by-token/approve",
+                 "/media/card/0/x.jpg", "/healthz")
 # what anyone who reached the dashboard through Cloudflare without the sign-in sees: a page a phone can read
 REFUSED_PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1"><title>Sign in through Cloudflare first</title></head>

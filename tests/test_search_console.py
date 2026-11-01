@@ -53,7 +53,8 @@ class FakeFlow:
 
 
 class Google:
-    """The Search Console API, recorded: the sites list, then the four queries."""
+    """The Search Console API, recorded: the sites list, then the two totals, the top searches, every page and every search
+    on a page."""
     def __init__(self, sites=None):
         self.calls = []
         self.sites = sites if sites is not None else [{"siteUrl": "sc-domain:eventcaliber.com", "permissionLevel": "siteOwner"}]
@@ -69,6 +70,8 @@ class Google:
         if dims == ["query"]:
             return 200, {"rows": [{"keys": ["event caliber"], "clicks": 5, "impressions": 40, "position": 1.2},
                                   {"keys": ["convention photographer dc"], "clicks": 1, "impressions": 30, "position": 18.0}]}
+        if dims == ["page", "query"]:
+            return 200, {"rows": [{"keys": ["https://eventcaliber.com/", "event caliber"], "clicks": 5, "impressions": 40, "position": 1.2}]}
         return 200, {"rows": [{"keys": ["https://eventcaliber.com/"], "clicks": 9, "impressions": 200, "position": 12.0}]}
 
 

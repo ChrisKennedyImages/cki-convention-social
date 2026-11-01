@@ -1995,3 +1995,42 @@ Chris, after approving the first two organizer notes: "Can we put the outreach o
 and a back button to return to the draft list?" The dashboard's top navigation reads Today, Photos, Bookings,
 Outreach, Settings; under Outreach sit Drafts, Scout and Do not contact (they were under Settings). A draft opens with
 "All drafts" at the top, back to the list. The Settings page still links to them under Finding work.
+
+## 2026-11-01: the SEO loop, part one: weak titles and descriptions, one tap from his phone
+
+Chris, on the Search Console numbers: "shouldn't we have it do it all. Why wouldn't we?" Asked how each change should
+reach the site, he chose "One tap from my phone": each change is drafted and pinged to him with before and after and an
+Approve button, like posts; on Approve it goes live, is measured four weeks, and is put back by itself if the numbers
+drop. Part one is the pages whose title and description lose the click (seo/titles.py over seo/changes.py):
+
+- The weekly read (Mondays, live only) now also keeps every page's own numbers and every search on every page for the
+  28-day window (table search_console_rows; a page's own total is kept apart, since Google leaves its rare searches out
+  of the per-search rows). The morning brief's line is unchanged.
+- A page is weak when it was shown at least 100 times in the window, at an average place on Google's first page, and
+  clicked less than half as often as a result at that place usually is. The usual rates by place are general industry
+  figures in the code, not this site's (place 1 about 28%, 4 about 8%, 10 about 2.4%). Past the first page the words are
+  not what loses the click; that is part two's ground. The most clicks missing first, at most two pages a week.
+- Claude writes a new title and description from the page's own words and its real top searches, under the AI cap
+  (reserved and recorded through ai/spend). Every draft is checked before it is proposed: the copy rules (no price, no
+  dash, no claim, no promise), the names rule (no event, company or person, even when a search names one), and the
+  lengths a search result shows whole (75 and 160); the home page's title keeps the name Event Caliber. A draft that
+  fails is dropped with the reason in the agent's summary, never proposed. A dry run reads nothing, pays nothing and
+  proposes nothing.
+- The ping carries the page, why, before and after, and Approve, Skip and Open: signed and single use, like a post's
+  (core/approve_token, under its own scope, so a post's token never opens a change). The same proposal waits on
+  Settings, Search, Search changes, with the same two buttons, and Today says when one waits. Nothing on the site
+  changes until Approve.
+- Approve sends the site to republish (about ten minutes later). The build lays the new words over the page's own in one
+  place (site/build.with_seo_changes), still through the copy rules, the names rule and the lengths; a change that no
+  longer passes, or whose page no longer says what it replaced, is left off with a note on the Errors page and the page
+  keeps its words. A change is live from the deploy that carried it.
+- 31 days after it went live (28 days of numbers and Google's three-day lag), the weekly run compares the page's click
+  rate in the newest window that starts after it went live with the rate in the last window before. With at least 100
+  showings since: down by a fifth or more (relative), it is put back and the site republishes; otherwise it is kept.
+  Fewer than 100 showings: measured again next week, and the brief says so. The morning brief says what was proposed,
+  approved, put live, kept or put back, with the numbers.
+- One open change per page at a time (the database holds it too). A page rests eight weeks after its last change went
+  live, and eight weeks after he skips one, so a Skip is not asked again the next Monday.
+
+Parts two (near-miss wording) and three (new pages from search demand) follow in their own pull requests, as new kinds
+of change over the same table, the same ping, approve, measure and put back.

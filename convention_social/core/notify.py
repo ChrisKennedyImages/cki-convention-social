@@ -36,16 +36,21 @@ NOT_A_FAILURE = ("sent", "dry run: nothing sent", "no push from a test")
 CHOICES = (("now", "Post now"), ("pace", "Follow the pace"), ("skip", "Skip"))
 
 
-def _choice(qid: int, token: str, how: str, label: str) -> str:
-    """One of his choices as an ntfy action. On the Tailscale address, an `http` action: a POST carrying the signed
-    single-use token in its body (a GET on that address decides nothing), in the form docs.ntfy.sh/publish documents:
-    `http, <label>, <url>, method=, headers.<h>=, body=, clear=true`. Behind Cloudflare Access (2026-10-15) only a
-    browser gets in: the ntfy app's own POST would meet the sign-in and look done when nothing was decided, so the
-    button opens the choice page in the browser instead (one more tap there)."""
+def token_action(path: str, token: str, label: str) -> str:
+    """One of his choices as an ntfy action, at the dashboard `path` that takes it. On the Tailscale address, an `http`
+    action: a POST carrying the signed single-use token in its body (a GET on that address decides nothing), in the form
+    docs.ntfy.sh/publish documents: `http, <label>, <url>, method=, headers.<h>=, body=, clear=true`. Behind Cloudflare
+    Access (2026-10-15) only a browser gets in: the ntfy app's own POST would meet the sign-in and look done when nothing
+    was decided, so the button opens the choice page in the browser instead (one more tap there)."""
     if access.through_access(link("/")):
-        return f"view, {label}, {link(f'/queue/{qid}/choose-by-token/{how}?token={token}')}, clear=true"
-    return (f"http, {label}, {link(f'/queue/{qid}/choose-by-token/{how}')}, method=POST, "
+        return f"view, {label}, {link(f'{path}?token={token}')}, clear=true"
+    return (f"http, {label}, {link(path)}, method=POST, "
             f"headers.Content-Type=application/x-www-form-urlencoded, body='token={token}', clear=true")
+
+
+def _choice(qid: int, token: str, how: str, label: str) -> str:
+    """A draft's choice (Post now, Follow the pace, Skip) at its own route."""
+    return token_action(f"/queue/{qid}/choose-by-token/{how}", token, label)
 
 
 def choice_actions(qid: int, token: str) -> str:

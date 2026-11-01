@@ -10,19 +10,27 @@
    (offer.public_pages), /sitemap.xml and /robots.txt on BRAND_DOMAIN,
    a site_checks row per page, an errors row for each page that fails. Dry
    run only says what it would check.
+3. Search Console (seo/search_console.py), live only: the last 28 days for
+   the morning brief, and every page's numbers kept for the window.
+4. Search changes (2026-11-01, seo/changes.py and seo/titles.py), live only
+   and only after this week's read: every change live for 31 days is
+   measured and kept or put back; then the pages whose title and description
+   lose the click get new words from Claude, at most two a week, each
+   proposed to Chris with a ping and changed on the site only on his Approve.
 
-Nothing here publishes, uploads or sends anything.
+Nothing here publishes, uploads or sends anything without his Approve; a put
+back (step 4) returns a page to the words it had before.
 """
 from __future__ import annotations
 
 from typing import Optional
 
 from ..core import runner
-from ..seo import photo_text, search_console, site_check
+from ..seo import changes, photo_text, search_console, site_check, titles
 
 
 def run(ctx: runner.Context, *, client=None, transport: Optional[site_check.Transport] = None,
-        console: Optional[search_console.Transport] = None) -> str:
+        console: Optional[search_console.Transport] = None, title_client=None) -> str:
     s = photo_text.write_all(ctx.conn, ctx.cfg, dry_run=ctx.dry_run, client=client, agent=ctx.agent)
     text = (f"seo text: {s['written']} written ({s['claude']} by {s['model'] if s['claude'] else 'Claude'}, "
             f"{s['template']} template, {s['fell_back']} fell back), {s['kept']} kept, {s['edited']} edited by Chris, "
@@ -38,12 +46,24 @@ def run(ctx: runner.Context, *, client=None, transport: Optional[site_check.Tran
     # 2026-10-31, Chris chose "Search Console in the digest": Google's own numbers, read weekly, in the next brief
     if ctx.dry_run:
         google = "Search Console not read in dry run"
+        loop = "search changes: none in dry run (nothing read, measured, paid for or proposed)"
     else:
         try:
             google = search_console.line(search_console.read(ctx.conn, ctx.cfg, transport=console))
         except search_console.SearchConsoleError as e:
             google = f"Search Console not read: {e}"
-    return f"{'DRY RUN ' if ctx.dry_run else ''}{text}; {site}; {google}"
+            loop = "search changes: nothing measured or proposed without this week's numbers"
+        else:
+            loop = search_changes(ctx, title_client)
+    return f"{'DRY RUN ' if ctx.dry_run else ''}{text}; {site}; {google}; {loop}"
+
+
+def search_changes(ctx: runner.Context, client=None) -> str:
+    """Chris, 2026-11-01: "shouldn't we have it do it all. Why wouldn't we?" The changes live 31 days are measured first
+    (kept, or put back with the site republishing), then this week's weak pages are drafted and proposed."""
+    measured = [m["words"] for m in changes.measure(ctx.conn, cfg=ctx.cfg)]
+    proposed = titles.propose_week(ctx.conn, ctx.cfg, client=client, agent=ctx.agent)
+    return "search changes: " + " ".join(measured + [f"New words: {proposed}.", f"Standing: {changes.standing(ctx.conn)}."])
 
 
 if __name__ == "__main__":

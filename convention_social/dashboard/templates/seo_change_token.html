@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block body %}
+<h1>Search change {{ c.id }}</h1>
+<div class="card">
+  <strong>{{ c.name }}</strong>
+  {% for label, before, after in c.shown %}
+  <p><span class="muted">{{ label }} now</span><br>{{ before }}<br><span class="muted">{{ label }} new</span><br>{{ after }}</p>
+  {% endfor %}
+  {% if c.status != 'proposed' %}
+  <p>This change is {{ c.status_words }}; there is nothing to choose here. <a href="/seo/changes#c{{ c.id }}">Open it</a>.</p>
+  {% elif token %}
+  {% if how %}<p>You chose <strong>{{ choices[how] }}</strong> on your phone. Nothing is decided until you press it here.</p>{% endif %}
+  <div class="choices two">
+  {% for key, label in choices.items() %}
+    <form method="post" action="/seo/changes/{{ c.id }}/by-token/{{ key }}"><input type="hidden" name="token" value="{{ token }}">
+      <button class="{{ 'primary' if key == 'approve' else 'skip' }}" type="submit"{% if how and key != how %} style="opacity:.55"{% endif %}>{{ label }}</button></form>
+  {% endfor %}
+  </div>
+  {% else %}
+  <p>This page decides nothing on its own. <a href="/seo/changes#c{{ c.id }}">Open the Search changes page</a> to choose.</p>
+  {% endif %}
+</div>
+{% endblock %}

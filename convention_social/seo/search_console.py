@@ -14,6 +14,10 @@ the webmasters.readonly scope added (docs/SETUP.md 8a).
 
 Search Console's numbers lag about three days, so the window ends three days ago. Searches can name events or people;
 this is private mail to Chris and never public copy.
+
+2026-11-01 (Chris: "shouldn't we have it do it all. Why wouldn't we?"): the read also keeps, for the current window,
+every page's own numbers and the numbers of every search on every page (table search_console_rows), so the SEO agent
+can find the pages whose words lose clicks and measure what its changes did (seo/changes.py, seo/titles.py).
 """
 from __future__ import annotations
 
@@ -38,6 +42,8 @@ LAST_KEY = "search_console.last"                 # JSON: the last read, for the 
 WINDOW_DAYS = 28
 LAG_DAYS = 3
 TOP = 5
+ROW_LIMIT = 1000           # pages, and searches on a page, kept for the window (the site has a few dozen pages)
+TOTAL = ""                 # search_console_rows.query of a page's own total over every search
 TIMEOUT = 30
 
 # (method, url, json body or None, headers) -> (status, parsed json or None)
@@ -190,16 +196,24 @@ def _totals(transport, token, prop, start: date, end: date) -> dict:
             "position": round(float(row.get("position") or 0), 1)}
 
 
-def _top(transport, token, prop, start: date, end: date, dimension: str) -> list[dict]:
+def _rows(transport, token, prop, start: date, end: date, dimensions: list[str], limit: int) -> list[dict]:
+    """One query's rows as Google sorts them (most clicks first): the keys in the order of `dimensions`, the numbers."""
     data = _call(transport, token, "POST", f"/sites/{quote(prop, safe='')}/searchAnalytics/query",
-                 {"startDate": start.isoformat(), "endDate": end.isoformat(), "dimensions": [dimension], "rowLimit": TOP})
-    return [{"key": (r.get("keys") or [""])[0], "clicks": int(r.get("clicks") or 0), "impressions": int(r.get("impressions") or 0),
-             "position": round(float(r.get("position") or 0), 1)} for r in data.get("rows") or []]
+                 {"startDate": start.isoformat(), "endDate": end.isoformat(), "dimensions": dimensions, "rowLimit": limit})
+    return [{"keys": [str(k) for k in r.get("keys") or []], "clicks": int(r.get("clicks") or 0),
+             "impressions": int(r.get("impressions") or 0), "position": float(r.get("position") or 0)}
+            for r in data.get("rows") or []]
+
+
+def _top(rows: list[dict]) -> list[dict]:
+    return [{"key": (r["keys"] or [""])[0], "clicks": r["clicks"], "impressions": r["impressions"], "position": round(r["position"], 1)}
+            for r in rows[:TOP]]
 
 
 def read(conn: sqlite3.Connection, cfg=None, *, transport: Optional[Transport] = None, today: Optional[date] = None,
          token: Optional[str] = None) -> dict:
-    """The last 28 days against the 28 before, stored for the brief. Raises SearchConsoleError when it cannot."""
+    """The last 28 days against the 28 before, stored for the brief, and the window's rows per page and per search on a
+    page kept (keep_rows). Raises SearchConsoleError when it cannot."""
     cfg = cfg or config.get_config()
     transport = transport or _requests_transport
     token = token or access_token(conn)
@@ -210,11 +224,87 @@ def read(conn: sqlite3.Connection, cfg=None, *, transport: Optional[Transport] =
     today = today or datetime.now(timezone.utc).date()
     start, end = window(today)
     before = (start - timedelta(days=WINDOW_DAYS), start - timedelta(days=1))
-    out = {"at": db.utcnow(), "property": prop, "start": start.isoformat(), "end": end.isoformat(),
-           "now": _totals(transport, token, prop, start, end), "before": _totals(transport, token, prop, *before),
-           "queries": _top(transport, token, prop, start, end, "query"), "pages": _top(transport, token, prop, start, end, "page")}
+    now, was = _totals(transport, token, prop, start, end), _totals(transport, token, prop, *before)
+    queries = _rows(transport, token, prop, start, end, ["query"], TOP)
+    pages = _rows(transport, token, prop, start, end, ["page"], ROW_LIMIT)
+    on_pages = _rows(transport, token, prop, start, end, ["page", "query"], ROW_LIMIT)
+    out = {"at": db.utcnow(), "property": prop, "start": start.isoformat(), "end": end.isoformat(), "now": now, "before": was,
+           "queries": _top(queries), "pages": _top(pages)}
+    keep_rows(conn, start, end, pages, on_pages)
     settings.set(conn, LAST_KEY, json.dumps(out))
     return out
+
+
+# ------------------------------------------------------------------ the kept rows
+
+def keep_rows(conn: sqlite3.Connection, start: date, end: date, pages: list[dict], on_pages: list[dict]) -> int:
+    """The window's rows (a page's own total under query TOTAL, then each search on it), in place of any an earlier read
+    of the same window kept. How many."""
+    at, s, e = db.utcnow(), start.isoformat(), end.isoformat()
+    rows = [(at, s, e, r["keys"][0], TOTAL, r["clicks"], r["impressions"], r["position"]) for r in pages if len(r["keys"]) == 1]
+    rows += [(at, s, e, r["keys"][0], r["keys"][1], r["clicks"], r["impressions"], r["position"])
+             for r in on_pages if len(r["keys"]) == 2 and r["keys"][1]]
+    began = not conn.in_transaction
+    if began:
+        conn.execute("BEGIN")
+    try:
+        conn.execute("DELETE FROM search_console_rows WHERE start_date=? AND end_date=?", (s, e))
+        conn.executemany("INSERT INTO search_console_rows (read_at, start_date, end_date, page, query, clicks, impressions, position) "
+                         "VALUES (?,?,?,?,?,?,?,?)", rows)
+    except BaseException:
+        if began:
+            conn.execute("ROLLBACK")
+        raise
+    if began:
+        conn.execute("COMMIT")
+    return len(rows)
+
+
+def page_url(path: str, cfg=None) -> str:
+    """The address Google gives for a page of the site: https, the bare domain, the path as the site writes it."""
+    return f"https://{((cfg or config.get_config()).brand_domain or '').strip().lower()}{path}"
+
+
+def latest_window(conn: sqlite3.Connection, *, ending_before: Optional[str] = None,
+                  starting_from: Optional[str] = None) -> Optional[tuple[str, str]]:
+    """(start, end) of the newest kept window, optionally one that ends before a date or starts on or after one."""
+    where, params = ["1=1"], []
+    if ending_before:
+        where.append("end_date < ?")
+        params.append(ending_before)
+    if starting_from:
+        where.append("start_date >= ?")
+        params.append(starting_from)
+    row = db.one(conn, f"SELECT start_date, end_date FROM search_console_rows WHERE {' AND '.join(where)} "
+                       "ORDER BY end_date DESC, start_date DESC LIMIT 1", tuple(params))
+    return (row["start_date"], row["end_date"]) if row else None
+
+
+def _numbers(start: str, end: str, clicks: int, impressions: int, position: float) -> dict:
+    return {"start": start, "end": end, "clicks": clicks, "impressions": impressions,
+            "ctr": round(clicks / impressions, 4) if impressions else 0.0, "position": round(position, 1)}
+
+
+def page_numbers(conn: sqlite3.Connection, win: tuple[str, str], url: str) -> dict:
+    """A page's own numbers in a kept window; a page Google did not list was shown nowhere, so its numbers are nought."""
+    row = db.one(conn, "SELECT clicks, impressions, position FROM search_console_rows "
+                       "WHERE start_date=? AND end_date=? AND page=? AND query=?", (*win, url, TOTAL))
+    return _numbers(*win, *(tuple(row) if row else (0, 0, 0.0)))
+
+
+def page_totals(conn: sqlite3.Connection, win: tuple[str, str]) -> list[dict]:
+    """Every page's own numbers in a kept window, with its address, most shown first."""
+    return [{"page": r["page"], **_numbers(*win, r["clicks"], r["impressions"], r["position"])}
+            for r in db.rows(conn, "SELECT page, clicks, impressions, position FROM search_console_rows "
+                                   "WHERE start_date=? AND end_date=? AND query=? ORDER BY impressions DESC, page", (*win, TOTAL))]
+
+
+def searches(conn: sqlite3.Connection, win: tuple[str, str], url: str, limit: int = 10) -> list[dict]:
+    """The searches a page was shown for in a kept window, most shown first."""
+    return [{"query": r["query"], "clicks": r["clicks"], "impressions": r["impressions"], "position": round(r["position"], 1)}
+            for r in db.rows(conn, "SELECT query, clicks, impressions, position FROM search_console_rows WHERE start_date=? "
+                                   "AND end_date=? AND page=? AND query != ? ORDER BY impressions DESC, clicks DESC, query LIMIT ?",
+                             (*win, url, TOTAL, limit))]
 
 
 def line(r: dict) -> str:

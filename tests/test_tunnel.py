@@ -301,6 +301,7 @@ class OutsideCheck(AccessCase):
         self.assertEqual(calls, [f"https://{HOST}{p}" for p in access.OUTSIDE_PATHS])
         self.assertIn("/queue/0/approve-by-token", access.OUTSIDE_PATHS, "the token paths are behind Access too")
         self.assertIn("/queue/0/choose-by-token/now", access.OUTSIDE_PATHS, "his three choices' path too (2026-10-15)")
+        self.assertIn("/seo/changes/0/by-token/approve", access.OUTSIDE_PATHS, "a search change's one tap too (2026-11-01)")
 
     def test_anything_else_fails(self):
         for answer, word in ((mock.Mock(status_code=200, headers={}), "200"),
