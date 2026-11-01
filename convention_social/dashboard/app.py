@@ -148,10 +148,13 @@ SECTIONS = (
       ("Folders", "/library?view=folders"), ("Music", "/music"), ("Do not use", "/donotuse"), ("Drive", "/drive"))),
     ("Bookings", "/inquiries", ("/inquiries", "/bookings", "/calendar"),
      (("Requests", "/inquiries"), ("Bookings", "/bookings"), ("Calendar", "/calendar"))),
-    ("Settings", "/settings", ("/settings", "/more", "/outreach", "/scout", "/seo", "/learner", "/agents", "/buffer", "/keys", "/errors",
-                               "/team"),
+    # 2026-11-01, Chris: "Can we put the outreach on the top navigation for easier access": a tab of its own, with the
+    # scout's finds and the do-not-contact list beside the drafts (they were under Settings)
+    ("Outreach", "/outreach", ("/outreach", "/scout"),
+     (("Drafts", "/outreach"), ("Scout", "/scout"), ("Do not contact", "/outreach/donotcontact"))),
+    ("Settings", "/settings", ("/settings", "/more", "/seo", "/learner", "/agents", "/buffer", "/keys", "/errors", "/team"),
      (("Agents", "/agents"), ("Errors", "/errors"), ("Keys", "/keys"), ("Team", "/team"), ("Buffer", "/buffer"),
-      ("Outreach", "/outreach"), ("Scout", "/scout"), ("Search", "/seo"), ("Learner", "/learner"))),
+      ("Search", "/seo"), ("Learner", "/learner"))),
 )
 # the Settings page, its pages in two groups (2026-10-15: "System pages grouped")
 SETTINGS_GROUPS = (
@@ -178,8 +181,10 @@ def nav_for(request: Request) -> dict:
             return False
         want = dict(x.split("=", 1) for x in q.split("&") if "=" in x).get("view", "")
         return want == view or (path.startswith("/library/folder/") and want == "folders")
+    # one chip lit: the longest that matches (/outreach/donotcontact lights Do not contact, not Drafts as well)
+    lit = max((href for _, href in here[3] if on(href)), key=len, default=None)
     return {"tabs": [{"label": s[0], "href": s[1], "on": s is here} for s in SECTIONS],
-            "chips": [{"label": label, "href": href, "on": on(href)} for label, href in here[3]] if len(here[3]) > 1 else []}
+            "chips": [{"label": label, "href": href, "on": href == lit} for label, href in here[3]] if len(here[3]) > 1 else []}
 
 
 def practice_lines() -> Optional[dict]:

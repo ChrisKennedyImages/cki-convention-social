@@ -455,6 +455,7 @@ class Pages(OutreachCase):
             self.assertEqual(r.status_code, 200, path)
             self.assertIn("<main>", r.text, path)
         detail = self.c.get(f"/outreach/{oid}").text
+        self.assertIn('<a class="back" href="/outreach">&larr; All drafts</a>', detail, "a draft has a way back to the list (2026-11-01)")
         self.assertIn(POSTAL, detail)
         self.assertIn("unsubscribe?t=", detail)
         self.assertIn("List-Unsubscribe=One-Click", detail)

@@ -1988,3 +1988,10 @@ Search Console API (clicks, how often the site was shown, its average place, the
 one read-only permission (webmasters.readonly), its own token file, on the Drive page with the same paste-back; the
 Drive sign-in stays drive.readonly and untouched. The Google Cloud project needs the Search Console API enabled and
 that scope added once (docs/SETUP.md 8a). Searches can name events or people; the brief is private mail.
+
+## 2026-11-01: Outreach is a tab of its own, and a draft has a way back to the list
+
+Chris, after approving the first two organizer notes: "Can we put the outreach on the top navigation for easier access
+and a back button to return to the draft list?" The dashboard's top navigation reads Today, Photos, Bookings,
+Outreach, Settings; under Outreach sit Drafts, Scout and Do not contact (they were under Settings). A draft opens with
+"All drafts" at the top, back to the list. The Settings page still links to them under Finding work.

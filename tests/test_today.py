@@ -660,15 +660,16 @@ class Words(Case):
             self.assertNotIn("Practice run:", self.client.get(path).text, path)
 
 
-# ============================================================ 4. four tabs, Settings, alerts with their fixes
+# ============================================================ 4. five tabs, Settings, alerts with their fixes
 class Tabs(Case):
     def tabs(self, page):
         bar = re.search(r"<nav>(.*?)</nav>", page, re.S).group(1)
         return re.findall(r">([A-Za-z ]+)</a>", bar)
 
-    def test_four_tabs_and_settings_holds_the_system_pages_grouped(self):
+    def test_five_tabs_and_settings_holds_the_system_pages_grouped(self):
+        # 2026-11-01: Outreach is a tab of its own ("for easier access")
         for path in ("/", "/library", "/inquiries", "/settings", "/agents", "/keys", "/errors", "/outreach"):
-            self.assertEqual(self.tabs(self.client.get(path).text), ["Today", "Photos", "Bookings", "Settings"], path)
+            self.assertEqual(self.tabs(self.client.get(path).text), ["Today", "Photos", "Bookings", "Outreach", "Settings"], path)
         page = self.client.get("/settings").text
         system, work = page.index(">System<"), page.index(">Finding work<")
         for href in ("/agents", "/errors", "/keys", "/team", "/buffer"):      # Team (2026-10-15, his photographers): a system page
@@ -676,9 +677,10 @@ class Tabs(Case):
         for href in ("/outreach", "/scout", "/seo", "/learner"):
             self.assertGreater(page.index(f'href="{href}"', work), work, href)
         chips = re.search(r'<div class="chips">(.*?)</div>', self.client.get("/agents").text, re.S).group(1)
-        # deliberate change, 2026-10-15: the Team page (his photographers) sits under Settings, after Keys
+        # deliberate change, 2026-10-15: the Team page (his photographers) sits under Settings, after Keys; 2026-11-01:
+        # Outreach and Scout moved to the Outreach tab
         self.assertEqual(re.findall(r">([A-Za-z ]+)</a>", chips),
-                         ["Agents", "Errors", "Keys", "Team", "Buffer", "Outreach", "Scout", "Search", "Learner"])
+                         ["Agents", "Errors", "Keys", "Team", "Buffer", "Search", "Learner"])
 
     def test_every_alert_has_its_fix_where_one_exists(self):
         pid = self.photo(1)
