@@ -1,4 +1,5 @@
-"""When an approved post goes out: one post a day per network, at that network's time.
+"""When an approved post goes out: two posts a day per network, at that network's two times (one a day until
+2026-10-31; Chris: "Two a day").
 
 Starting times, local to TIMEZONE (Eastern by default; FOUNDER_DECISIONS.md
 2026-10-09, from general industry data, not this account's own numbers):
@@ -8,10 +9,15 @@ Instagram 11:30 on weekdays and 10:00 on weekends, Facebook 09:30, Pinterest
 "instagram=11:30/10:00" (weekdays/weekends). Unknown networks and unreadable
 times in POST_TIMES are ignored and the default stands.
 
-A post with no time chosen takes, for each network it targets, the first
-local day from today on where that network has nothing out or queued, at that
-network's time, at least LEAD from now. A time Chris sets on the draft always
-wins, for every network on it.
+The second time of the day (SECOND_TIMES, Chris's "Yes, those times"): Instagram
+17:30 on weekdays and 16:00 on weekends, Facebook 15:30, Pinterest 14:30. When
+the first time (the learner's, which moves) comes within MIN_GAP of the second,
+the second moves to MIN_GAP before the first, so two posts never land together.
+
+A post with no time chosen takes, for each network it targets, the first open
+slot from today on: a day with fewer than SLOTS_PER_DAY posts out or queued on
+that network, at a slot of that day no post is within MIN_GAP of, at least LEAD
+from now. A time Chris sets on the draft always wins, for every network on it.
 """
 from __future__ import annotations
 
@@ -28,6 +34,14 @@ DEFAULT_TIMES: dict[str, tuple[time, time]] = {      # network: (weekdays, weeke
     "facebook": (time(9, 30), time(9, 30)),
     "pinterest": (time(20, 30), time(20, 30)),
 }
+# 2026-10-31, Chris: "Two a day"; the second times he approved ("Yes, those times"), Eastern, (weekdays, weekends)
+SECOND_TIMES: dict[str, tuple[time, time]] = {
+    "instagram": (time(17, 30), time(16, 0)),
+    "facebook": (time(15, 30), time(15, 30)),
+    "pinterest": (time(14, 30), time(14, 30)),
+}
+SLOTS_PER_DAY = 2
+MIN_GAP = timedelta(hours=3)          # two posts on one network are never closer than this
 FALLBACK_TIME = time(12, 0)
 LEAD = timedelta(minutes=30)
 HORIZON_DAYS = 90
@@ -74,15 +88,41 @@ def time_for(network: str, day: date) -> time:
     return weekend if day.weekday() >= 5 else weekday
 
 
+def second_time_for(network: str, day: date) -> Optional[time]:
+    """The day's second time on this network, or None for a network with one time a day."""
+    pair = SECOND_TIMES.get(network)
+    if pair is None:
+        return None
+    return pair[1] if day.weekday() >= 5 else pair[0]
+
+
+def day_slots(conn, network: str, day: date, tz: ZoneInfo) -> list[datetime]:
+    """The day's slots on this network, in time order: the first time (the learner's) and the second, which moves to
+    MIN_GAP before the first when the learner has brought the first within MIN_GAP of it."""
+    first = datetime.combine(day, learner.post_time_for(conn, network, time_for(network, day), day), tz)
+    second_t = second_time_for(network, day)
+    if second_t is None:
+        return [first]
+    second = datetime.combine(day, second_t, tz)
+    if abs(second - first) < MIN_GAP:
+        second = first - MIN_GAP
+    return sorted([first, second])
+
+
 def _clock(t: time) -> str:
     return f"{(t.hour % 12) or 12}:{t.minute:02d} {'am' if t.hour < 12 else 'pm'}"
 
 
 def describe() -> str:
-    """'Instagram 11:30 am weekdays, 10:00 am weekends. Facebook 9:30 am. Pinterest 8:30 pm.' for the dashboard."""
+    """'Instagram 11:30 am and 5:30 pm weekdays, 10:00 am and 4:00 pm weekends. Facebook 9:30 am and 3:30 pm.
+    Pinterest 2:30 pm and 8:30 pm.' for the dashboard (the starting times, before the learner moves the first)."""
     parts = []
     for net, (weekday, weekend) in times_table().items():
-        when = _clock(weekday) if weekday == weekend else f"{_clock(weekday)} weekdays, {_clock(weekend)} weekends"
+        second = SECOND_TIMES.get(net)
+        def both(first: time, other: Optional[time]) -> str:
+            return " and ".join(_clock(t) for t in sorted(x for x in (first, other) if x is not None))
+        wd, we = both(weekday, second[0] if second else None), both(weekend, second[1] if second else None)
+        when = wd if wd == we else f"{wd} weekdays, {we} weekends"
         parts.append(f"{net.capitalize()} {when}.")
     return " ".join(parts)
 
@@ -122,21 +162,21 @@ def due_times(row, tz: ZoneInfo) -> dict[str, datetime]:
     return out
 
 
-def taken_days(conn, network: str, tz: ZoneInfo, *, include_dry: bool = False) -> set[date]:
-    """Local days this network already has something out or queued.
+def taken_times(conn, network: str, tz: ZoneInfo, *, include_dry: bool = False) -> dict[date, list[datetime]]:
+    """{local day: [local times]} this network already has out or queued.
     `include_dry` also counts dry-run rows (would_publish), so a dry run paces the way a live one would."""
     statuses = TAKEN_STATUSES + (("would_publish",) if include_dry else ())
     marks = ",".join("?" for _ in statuses)
-    days = set()
+    days: dict[date, list[datetime]] = {}
     for r in db.rows(conn, f"SELECT targets, payload, scheduled_for, published_at, updated_at FROM content_queue "
                            f"WHERE status IN ({marks})", statuses):
         dt = due_times(r, tz).get(network)
         if dt:
-            days.add(dt.date())
+            days.setdefault(dt.date(), []).append(dt)
     for r in db.rows(conn, "SELECT sent_at FROM post_history WHERE service=?", (network,)):
         dt = _local(r["sent_at"], tz, naive_is_local=False)
         if dt:
-            days.add(dt.date())
+            days.setdefault(dt.date(), []).append(dt)
     return days
 
 
@@ -148,15 +188,16 @@ def next_slot(conn, network: str, now: Optional[datetime] = None, cfg: Optional[
     cfg = cfg or config.get_config()
     tz = ZoneInfo(cfg.timezone)
     local_now = (now or datetime.now(timezone.utc)).astimezone(tz)
-    taken = taken_days(conn, network, tz, include_dry=include_dry)
+    taken = taken_times(conn, network, tz, include_dry=include_dry)
     first = max(local_now.date(), not_before) if not_before else local_now.date()
     for i in range(HORIZON_DAYS):
         day = first + timedelta(days=i)
-        if day in taken:
+        used = taken.get(day, [])
+        if len(used) >= SLOTS_PER_DAY:
             continue
-        slot = datetime.combine(day, learner.post_time_for(conn, network, time_for(network, day), day), tz)
-        if slot > local_now + LEAD:
-            return slot
+        for slot in day_slots(conn, network, day, tz):
+            if slot > local_now + LEAD and not any(abs(slot - u) < MIN_GAP for u in used):
+                return slot
     return None
 
 
