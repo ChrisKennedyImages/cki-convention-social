@@ -35,7 +35,7 @@ from typing import Optional
 from ..ai import copy_rules, spend
 from ..ai import names as ai_names
 from ..ai.claude import FALLBACK_BETA, tidy
-from ..core import config, db, runner, secrets
+from ..core import config, db, runner, secrets, settings
 from ..library import eligibility
 
 DEFAULT_MODEL = "claude-haiku-4-5"
@@ -68,6 +68,17 @@ anime comic comics gaming game games expo summit forum floor lobby ballroom atri
 glass brick stone modern historic entrance facade evening night morning dusk day light lights coverage professional
 full image images moment moments costume costumes character characters crowded busy quiet empty large small
 """.split())
+# 2026-11-01, SEO part four: the words people search to find the site (Search Console's kept rows). A search is used
+# only when every word in it is trade or place vocabulary: a search can carry a person's or an event's name the names
+# gate has never seen, so anything else is left out, whatever it is.
+SEARCH_VOCAB = COMMON_WORDS | set("""
+photographers photographs washington dc maryland virginia arlington alexandria baltimore bethesda nationwide local near
+me corporate meeting meetings association associations annual trade show shows keynotes headshots best hire services
+service company companies team teams
+""".split())
+SEARCH_WORDS_MAX = 10
+SEARCH_MIN_SHOWN = 5          # a search shown fewer times than this in the window is noise
+SEARCH_WORDS_KEY = "seo.search_words"      # JSON {"words": [...], "at": ...}: the set the writer last used
 ADDRESS = re.compile(
     r"\b\d{1,6}\s+(?:[A-Za-z0-9.'’]+\s+){0,3}(?:street|st|avenue|ave|road|rd|boulevard|blvd|lane|ln|drive|dr|way|"
     r"court|ct|place|pl|terrace|parkway|pkwy|highway|hwy|circle|cir)\b", re.IGNORECASE)
@@ -120,6 +131,7 @@ class PhotoFacts:
     handles: tuple[str, ...]
     brand: str
     names: tuple[str, ...] = ()      # ai/names.public_names: none of these may appear in any field
+    search_words: tuple[str, ...] = ()   # what people search to find the site (search_words), for the writer's wording
 
 
 # ------------------------------------------------------------------ facts
@@ -184,7 +196,7 @@ def gather(conn: sqlite3.Connection, photo_id: int, cfg: Optional[config.Config]
                       city=((cal["city"] or "").strip() if cal is not None else ""),
                       view=row["view"] if row["view"] in ("exterior", "interior") else "",
                       summary=(row["summary"] or "").strip(), handles=handles, brand=cfg.brand_name,
-                      names=tuple(ai_names.public_names(conn)))
+                      names=tuple(ai_names.public_names(conn)), search_words=search_words(conn))
 
 
 # ------------------------------------------------------------------ slugs
@@ -366,7 +378,8 @@ def problems(fields: dict, f: PhotoFacts, *, guess_names: bool = True) -> list[s
 
 def allowed_vocabulary(f: PhotoFacts) -> set[str]:
     words = set(COMMON_WORDS)
-    for phrase in template_keywords(f) + [f.event_name, f.city, f.brand, shot_words(f), KIND_WORDS.get(f.event_kind, "")]:
+    for phrase in template_keywords(f) + [f.event_name, f.city, f.brand, shot_words(f), KIND_WORDS.get(f.event_kind, "")] \
+            + list(f.search_words):
         words.update(w.lower() for w in WORD.findall(phrase or ""))
     return words
 
@@ -403,7 +416,8 @@ def user_text(f: PhotoFacts) -> str:
         f"Year: {f.year or 'unknown, do not give one'}",
         f"City: {f.city or 'none, do not name a city'}",
         f"What the sorter saw: {f.summary or 'nothing recorded'}",
-    ])
+    ] + ([f"What people search to find this company (use a phrase only where it truly describes this photo): "
+          f"{'; '.join(f.search_words)}"] if f.search_words else []))
 
 
 class ClaudeWriter:
@@ -499,7 +513,6 @@ def save(conn: sqlite3.Connection, photo_id: int, fields: dict, model: str, fact
 
 def shown_on_site(conn: sqlite3.Connection) -> list[int]:
     """The library photos the last live site build showed (site/build.py SHOWN_KEY), home page first."""
-    from ..core import settings
     try:
         return [int(i) for i in json.loads(settings.get(conn, "site.shown_photo_ids") or "[]")]
     except (ValueError, TypeError):
@@ -553,6 +566,50 @@ def purge_named(conn: sqlite3.Connection) -> int:
     return gone
 
 
+def search_words(conn: sqlite3.Connection) -> tuple[str, ...]:
+    """The searches people found the site with in the newest kept window, most shown first, that are made only of trade
+    and place words (SEARCH_VOCAB), never the brand's own name, and pass the copy rules and the names gate."""
+    from . import search_console
+    try:
+        win = search_console.latest_window(conn)
+    except sqlite3.OperationalError:
+        return ()
+    if win is None:
+        return ()
+    brand = config.get_config().brand_name.lower()
+    known = ai_names.public_names(conn)
+    out: list[str] = []
+    for r in db.rows(conn, "SELECT query, SUM(impressions) AS shown FROM search_console_rows WHERE start_date=? AND end_date=? "
+                           "AND query != ? GROUP BY query HAVING shown >= ? ORDER BY shown DESC, query",
+                     (*win, search_console.TOTAL, SEARCH_MIN_SHOWN)):
+        q = " ".join(str(r["query"]).lower().split())
+        tokens = re.findall(r"[a-z0-9'’]+", q)
+        if not tokens or brand in q or len(q) > KEYWORD_MAX_LEN or not all(t in SEARCH_VOCAB for t in tokens):
+            continue
+        if not copy_rules.check(q, names=known).ok:
+            continue
+        out.append(q)
+        if len(out) >= SEARCH_WORDS_MAX:
+            break
+    return tuple(out)
+
+
+def words_changed_at(conn: sqlite3.Connection) -> Optional[str]:
+    """When the searchers' words last changed (stamped here the first time a new set is seen), or None while there are
+    none. The writer rewrites the site's photos written before it, once, in their new words."""
+    words = list(search_words(conn))
+    if not words:
+        return None
+    try:
+        kept = json.loads(settings.get(conn, SEARCH_WORDS_KEY) or "null") or {}
+    except ValueError:
+        kept = {}
+    if kept.get("words") != words or not kept.get("at"):
+        kept = {"words": words, "at": db.utcnow()}
+        settings.set(conn, SEARCH_WORDS_KEY, json.dumps(kept))
+    return kept["at"]
+
+
 def write_all(conn: sqlite3.Connection, cfg: Optional[config.Config] = None, *, dry_run: bool = True, client=None,
               agent: str = "seo", limit: Optional[int] = None) -> dict:
     cfg = cfg or config.get_config()
@@ -565,15 +622,18 @@ def write_all(conn: sqlite3.Connection, cfg: Optional[config.Config] = None, *, 
     renamed = purge_named(conn)
     ids, left_out = wanted_photos(conn)
     shown_now = set(shown_on_site(conn))
+    # part four (2026-11-01): when the searchers' words change, the photos the site shows are written once more in them
+    words_at = words_changed_at(conn) if writer is not None else None
     stats = {"wanted": len(ids), "written": 0, "claude": 0, "template": 0, "fell_back": 0, "kept": 0, "edited": 0,
              "left_out": left_out, "unsorted": 0, "refused": 0, "stopped": "", "model": writer.model if writer else "template",
-             "renamed": renamed, "shown_written": 0}
+             "renamed": renamed, "shown_written": 0, "refreshed": 0}
     for pid in ids:
-        row = db.one(conn, "SELECT model, edited_at FROM photo_seo WHERE photo_id=?", (pid,))
+        row = db.one(conn, "SELECT model, edited_at, written_at FROM photo_seo WHERE photo_id=?", (pid,))
         if row is not None and row["edited_at"]:
             stats["edited"] += 1
             continue
-        if row is not None and (row["model"] != "template" or writer is None):
+        refresh = bool(words_at and row is not None and pid in shown_now and (row["written_at"] or "") < words_at)
+        if row is not None and (row["model"] != "template" or writer is None) and not refresh:
             stats["kept"] += 1
             continue
         if stats["written"] >= limit:
@@ -607,13 +667,13 @@ def write_all(conn: sqlite3.Connection, cfg: Optional[config.Config] = None, *, 
                 continue
         save(conn, pid, fields, model, f)
         stats["written"] += 1
+        stats["refreshed"] += int(refresh)
         stats["template" if model == "template" else "claude"] += 1
         stats["fell_back"] += int(bool(why))
         if pid in shown_now:
             stats["shown_written"] += 1
     if stats["shown_written"] and not dry_run:
         # the site republishes itself within ten minutes with the new words (site/deploy.py reads this stamp)
-        from ..core import settings
         settings.set(conn, "site.photos_changed_at", db.utcnow())
     return stats
 

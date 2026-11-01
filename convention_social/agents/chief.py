@@ -106,6 +106,9 @@ def gather(ctx: runner.Context, now: datetime) -> dict:
     google = search_console.fresh_line(conn, now)          # the weekly read, in the morning brief after it (2026-10-31)
     if google:
         watching.append(google)
+    index = search_console.fresh_index_line(conn, now)     # which pages Google has in its index (2026-11-01, part five)
+    if index:
+        watching.append(index)
     search_done, search_watching = changes.brief(conn, now - timedelta(hours=24))   # proposed, approved, kept, put back (2026-11-01)
     done += search_done
     watching += search_watching
