@@ -223,7 +223,10 @@ on the dashboard's Outreach page, under Do not contact.
 
 The Scout searches only where you tell it: set `SCOUT_REGION` in `.env` in
 plain words (for example "Washington DC, Baltimore and Northern Virginia").
-Empty means it does not search.
+Empty means the default, around Washington DC. It looks for events starting
+three months to `SCOUT_MONTHS` months out, and every one becomes an organizer
+note draft by itself once a person's address and the dates are read off the
+event's own site (2026-11-01).
 
 ### 8c. The phone number and the social links on the site: the Keys page
 
@@ -496,7 +499,7 @@ sends at once, from the Shortcut and from the page.
   **Follow the pace** (the next open Instagram slot, one post a slot) and
   **Skip** (set aside; its photos go back into the rotation, never Don't use).
   A reel plays right there with its sound. Under the drafts, what else needs
-  you (quote requests, organizer notes, scout finds) and each alert with the
+  you (quote requests, organizer notes) and each alert with the
   button that fixes it. **This week**: what is set to go out, by day. **Went
   out**: the last posts, each with its link on Instagram. The chips: Send a
   photo, and All posts (every post in every state, and the numbers by week).

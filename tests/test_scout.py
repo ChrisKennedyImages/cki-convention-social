@@ -136,9 +136,23 @@ class Gates(ScoutCase):
         config.reset()
         self.assertEqual(scout.months(), 3)
         self.assertEqual(scout.horizon(scout.date(2026, 11, 30), 3).isoformat(), "2027-02-28")
+        fake = FakeClaude()
+        line = scout.run(self.ctx(), client=fake)
+        self.assertIn("nothing searched", line, "a horizon three months out leaves nothing to search")
+        self.assertEqual(fake.calls, [])
         os.environ["SCOUT_MONTHS"] = "nonsense"
         config.reset()
         self.assertEqual(scout.months(), 9)
+
+    def test_three_calendar_months_out_in_the_founders_zone(self):
+        """Chris, 2026-11-01: "the events need to be at least 3 months out". One day for the scout, the drafts and the send."""
+        self.assertEqual(scout.LEAD_MONTHS, 3)
+        for today, first in (("2026-11-01", "2027-02-01"), ("2026-11-30", "2027-02-28"), ("2026-12-31", "2027-03-31"),
+                             ("2027-05-31", "2027-08-31"), ("2027-11-30", "2028-02-29")):
+            self.assertEqual(scout.earliest_start(scout.date.fromisoformat(today)).isoformat(), first, today)
+        from datetime import datetime, timezone
+        late_sunday = datetime(2026, 11, 2, 3, 30, tzinfo=timezone.utc)       # 22:30 on Sunday 1 November in Washington
+        self.assertEqual(scout.local_today(config.get_config(), late_sunday).isoformat(), "2026-11-01")
 
 
 class Research(ScoutCase):
@@ -148,17 +162,18 @@ class Research(ScoutCase):
 
     def good_run(self):
         events = [
-            ev("Sample Con 2027", self.day(40), end_date=self.day(42), website=self.SITE, organizer="Sample Events LLC",
+            ev("Sample Con 2027", self.day(140), end_date=self.day(142), website=self.SITE, organizer="Sample Events LLC",
                organizer_email="Press@SampleCon.example", email_source_url=self.CONTACT, sources=[self.LISTING, self.SITE]),
-            ev("Made Up Expo", self.day(50), sources=["https://never-searched.example/expo"]),        # no seen source: dropped
-            ev("Other Site Email Con", self.day(60), website="https://othercon.example", organizer_email="boss@gmail.example",
+            ev("Made Up Expo", self.day(150), sources=["https://never-searched.example/expo"]),        # no seen source: dropped
+            ev("Other Site Email Con", self.day(160), website="https://othercon.example", organizer_email="boss@gmail.example",
                email_source_url="https://listings.example/events/other", sources=[self.LISTING]),     # email not from own site
             ev("Already Over Con", self.day(-5), sources=[self.LISTING]),                                # past: dropped
+            ev("Too Soon Con", self.day(40), sources=[self.LISTING]),                                    # under three months: dropped
             ev("Far Future Con", self.day(400), sources=[self.LISTING]),                                 # beyond horizon: dropped
             ev("Fuzzy Date Summit", "sometime in May", kind="business", sources=[self.LISTING]),         # kept, no date
-            ev("Sample Con 2027", self.day(40), sources=[self.SITE]),                                    # duplicate
-            ev("Invented Site Con", self.day(70), website="https://invented.example", sources=[self.LISTING]),
-            ev("", self.day(20), sources=[self.LISTING]),
+            ev("Sample Con 2027", self.day(140), sources=[self.SITE]),                                    # duplicate
+            ev("Invented Site Con", self.day(170), website="https://invented.example", sources=[self.LISTING]),
+            ev("", self.day(120), sources=[self.LISTING]),
         ]
         first = resp([search_block(self.SITE, self.LISTING, self.CONTACT, "https://othercon.example/"),
                       search_error(), text(answer(events))], searches=3)
@@ -176,18 +191,20 @@ class Research(ScoutCase):
         self.assertEqual(kw["output_config"], {"effort": "medium"})
         self.assertEqual(kw["tools"], [{"type": "web_search_20260209", "name": "web_search", "max_uses": 8}])
         self.assertIn("Washington DC, Maryland, Virginia", kw["messages"][0]["content"])
+        # 2026-11-01: the search starts three calendar months out and ends at the horizon
+        earliest, until = scout.earliest_start(self.today), scout.horizon(self.today, scout.months())
+        self.assertIn(f"Find events starting between {earliest.isoformat()} and {until.isoformat()}.", kw["messages"][0]["content"])
+        self.assertIn(f"Today: {self.today.isoformat()}", kw["messages"][0]["content"])
 
-    def test_new_finds_ping_the_phone_once_to_the_scout_page(self):
-        with mock.patch.object(scout.notify, "push") as push:
-            scout.run(self.ctx(), client=self.good_run())
-        self.assertEqual(push.call_count, 1)
-        args, kw = push.call_args
-        self.assertIn("new event", args[1])
-        self.assertTrue(kw["click"].endswith("/scout"))
-        self.assertIs(kw["conn"], self.conn)
-        with mock.patch.object(scout.notify, "push") as push:
-            scout.run(self.ctx(), client=self.good_run())
-        self.assertEqual(push.call_count, 0, "the same finds again are not news")
+    def test_new_finds_ping_nobody(self):
+        """Chris, 2026-11-01: "I would rather them all just be converted to drafts". The scout's own ping ("the scout found
+        events ... Tap to see them.") is gone; each find reaches him as an organizer draft, with the outreach ping."""
+        from convention_social.core import notify
+        with mock.patch.object(notify, "push") as push:
+            line = scout.run(self.ctx(), client=self.good_run())
+        self.assertIn(", 4 new", line)
+        self.assertEqual(push.call_count, 0)
+        self.assertFalse(hasattr(scout, "notify"), "the scout has nothing to say to the phone")
 
     def test_only_sourced_events_are_kept_and_emails_only_from_their_own_site(self):
         line = scout.run(self.ctx(), client=self.good_run())
@@ -199,12 +216,12 @@ class Research(ScoutCase):
         self.assertEqual(sample["organizer_email"], "press@samplecon.example")
         self.assertEqual(sample["email_source_url"], self.CONTACT)
         self.assertEqual(json.loads(sample["sources"]), [self.LISTING, self.SITE])
-        self.assertEqual(sample["end_date"], self.day(42))
+        self.assertEqual(sample["end_date"], self.day(142))
         self.assertIsNone(rows["Other Site Email Con"]["organizer_email"])        # read on a listing, not their site
         self.assertIsNone(rows["Fuzzy Date Summit"]["start_date"])                 # not a date: left empty
         self.assertEqual(rows["Fuzzy Date Summit"]["kind"], "business")
         self.assertIsNone(rows["Invented Site Con"]["website"])                    # a site no search returned
-        for word in ("no source 1", "past 1", "beyond horizon 1", "no name 1"):
+        for word in ("no source 1", "past 1", "under three months 1", "beyond horizon 1", "no name 1"):
             self.assertIn(word, line)
         self.assertIn("1 with an organizer email", line)
         # a web search error is recorded, not swallowed
@@ -213,18 +230,18 @@ class Research(ScoutCase):
     def test_cpac_and_the_acu_are_never_stored(self):
         """Chris, 2026-10-13: never CPAC, never the ACU, never an affiliate. Dropped by the vetting, refused by the store."""
         cpac = "https://cpac.conservative.org/"
-        events = [ev("CPAC 2027", self.day(40), kind="business", website=cpac, sources=[cpac, self.LISTING]),
-                  ev("ACU Policy Summit", self.day(50), kind="business", sources=[self.LISTING]),
-                  ev("Regional Expo", self.day(60), kind="business", organizer="American Conservative Union", sources=[self.LISTING]),
-                  ev("Sample Con 2027", self.day(40), sources=[self.SITE]),
-                  ev("Vacuum Tech Summit", self.day(45), kind="business", sources=[self.LISTING])]
+        events = [ev("CPAC 2027", self.day(140), kind="business", website=cpac, sources=[cpac, self.LISTING]),
+                  ev("ACU Policy Summit", self.day(150), kind="business", sources=[self.LISTING]),
+                  ev("Regional Expo", self.day(160), kind="business", organizer="American Conservative Union", sources=[self.LISTING]),
+                  ev("Sample Con 2027", self.day(140), sources=[self.SITE]),
+                  ev("Vacuum Tech Summit", self.day(145), kind="business", sources=[self.LISTING])]
         fake = FakeClaude(resp([search_block(self.SITE, self.LISTING, cpac), text(answer(events))], searches=2))
         line = scout.run(self.ctx(), client=fake)
         names = {r["name"] for r in db.rows(self.conn, "SELECT name FROM scout_events")}
         self.assertEqual(names, {"Sample Con 2027", "Vacuum Tech Summit"}, line)
         self.assertIn("never 3", line)
         self.assertIn("CPAC", fake.calls[0]["system"][0]["text"])
-        self.assertFalse(scout.store(self.conn, {"name": "CPAC Texas", "kind": "business", "start_date": self.day(30), "end_date": "",
+        self.assertFalse(scout.store(self.conn, {"name": "CPAC Texas", "kind": "business", "start_date": self.day(130), "end_date": "",
                                                 "sources": [self.LISTING]}, "m", set()))
         self.assertEqual(db.one(self.conn, "SELECT COUNT(*) n FROM scout_events")["n"], 2)
 
@@ -248,14 +265,14 @@ class Research(ScoutCase):
 
     def test_events_already_on_the_calendar_are_skipped(self):
         now = db.utcnow()
-        db.insert(self.conn, "conventions", name="Sample Con 2027", start_date=self.day(40), created_at=now, updated_at=now)
+        db.insert(self.conn, "conventions", name="Sample Con 2027", start_date=self.day(140), created_at=now, updated_at=now)
         scout.run(self.ctx(), client=self.good_run())
         names = [r["name"] for r in db.rows(self.conn, "SELECT name FROM scout_events")]
         self.assertTrue(names)
         self.assertNotIn("Sample Con 2027", names)
 
     def test_email_quoted_by_a_citation_from_their_own_site_is_kept(self):
-        events = [ev("Cited Con", self.day(30), website="https://citedcon.example", organizer_email="hello@citedcon.example",
+        events = [ev("Cited Con", self.day(130), website="https://citedcon.example", organizer_email="hello@citedcon.example",
                      sources=["https://citedcon.example/about"])]
         fake = FakeClaude(resp([search_block("https://citedcon.example/about"),
                                 text("They list a contact.", [cite("https://citedcon.example/faq", "Write to hello@citedcon.example")]),
@@ -267,14 +284,14 @@ class Research(ScoutCase):
         self.assertEqual(row["email_source_url"], "https://citedcon.example/faq")
 
     def test_search_errors_only_means_nothing_kept(self):
-        fake = FakeClaude(resp([search_error("too_many_requests"), text(answer([ev("Ghost Con", self.day(30), sources=[self.SITE])]))]))
+        fake = FakeClaude(resp([search_error("too_many_requests"), text(answer([ev("Ghost Con", self.day(130), sources=[self.SITE])]))]))
         line = scout.run(self.ctx(), client=fake)
         self.assertIn("no source URLs came back", line)
         self.assertIsNone(db.one(self.conn, "SELECT 1 FROM scout_events"))
 
     def test_pause_turn_is_resumed_with_the_same_turn(self):
         paused = resp([search_block(self.SITE)], stop="pause_turn", searches=1)
-        done = resp([text(answer([ev("Sample Con 2027", self.day(40), sources=[self.SITE])]))], searches=0)
+        done = resp([text(answer([ev("Sample Con 2027", self.day(140), sources=[self.SITE])]))], searches=0)
         fake = FakeClaude(paused, done)
         scout.run(self.ctx(), client=fake)
         self.assertEqual(len(fake.calls), 2)
@@ -284,14 +301,14 @@ class Research(ScoutCase):
         self.assertEqual(db.one(self.conn, "SELECT name FROM scout_events")["name"], "Sample Con 2027")
 
     def test_refusal_stores_nothing(self):
-        fake = FakeClaude(resp([search_block(self.SITE), text(answer([ev("X Con", self.day(30), sources=[self.SITE])]))], stop="refusal"))
+        fake = FakeClaude(resp([search_block(self.SITE), text(answer([ev("X Con", self.day(130), sources=[self.SITE])]))], stop="refusal"))
         line = scout.run(self.ctx(), client=fake)
         self.assertIn("declined", line)
         self.assertIsNone(db.one(self.conn, "SELECT 1 FROM scout_events"))
 
     def test_unreadable_answer_gets_one_structuring_call(self):
         notes = text("Sample Con 2027 runs in Baltimore, see " + self.SITE + " (no JSON, sorry)")
-        structured = resp([text(json.dumps({"events": [ev("Sample Con 2027", self.day(40), sources=[self.SITE])]}))])
+        structured = resp([text(json.dumps({"events": [ev("Sample Con 2027", self.day(140), sources=[self.SITE])]}))])
         fake = FakeClaude(resp([search_block(self.SITE), notes]), structured)
         line = scout.run(self.ctx(), client=fake)
         self.assertEqual(len(fake.calls), 2)
@@ -357,6 +374,28 @@ class ScoutPages(ScoutCase):
         self.c.cookies.clear()
         self.assertEqual(self.c.get("/scout", follow_redirects=False).status_code, 307)
         self.assertEqual(self.c.post(f"/scout/{self.sid}/add").status_code, 401)
+
+    def test_the_page_says_every_event_three_months_out_becomes_a_draft(self):
+        """Chris, 2026-11-01: "I would rather them all just be converted to drafts and the events need to be at least 3
+        months out." The page says so, and each card says where its event stands."""
+        page = self.c.get("/scout").text
+        self.assertIn("starting 3 to 9 months from now", page)
+        self.assertIn("Every event three months or more out becomes an organizer note on its own", page)
+        self.assertIn("Under three months away: no organizer note.", page, "Sample Con is forty days out")
+        self.assertNotIn("in the next 9 months", page)
+        started = self.c.get("/scout?msg=started").text
+        self.assertIn("becomes a draft on its own", started)
+        self.assertNotIn("your phone gets a ping", started)
+        now = db.utcnow()
+        later = db.insert(self.conn, "scout_events", dedup_key="later con|", name_key="later con", name="Later Con", kind="business",
+                          website="https://latercon.example", organizer_email="jane.doe@latercon.example",
+                          dates_note="no dates on https://latercon.example", sources=json.dumps(["https://latercon.example"]),
+                          status="new", found_at=now, updated_at=now)
+        page = self.c.get("/scout").text
+        self.assertIn("No dates yet: no dates on https://latercon.example. A note is drafted once dates three months or more out are found.", page)
+        oid = db.insert(self.conn, "outreach", kind="first", scout_event_id=later, event_key="later con|", event_name="Later Con",
+                        email="jane.doe@latercon.example", status="draft", token="b" * 32, created_at=now, updated_at=now)
+        self.assertIn(f'<a href="/outreach/{oid}">Organizer note to jane.doe@latercon.example: draft</a>', self.c.get("/scout").text)
 
     def test_search_now_starts_one_scout_run(self):
         from convention_social.core import runner as runner_module

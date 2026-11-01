@@ -64,8 +64,10 @@ class Chief(IsolatedCase):
         for item in needs:
             self.assertIn(item, gathered, "the brief carries the same lines")
 
-    def test_counts_outreach_drafts_and_scout_finds(self):
-        """The brief reads the tables migration 0040 really makes: outreach and scout_events."""
+    def test_counts_outreach_drafts_and_never_the_scout_finds(self):
+        """The brief reads the table migration 0040 really makes. Chris, 2026-11-01: "I would rather them all just be
+        converted to drafts": an event the scout found is no line of its own (it was "N upcoming event(s) the scout found
+        for you to look at."); it reaches him as an organizer draft."""
         now = db.utcnow()
         db.insert(self.conn, "outreach", event_key="expo|2027-03-05", event_name="Expo", email="o@example.org",
                   status="draft", token="a" * 32, created_at=now, updated_at=now)
@@ -75,7 +77,8 @@ class Chief(IsolatedCase):
         needs = dict(json.loads(settings.get(self.conn, chief.BRIEF_KEY))["needs"])
         self.assertTrue(needs)
         self.assertEqual(needs.get("1 organizer email(s) drafted for your Approve."), "/outreach")
-        self.assertEqual(needs.get("1 upcoming event(s) the scout found for you to look at."), "/scout")
+        self.assertNotIn("/scout", needs.values())
+        self.assertFalse([t for t in needs if "scout" in t.lower()], needs)
 
     def test_a_brief_that_could_not_be_mailed_is_not_marked_sent_and_the_push_goes_once(self):
         failed = mail.MailResult(sent=False, dry_run=False, error="SMTPAuthenticationError: bad password")
