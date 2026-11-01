@@ -21,10 +21,24 @@ from ..core import db
 # the ones Chris named, in every form a caption might use
 ALWAYS = ("CPAC", "ACU", "American Conservative Union", "Conservative Political Action Conference",
           "Conservative Political Action")
-NOT_NAMES = {"unknown", "none", "n/a", "na", "event", "events", "convention", "conference", "other", "misc"}
+# plain words for a kind of event or a room are not names (2026-10-31): the sorter had stored "reception", "receptions",
+# "conventions", "awards", "Gala" and "volunteer" as event names (from folder names), and the gate then refused every
+# reception photo's words, the template's included, because "reception" is the kind of shot. A real name that contains
+# one ("C.A.S.E. Gala", "ACU Awards") is still a name.
+PLAIN_WORDS = {"reception", "receptions", "convention", "conventions", "conference", "conferences", "gala", "galas",
+               "award", "awards", "dinner", "dinners", "summit", "summits", "expo", "expos", "panel", "panels", "keynote",
+               "keynotes", "breakout", "breakouts", "portrait", "portraits", "backstage", "stage", "candid", "meeting",
+               "meetings", "volunteer", "volunteers", "banquet", "luncheon", "ceremony"}
+NOT_NAMES = {"unknown", "none", "n/a", "na", "event", "events", "other", "misc"} | PLAIN_WORDS
 YEAR = re.compile(r"\s*\b(?:19|20)\d{2}\b\s*")
 HANDLE = re.compile(r"(?<![\w.])@[A-Za-z0-9_.]{2,}")
 HASHTAG = re.compile(r"#(\w+)")
+
+
+def is_name(text: str) -> bool:
+    """True when the text, without a year, is a name: not a placeholder and not a plain event word."""
+    plain = " ".join(YEAR.sub(" ", text or "").split()).strip(" -_,.").lower()
+    return len(plain) >= 3 and plain not in NOT_NAMES
 
 
 def _forms(name: str) -> set[str]:
