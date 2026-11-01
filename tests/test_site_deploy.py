@@ -271,6 +271,22 @@ class Run(Repos):
         self.assertTrue(deploy.wanted(self.conn, self.repo, now=built + timedelta(minutes=11))[0])
         self.assertFalse(deploy.wanted(self.conn, self.repo, now=built + timedelta(minutes=2))[0], "ten minutes of quiet first")
 
+    def test_the_search_changes_the_build_carried_go_live_only_when_the_deploy_does(self):
+        """2026-11-01 (seo/changes.py): an approved change is live from the deploy that sent it, never from the Approve."""
+        from convention_social.seo import changes
+        now = db.utcnow()
+        cid = db.insert(self.conn, "seo_changes", kind="title", page="/coverage/stage/", fields="[]", before="{}", after="{}",
+                        reason="x", status="approved", proposed_at=now, approved_at=now, updated_at=now)
+        settings.set(self.conn, changes.BUILT_KEY, json.dumps([cid]))       # what the build wrote: it laid this change
+        settings.set(self.conn, deploy.DEPLOYED_KEY, "")
+        self.assertEqual(self.go(build=done("boom", 1)), 1)
+        self.assertEqual(changes.get(self.conn, cid)["status"], "approved", "a failed deploy puts nothing live")
+        self.assertEqual(self.go(), 0)
+        row = changes.get(self.conn, cid)
+        self.assertEqual(row["status"], "live")
+        self.assertTrue(row["live_at"] and row["measure_after"] and row["baseline"])
+        self.assertIn("search changes live: /coverage/stage/", self.said)
+
     def test_no_check_skips_the_check_only(self):
         self.assertEqual(self.go(with_check=False), 0)
         self.assertEqual([s for s, _ in self.steps], ["build", "deploy"])

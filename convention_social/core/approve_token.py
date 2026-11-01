@@ -10,6 +10,11 @@ The card the ping shows is fetched by the phone from the dashboard without a log
 its own: `card_key`, signed over `card|qid|updated_at|exp|nonce`, opens the card and nothing else. The address, and
 the dashboard's access log that keeps every address, never carry the approve token (2026-10-24 audit: 59 tokens in
 the log). The card key lives and dies with the token: the nonce blanked, the row changed, the hours up.
+
+The same token serves other rows Chris decides from a ping (2026-11-01: the SEO agent's changes, seo/changes.py), each
+under its own Scope: the nonce lives at `<scope>.<id>.ping_nonce` and the scope's name is signed first, so a token for
+one kind of row never opens another. A post's token signs exactly as it always has, so the pings already on his phone
+keep working.
 """
 from __future__ import annotations
 
@@ -17,12 +22,23 @@ import hashlib
 import hmac
 import secrets as pysecrets
 import time
+from dataclasses import dataclass
 from typing import Optional
 
 from . import config, settings
 
 TOKEN_HOURS = 36
 SECRET_FILE = "dashboard.secret"
+
+
+@dataclass(frozen=True)
+class Scope:
+    name: str           # the nonce's settings prefix, and (for all but posts) the first thing signed
+    where: str          # where he goes to decide instead, in the refusals
+    changed: str        # what the refusal says when the row changed since the ping
+
+
+POSTS = Scope("queue", "the draft", "The post changed since that ping (a save or a rewrite).")
 
 
 def secret() -> bytes:
@@ -36,24 +52,29 @@ def secret() -> bytes:
     return path.read_text().strip().encode()
 
 
-def nonce_key(qid: int) -> str:
-    return f"queue.{qid}.ping_nonce"
+def nonce_key(rid: int, scope: Scope = POSTS) -> str:
+    return f"{scope.name}.{rid}.ping_nonce"
 
 
 def _sign(*parts) -> str:
     return hmac.new(secret(), "|".join(str(p) for p in parts).encode(), hashlib.sha256).hexdigest()
 
 
-def issue(conn, row, now: Optional[float] = None) -> str:
-    """A fresh token for this draft (a new nonce replaces any older one, so only the latest ping's button works)."""
+def _subject(row, scope: Scope) -> tuple:
+    """What a token signs about its row: its id and updated_at, after the scope's name for anything but a post."""
+    return (row["id"], row["updated_at"]) if scope is POSTS else (scope.name, row["id"], row["updated_at"])
+
+
+def issue(conn, row, now: Optional[float] = None, scope: Scope = POSTS) -> str:
+    """A fresh token for this row (a new nonce replaces any older one, so only the latest ping's button works)."""
     nonce = pysecrets.token_hex(16)
-    settings.set(conn, nonce_key(row["id"]), nonce)
+    settings.set(conn, nonce_key(row["id"], scope), nonce)
     exp = int((now or time.time()) + TOKEN_HOURS * 3600)
-    return f"{exp}.{nonce}.{_sign(row['id'], row['updated_at'], exp, nonce)}"
+    return f"{exp}.{nonce}.{_sign(*_subject(row, scope), exp, nonce)}"
 
 
-def check(conn, row, token: str, now: Optional[float] = None) -> tuple[bool, str]:
-    """(True, "") when the token is this draft's, unspent, unexpired and the draft is as it was; else (False, why)."""
+def check(conn, row, token: str, now: Optional[float] = None, scope: Scope = POSTS) -> tuple[bool, str]:
+    """(True, "") when the token is this row's, unspent, unexpired and the row is as it was; else (False, why)."""
     parts = (token or "").strip().split(".")
     if len(parts) != 3:
         return False, "That link is not a valid approve link."
@@ -62,12 +83,12 @@ def check(conn, row, token: str, now: Optional[float] = None) -> tuple[bool, str
         exp = int(exp_s)
     except ValueError:
         return False, "That link is not a valid approve link."
-    if not nonce or settings.get(conn, nonce_key(row["id"])) != nonce:
-        return False, "That approve button was already used, or belongs to an older ping. Open the draft to approve it."
+    if not nonce or settings.get(conn, nonce_key(row["id"], scope)) != nonce:
+        return False, f"That approve button was already used, or belongs to an older ping. Open {scope.where} to approve it."
     if exp < (now or time.time()):
-        return False, "That approve button has expired. Open the draft to approve it."
-    if not hmac.compare_digest(_sign(row["id"], row["updated_at"], exp, nonce), sig):
-        return False, "The post changed since that ping (a save or a rewrite). Open the draft to see it and approve it."
+        return False, f"That approve button has expired. Open {scope.where} to approve it."
+    if not hmac.compare_digest(_sign(*_subject(row, scope), exp, nonce), sig):
+        return False, f"{scope.changed} Open {scope.where} to see it and approve it."
     return True, ""
 
 
@@ -89,6 +110,6 @@ def check_card(conn, row, key: str, now: Optional[float] = None) -> bool:
     return hmac.compare_digest(_sign("card", row["id"], row["updated_at"], exp, nonce), sig)
 
 
-def spend(conn, qid: int) -> None:
+def spend(conn, rid: int, scope: Scope = POSTS) -> None:
     """The token is used: no second approval from the same ping."""
-    settings.set(conn, nonce_key(qid), "")
+    settings.set(conn, nonce_key(rid, scope), "")

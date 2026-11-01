@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}Search changes | {{ brand }}{% endblock %}
+{% block body %}
+<style>
+.serp{border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:10px 0 0;background:#fff}
+.serp.new{border-color:#9db6f2;background:#f5f8ff}
+.serp .lab{font-size:12px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);margin-bottom:4px}
+.serp .u{font-size:13px;color:#2f6b3a;word-break:break-all}
+.serp .t{font-size:18px;line-height:1.3;color:#1a0dab;margin:3px 0 4px}
+.serp .d{font-size:14px;line-height:1.45;color:#4d5156}
+.change .why{margin:8px 0 0;font-size:15px}
+.change details{margin-top:10px}
+.change details table{font-size:14px}
+.change .after{margin:10px 0 0}
+</style>
+{% set badge = {'proposed': 'draft', 'approved': 'approved', 'live': 'published', 'kept': 'ok', 'reverted': 'failed', 'skipped': 'rejected'} %}
+{% set was = {'proposed': 'In Google now', 'approved': 'In Google now', 'skipped': 'In Google now'} %}
+{% set new = {'proposed': 'Proposed', 'approved': 'Approved', 'live': 'On the site now', 'kept': 'On the site now',
+              'reverted': 'Tried, then put back', 'skipped': 'Proposed, skipped'} %}
+{% if msg %}<div class="msg">{{ msg }}</div>{% endif %}
+{% if bad %}<div class="msg bad">{{ bad }}</div>{% endif %}
+<a class="back" href="/seo">&larr; Search</a>
+<h1>Search changes</h1>
+<div class="card muted">Every Monday the SEO agent reads Google's numbers. A page shown often but rarely clicked gets new words for
+  its search result, at most two pages a week. Nothing on the site changes until you approve. Then the new words are measured for
+  four weeks and put back by themselves if fewer people click.{% if dry_run %} The SEO agent is in practice run, so it proposes nothing.{% endif %}</div>
+{% if not items %}<div class="card muted">No changes yet. The first come after a Monday read finds a page that loses its clicks.</div>{% endif %}
+{% for c in items %}
+<article class="card change" id="c{{ c.id }}">
+  <div class="row"><strong>{{ c.name }}</strong><span class="badge {{ badge[c.status] }}" style="margin-left:auto">{{ c.status_words }}</span></div>
+  <p class="why">{{ c.reason }}</p>
+  <div class="serp"><div class="lab">{{ was.get(c.status, 'Before') }}</div><div class="u">{{ c.url }}</div>
+    {% for label, before, after in c.shown %}<div class="{{ 't' if loop.first else 'd' }}">{{ before }}</div>{% endfor %}</div>
+  <div class="serp new"><div class="lab">{{ new[c.status] }}</div><div class="u">{{ c.url }}</div>
+    {% for label, before, after in c.shown %}<div class="{{ 't' if loop.first else 'd' }}">{{ after }}</div>{% endfor %}</div>
+  {% if c.queries %}<details{{ ' open' if c.status == 'proposed' else '' }}><summary>What people searched ({{ c.queries|length }})</summary>
+    <table><tr><th>Search</th><th>Shown</th><th>Clicked</th><th>Place</th></tr>
+    {% for q in c.queries %}<tr><td>{{ q.query }}</td><td>{{ q.impressions }}</td><td>{{ q.clicks }}</td><td>{{ q.position }}</td></tr>{% endfor %}
+    </table></details>{% endif %}
+  {% if c.status == 'proposed' %}
+  <div class="choices two">
+    <form method="post" action="/seo/changes/{{ c.id }}/approve"><button class="primary" type="submit">Approve</button></form>
+    <form method="post" action="/seo/changes/{{ c.id }}/skip"><button class="skip" type="submit">Skip</button></form>
+  </div>
+  <div class="muted" style="margin-top:8px">Proposed {{ c.proposed_at|local }}.</div>
+  {% elif c.status == 'approved' %}
+  <p class="muted after">Approved {{ c.approved_at|local }}. It goes on the site when the site next publishes, in about ten minutes.</p>
+  <form method="post" action="/seo/changes/{{ c.id }}/skip"><button class="small" type="submit">Take it back</button></form>
+  {% elif c.status == 'live' %}
+  <p class="muted after">On the site since {{ c.live_at|local }}; measured from {{ c.measure_after|local }}.
+    {% if c.baseline_words %}Before: {{ c.baseline_words }}.{% endif %}</p>
+  {% if c.result and c.result.words %}<p class="muted">{{ c.result.words }}</p>{% endif %}
+  {% elif c.status in ('kept', 'reverted') %}
+  <p class="after">{{ c.result.words if c.result else '' }}</p>
+  {% else %}
+  <p class="muted after">Skipped {{ c.verdict_at|local }}.</p>
+  {% endif %}
+  {% if c.off_site %}<div class="msg bad" style="margin:10px 0 0">Not on the site: {{ c.off_site }}. The page keeps the words it had.</div>{% endif %}
+</article>
+{% endfor %}
+{% endblock %}

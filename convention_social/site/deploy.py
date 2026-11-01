@@ -49,6 +49,7 @@ PHOTOS_CHANGED_KEY = "site.photos_changed_at"        # stamped by every Use / Do
 TAG_CHANGED_KEY = "site.tag_changed_at"              # the Search Console value on the Keys page changed (2026-10-13)
 KEYS_CHANGED_KEY = "site.keys_changed_at"            # the phone number or a social address on the Keys page changed (2026-10-14)
 SEND_TOKEN_CHANGED_KEY = "site.send_token_changed_at"  # the share sheet's token changed on the Keys page: the Worker takes it (2026-10-15)
+SEO_CHANGED_KEY = "site.seo_changed_at"              # a search change was approved, or put back by its measure (2026-11-01, seo/changes.py)
 SITE_KEYS = ("BRAND_PHONE", "SOCIAL_INSTAGRAM", "SOCIAL_FACEBOOK", "SOCIAL_PINTEREST")   # Keys page values the site shows
 PHOTOS_SETTLE = 10 * 60                              # seconds of quiet after the last photo change before the site publishes itself
 MAX_TRIES = 3                                        # per commit, by itself; Publish on the Photos page always tries
@@ -58,7 +59,8 @@ DEPLOY_TIMEOUT = 10 * 60
 CHECK_WAIT = 5 * 60
 # a change under these paths changes the site; anything else does not need a deploy
 SITE_PATHS = ("convention_social/site/", "site/", "worker/", "offer.json", "wrangler.jsonc",
-              "convention_social/seo/markup.py", "convention_social/seo/photo_text.py", "convention_social/offer.py")
+              "convention_social/seo/markup.py", "convention_social/seo/photo_text.py", "convention_social/seo/changes.py",
+              "convention_social/offer.py")
 
 
 def live_config(repo: Optional[Path] = None) -> Path:
@@ -195,7 +197,8 @@ def photos_pending(conn, now: Optional[datetime] = None) -> tuple[bool, str]:
     stamps = [(_stamp(settings.get(conn, PHOTOS_CHANGED_KEY)), "the approved photos changed at"),
               (_stamp(settings.get(conn, TAG_CHANGED_KEY)), "the Search Console tag changed at"),
               (_stamp(settings.get(conn, KEYS_CHANGED_KEY)), "the website's contact details on the Keys page changed at"),
-              (_stamp(settings.get(conn, SEND_TOKEN_CHANGED_KEY)), "the send token on the Keys page changed at")]
+              (_stamp(settings.get(conn, SEND_TOKEN_CHANGED_KEY)), "the send token on the Keys page changed at"),
+              (_stamp(settings.get(conn, SEO_CHANGED_KEY)), "a search change was approved or put back at")]
     changed, what = max(((t, w) for t, w in stamps if t is not None), default=(None, ""), key=lambda tw: tw[0])
     built = _stamp(settings.get(conn, DEPLOYED_AT_KEY))
     if changed is None or (built is not None and changed <= built):
@@ -365,6 +368,10 @@ def run(*, repo: Optional[Path] = None, conn=None, say: Callable[[str], None] = 
         settings.set(conn, DEPLOYED_KEY, head)
         settings.set(conn, DEPLOYED_AT_KEY, started)
         settings.set(conn, FAILED_KEY, "")
+        from ..seo import changes
+        went = changes.went_live(conn)              # the search changes this build carried are on the site now
+        if went:
+            say(f"search changes live: {', '.join(went)}")
         told, engines = tell_engines()            # the site is live either way; the card says whether they heard
         say(engines)
         write_status("done", f"live on {head[:7]}" + (f"; hero: {hero}" if hero else ""), commit=head, hero=hero,

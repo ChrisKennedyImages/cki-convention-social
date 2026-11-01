@@ -13,6 +13,11 @@ Every word on every page passes ai.copy_rules: no price, no dash, no claim of
 an official role. The one list of organizations is the logo strip under the hero
 (Chris, 2026-10-15: "should we add the companies we have worked for on the
 website? like their logos"), off until he turns it on in offer.json.
+
+Each page's title and description are written in one place (page_words). A search
+change Chris approved (seo/changes.py, 2026-11-01) is laid over them by
+with_seo_changes, still through the copy rules, the names rule and the lengths; one
+that no longer passes is left off with a note, and the page keeps its own words.
 """
 from __future__ import annotations
 
@@ -32,7 +37,9 @@ from PIL import Image, ImageOps, ImageStat
 
 from .. import offer
 from ..ai import copy_rules
+from ..ai import names as ai_names
 from ..core import config, db
+from ..seo import changes as seo_changes
 from ..seo import indexnow, markup
 from ..library import eligibility
 from ..render import fonts
@@ -526,6 +533,87 @@ def check_copy(texts) -> None:
             raise SiteCopyRefused(f"{t[:60]!r}: {r.blocks[0].message}")
 
 
+def rel_of(path: str) -> str:
+    """The file a site path is written to: "/" is index.html, "/coverage/stage/" is coverage/stage/index.html."""
+    return "index.html" if path == "/" else path.strip("/") + "/index.html"
+
+
+def page_words(o: dict, t: dict, brand: str) -> dict[str, tuple[str, str]]:
+    """Every page's own title and description, by the file it is written to. The build adds " | brand" after every
+    title but the home page's (full_title)."""
+    words = {"index.html": (t["title"], t["description"]),
+             "coverage/index.html": (f"Event photography coverage in {AREA}", t["coverage_description"])}
+    for c in o["coverage"]:
+        words[f"coverage/{c['key']}/index.html"] = (f"{c['title']}, {AREA}", c["first"])
+    words["contact/index.html"] = ("Contact us", f"Email or call {brand}, event and convention photographers based in {AREA}. "
+                                                 "One of us writes back within 24 hours.")
+    words["book/index.html"] = ("Request a quote for event photography",
+                                f"Send the dates, the venue and the rooms that matter. One of us writes back within 24 hours "
+                                f"with a quote, in {AREA} or wherever your event is.")
+    words["about/index.html"] = ("About us: two brothers, event photographers",
+                                 f"Chris and Nic Kennedy, brothers, more than thirty years each behind the camera, based in {AREA} "
+                                 "and travelling nationwide.")
+    words["thanks/index.html"] = ("Thank you", "Your request is in.")
+    words["privacy/index.html"] = ("Privacy and photo removal", "How quote requests are handled, and how to have a photo taken down.")
+    words["404.html"] = ("Not found", "Not found.")
+    return words
+
+
+def full_title(rel: str, title: str, brand: str) -> str:
+    """The title as a search result shows it: the page's own, then " | brand"; the home page's title is whole."""
+    return title if rel == "index.html" else f"{title} | {brand}"
+
+
+def words_problems(rel: str, title: str, description: str, brand: str, names) -> list[str]:
+    """Why a title and description may not stand on a page, in plain words; [] when they may: the copy rules, the names
+    rule (Chris, 2026-10-11: no public word names an event or a person; ai/names.py) and the lengths a search result
+    shows whole. The home page's title keeps the company's name."""
+    why = []
+    for what, text in (("title", title), ("description", description)):
+        if not (text or "").strip():
+            why.append(f"the {what} is empty")
+            continue
+        why += [f"the {what} {b.message}" for b in copy_rules.check(text, names=names).blocks]
+    shown = full_title(rel, title, brand)
+    if len(shown) > TITLE_MAX:
+        why.append(f"the title is {len(shown)} characters in a search result, {TITLE_MAX} at most")
+    if len(description or "") > DESCRIPTION_MAX:
+        why.append(f"the description is {len(description)} characters, {DESCRIPTION_MAX} at most")
+    if rel == "index.html" and brand.lower() not in (title or "").lower():
+        why.append(f"the home page's title must keep the name {brand}")
+    return why
+
+
+def with_seo_changes(conn: sqlite3.Connection, words: dict[str, tuple[str, str]],
+                     brand: str) -> tuple[dict[str, tuple[str, str]], list[int], dict[int, str]]:
+    """The pages' words with the title changes Chris approved laid over them (seo/changes.py: approved, live or kept,
+    oldest first): (the words, the changes laid, and why for each change left off). A change is laid only while the page still
+    says what it replaced (an older change on the same page counts) and its words pass words_problems today; otherwise
+    the page keeps the words it has."""
+    out = dict(words)
+    names = ai_names.public_names(conn)
+    laid, left_off = [], {}
+    for ch in seo_changes.on_site(conn, "title"):
+        rel = rel_of(ch["page"])
+        before, after = json.loads(ch["before"]), json.loads(ch["after"])
+        if rel not in out:
+            left_off[ch["id"]] = f"the site no longer has the page {ch['page']}"
+        elif (before.get("title"), before.get("description")) != out[rel]:
+            left_off[ch["id"]] = f"{ch['page']} no longer has the words it replaced"
+        elif why := words_problems(rel, after.get("title", ""), after.get("description", ""), brand, names):
+            left_off[ch["id"]] = f"its words no longer pass: {'; '.join(why)}"
+        else:
+            out[rel] = (after["title"], after["description"])
+            laid.append(ch["id"])
+    return out, laid, left_off
+
+
+def site_words(conn: sqlite3.Connection) -> dict[str, tuple[str, str]]:
+    """Every page's title and description as the next live build writes them: its own, with the approved changes."""
+    brand = config.get_config().brand_name
+    return with_seo_changes(conn, page_words(offer.load(), copy_text(), brand), brand)[0]
+
+
 def _photo(entry):
     """(image, alt[, meta[, slug[, label]]]) -> (image, alt, meta, slug, label); fixtures and older callers pass two or three."""
     im, alt = entry[0], entry[1]
@@ -774,14 +862,18 @@ def build(conn: Optional[sqlite3.Connection], photos: SitePhotos, *, out: Path =
         from ..core import runner
         runner.record_error_once(conn, "site", "client_logos", "Logos left off the home page: " + "; ".join(left_out) + ".")
     base = f"https://{cfg.brand_domain}"
-    pages = {"index.html": (t["title"], t["description"], home_body(t, hero, frames, stack, venues, strip))}
+    words = page_words(o, t, brand)
+    laid, not_laid = [], {}
+    if conn is not None:
+        words, laid, not_laid = with_seo_changes(conn, words, brand)       # the search changes Chris approved (2026-11-01)
+    pages = {"index.html": (*words["index.html"], home_body(t, hero, frames, stack, venues, strip))}
     page_shown: dict[str, list[tuple[str, str, ImageMeta]]] = {"/": list(shown)}     # per page, for the sitemap and the image blocks
     page_og: dict[str, str] = {}
     page_jsonld: dict[str, str] = {}
     page_noindex: set[str] = set()
     coverage_list = tuple((c["key"], c["label"]) for c in offer.listed_coverage())      # the footer: rows, not every page
     # the coverage index and one page per coverage item (2026-10-14: every row led to the quote form)
-    pages["coverage/index.html"] = (f"Event photography coverage in {AREA}", t["coverage_description"], f"""
+    pages["coverage/index.html"] = (*words["coverage/index.html"], f"""
 <section class="page cover"><div class="kick mono c">Coverage</div><h1>Every<br><span class="o">room</span><b>.</b></h1>
 <p class="first">{e(t['coverage_first'])}</p>
 <p class="g" style="max-width:640px;margin:18px 0 0">{e(t['coverage_p'])}</p>
@@ -792,7 +884,7 @@ def build(conn: Optional[sqlite3.Connection], photos: SitePhotos, *, out: Path =
         rel = f"coverage/{c['key']}/index.html"
         figures = "".join(f'<figure style="--ar:{ar}">{img_tag(files, alt, "(max-width:760px) 50vw, (max-width:1100px) 50vw, 33vw")}</figure>'
                           for files, alt, m, ar in page_files.get(c["key"], []))
-        pages[rel] = (f"{c['title']}, {AREA}", c["first"], f"""
+        pages[rel] = (*words[rel], f"""
 <section class="page cover"><div class="kick mono c"><a href="/coverage/">Coverage</a></div><h1>{e(c['label'])}<b>.</b></h1>
 <p class="first">{e(c['first'])}</p><div class="prose"><p>{e(c['about'])}</p></div>
 {f'<div class="grid">{figures}</div>' if figures else ''}
@@ -809,7 +901,7 @@ def build(conn: Optional[sqlite3.Connection], photos: SitePhotos, *, out: Path =
         page_jsonld[rel] = "".join(markup.jsonld_script(b) for b in blocks)
     # the contact page (2026-10-14): email and phone, no form (his decision); the quote form for dates
     phone = contact_phone()
-    pages["contact/index.html"] = ("Contact us", f"Email or call {brand}, event and convention photographers based in {AREA}. One of us writes back within 24 hours.", f"""
+    pages["contact/index.html"] = (*words["contact/index.html"], f"""
 <section class="page contact"><div class="kick mono c">Contact</div><h1>Get in<br><span class="o">touch</span><b>.</b></h1>
 <p class="first">{e(t['contact_first'])}</p>
 <div class="hand"><div><div class="mono c">Email</div><a class="l" href="mailto:{e(contact_email())}">{e(contact_email())}</a></div>
@@ -827,8 +919,7 @@ def build(conn: Optional[sqlite3.Connection], photos: SitePhotos, *, out: Path =
                  'data-expired-callback="checkExpired" data-error-callback="checkFailed"></div>'
                  f'<noscript><p class="mono g" style="margin-bottom:22px">This form needs JavaScript. Without it, email us at {mail_link}.</p></noscript>')
     questions = "".join(f"<li>{e(q)}</li>" for q in (o.get("quote_questions") or [])[:4])
-    pages["book/index.html"] = ("Request a quote for event photography",
-                                f"Send the dates, the venue and the rooms that matter. One of us writes back within 24 hours with a quote, in {AREA} or wherever your event is.", f"""
+    pages["book/index.html"] = (*words["book/index.html"], f"""
 <section class="page"><div class="kick mono c">Request a quote</div><h1>Tell us about<br><span class="o">your</span> event<b>.</b></h1>
 <p class="g" style="max-width:640px;margin:18px 0 30px">Send the dates, the venue and the rooms that matter, and one of us writes back within 24 hours.
 What moves the quote: the days and hours, the rooms covered at the same time, how many photographers, how fast you need selects, and where the images will be used.</p>
@@ -866,26 +957,25 @@ book.addEventListener("submit",ev=>{{if(token)return;ev.preventDefault();waiting
 <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer onerror="checkFailed()"></script>""")
     about_photos = "".join(f'<figure style="--ar:{ar}">{img}</figure>' for img, _, _, ar in frames[:2])
     about_paras = "".join(f"<p>{e(p)}</p>" for p in t["about"].split("\n\n"))
-    pages["about/index.html"] = ("About us: two brothers, event photographers",
-                                 f"Chris and Nic Kennedy, brothers, more than thirty years each behind the camera, based in {AREA} and travelling nationwide.", f"""
+    pages["about/index.html"] = (*words["about/index.html"], f"""
 <section class="page cover"><div class="kick mono c">About</div><h1>Two<br><span class="o">brothers</span><b>.</b></h1>
 <div class="prose" style="max-width:640px;margin-top:30px">{about_paras}
 <h3>Who will be at your event</h3><p>{e(t['who'])}</p><p>References available on request.</p></div>
 {f'<div class="grid" style="margin-top:50px">{about_photos}</div>' if about_photos else ''}
 <p style="margin-top:50px"><a class="btn fill" href="/book/">Request a quote <span class="arr">&#8599;</span></a></p></section>""")
-    pages["thanks/index.html"] = ("Thank you", "Your request is in.", f"""<section class="page">
+    pages["thanks/index.html"] = (*words["thanks/index.html"], f"""<section class="page">
 <div class="kick mono c">Request received</div><h1>Thank<br><span class="o">you</span><b>.</b></h1>
 <p class="first">{e(t['thanks'])}</p>
 <p class="g" style="max-width:560px;margin-top:18px">{e(t['thanks_p'])}</p>
 <p style="margin-top:30px"><a class="btn" href="/coverage/">The coverage <span class="arr">&#8599;</span></a> <a class="btn" href="/">Back to the site <span class="arr">&#8599;</span></a></p></section>""")
-    pages["privacy/index.html"] = ("Privacy and photo removal", "How quote requests are handled, and how to have a photo taken down.", f"""
+    pages["privacy/index.html"] = (*words["privacy/index.html"], f"""
 <section class="page"><div class="kick mono c">Privacy</div><h1>Privacy<b>.</b></h1><div class="prose">
 <h3>The quote form</h3><p>What you send through the form is used only to reply to you and to prepare your quote.
 It is never sold or shared. The website holds it only until the booking inbox collects it, which it does every ten minutes.</p>
 <h3>Photos of you</h3><p>If you appear in a photo shared by {e(brand)} and want it taken down, email
 <a class="c" href="mailto:{e(contact_email())}">{e(contact_email())}</a> with a link to it. It comes down, and it stays out of anything shared after that.</p>
 <h3>Who we are</h3><p>{e(t['who_we_are'].format(email=contact_email()))}</p></div></section>""")
-    pages["404.html"] = ("Not found", "Not found.", f"""<section class="page"><div class="kick mono c">Out of frame</div>
+    pages["404.html"] = (*words["404.html"], f"""<section class="page"><div class="kick mono c">Out of frame</div>
 <h1>Not<br><span class="o">found</span><b>.</b></h1><p class="first">{e(t['not_found'])}</p>
 <p style="margin-top:30px"><a class="btn" href="/">Back to the site <span class="arr">&#8599;</span></a> <a class="btn" href="/coverage/">The coverage <span class="arr">&#8599;</span></a> <a class="btn" href="/contact/">Contact <span class="arr">&#8599;</span></a></p></section>""")
     og = f"{base}/assets/hero-1600.jpg" if hero else ""
@@ -906,16 +996,15 @@ It is never sold or shared. The website holds it only until the booking inbox co
     titles: dict[str, str] = {}
     for rel, (title, desc, body) in pages.items():                  # every page is judged before any is written
         check_copy([desc])
-        titles[rel] = title if rel == "index.html" else f"{title} | {brand}"
+        titles[rel] = full_title(rel, title, brand)
         if len(titles[rel]) > TITLE_MAX or len(desc) > DESCRIPTION_MAX:
             raise SiteCopyRefused(f"{rel}: the title ({len(titles[rel])} characters, {TITLE_MAX} at most) or the description "
                                   f"({len(desc)}, {DESCRIPTION_MAX} at most) is too long for a search result")
     for rel, (title, desc, body) in pages.items():
-        full_title = titles[rel]
         dest = out / rel
         dest.parent.mkdir(parents=True, exist_ok=True)
         path = "/" + rel.replace("index.html", "")
-        dest.write_text(theme.shell(title=e(full_title), description=e(desc), body=body,
+        dest.write_text(theme.shell(title=e(titles[rel]), description=e(desc), body=body,
                                     mark_svg=mark_svg, brand=e(brand), legal=e(cfg.legal_name), email=e(contact_email()),
                                     preview=preview, canonical=base + path, jsonld=page_jsonld.get(rel, ""),
                                     og_image=page_og.get(rel) or og, sections=sections, verification=verification, path=path,
@@ -928,7 +1017,7 @@ It is never sold or shared. The website holds it only until the booking inbox co
     if verification_name and not preview:
         # the HTML file method: Search Console reads this file at the root, with this one line in it
         (out / verification_name).write_text(f"google-site-verification: {verification_name}\n")
-    rels = {p: ("index.html" if p == "/" else p.strip("/") + "/index.html") for p in PAGES}
+    rels = {p: rel_of(p) for p in PAGES}
     (out / "sitemap.xml").write_text(markup.sitemap_xml(
         base, list(PAGES),
         {page: [{"loc": loc, "title": m.title or alt, "caption": m.description or alt} for loc, alt, m in entries]
@@ -948,6 +1037,14 @@ It is never sold or shared. The website holds it only until the booking inbox co
         # words first (seo/photo_text.wanted_photos); a note, not a use, so the rotation is untouched
         from ..core import settings
         settings.set(conn, SHOWN_KEY, json.dumps(photos.ids))
+    if conn is not None and not preview:
+        # the search changes this build carried: the deploy that sends it marks them live (seo/changes.went_live), and
+        # one left off is said on the Errors page
+        from ..core import runner, settings
+        settings.set(conn, seo_changes.BUILT_KEY, json.dumps(laid))
+        for cid, why in not_laid.items():
+            runner.record_error_once(conn, "site", "seo_change", f"Search change {cid} is not on the site: {why}. "
+                                                                 "The page keeps the words it had.")
     (out / "build.json").write_text(json.dumps({"preview": preview, "hero": len(photos.hero), "coverage": len(photos.coverage),
                                                 "venues": len(photos.venues), "mark": mark_key}))
     return out

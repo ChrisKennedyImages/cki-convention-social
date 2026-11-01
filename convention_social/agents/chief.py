@@ -66,6 +66,9 @@ def needs(conn: sqlite3.Connection) -> list[tuple[str, str]]:
     scout = _count(conn, "SELECT COUNT(*) FROM scout_events WHERE status='new'")
     if scout:
         out.append((f"{scout} upcoming event(s) the scout found for you to look at.", "/scout"))
+    search = _count(conn, "SELECT COUNT(*) FROM seo_changes WHERE status='proposed'")      # 2026-11-01, seo/changes.py
+    if search:
+        out.append((f"{search} search change(s) waiting for your Approve: new words for a page that loses clicks.", "/seo/changes"))
     drive = settings.get(conn, "drive.auth_state") or "missing"
     if drive in ("expired", "missing"):
         out.append(("Google Drive is " + ("signed out. Sign in again." if drive == "expired" else "not signed in yet."), "/drive"))
@@ -99,10 +102,13 @@ def gather(ctx: runner.Context, now: datetime) -> dict:
     if learner:
         done.append(f"Learner: {learner}")
     watching = [f"AI spend ${d['ai_mtd']:.2f} of the ${d['ai_cap']:.2f} monthly cap."]
-    from ..seo import search_console
+    from ..seo import changes, search_console
     google = search_console.fresh_line(conn, now)          # the weekly read, in the morning brief after it (2026-10-31)
     if google:
         watching.append(google)
+    search_done, search_watching = changes.brief(conn, now - timedelta(hours=24))   # proposed, approved, kept, put back (2026-11-01)
+    done += search_done
+    watching += search_watching
     for a in d["agents"]:
         if a["built"] and a["last"] and a["last"]["ok"] == 0:
             watching.append(f"The {a['name']} agent's last run failed: {(a['last']['summary'] or '')[:100]}")

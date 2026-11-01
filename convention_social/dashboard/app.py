@@ -976,11 +976,7 @@ def create_app() -> FastAPI:
         return render(request, "approve_token.html", qid=qid, token=token, status=row["status"], choices=CHOICE_WORDS,
                       how=how if how in CHOICE_WORDS else "")
 
-    async def token_of(request: Request) -> str:
-        from urllib.parse import parse_qs
-        from .team_routes import small_body
-        raw = await small_body(request)                   # at most a token's worth, refused before it is read
-        return (parse_qs(raw).get("token") or [raw.strip()])[0]
+    from .team_routes import token_of                     # at most a token's worth, refused before it is read
 
     def choose_by_token(conn, qid: int, token: str, how: str) -> PlainTextResponse:
         """Chris, 2026-10-15: Post now, Follow the pace or Skip from the ping. The body carries the signed, single-use

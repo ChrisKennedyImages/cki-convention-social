@@ -44,7 +44,8 @@ async def small_body(request: Request, limit: int = TOKEN_BODY_MAX) -> str:
     return b"".join(chunks).decode("utf-8", "replace")
 
 
-async def _token(request: Request) -> str:
+async def token_of(request: Request) -> str:
+    """The token a one-tap button POSTs: the form field, or the whole small body."""
     raw = await small_body(request)
     return (parse_qs(raw).get("token") or [raw.strip()])[0]
 
@@ -100,7 +101,7 @@ def register(app, require_user, conn_dep, render) -> None:
     @app.post("/queue/{qid}/feed-by-token")
     async def feed_by_token(qid: int, request: Request, conn=Depends(conn_dep)):
         row = _row(conn, qid)
-        ok, why = approve_token.check(conn, row, await _token(request))
+        ok, why = approve_token.check(conn, row, await token_of(request))
         if not ok:
             return PlainTextResponse(why, status_code=409)
         new, why = team.also_feed(conn, qid)
