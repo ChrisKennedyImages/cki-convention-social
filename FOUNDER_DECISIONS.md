@@ -1946,3 +1946,12 @@ notes the library photos it showed (site/build.py SHOWN_KEY, a note and not a us
 writer takes those first (seo/photo_text.wanted_photos), and when it has written words for a photo the site shows it
 stamps the site to republish, so the words reach the page within minutes. The run's summary says how many of its
 writes were for photos on the site now.
+
+## 2026-10-31: Draft now, one press on Today
+
+Chris: "where is the option to 'create sample posts' immediately with a touch? It disappeared." It went with the Design
+page on 2026-10-15, when the samples became designed drafts on Today; since then a draft arrived only when a run made
+one. "Yes, bring it back." A Draft now button at the top of To approve: one press records the ask and starts the
+content agent at once; it drafts one more post for the day on the morning post's road, final check and art director
+and all, marked as asked for so it never stands in for the day's own post, and it lands in Needs you with a ping.
+Nothing goes out without his Approve. In practice run it drafts a practice post, as the morning run would.

@@ -205,7 +205,9 @@ def render(request: Request, name: str, **ctx) -> HTMLResponse:
 
 # what Today says after a choice made elsewhere, by its short word; any other message is shown as it is
 MSGS = {"redraft": "Fixed. That draft is set aside and a new one is being made with the right words; it shows here in a few "
-                   "minutes, and your phone gets a ping."}
+                   "minutes, and your phone gets a ping.",
+        "draft_now": "Drafting one more post now, on the same road as the morning one. It shows here in a few minutes, and "
+                     "your phone gets a ping; nothing goes out without your Approve."}
 
 
 def designed_note(conn) -> str:
@@ -731,6 +733,16 @@ def create_app() -> FastAPI:
                       auth_state=settings.get(conn, "drive.auth_state") or "missing", msg=MSGS.get(msg, msg)[:400],
                       week=today_view.week(conn), went=today_view.went_out(conn), summary=metrics.summary(conn, 30),
                       designed_note=designed_note(conn), schedule=today_view.schedule(conn), sent_checked=today_view.sent_checked(conn))
+
+    @app.post("/today/draft-now")
+    def today_draft_now(user: str = Depends(require_user), conn=Depends(conn_dep)):
+        """Chris, 2026-10-31: the one-touch samples "disappeared" with the Design page (2026-10-15); "Yes, bring it back".
+        One press: the content agent starts now and drafts one more post on the morning post's road, art director and
+        all, into Needs you. In practice run it drafts a practice post, as the morning run would."""
+        from ..agents import content
+        content.ask_draft_now(conn)
+        start_agent("content", wait=True)
+        return RedirectResponse("/?msg=draft_now", status_code=303)
 
     @app.get("/history", response_class=HTMLResponse)
     def history(request: Request, user: str = Depends(require_user), conn=Depends(conn_dep), show: str = "all"):

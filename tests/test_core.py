@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import os
 import ssl
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from unittest import mock
 
 from convention_social.ai import spend
@@ -213,6 +213,10 @@ class Spend(IsolatedCase):
         """8.2 (2026-10-13): cap_reached checked but never reserved, so two agents could each overshoot by one call.
         An in-flight row counts until the call records over it (or is released); a stale one is swept."""
         os.environ["AI_MONTHLY_CAP_USD"] = "1"
+        # the cycle starts two days ago at the latest, so a reservation half an hour old is inside it whatever the date
+        # (it was backdated to 2026-10-13 and fell out of the cycle when November began, 2026-11-01)
+        now = datetime.now(timezone.utc)
+        os.environ["AI_CAP_RESETS_ON"] = str((now - timedelta(days=2)).day)
         config.reset()
         conn = db.connect()
         rid = spend.reserve(conn, "content", "claude-opus-5", estimate_usd=0.6)
@@ -233,7 +237,8 @@ class Spend(IsolatedCase):
         spend.release(conn, rid2)
         self.assertEqual(db.one(conn, "SELECT COUNT(*) n FROM api_usage")["n"], 1, "a call that failed leaves nothing")
         stale = spend.reserve(conn, "chief", "claude-opus-5", estimate_usd=0.5)
-        conn.execute("UPDATE api_usage SET ts=? WHERE id=?", ("2026-10-13T00:00:00+00:00", stale))
+        old = (now - spend.RESERVE_SWEEP - timedelta(minutes=1)).replace(microsecond=0).isoformat()
+        conn.execute("UPDATE api_usage SET ts=? WHERE id=?", (old, stale))
         self.assertAlmostEqual(spend.cycle_to_date(conn), 0.575, msg="held until swept")
         self.assertIsNotNone(spend.reserve(conn, "content", "claude-opus-5", estimate_usd=0.1))
         self.assertIsNone(db.one(conn, "SELECT id FROM api_usage WHERE cost_usd=0.5 AND detail LIKE 'reserved %'"),
