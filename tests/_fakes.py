@@ -18,7 +18,9 @@ from convention_social.core import config, db, logs, runner
 from tests._base import IsolatedCase
 from tests._photos import jpeg_bytes
 
-CHANNEL_IDS = {"instagram": "ch-ig", "facebook": "ch-fb", "pinterest": "ch-pin"}
+CHANNEL_IDS = {"instagram": "ch-ig", "facebook": "ch-fb", "pinterest": "ch-pin", "linkedin": "ch-li"}
+# Buffer's ChannelType for each (live schema, 2026-11-01); a fake channel tuple may name its own as a fourth member
+CHANNEL_TYPES = {"instagram": "business", "facebook": "page", "pinterest": "business", "linkedin": "profile"}
 
 
 def field(name, type_name, required=False, kind="INPUT_OBJECT", description=None):
@@ -125,9 +127,10 @@ class FakeBuffer:
                                                                         "boards": [{"serviceId": "board-123", "name": "Conventions"}]}}}})
         if "Channels" in op:
             return Response(200, {}, {"data": {"channels": [
-                {"id": cid, "name": svc, "service": svc, "displayName": name,
+                {"id": cid, "name": svc, "service": svc, "displayName": name, "type": rest[0] if rest else CHANNEL_TYPES.get(svc, "account"),
+                 "externalLink": f"https://{svc}.example/{name.replace(' ', '')}",
                  "isDisconnected": svc in self.disconnected, "isLocked": False, "isQueuePaused": False}
-                for svc, cid, name in self.channels]}})
+                for svc, cid, name, *rest in self.channels]}})
         if "CreatePost" in op:
             self.n_create += 1
             if self.n_create in self.raise_on_create:
@@ -230,7 +233,8 @@ def write_render(folder: Path, name: str) -> str:
 
 CLEAN = {"instagram": "Backstage before the keynote. Request a quote for your event.\n\n#eventphotography",
          "facebook": "Backstage before the keynote. Request a quote for your event.",
-         "pinterest": "Backstage before the keynote, calm and ready. #eventphotography #conventionphotography"}
+         "pinterest": "Backstage before the keynote, calm and ready. #eventphotography #conventionphotography",
+         "linkedin": "Backstage before the keynote. I was in the room before the doors opened. Request a quote for your event.\n\n#eventphotography"}
 
 
 def add_post(conn, photo_ids, targets=("instagram", "facebook", "pinterest"), *, captions=None, status="approved",

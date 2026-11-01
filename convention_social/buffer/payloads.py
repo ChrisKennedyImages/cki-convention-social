@@ -1,4 +1,4 @@
-"""CreatePostInput builders per network: instagram, facebook, pinterest.
+"""CreatePostInput builders per network: instagram, facebook, pinterest, linkedin.
 
 Field names were checked against Buffer's live GraphQL schema by introspection
 on 2026-10-09 (schema only; no post was created):
@@ -18,6 +18,10 @@ on 2026-10-09 (schema only; no post was created):
   (PinterestPostMetadataInput). A board's serviceId is listed on the Pinterest
   channel (PinterestMetadata.boards); BufferClient.pinterest_boards(channel_id)
   reads it, and it goes in PINTEREST_BOARD_ID.
+  LinkedIn (introspected 2026-11-01): metadata.linkedin is LinkedInPostMetadataInput {annotations, firstComment,
+  linkAttachment}, every field optional, and linkAttachment is refused beside a non-empty assets list, so an image
+  post sends no metadata at all. The channel is Chris's own profile (Buffer's Service enum: linkedin); there is no
+  company page. One image per post.
 
 REELS (2026-10-11): a reel is assets [{video: {...}}] with metadata type "reel" on Instagram and
 Facebook. The video asset's fields are not written here from memory: the publisher asks the live
@@ -34,6 +38,10 @@ in practice, how it treats a title over Pinterest's 100 characters, and whether
 it accepts more than one image per pin were not live-verified. Re-run the
 schema introspection, then make one real test pin with the publisher live and
 confirm it on Pinterest before leaving the lane on.
+
+BEFORE ARMING LINKEDIN (2026-11-01): the same. The field names were read from the live schema and no post has
+been created on LinkedIn through this code yet. Make one real test post with the publisher live and confirm it
+on his profile before leaving the lane on.
 """
 from __future__ import annotations
 
@@ -44,7 +52,10 @@ from zoneinfo import ZoneInfo
 
 from ..core import config
 
-NETWORKS = ("instagram", "facebook", "pinterest")
+NETWORKS = ("instagram", "facebook", "pinterest", "linkedin")
+NAMES = {"instagram": "Instagram", "facebook": "Facebook", "pinterest": "Pinterest", "linkedin": "LinkedIn"}
+ONE_IMAGE = ("pinterest", "linkedin")   # one image per post: a pin (more was never verified), a LinkedIn post (2026-11-01)
+LINKEDIN_CHANNEL_TYPE = "profile"       # ChannelType in the live schema (2026-11-01): account | business | channel | group | page | profile
 PIN_TITLE_MAX = 100          # Pinterest's own title limit
 INSTAGRAM_IMAGE_TYPE = "post"   # one photo or a carousel of several; Instagram takes post, story or reel
 
@@ -74,6 +85,21 @@ def posting_networks() -> tuple[str, ...]:
     raw = config.getenv(POSTING_KEY, "") or ""
     picked = tuple(n for n in (w.strip().lower() for w in raw.split(",")) if n in NETWORKS)
     return picked or POSTING_DEFAULT
+
+
+def channel_refusal(channel: dict) -> str:
+    """Why this Buffer channel is not one the suite links, or "": a service it does not post to, or a LinkedIn channel that
+    is not a profile (2026-11-01: the lane is Chris's own profile; the company page the same key sees is never used)."""
+    if channel.get("service") not in NETWORKS:
+        return "not a network this suite posts to"
+    if channel.get("service") == "linkedin" and channel.get("type") != LINKEDIN_CHANNEL_TYPE:
+        return f"a LinkedIn {channel.get('type') or 'channel'}, not your own profile; LinkedIn posts go to your profile only"
+    return ""
+
+
+def name_of(network: str) -> str:
+    """The network as it writes its own name, on every page and in every ping: LinkedIn, never Linkedin."""
+    return NAMES.get(network, network.capitalize())
 
 
 def pinterest_board_id() -> str:
@@ -122,8 +148,8 @@ def build(network: str, channel_id: str, text: str, image_urls: list[str], *,
         raise PayloadError(f"unknown network {network!r}")
     due = due_at_utc(scheduled_for)
     urls = list(image_urls)
-    if network == "pinterest":
-        urls = urls[:1]          # one image per pin (more than one per pin was not verified)
+    if network in ONE_IMAGE:
+        urls = urls[:1]
     inp: dict = {
         "channelId": channel_id,
         "text": text,
@@ -135,6 +161,7 @@ def build(network: str, channel_id: str, text: str, image_urls: list[str], *,
     }
     if due:
         inp["dueAt"] = due
+    # LinkedIn takes no metadata: every field of LinkedInPostMetadataInput is optional (live schema, 2026-11-01)
     if story:
         if network != "instagram":
             raise PayloadError(f"a Story goes to Instagram only, not {network}")

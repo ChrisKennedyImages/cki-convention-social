@@ -47,7 +47,7 @@ except ImportError:  # pragma: no cover
     pass
 
 WEEKDAYS = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
-TARGETS = ("instagram", "facebook", "pinterest")
+TARGETS = ("instagram", "facebook", "pinterest", "linkedin")
 MAX_TRIES = 5
 # 2026-10-13: the watchdog reads what the last run found (agents/watchdog.check_content_window) and starts this
 # agent again inside the day's window when the reason was passing or the inputs changed
@@ -472,11 +472,15 @@ def make_renderer(conn: sqlite3.Connection, agent: str, *, design: str, rows: li
     copy = motion.MotionCopy(kicker=kicker)
     tag = f"{hero['id']}-{design}"
     reel_failed: list[str] = []
+    # every design carries the hero alone on the single card twice over: at 2:3 for Pinterest and at 4:5 for LinkedIn
+    # (render_paths "linkedin"; 2026-11-01, one photo per post there)
+    hero_cards = ("2:3", motion.LINKEDIN_CARD)
+    card_aspect = {motion.LINKEDIN_CARD: "4:5"}
 
-    def single(focus, aspects=("4:5", "2:3")):
+    def single(focus, cards=("4:5", *hero_cards)):
         shot = shot_for(hero, images[hero["id"]], focus, words[hero["id"]])
-        return {a: [str(motion.single_post(shot, copy, out=out_dir / f"{tag}-{a.replace(':', '')}.jpg", aspect=a,
-                                           kicker=kicker, meta=seo))] for a in aspects}
+        return {c: [str(motion.single_post(shot, copy, out=out_dir / f"{tag}-{c.replace(':', '')}.jpg", aspect=card_aspect.get(c, c),
+                                           kicker=kicker, meta=seo))] for c in cards}
 
     def render(focus):
         if design == "single":
@@ -484,11 +488,11 @@ def make_renderer(conn: sqlite3.Connection, agent: str, *, design: str, rows: li
         shots = [shot_for(r, images[r["id"]], words=words[r["id"]]) for r in rows]
         if design in bold.DESIGNS:
             # the four bold designs (2026-10-15), each with its own 2:3 card for Pinterest; the hero first, the photos whole
-            return {a: [str(bold.post(design, shots, copy, out=out_dir / f"{tag}-{a.replace(':', '')}.jpg", aspect=a, meta=seo))]
-                    for a in ("4:5", "2:3")}
+            return {**{a: [str(bold.post(design, shots, copy, out=out_dir / f"{tag}-{a.replace(':', '')}.jpg", aspect=a, meta=seo))]
+                       for a in ("4:5", "2:3")}, **single(focus, (motion.LINKEDIN_CARD,))}
         if design == "reel" and not reel_failed:
             # Instagram and Facebook get the reel (render_paths "9:16"), with its cover; Pinterest the
-            # hero as a 2:3 card; the art director looks at the cover and the stills, never the mp4
+            # hero as a 2:3 card and LinkedIn the hero still; the art director looks at the cover and the stills, never the mp4
             try:
                 grid = reels3d.fillers(conn, exclude=[r["id"] for r in rows])
                 video = reels3d.render(reel_style, shots, out=out_dir / f"{tag}-{reel_style}.mp4", audio=track, grid=grid)
@@ -497,19 +501,19 @@ def make_renderer(conn: sqlite3.Connection, agent: str, *, design: str, rows: li
                 reel_failed.append(f"{type(e).__name__}: {e}")
                 runner.record_error(conn, agent, "reel", f"the {reel_style} reel for {day} was not made: {e}")
             else:
-                return {"9:16": [str(video)], "cover": [str(stills[0])], **single(focus, ("2:3",)),
+                return {"9:16": [str(video)], "cover": [str(stills[0])], **single(focus, hero_cards),
                         "stills": [str(p) for p in stills[1:]]}
         # every design carries the hero as a 2:3 card for Pinterest (2026-10-13: without one the publisher fell back
         # to the photo's own .img copy, which it refuses, and the whole post failed on every network)
         if design in ("carousel", "reel"):        # the reel's fallback takes the same 4 to 6 photos
-            return {"4:5": [str(p) for p in motion.carousel(shots, copy, out_dir=out_dir / tag, meta=seo)], **single(focus, ("2:3",))}
+            return {"4:5": [str(p) for p in motion.carousel(shots, copy, out_dir=out_dir / tag, meta=seo)], **single(focus, hero_cards)}
         ordered = middle_first(shots, shots[0])
         mid = ordered.index(shots[0])
         if design == "fan":
             return {"4:5": [str(motion.fan_post(ordered, copy, out=out_dir / f"{tag}.jpg", focus=mid, meta=seo))],
-                    **single(focus, ("2:3",))}
+                    **single(focus, hero_cards)}
         return {"4:5": [str(motion.spotlight_post(ordered, copy, out=out_dir / f"{tag}.jpg", index=mid, meta=seo))],
-                **single(focus, ("2:3",))}
+                **single(focus, hero_cards)}
 
     return render, reel_failed
 

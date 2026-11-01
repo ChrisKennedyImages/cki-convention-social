@@ -7,7 +7,7 @@
   <div class="line"><span>Buffer API key</span><span class="badge {{ 'ok' if b.key else 'failed' }}">{{ 'set' if b.key else 'missing' }}</span></div>
   <div class="line"><span>Image and video hosting</span><span class="badge {{ 'ok' if b.media else 'failed' }}">{{ 'set' if b.media else 'missing' }}</span></div>
   {% for n in b.networks %}{% set l = b.linked.get(n) %}
-  <div class="line"><span>{{ n|capitalize }}</span><span class="badge {{ 'ok' if l and l.connected else 'failed' }}">{{ (l.display_name ~ ('' if l.connected else ', disconnected in Buffer')) if l else 'not linked' }}</span></div>
+  <div class="line"><span>{{ n|network }}</span><span class="badge {{ 'ok' if l and l.connected else 'failed' }}">{{ (l.display_name ~ ('' if l.connected else ', disconnected in Buffer')) if l else 'not linked' }}</span></div>
   {% endfor %}
   <div class="line"><span>Pinterest board</span><span class="badge {{ 'ok' if b.board else 'failed' }}">{{ 'chosen' if b.board else 'not chosen' }}</span></div>
   <div class="line"><span>Video format (reels)</span><span class="badge {{ 'ok' if b.video and not b.video.problem else 'failed' }}">{{ 'checked ' ~ b.video.checked_at[:10] if b.video and not b.video.problem else ('needs a change' if b.video else 'not checked') }}</span></div>
@@ -19,7 +19,7 @@
 {% if not b.key %}
 <div class="card"><strong>Set up, once</strong>
   <ol class="muted" style="margin:6px 0 0 18px;padding:0">
-    <li>In Buffer, connect this company's Instagram (a business account), its Facebook Page and its Pinterest.</li>
+    <li>In Buffer, connect this company's Instagram (a business account), its Facebook Page, its Pinterest, and your own LinkedIn profile (LinkedIn posts go out under your name; there is no company page).</li>
     <li>Make an API key at publish.buffer.com/settings/api.</li>
     <li>Paste it on <a href="/keys">Keys</a>, under Buffer.</li>
     <li>Come back here and tap Find channels.</li>
@@ -44,10 +44,10 @@
 <div class="card" style="margin-top:12px"><strong>Channels in Buffer</strong>
   <div class="muted">Tap Use only on this company's own accounts. Nothing is linked by itself.</div>
   {% for c in b.found %}
-  <div class="line"><span>{{ c.service|capitalize }}: {{ c.displayName or c.name }}{% if c.isDisconnected %} <span class="badge failed">disconnected</span>{% endif %}{% if c.isLocked %} <span class="badge failed">locked</span>{% endif %}</span>
-    {% if c.service not in b.networks %}<span class="muted">not used here</span>
+  <div class="line"><span>{{ c.service|network }}: {{ c.displayName or c.name }}{% if c.externalLink %} <span class="muted">{{ c.externalLink }}</span>{% endif %}{% if c.isDisconnected %} <span class="badge failed">disconnected</span>{% endif %}{% if c.isLocked %} <span class="badge failed">locked</span>{% endif %}</span>
+    {% if c.refused %}<span class="muted">{{ c.refused }}</span>
     {% elif c.id in b.linked_ids %}<form method="post" action="/buffer/unlink" class="inline"><input type="hidden" name="service" value="{{ c.service }}"><span class="badge ok">in use</span> <button class="small" type="submit">Stop</button></form>
-    {% else %}<form method="post" action="/buffer/link" class="inline"><input type="hidden" name="channel_id" value="{{ c.id }}"><button class="small" type="submit">Use for {{ c.service|capitalize }}</button></form>{% endif %}
+    {% else %}<form method="post" action="/buffer/link" class="inline"><input type="hidden" name="channel_id" value="{{ c.id }}"><button class="small" type="submit">Use for {{ c.service|network }}</button></form>{% endif %}
   </div>
   {% endfor %}
 </div>

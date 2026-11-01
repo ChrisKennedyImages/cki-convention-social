@@ -107,8 +107,10 @@ class Content(IsolatedCase):
         self.assertEqual(len(rows), 1)
         row = rows[0]
         self.assertEqual(json.loads(row["photo_ids"]), [self.ids["e1"]])          # best event photo
+        self.assertEqual(json.loads(row["targets"]), list(content.TARGETS))
+        self.assertIn("linkedin", json.loads(row["caption"]), "every draft carries a LinkedIn caption (2026-11-01)")
         renders = json.loads(row["render_paths"])
-        self.assertEqual(sorted(renders), ["2:3", "4:5"])
+        self.assertEqual(sorted(renders), ["2:3", "4:5", "linkedin"])
         for paths in renders.values():
             self.assertEqual(meta.is_clean(Path(paths[0])), [])
             data = Path(paths[0]).read_bytes()
@@ -501,7 +503,7 @@ class NewDesigns(Content):
         self.assertEqual(meta_["design"], "spotlight")
         self.assertEqual(ids[0], self.ids["e1"])
         self.assertEqual(sorted(ids), sorted([self.ids["e1"], self.ids["e2"], self.ids["e3"]]))
-        self.assertEqual(sorted(renders), ["2:3", "4:5"])
+        self.assertEqual(sorted(renders), ["2:3", "4:5", "linkedin"])
         with Image.open(renders["4:5"][0]) as im:
             self.assertEqual(im.size, (1080, 1350))
         self.assertEqual(meta.is_clean(Path(renders["4:5"][0])), [])
@@ -521,7 +523,7 @@ class NewDesigns(Content):
         _, meta_, renders, ids = self.last()
         self.assertEqual((meta_["design"], meta_["design_wanted"]), ("poster", "select"))   # Thursday cascade, Saturday reel
         self.assertEqual(ids, [self.ids["e1"]])
-        self.assertEqual(sorted(renders), ["2:3", "4:5"])
+        self.assertEqual(sorted(renders), ["2:3", "4:5", "linkedin"])
 
     def test_every_design_has_a_pinterest_card(self):
         """2026-10-13: spotlight, carousel and fan rendered 4:5 only; Pinterest then fell back to the photo's own copy,
@@ -537,6 +539,11 @@ class NewDesigns(Content):
             with Image.open(renders["2:3"][0]) as im:
                 self.assertEqual(im.size, (1000, 1500), design)
             self.assertEqual(meta.is_clean(Path(renders["2:3"][0])), [])
+            # and the LinkedIn card: the hero alone on the single card at 4:5, whatever the design (2026-11-01)
+            self.assertEqual(len(renders.get("linkedin") or []), 1, (design, renders))
+            with Image.open(renders["linkedin"][0]) as im:
+                self.assertEqual(im.size, (1080, 1350), design)
+            self.assertEqual(meta.is_clean(Path(renders["linkedin"][0])), [])
 
     def test_sunday_is_the_poster(self):
         """The face match post is retired (Chris, 2026-10-11: a post never talks about a service); Sunday was a single

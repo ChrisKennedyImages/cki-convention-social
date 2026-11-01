@@ -105,7 +105,9 @@ change in the code).
 
 1. A **new** Buffer account for this company (its own email login).
 2. Connect: the Instagram professional account, the Facebook Page, the
-   Pinterest business account. Create the Pinterest board posts land on.
+   Pinterest business account, and Chris's own LinkedIn profile (there is no
+   company page; LinkedIn posts go out under his name). Create the Pinterest
+   board posts land on.
 3. publish.buffer.com/settings/api: create an API key. Keys (Buffer).
 4. Settings, Buffer: tap Find channels, then Use on each of this company's own
    accounts (nothing links by itself). If the key sees more than one Buffer

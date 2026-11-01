@@ -156,7 +156,7 @@ section{margin-bottom:28px}
       {% else %}<div class="from">{{ w.text[:140] }}{{ '…' if w.text|length > 140 else '' }}</div>{% endif %}</div>
       <div class="muted" style="margin-top:6px">{{ w.when }}{% if not w.id %}<br>Sent from Buffer, not made here{% endif %}</div>
       {% set ig = (w.links|selectattr('href')|list) %}
-      {% if ig %}<a class="btn" href="{{ ig[0].href }}" rel="noopener noreferrer" target="_blank">Open on {{ ig[0].service|capitalize }}</a>
+      {% if ig %}<a class="btn" href="{{ ig[0].href }}" rel="noopener noreferrer" target="_blank">Open on {{ ig[0].service|network }}</a>
       {% else %}<div class="muted">No link from Buffer yet</div>{% endif %}
     </div>
   {% endfor %}

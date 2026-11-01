@@ -36,11 +36,11 @@ DEFAULT_MODEL = "claude-opus-5"
 DEFAULT_EFFORT = "medium"
 FALLBACK_BETA = "server-side-fallback-2026-07-01"
 MAX_IMAGE_EDGE = 1024
-NETWORKS = ("instagram", "facebook", "pinterest")
+NETWORKS = ("instagram", "facebook", "pinterest", "linkedin")
 # what kind of event, said instead of which one (ai/names.py: no event or person is ever named)
 KIND_WORDS = {"fan": "a convention", "business": "a conference"}        # never "fan convention" in public (Chris, 2026-10-12)
 
-SYSTEM_PROMPT = """You write social posts for an event and convention photography company, in the photographer's own voice. A post is about the photo: what it shows, where in the event it was made, the moment. It is never about the company's services, what it offers, how it works or what a client gets; that is between the photographer and the client. The company photographs business, corporate and association conferences, conventions, galas and award dinners.
+SYSTEM_PROMPT = """You write social posts for an event and convention photography company, in the photographer's own voice. A post is about the photo: what it shows, where in the event it was made, the moment. It is never about the company's services, what it offers, how it works or what a client gets; that is between the photographer and the client. The company photographs business, corporate and association conferences, conventions, galas and award dinners. The LinkedIn post goes on the photographer's own profile, not the company's page: it speaks in the first person singular, plainly, as he would to the people who book photographers for their events; the other captions speak for the company.
 
 Write plain, short sentences. Use commas and periods, never a dash of any kind. No hype words, no emojis, no exclamation marks in a row. Describe only what the photo shows and what the facts give you.
 
@@ -51,7 +51,7 @@ Hard rules:
 4. Never mention a badge name, a plate, a screen or any personal detail you can read in the photo.
 5. Never describe the company's services or what it offers: not what it covers, includes or comes with, not how a shoot is set up, how photos are delivered, how long anything takes, or what anyone leaves with. The words include, coverage, service, offer and delivery never appear. The caption describes the photo; the one ask is a quote.
 6. Write no hashtags and no links. The suite adds the hashtags and the quote link.
-7. Search: each caption is found through its words. Use the search phrase you are given word for word in the first sentence, and one or two of the related phrases word for word in the body, written as a person would say them, never as a list of keywords. The Instagram caption's first line is under 125 characters. The Pinterest caption opens with the search phrase in a first sentence under 100 characters: that sentence is the pin's title.
+7. Search: each caption is found through its words. Use the search phrase you are given word for word in the first sentence, and one or two of the related phrases word for word in the body, written as a person would say them, never as a list of keywords. The Instagram caption's first line is under 125 characters. The Pinterest caption opens with the search phrase in a first sentence under 100 characters: that sentence is the pin's title. The LinkedIn caption's first sentence carries the search phrase and is under 200 characters: that is what LinkedIn shows before "see more".
 8. alt_text: one plain sentence, under 125 characters, saying literally what the photo shows for someone who cannot see it. No names, no event, no handles.
 
 Return JSON only, matching the schema you are given."""
@@ -140,8 +140,9 @@ def user_text(facts: PostFacts) -> str:
         *(facts.plan.prompt_lines() if facts.plan else []),
         "Write one caption per network: instagram (a first line under 125 characters that carries the search phrase, then "
         "two or three short sentences), facebook (one or two short paragraphs), pinterest (a first sentence under 100 "
-        "characters that opens with the search phrase, then one or two descriptive sentences). Each caption ends by "
-        "asking for a quote.",
+        "characters that opens with the search phrase, then one or two descriptive sentences), linkedin (two or three "
+        "short paragraphs in the first person singular, the photographer on his own profile, plain and professional, the "
+        "first sentence under 200 characters). Each caption ends by asking for a quote.",
     ])
 
 
@@ -226,7 +227,7 @@ class TemplateDrafter:
         ask = f" Request a quote for your event. {facts.quote_link}".rstrip()
         body = f"A moment from {where}.{ask}"
         tags = "#eventphotography #conventionphotography"
-        captions = {"instagram": f"{body}\n\n{tags}", "facebook": body, "pinterest": f"{body} {tags}"}
+        captions = {"instagram": f"{body}\n\n{tags}", "facebook": body, "pinterest": f"{body} {tags}", "linkedin": f"{body}\n\n{tags}"}
         return Draft(captions={k: tidy(v) if k == "facebook" else v for k, v in captions.items()},
                      photo_summary="template caption; the photo was not looked at", model=self.model)
 
