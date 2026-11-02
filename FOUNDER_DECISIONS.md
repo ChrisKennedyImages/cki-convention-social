@@ -2500,3 +2500,18 @@ may come back in another design, mixed with other photos.
 - **Read into the rules, for him to correct:** the shoot's last use counts posts only (what he sees on the networks),
   while the photo's own order still counts every surface (site, samples, grids), as since 2026-10-14; the wall of fillers
   keeps its own spread (one per room per shoot) and is not under the cap.
+
+## 2026-11-02: organizer notes go out paced, one at a time
+
+Chris: "On small housekeeping item: when sending outreach, make sure they are paced sends so Google doesn't think I'm email
+blasting people." Until now the 09:00 outreach run sent every approved note in the same second: on 2 November the two
+approved notes left at 14:01:48 and 14:01:50 UTC.
+
+- One note at a time. After a note goes out, the next waits 20 to 40 minutes: a different wait each time, fixed for a given
+  note so a rerun never shortens it (agents/outreach.gap_after).
+- Only between 9:00 and 4:30 in his zone, Monday to Friday (the weekday rule of 2026-10-31 stands). Outside those hours an
+  approved note waits, with a note saying so.
+- The 09:00 run sends the first one due; the inbox agent, which runs every 10 minutes, sends each next one when its turn
+  comes (agents/outreach.send_paced), under the outreach agent's own dry-run setting, with the opt-outs pulled first (a
+  live send holds without them). One sender at a time: a lock keeps the two from sending together.
+- The daily cap (OUTREACH_DAILY_SENDS) stands; ten notes fit inside the hours.
