@@ -234,7 +234,7 @@ def write_render(folder: Path, name: str) -> str:
 CLEAN = {"instagram": "Backstage before the keynote. Request a quote for your event.\n\n#eventphotography",
          "facebook": "Backstage before the keynote. Request a quote for your event.",
          "pinterest": "Backstage before the keynote, calm and ready. #eventphotography #conventionphotography",
-         "linkedin": "Backstage before the keynote. I was in the room before the doors opened. Request a quote for your event.\n\n#eventphotography"}
+         "linkedin": "Some speakers just own the room!\n\neventcaliber.com\n\n#eventphotography #conferencephotography"}
 
 
 def add_post(conn, photo_ids, targets=("instagram", "facebook", "pinterest"), *, captions=None, status="approved",

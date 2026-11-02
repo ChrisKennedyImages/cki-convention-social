@@ -2217,3 +2217,138 @@ the centre) is the case in point and must not go to LinkedIn.
 - **A photo not judged yet** (a dry-run draft, the cap reached, no key, the API down): LinkedIn waits. The publisher asks
   once when it can (live, with budget); until then the post goes out without LinkedIn and the draft page says so.
 - Instagram, Facebook and Pinterest are untouched.
+
+## 2026-11-01, evening: on LinkedIn the photo alone
+
+The coordinator suggested: "On a personal profile, the photo alone with your caption may read more like you and less like an
+ad. Instagram would stay as it is." Chris: "Let's do that."
+
+- **LinkedIn gets the hero photo itself, as shot, in its own aspect ratio:** no crop, no frame, no text, no mark, no Request
+  a quote, and no light or effect over it (his standing rule: photos render exactly as shot). It is the library copy's
+  pixels re-encoded like every file the suite publishes (no camera data, no GPS, our descriptive fields inside), made
+  smaller only when a limit asks: Buffer takes an image under 10 MB on LinkedIn, LinkedIn under 5 MB and under 36,152,320
+  pixels (read from their documentation on 2026-11-01, render/photo.py). A library copy is at most 3000 px on its long
+  side, so in practice nothing is resized. LinkedIn's own note says a 3:2 image displays whole on the phone.
+- **Nothing else moves.** The caption, the public-figure rule, the pacing and the profile-only guard stay as they are;
+  Instagram, Facebook and Pinterest are untouched. The draft page shows the bare photo for LinkedIn while the lane is on.
+- The LinkedIn design card is gone; render_paths "linkedin" now holds the photo.
+
+## 2026-11-01, evening: the LinkedIn caption in his voice
+
+Chris, on the first LinkedIn captions (three first-person paragraphs each, the bare-photo mocks): "this is way to fake of a
+comment above. I need it to be in my voice and less robotic and I don't explain shots.... It's too much, way too much." Shown
+six example lines in three styles, he chose "Mix all three" and "LinkedIn only for now", and confirmed "Photo alone".
+
+The six lines he saw, each followed by eventcaliber.com and #eventphotography #conferencephotography:
+1. "Some speakers just own the room!"
+2. "Another great keynote in the books."
+3. "Love it when a speaker walks right up to the edge of the stage. Planning a conference next year? I'd love to hear about it."
+4. "Good room, good speaker, good day. If you've got a conference coming up, let's talk."
+5. "Over thirty years of doing this and moments like this still never get old."
+6. "My brother and I have been covering rooms like this for a long time. Still love it."
+
+- **The LinkedIn caption** (ai/linkedin.py): one or two short, plain, conversational sentences, then eventcaliber.com, then
+  the two hashtags. Never how the photo was made (no light, angles, positions, bursts, gear or technique) and no narrating
+  what is in the frame; a caption that does is written once more, then his own line stands in. LinkedIn is outside the
+  search plan's rules (no search phrase in the first sentence, no place words, no paragraphs, no three hashtags). The copy
+  gate every caption shares stands: no dash as punctuation, no event or person named, no price, nothing about services or
+  delivery, no official-photographer claim.
+- **Three styles, round robin:** one line; a line and a plain invite; a personal line. The next draft takes the next
+  style, recorded the moment it is chosen, so the feed never reads the same way twice running; the draft page says which.
+- **His voice, by example:** the writer gets the six lines above and three of his real old posts ("Looking for a commercial
+  Architecture photographer? #photographer #architecture", "You never know when the right moment will come!", "An
+  incredible Art Teacher getting ready to take the stage. Event Photography."). The facts it may use: Washington, DC and
+  nationwide; two brothers; more than thirty years each. Nothing else.
+- **The fallback** is one of his approved lines, in the draft's style (the stage lines where the photo is a stage).
+- Instagram, Facebook and Pinterest captions are exactly as they were.
+
+## 2026-11-01, evening: the LinkedIn caption, second round; a light hint at speed on LinkedIn only
+
+Chris, on the first three real drafts in the new voice: "The 3rd one is closest - but the others sound like a robot. Keep the
+briefness, but more of a human interest grab. For the first one "she had the whole room on the edge of their seat by the
+first sentence. And we caught the moment she hooked them." Or something similar. For the second one, something like "the
+room goes quiet, he takes the podium, we already got the shot and you've already got the promo" but better. With flow
+please."
+
+His lines, smoothed, which he has seen; the writer's examples now (ai/linkedin.py):
+1. "One sentence in and she had the whole room on the edge of their seats. We caught the exact moment she hooked them."
+2. "The room goes quiet. He steps up to the podium. We've already got the shot, and you've already got the promo."
+3. "Thirty some years in and the hallway is still where the good stuff happens. My brother and I keep showing up for it."
+
+- **The voice now:** brief, one to three short sentences that build, a human-interest hook about the moment and the
+  people, "we" (the two brothers), present tense where it fits. Still never how the photo was made. The three styles
+  still rotate (the moment; the moment and the client; a personal line, the one he liked most).
+- **A light hint at how fast clients get their photos, on LinkedIn only.** Asked whether LinkedIn captions may hint at it,
+  like line 2: "Yes, on LinkedIn only." A LinkedIn caption may say it in a light, human way. Still never the steps, never
+  how it works, never face match, badges or selfies (his 2026-10-12 rule stands), and never a price. Instagram,
+  Facebook, Pinterest, the site, outreach and every other surface keep the 2026-10-11 offer and claims rules unchanged
+  (ai/copy_rules.py, the `linkedin` exception; tests prove the same sentence still blocks elsewhere).
+
+## 2026-11-01, evening: LinkedIn skips a photo where an organization's name or logo is prominent
+
+Asked whether LinkedIn should skip photos where an organization's name or logo is prominent, as on the banner behind the
+people in one sample post: "Yes, skip on LinkedIn".
+
+- The art director's once-per-photo judgement also answers whether an organization's name or logo is prominent (large,
+  central or clearly readable: a banner, a backdrop, a lectern sign, a screen, a shirt; not a small badge or a blurred sign
+  in the background). Stored on the photo (photos.prominent_logo, with when), asked once through the AI till, naming no
+  one and no organization, never re-asked.
+- LinkedIn skips such a photo and the draft page says why ("an organization's name or logo is prominent in the photo").
+  A photo not yet judged waits. Instagram is unchanged.
+
+## 2026-11-01, late evening: the public-figure rule is withdrawn
+
+Chris: "It can show a public figure!" The ruling of earlier the same day (LinkedIn posts avoid photos whose main subject is
+a recognisable public figure, #161) is withdrawn: photos with a public figure go to LinkedIn like any other approved photo.
+The question, its draft-page note, the publisher's wait on it and its columns (photos.public_figure, public_figure_at;
+migration 0094 drops them) are gone. The prominent name or logo skip he chose minutes before stays, now the only question in
+the art director's once-per-photo look for LinkedIn: one look through the till, stored on the photo, never re-asked, naming
+no one; a photo not yet judged waits.
+
+## 2026-11-01, late evening: posts say we, never brothers
+
+Chris, approving the LinkedIn voice: "Much better but, one change. Never use "brothers" use "we". It's fine on the website,
+but I don't want it to be a part of posts".
+
+- Every social post caption, on every network (LinkedIn, Instagram, Facebook, Pinterest, Stories, reels, the cards), never
+  says brother, brothers, "my brother and I" or "two brothers": the copy gate blocks the word on every social surface
+  (ai/copy_rules.py, rule `brothers`). The site and outreach are untouched.
+- The LinkedIn writer's examples and facts no longer mention a brother; the personal line is "Thirty some years in and the
+  hallway is still where the good stuff happens. We keep showing up for it." Only the personal style may mention the
+  years. The Instagram, Facebook and Pinterest writers and templates never mentioned brothers.
+
+## 2026-11-01, late evening: the LinkedIn voice locked to his rhythm, with gates against drift
+
+Chris, on the captions written after "Never use brothers": "You're using a lot of innuendo's and silly kid of wording. Tell it
+more specifically and more casually written. You're dancing around the "we got the shot and you already got the promo before
+the speech ends.... Same with attendees if chosen for the event etc.... It's just too unspecified and not casually written.
+It's written like AI would write it. It's needs to feel personal and human. Same pics as usual for comparison". Shown lines
+in his own rhythm, each checked against its photo: "Much better! That's great, but gate any drift so you don't steer back to
+another tone or voice." "the 1st image is a women which is VERY VERY VERY important not to mess up." "I just can't have you
+mixing up captions that say he when it's a she."
+
+The lines he approved, the writer's examples now (ai/linkedin.py):
+- "She walks right up to the edge of the stage and the front row's hanging on every word, we got it."
+- "Ceremony starts, the honor guard steps in, the whole crowd goes quiet, we got the shot."
+- "Keynote wraps, the whole room's clapping, we get the shot and the attendees already have theirs on their phones before
+  they hit the hallway."
+- "She had the whole room listening from her first sentence. We got the shot, and her team had it for promo before she even
+  walked off stage."
+
+- **His rhythm:** plain action beats strung with commas, present tense, then the payoff ("we got it", "we got the shot"),
+  sometimes "and the client / her team / the attendees already have it ... before ...". Short and casual, contractions
+  fine. No tag line on the end, no metaphor or innuendo, no reflecting, no I (always we), never brothers, no thirty years,
+  never how the photo was made. Delivery in some captions, not every one ("all of them do not have to mention this"), and
+  only what the site says (offer.json, instant delivery): the client or the speaker's team has the photo for promo before
+  the talk ends or the speaker leaves the stage; attendees get their own photos on their phones while the event is still
+  going, when the organizer picks it. Three styles rotate: the moment; the moment and the client's promo; the moment and
+  the attendees' phones.
+- **The drift gate:** every LinkedIn caption is checked for the payoff, a tag-line ending, metaphor and reflection phrases,
+  I or my, more than 35 words, technique words, the years; brothers and the rest through the shared gate. Two misses fall
+  back to a fixed sentence in his rhythm, never to another tone. The lines he approved pass; every line he turned back
+  from the earlier rounds fails (golden tests, tests/test_linkedin_voice.py).
+- **The pronoun gate:** the writer may say he or she only when the photo clearly shows one main person and which. A
+  separate look at the photo through the till (agents/art_director.subject_of: woman, man or unclear) confirms every
+  gendered pronoun before a caption is kept; on any doubt, or when the look cannot run, the caption is written again with
+  none ("the speaker", or no one), and after two misses the fallback, which has none, stands in.
+- LinkedIn only. Instagram, Facebook and Pinterest are untouched.
