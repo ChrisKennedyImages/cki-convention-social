@@ -22,6 +22,20 @@ FOUNDER_DECISIONS.md is the source of truth. Read it first.
 - **No affiliation claims** unless Chris confirmed the event.
 - **Show first.** Anything visual goes to Chris as a rendered file before it
   is wired. Flags for new surfaces default off.
+- **Check what goes out before saying "post it".** Never tell Chris a post is
+  ready, safe, or to tap Post now / Approve until you have (1) run the
+  publisher's own builder on that exact row without sending
+  (`publisher.media_urls(ctx, row, networks, live=False)` and the payload it
+  would build) and said what it picked, and (2) seen that the screen he
+  approves from (Today, the draft page, the ping) shows that same image and
+  caption for every ticked network. If the screen shows anything else, he
+  holds and the screen is fixed first. Reading the code is not a check
+  (2026-11-02: the Today card for post #61 showed the Instagram design while
+  LinkedIn would get the bare photo, and he was told to post anyway).
+- **Look at the photo before writing about it.** Open the actual image before
+  any caption. Captions to Chris come in the photos' order, each labelled with
+  who is in it. He or she only when the photo clearly shows it; otherwise no
+  gendered pronoun (2026-11-02: a woman was called "he").
 - **Nothing from another company.** No name, key, account, domain, bucket,
   topic or id from another suite, anywhere (`tests/test_banned_words.py`).
   One exception, Chris's own choice on 2026-10-11: the Anthropic key is the one
