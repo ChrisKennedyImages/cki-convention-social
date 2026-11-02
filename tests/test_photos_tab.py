@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 import os
 import random
+import re
 from unittest import mock
 import time
 from pathlib import Path
@@ -233,3 +234,96 @@ class ReadyAhead(IsolatedCase):
     def test_the_previews_stay_under_500_mb(self):
         from convention_social import storage
         self.assertEqual(storage.THUMBS_CAP_MB, 500, "Chris was told 500 MB at most (2026-10-21)")
+
+
+class PagePicker(IsolatedCase):
+    """Chris, 2026-11-02: "I'd like to be able to skip to any page I want - like a page picker at the top to jump too"."""
+
+    def setUp(self):
+        super().setUp()
+        os.environ["DASHBOARD_PASSWORD_HASH"] = auth.hash_password("correct horse")
+        config.reset()
+        self.conn = db.connect()
+        self.addCleanup(self.conn.close)
+        self.client = TestClient(create_app())
+        self.client.cookies.set(COOKIE, make_token("chris"))
+        now = db.utcnow()
+        db.insert(self.conn, "drive_folders", drive_id="f", name="F", clearance="not_cleared", first_seen_at=now, last_seen_at=now)
+        # five pages of event photos to review (the strongest first), and one building
+        self.n = dash.PAGE * 4 + 3
+        for i in range(1, self.n + 2):
+            db.insert(self.conn, "photos", id=i, drive_id=f"d{i}", name=f"{i}.jpg", folder_id="f", first_seen_at=now, last_seen_at=now)
+            db.insert(self.conn, "classifications", photo_id=i, method="vision", subject="architecture" if i > self.n else "event",
+                      quality=5 - i * 5 // (self.n + 2), personal_details="[]", space="exterior", residential=0, empty_room=0,
+                      classified_at=now)
+        self.conn.commit()
+        dash.prepare_photo_views(self.conn, eligibility.folder_decisions(self.conn))
+
+    @staticmethod
+    def pickers(page: str) -> list[str]:
+        return [chunk.split("</form>")[0] for chunk in page.split('<form class="row pager"')[1:]]
+
+    def test_the_picker_is_above_the_photos_and_lists_every_page(self):
+        page = self.client.get("/library?view=review&subject=event&page=3").text
+        pickers = self.pickers(page)
+        self.assertEqual(len(pickers), 2, "one above the photos, one under them")
+        self.assertLess(page.index('<form class="row pager"'), page.index('<div class="grid">'), "the first is at the top")
+        top = pickers[0]
+        self.assertIn('method="get" action="/library"', top)
+        self.assertIn('name="view" value="review"', top)
+        self.assertIn('name="subject" value="event"', top)
+        self.assertEqual([int(v) for v in re.findall(r'<option value="(\d+)"', top)], [1, 2, 3, 4, 5])
+        self.assertEqual(re.findall(r'<option value="(\d+)" selected>', top), ["3"], "the page on screen is the one picked")
+        self.assertIn("of 5", top)
+        self.assertIn('onchange="this.form.submit()"', top, "picking a page opens it")
+        self.assertIn('<noscript><button class="small" type="submit">Go</button></noscript>', top, "and without a script, Go does")
+        self.assertIn('href="/library?view=review&subject=event&page=2">Previous</a>', top)
+        self.assertIn('href="/library?view=review&subject=event&page=4">Next</a>', top)
+
+    def test_a_picked_page_shows_that_page(self):
+        want = [p["id"] for p in dash.photo_page(self.conn, "review", 4, subject="event")]
+        page = self.client.get("/library", params={"view": "review", "subject": "event", "page": "4"}).text
+        self.assertEqual([int(i) for i in re.findall(r'<img src="/media/thumb/(\d+)"', page)], want)
+        self.assertEqual(re.findall(r'<option value="(\d+)" selected>', page), ["4", "4"])
+
+    def test_the_first_and_last_pages_have_no_way_off_the_end(self):
+        first = self.pickers(self.client.get("/library?view=review&subject=event").text)[0]
+        self.assertNotIn("Previous", first)
+        self.assertIn("page=2\">Next</a>", first)
+        last = self.pickers(self.client.get("/library?view=review&subject=event&page=99").text)[0]
+        self.assertNotIn("Next", last)
+        self.assertIn('<option value="5" selected>', last, "a page past the end opens the last one")
+
+    def test_one_page_needs_no_picker(self):
+        page = self.client.get("/library?view=review&subject=architecture").text
+        self.assertIn(f"/media/thumb/{self.n + 1}", page)
+        self.assertEqual(self.pickers(page), [])
+
+    def test_every_list_has_it(self):
+        self.conn.execute("UPDATE photos SET clearance='cleared'")
+        self.conn.commit()
+        page = self.client.get("/library?view=approved&subject=event&page=2").text
+        top = self.pickers(page)[0]
+        self.assertIn('name="view" value="approved"', top)
+        self.assertEqual(re.findall(r'<option value="(\d+)" selected>', top), ["2"])
+
+
+class SentenceBadges(IsolatedCase):
+    """A badge holding a sentence wraps (2026-11-02: the site's reason and the hero's note, each one unbroken line in a
+    badge, pushed the Approved page 380 px past a 393 px phone screen)."""
+
+    def test_the_badges_that_say_a_sentence_can_wrap(self):
+        os.environ["DASHBOARD_PASSWORD_HASH"] = auth.hash_password("correct horse")
+        config.reset()
+        conn = db.connect()
+        self.addCleanup(conn.close)
+        now = db.utcnow()
+        db.insert(conn, "drive_folders", drive_id="f", name="F", clearance="not_cleared", first_seen_at=now, last_seen_at=now)
+        db.insert(conn, "photos", id=1, drive_id="d1", name="1.jpg", folder_id="f", clearance="cleared", first_seen_at=now, last_seen_at=now)
+        conn.commit()
+        client = TestClient(create_app())
+        client.cookies.set(COOKIE, make_token("chris"))
+        page = client.get("/library?view=approved&subject=event").text
+        self.assertIn(".badge.says{white-space:normal;overflow-wrap:anywhere}", page)
+        self.assertIn('<span class="badge says blocked">not sorted yet</span>', page, "a photo's reason")
+        self.assertRegex(page, r'<span class="badge blocked says">[^<]{40,}</span>', "the reason the site is not published from here")
