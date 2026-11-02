@@ -7,10 +7,10 @@ For each targeted network there must be a connected row in `channels`
 PINTEREST_BOARD_ID. Each network gets its own time from pacing.py unless
 Chris chose one on the draft. Media: the rendered design for the network's
 aspect (render_paths {aspect: [paths]}: instagram and facebook 4:5,
-pinterest 2:3, linkedin the hero's own 4:5 card under "linkedin"), else the photo's own local copy. A reel (render_paths "9:16"
+pinterest 2:3, linkedin the hero as shot under "linkedin"), else the photo's own local copy. A reel (render_paths "9:16"
 holds an mp4, "cover" its cover) goes to Instagram and Facebook as a video
 post whose fields are read from Buffer's live schema first
-(BufferClient.video_asset_fields); Pinterest and LinkedIn still get their cards.
+(BufferClient.video_asset_fields); Pinterest still gets the 2:3 card and LinkedIn the hero as shot.
 
 Dry run (the default): the exact payloads are stored on the row, status
 becomes 'would_publish', nothing is uploaded or sent. Live: media uploaded,
@@ -31,14 +31,14 @@ from ..ai import copy_rules, names
 from ..buffer import budget, media, payloads
 from ..buffer.client import BufferBudgetExceeded, BufferClient, BufferError, BufferRateLimited, BufferUnknownOutcome
 from ..core import config, db, notify, runner, settings
-from ..render.motion import LINKEDIN_CARD
+from ..render.photo import LINKEDIN_PHOTO
 from . import art_director, pacing
 
 READY_SQL = "SELECT * FROM content_queue WHERE status = 'approved' ORDER BY COALESCE(approved_at, created_at), id"
 TERMINAL_OK = {"sent"}
 TERMINAL_BAD = {"error"}
-# the render_paths key each network posts: LinkedIn the hero alone on its 4:5 card (2026-11-01, one photo per post)
-ASPECT_FOR = {"instagram": "4:5", "facebook": "4:5", "pinterest": "2:3", "linkedin": LINKEDIN_CARD}
+# the render_paths key each network posts: LinkedIn the hero as shot, no card (2026-11-01 evening, "Let's do that")
+ASPECT_FOR = {"instagram": "4:5", "facebook": "4:5", "pinterest": "2:3", "linkedin": LINKEDIN_PHOTO}
 POSTABLE_SUFFIXES = {".jpg", ".jpeg", ".png"}
 VIDEO_ASPECT = "9:16"
 # A dry run asks Buffer nothing: it builds the reel with the fields last read from Buffer (the Buffer
@@ -330,7 +330,7 @@ def door(ctx: runner.Context, row) -> Optional[tuple[str, str]]:
     official = is_official(ctx.conn, row["convention_id"])
     known_names = names.public_names(ctx.conn)          # no event or person is named (ai/names.py)
     for net in targets_of(row):
-        report = copy_rules.check(captions.get(net, ""), official=official, names=known_names, social=True)
+        report = copy_rules.check(captions.get(net, ""), official=official, names=known_names, social=True, linkedin=net == "linkedin")
         if not report.ok:
             return "back", f"The {net} {CAPTION_BACK}: {report.blocks[0].message}."
     ids = photo_ids_of(row)
@@ -528,23 +528,24 @@ def reel_urls(row, fields: list[dict], *, live: bool, uploader=None) -> str:
 
 # ------------------------------------------------------------------ publishing
 
-def linkedin_hold(ctx: runner.Context, row, figure_client=None) -> Optional[str]:
-    """Why this post does not go to LinkedIn, or None. Chris, 2026-11-01: LinkedIn posts avoid photos whose main subject is
-    a recognisable public figure. The hero photo's judgement (photos.public_figure, the art director's one look) decides; a
-    photo not judged yet is judged here once when the run is live and the till allows, else LinkedIn waits. Fails closed."""
+def linkedin_hold(ctx: runner.Context, row, judge_client=None) -> Optional[str]:
+    """Why this post does not go to LinkedIn, or None. Chris, 2026-11-01 evening: LinkedIn skips a photo where an
+    organization's name or logo is prominent. The hero photo's answer (photos.prominent_logo, the art director's one look)
+    decides; a photo not judged yet is judged here once when the run is live and the till allows, else LinkedIn waits.
+    Fails closed."""
     ids = photo_ids_of(row) or []
-    photo = db.one(ctx.conn, "SELECT id, public_figure, local_path FROM photos WHERE id=?", (ids[0],)) if ids else None
+    photo = db.one(ctx.conn, "SELECT id, prominent_logo, local_path FROM photos WHERE id=?", (ids[0],)) if ids else None
     if photo is None:
-        return "no photo to judge for a public figure"
-    verdict = None if photo["public_figure"] is None else bool(photo["public_figure"])
+        return "no photo to judge for LinkedIn"
+    verdict = None if photo["prominent_logo"] is None else bool(photo["prominent_logo"])
     if verdict is None and not ctx.dry_run and photo["local_path"] and Path(photo["local_path"]).is_file():
-        verdict = art_director.public_figure(ctx.conn, photo["id"], Path(photo["local_path"]), client=figure_client, agent=ctx.agent)
+        verdict = art_director.prominent_logo(ctx.conn, photo["id"], Path(photo["local_path"]), client=judge_client, agent=ctx.agent)
     if verdict is None:
-        return art_director.FIGURE_WAIT
-    return art_director.FIGURE_SKIP if verdict else None
+        return art_director.WAIT
+    return art_director.LOGO_SKIP if verdict else None
 
 
-def usable_networks(ctx: runner.Context, row, figure_client=None) -> tuple[dict[str, dict], dict[str, str], dict[str, str]]:
+def usable_networks(ctx: runner.Context, row, judge_client=None) -> tuple[dict[str, dict], dict[str, str], dict[str, str]]:
     """({network: channel row} that can go, {network: why not} for the rest, {network: why a rule holds it}). A network
     switched off on the Keys page (POST_NETWORKS; Instagram only by default, 2026-10-15) is left out quietly: no channel is
     expected for it. A hold (LinkedIn on a photo judged a public figure, or not judged yet; 2026-11-01) is said on the
@@ -565,7 +566,7 @@ def usable_networks(ctx: runner.Context, row, figure_client=None) -> tuple[dict[
             skipped[net] = "PINTEREST_BOARD_ID is not set"
             continue
         if net == "linkedin":
-            why = linkedin_hold(ctx, row, figure_client)
+            why = linkedin_hold(ctx, row, judge_client)
             if why:
                 held[net] = why
                 continue
@@ -611,7 +612,7 @@ def build_all(ctx: runner.Context, row, channels: dict[str, dict], when: dict[st
 
 
 def publish_ready(ctx: runner.Context, client: Optional[BufferClient] = None, uploader=None,
-                  now: Optional[datetime] = None, figure_client=None) -> dict:
+                  now: Optional[datetime] = None, judge_client=None) -> dict:
     live = not ctx.dry_run
     stats = {"would_publish": 0, "scheduled": 0, "failed": 0, "turned_back": 0, "held": 0, "skipped_networks": 0}
     rows = db.rows(ctx.conn, READY_SQL)
@@ -711,7 +712,7 @@ def publish_ready(ctx: runner.Context, client: Optional[BufferClient] = None, up
                             priority="default", click=notify.link(f"/queue/{row['id']}"), conn=ctx.conn, agent=ctx.agent)
                 stats["held"] += 1
                 continue
-        channels, skipped, held = usable_networks(ctx, row, figure_client)
+        channels, skipped, held = usable_networks(ctx, row, judge_client)
         if fmt == "story":
             skipped.update({n: "a Story goes to Instagram only" for n in channels if n != "instagram"})
             channels = {n: ch for n, ch in channels.items() if n == "instagram"}

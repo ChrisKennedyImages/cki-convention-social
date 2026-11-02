@@ -32,7 +32,7 @@ from fastapi.templating import Jinja2Templates
 from markupsafe import Markup, escape
 
 from ..agents import AGENTS, is_built
-from ..ai import copy_rules, spend
+from ..ai import copy_rules, linkedin, spend
 from ..ai import names as ai_names
 from ..ai.claude import NETWORKS
 from ..buffer import payloads as buffer_payloads
@@ -40,7 +40,7 @@ from ..buffer.client import BufferBudgetExceeded, BufferClient, BufferError, Buf
 from ..core import access, approve_token, auth, config, db, runner, secrets, settings, state_io
 from .. import music
 from ..library import eligibility, report
-from ..render.motion import LINKEDIN_CARD
+from ..render.photo import LINKEDIN_PHOTO
 from . import alerts
 from . import today as today_view
 
@@ -246,7 +246,7 @@ def queue_view(conn, row) -> dict:
     targets = json.loads(row["targets"] or "[]")
     official = official_for(conn, row)
     known_names = ai_names.public_names(conn)
-    reports = {n: copy_rules.check(captions.get(n, ""), official=official, names=known_names, social=True) for n in NETWORKS}
+    reports = {n: copy_rules.check(captions.get(n, ""), official=official, names=known_names, social=True, linkedin=n == "linkedin") for n in NETWORKS}
     photo_ids = json.loads(row["photo_ids"] or "[]")
     photo_checks = [(pid, *eligibility.is_eligible(conn, int(pid)), shot_type_of(conn, int(pid))) for pid in photo_ids]
     renders = json.loads(row["render_paths"] or "{}")
@@ -269,6 +269,7 @@ def queue_view(conn, row) -> dict:
         held_html = Markup(escape(row["last_error"])).replace(link, Markup(f'<a href="/queue/{int(held["post"])}">{link}</a>'))
     return {**dict(row), "art": art, "captions": captions, "targets": targets, "reports": reports, "official": official,
             "skipped": meta.get("skipped") if isinstance(meta.get("skipped"), dict) else {},   # {network: why it is not sent} (2026-11-01)
+            "linkedin_style": linkedin.STYLE_WORDS.get(meta.get("linkedin_style") or "", ""),   # how its LinkedIn line reads (2026-11-01 evening)
             "held_html": held_html, "held_post": int(held["post"]) if held_html else None,
             **({"last_error": None} if released else {}),
             "design_name": DESIGN_WORDS.get(meta.get("design") or "", meta.get("design") or ""),
@@ -280,7 +281,7 @@ def queue_view(conn, row) -> dict:
             "instant_format": meta.get("format", "") if meta.get("instant") else "",   # an instant photo's Story or feed post (2026-10-15)
             "renders": {a: list(range(1, len(ps) + 1)) for a, ps in renders.items()
                         if a not in NOT_THUMBS and (a != "2:3" or "pinterest" in on)
-                        and (a != LINKEDIN_CARD or "linkedin" in on)}}     # the pin card only while Pinterest is on, the LinkedIn card while LinkedIn is
+                        and (a != LINKEDIN_PHOTO or "linkedin" in on)}}     # the pin card only while Pinterest is on, the LinkedIn photo while LinkedIn is
 
 
 MEDIA_TYPES = {".mp4": "video/mp4", ".png": "image/png"}

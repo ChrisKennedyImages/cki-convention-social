@@ -539,10 +539,10 @@ class NewDesigns(Content):
             with Image.open(renders["2:3"][0]) as im:
                 self.assertEqual(im.size, (1000, 1500), design)
             self.assertEqual(meta.is_clean(Path(renders["2:3"][0])), [])
-            # and the LinkedIn card: the hero alone on the single card at 4:5, whatever the design (2026-11-01)
+            # and LinkedIn's photo: the hero as shot, its own size and aspect, no card, whatever the design (2026-11-01 evening)
             self.assertEqual(len(renders.get("linkedin") or []), 1, (design, renders))
             with Image.open(renders["linkedin"][0]) as im:
-                self.assertEqual(im.size, (1080, 1350), design)
+                self.assertEqual(im.size, (3000, 2000), design)
             self.assertEqual(meta.is_clean(Path(renders["linkedin"][0])), [])
 
     def test_sunday_is_the_poster(self):

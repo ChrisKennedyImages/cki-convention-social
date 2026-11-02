@@ -27,7 +27,7 @@ from typing import TYPE_CHECKING, Optional, Protocol, Sequence
 from PIL import Image, ImageOps
 
 from ..core import config, secrets
-from . import spend
+from . import linkedin, spend
 
 if TYPE_CHECKING:
     from . import seo_plan
@@ -40,7 +40,7 @@ NETWORKS = ("instagram", "facebook", "pinterest", "linkedin")
 # what kind of event, said instead of which one (ai/names.py: no event or person is ever named)
 KIND_WORDS = {"fan": "a convention", "business": "a conference"}        # never "fan convention" in public (Chris, 2026-10-12)
 
-SYSTEM_PROMPT = """You write social posts for an event and convention photography company, in the photographer's own voice. A post is about the photo: what it shows, where in the event it was made, the moment. It is never about the company's services, what it offers, how it works or what a client gets; that is between the photographer and the client. The company photographs business, corporate and association conferences, conventions, galas and award dinners. The LinkedIn post goes on the photographer's own profile, not the company's page: it speaks in the first person singular, plainly, as he would to the people who book photographers for their events; the other captions speak for the company.
+SYSTEM_PROMPT = """You write social posts for an event and convention photography company, in the photographer's own voice. A post is about the photo: what it shows, where in the event it was made, the moment. It is never about the company's services, what it offers, how it works or what a client gets; that is between the photographer and the client. The company photographs business, corporate and association conferences, conventions, galas and award dinners. The LinkedIn post goes on the photographer's own profile, not the company's page, and is written the way he writes: one or two short, plain, conversational sentences and nothing more. It never says how the photo was made (no light, angles, positions, bursts, gear or technique) and never narrates what is in the frame. The other captions speak for the company.
 
 Write plain, short sentences. Use commas and periods, never a dash of any kind. No hype words, no emojis, no exclamation marks in a row. Describe only what the photo shows and what the facts give you.
 
@@ -51,7 +51,7 @@ Hard rules:
 4. Never mention a badge name, a plate, a screen or any personal detail you can read in the photo.
 5. Never describe the company's services or what it offers: not what it covers, includes or comes with, not how a shoot is set up, how photos are delivered, how long anything takes, or what anyone leaves with. The words include, coverage, service, offer and delivery never appear. The caption describes the photo; the one ask is a quote.
 6. Write no hashtags and no links. The suite adds the hashtags and the quote link.
-7. Search: each caption is found through its words. Use the search phrase you are given word for word in the first sentence, and one or two of the related phrases word for word in the body, written as a person would say them, never as a list of keywords. The Instagram caption's first line is under 125 characters. The Pinterest caption opens with the search phrase in a first sentence under 100 characters: that sentence is the pin's title. The LinkedIn caption's first sentence carries the search phrase and is under 200 characters: that is what LinkedIn shows before "see more".
+7. Search: each caption is found through its words. Use the search phrase you are given word for word in the first sentence, and one or two of the related phrases word for word in the body, written as a person would say them, never as a list of keywords. The Instagram caption's first line is under 125 characters. The Pinterest caption opens with the search phrase in a first sentence under 100 characters: that sentence is the pin's title. The LinkedIn caption is outside these search rules: no search phrase, no place, no hashtags, no link; the suite adds his address and hashtags.
 8. alt_text: one plain sentence, under 125 characters, saying literally what the photo shows for someone who cannot see it. No names, no event, no handles.
 
 Return JSON only, matching the schema you are given."""
@@ -84,6 +84,7 @@ class PostFacts:
     subject: str = "event"               # event | architecture
     plan: Optional["seo_plan.Plan"] = None   # the search words this post is built around (ai/seo_plan.py)
     note: str = ""                       # what the photographer said about the moment (a photo sent from the phone), no name in it
+    linkedin_style: str = ""             # this draft's LinkedIn style (ai/linkedin.py STYLES), chosen round robin by the content agent
 
 
 @dataclass
@@ -138,11 +139,11 @@ def user_text(facts: PostFacts) -> str:
         *([f"The photographer, who took it minutes ago, says of this moment: {facts.note}. Use that, in your own words; "
            "it names no event and no person, and neither do you."] if facts.note else []),
         *(facts.plan.prompt_lines() if facts.plan else []),
+        *linkedin.prompt_lines(facts.linkedin_style),
         "Write one caption per network: instagram (a first line under 125 characters that carries the search phrase, then "
         "two or three short sentences), facebook (one or two short paragraphs), pinterest (a first sentence under 100 "
-        "characters that opens with the search phrase, then one or two descriptive sentences), linkedin (two or three "
-        "short paragraphs in the first person singular, the photographer on his own profile, plain and professional, the "
-        "first sentence under 200 characters). Each caption ends by asking for a quote.",
+        "characters that opens with the search phrase, then one or two descriptive sentences); each of these three ends by "
+        "asking for a quote. linkedin: the LinkedIn lines above, his voice, nothing more.",
     ])
 
 
@@ -221,13 +222,14 @@ class TemplateDrafter:
     def draft(self, facts: PostFacts, photo: Path, notes: Sequence[str] = ()) -> Draft:
         if facts.plan is not None:
             from . import seo_plan
-            captions = seo_plan.template_captions(facts.plan, facts.quote_link, facts.brand_name)
+            captions = seo_plan.template_captions(facts.plan, facts.quote_link, facts.brand_name, facts.linkedin_style)
             return Draft(captions=captions, photo_summary="template caption; the photo was not looked at", model=self.model)
         where = "a building we photographed" if facts.subject == "architecture" else KIND_WORDS.get(facts.event_kind, "an event")
         ask = f" Request a quote for your event. {facts.quote_link}".rstrip()
         body = f"A moment from {where}.{ask}"
         tags = "#eventphotography #conventionphotography"
-        captions = {"instagram": f"{body}\n\n{tags}", "facebook": body, "pinterest": f"{body} {tags}", "linkedin": f"{body}\n\n{tags}"}
+        captions = {"instagram": f"{body}\n\n{tags}", "facebook": body, "pinterest": f"{body} {tags}",
+                    "linkedin": linkedin.finish(linkedin.template(facts.linkedin_style), config.get_config().brand_domain)}
         return Draft(captions={k: tidy(v) if k == "facebook" else v for k, v in captions.items()},
                      photo_summary="template caption; the photo was not looked at", model=self.model)
 

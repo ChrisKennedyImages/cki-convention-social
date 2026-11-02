@@ -9,8 +9,8 @@ Chris, 2026-10-11: "Make sure the captions are SEO optimized painstakingly". Whe
              no hashtags.
   Pinterest  is a search engine: the pin title (the caption's first sentence, under 100 characters) opens
              with the phrase, the description carries the related phrases, the pin links to the quote page.
-  LinkedIn   (2026-11-01, Chris's own profile) shows the first sentence or so before "see more": the phrase goes
-             there, under 200 characters; the paragraphs stay paragraphs; the quote link at the end; three hashtags.
+  LinkedIn   is outside these rules (Chris, 2026-11-01 evening: his voice, one or two plain sentences, no search
+             phrase, no place words): ai/linkedin.py writes, finishes and checks it.
   The image  carries alt text (Instagram and Pinterest read it, when Buffer takes it) and our search fields
              inside the file (render/meta.py).
 
@@ -30,14 +30,13 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 from ..core import config
+from . import linkedin
 
 IG_FOLD = 125            # Instagram shows about this much before "more"
 PIN_TITLE_MAX = 100
 PIN_DESCRIPTION_MAX = 500
 IG_MAX = 2200
-LI_FOLD = 200            # LinkedIn shows about this much before "see more"
-LI_MAX = 3000
-IG_TAGS, PIN_TAGS, LI_TAGS = 5, 3, 3
+IG_TAGS, PIN_TAGS = 5, 3
 
 # the room a photo is from, by the sorter's shot type
 ROOM = {"main_stage": "stage", "stage_panel": "stage", "breakout": "stage", "backstage": "backstage",
@@ -73,7 +72,6 @@ SET_SCENE = "moments from one event, room by room"
 KIND_WORDS = {"business": "conference", "fan": "convention"}            # never "fan convention" in public (Chris, 2026-10-12)
 HASHTAG = re.compile(r"(?<!\w)#\w+")
 SENTENCE_END = re.compile(r"(?<=[.!?])\s+")
-PARAGRAPH_BREAK = re.compile(r"\n\s*\n")
 
 
 @dataclass(frozen=True)
@@ -87,8 +85,8 @@ class Plan:
     design: str = "single"
 
     def prompt_lines(self) -> list[str]:
-        lines = [f"Search phrase: {self.primary}. Use it word for word in the first sentence of every caption; the Pinterest "
-                 "caption opens with it.",
+        lines = [f"Search phrase: {self.primary}. Use it word for word in the first sentence of every caption but LinkedIn's; "
+                 "the Pinterest caption opens with it.",
                  f"Related search phrases: {'; '.join(self.related)}. Use one or two of them, word for word and naturally, "
                  "in each caption."]
         if self.area:
@@ -152,34 +150,34 @@ def first_sentence(text: str) -> str:
     return SENTENCE_END.split(body_of(text).strip(), maxsplit=1)[0]
 
 
-def paragraphs_of(text: str) -> str:
-    """The caption's words without hashtags, its paragraphs kept (LinkedIn reads as paragraphs; 2026-11-01)."""
-    return "\n\n".join(" ".join(p.split()) for p in PARAGRAPH_BREAK.split(HASHTAG.sub(" ", text or "")) if p.strip())
-
-
 def finish(captions: dict, plan: Plan, link: str) -> dict:
     """The hashtags and the link where each network wants them, whatever the writer did with them."""
     out = {}
     for net, text in captions.items():
-        body = paragraphs_of(text) if net == "linkedin" else body_of(text)
-        if link and net in ("facebook", "pinterest", "linkedin") and link.lower() not in body.lower():
+        if net == "linkedin":
+            out[net] = linkedin.finish(text, config.get_config().brand_domain)     # his words, the address, two hashtags
+            continue
+        body = body_of(text)
+        if link and net in ("facebook", "pinterest") and link.lower() not in body.lower():
             body = f"{body} {link}".strip()
         if net == "instagram":
             out[net] = f"{body}\n\n{' '.join(plan.hashtags[:IG_TAGS])}"
         elif net == "pinterest":
             out[net] = f"{body} {' '.join(plan.hashtags[:PIN_TAGS])}"
-        elif net == "linkedin":
-            out[net] = f"{body}\n\n{' '.join(plan.hashtags[:LI_TAGS])}"
         else:
             out[net] = body
     return out
 
 
-def problems(captions: dict, plan: Plan) -> list[str]:
-    """What a finished draft misses of its plan; empty when it meets it."""
+def problems(captions: dict, plan: Plan, linkedin_style: str = "") -> list[str]:
+    """What a finished draft misses of its plan; empty when it meets it. `linkedin_style`: the draft's LinkedIn style, whose
+    own rules judge that caption."""
     out = []
     p = plan.primary.lower()
     for net, text in captions.items():
+        if net == "linkedin":
+            out += linkedin.problems(text, linkedin_style)        # his rules, not the search plan's
+            continue
         body, first = body_of(text), first_sentence(text)
         if p not in first.lower():
             out.append(f"the {net} caption's first sentence does not say \"{plan.primary}\"")
@@ -200,11 +198,6 @@ def problems(captions: dict, plan: Plan) -> list[str]:
                 out.append(f"the Pinterest title does not open with \"{plan.primary}\"")
             if len(text) > PIN_DESCRIPTION_MAX:
                 out.append(f"the Pinterest caption is over {PIN_DESCRIPTION_MAX} characters")
-        if net == "linkedin":
-            if p not in body[:LI_FOLD].lower():
-                out.append(f"on LinkedIn \"{plan.primary}\" falls below the fold (the first {LI_FOLD} characters)")
-            if len(text) > LI_MAX:
-                out.append(f"the LinkedIn caption is over {LI_MAX} characters")
     return out
 
 
@@ -216,8 +209,9 @@ def alt_text(plan: Plan, shot_words: str, brand: str) -> str:
     return f"{shot_words or 'Event photography'} at a {where}, photographed by {brand}"[:125]
 
 
-def template_captions(plan: Plan, link: str, brand: str) -> dict:
-    """Captions that meet the plan by construction, for dry runs and when the writer misses twice."""
+def template_captions(plan: Plan, link: str, brand: str, linkedin_style: str = "") -> dict:
+    """Captions that meet the plan by construction, for dry runs and when the writer misses twice; LinkedIn's is one of
+    the lines Chris approved, in the draft's style."""
     cap = plan.primary[0].upper() + plan.primary[1:]
     scene = SET_SCENE if plan.design in ("spotlight", "carousel", "fan", "reel") else SCENE.get(plan.room, SCENE["crowd"])
     first = f"{cap}: {scene}."
@@ -225,4 +219,4 @@ def template_captions(plan: Plan, link: str, brand: str) -> dict:
     place = f" {place_phrase(plan.area)}" if plan.area else ""
     ask = f" Request a quote at {link}." if link else " Request a quote for your event."
     body = f"{first} {second}{place}{ask}".strip()
-    return finish({"instagram": body, "facebook": body, "pinterest": body, "linkedin": body}, plan, link)
+    return finish({"instagram": body, "facebook": body, "pinterest": body, "linkedin": linkedin.template(linkedin_style, plan.room)}, plan, link)
