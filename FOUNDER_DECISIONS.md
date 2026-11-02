@@ -2547,3 +2547,15 @@ measured over 2026-10-30 to 11-02.
 - **A sorted photo with no kind of shot says so.** It read "not sorted yet". Now: "kind of shot: being sorted again" for
   the 2,899 on To review that lost an old label and wait for Claude's second look, "kind of shot not named" for any other,
   and "not sorted yet" only for a photo no model has looked at.
+
+## 2026-11-02: a photo marked for a second look gets it, whatever the old sorter called it
+
+Asked whether Claude should re-sort the 217 photos on To review that the old sorter had called "other" (197 of them at
+business events; Claude's sorter never took "other", so they sat at the back of the Events deck), Chris chose "Yes,
+re-sort them (Recommended)". Counted before building, it was 358 (another 140 marked for a second look but hidden from
+To review: duplicates, costumes, readable details), about $1.75 at $0.0049 a look; asked again, he chose "All 358,
+~$1.75 (Recommended)".
+
+- **The sorter's queue** (`library/classify.queue`) takes every photo marked `rejudge`, whatever its old subject; only
+  the folder pass's own "other" stays out, unsorted and unpaid, as before. The 14 old-sorter "other" photos on To review
+  that were not marked yet were marked the same day (a change to the data, not the code).

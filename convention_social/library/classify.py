@@ -237,6 +237,10 @@ def queue(conn: sqlite3.Connection, limit: int) -> list[sqlite3.Row]:
     so five events can never yield thirty picks. Taking the newest from every event, then the
     second newest from every event, reaches the same photos in the end and gives a
     representative sample at any cut-off.
+
+    A photo marked for a second look (rejudge) gets it whatever the first look called it; only the folder pass's
+    "other" stays out, unsorted. On 2026-11-02, 344 photos the old sorter had called "other" were marked and never
+    taken, so they sat at the back of To review (Chris: "All 358, ~$1.75").
     """
     return db.rows(conn, """
         SELECT * FROM (
@@ -246,7 +250,7 @@ def queue(conn: sqlite3.Connection, limit: int) -> list[sqlite3.Row]:
                                       ORDER BY COALESCE(p.taken_at, p.modified_time) DESC) AS rank_in_event
             FROM photos p JOIN classifications c ON c.photo_id = p.id
             WHERE p.trashed = 0 AND (c.method = 'folder' OR c.rejudge = 1) AND p.thumbnail_link IS NOT NULL
-              AND (c.subject IN ('event', 'architecture') OR p.clearance = 'cleared'
+              AND (c.subject IN ('event', 'architecture') OR c.rejudge = 1 OR p.clearance = 'cleared'
                    OR EXISTS (SELECT 1 FROM drive_folders f WHERE f.drive_id = p.folder_id AND f.clearance = 'cleared'))
         )
         ORDER BY cleared_hint DESC, rank_in_event ASC, COALESCE(taken_at, modified_time) DESC

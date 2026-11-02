@@ -586,6 +586,19 @@ class SortQueue(IsolatedCase):
         conn = self._library()
         self.assertEqual(len(classify.queue(conn, 100)), 11)
 
+    def test_a_photo_marked_for_a_second_look_gets_it_whatever_the_first_look_called_it(self):
+        """2026-11-02: 344 photos the old sorter called "other" were marked for a second look and never taken (Chris:
+        "All 358, ~$1.75"). The folder pass's own "other" stays out: those are not paid for."""
+        conn = self._library()
+        marked, folder_word = [r["photo_id"] for r in conn.execute("SELECT photo_id FROM classifications ORDER BY photo_id LIMIT 2")]
+        conn.execute("UPDATE classifications SET method='ollama', subject='other', rejudge=0 WHERE photo_id=?", (marked,))
+        conn.execute("UPDATE classifications SET subject='other' WHERE photo_id=?", (folder_word,))
+        taken = lambda: {r["id"] for r in classify.queue(conn, 100)}
+        self.assertFalse({marked, folder_word} & taken())
+        conn.execute("UPDATE classifications SET rejudge=1 WHERE photo_id=?", (marked,))
+        self.assertIn(marked, taken())
+        self.assertNotIn(folder_word, taken())
+
 
 def _ollama_ok(url, json=None, **kw):
     """A local sorter that always answers well, so a test can isolate the thumbnail fetch."""
