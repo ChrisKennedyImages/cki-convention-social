@@ -7,6 +7,7 @@
 <div class="card">
   {% if how %}<p>You chose <strong>{{ choices[how] }}</strong> on your phone. Nothing is decided until you press it here.</p>
   {% else %}<p>Nothing was decided by opening this page. Choose below, or open the draft to look at it first.</p>{% endif %}
+  {% if card %}<div style="margin:6px 0 10px"><strong>{{ card_label }}</strong><br><img src="{{ card }}" alt="{{ card_label }}" style="max-width:100%;max-height:60vh;border-radius:8px;margin-top:6px"></div>{% endif %}
   <a class="btn" href="/queue/{{ qid }}">Open the draft</a>
   <div class="choices">
   {% for key, label in choices.items() %}

@@ -11,6 +11,7 @@ from pathlib import Path
 from PIL import Image
 
 from convention_social.agents import content
+from convention_social.buffer import payloads
 from convention_social.core import config, db, runner
 from convention_social.render import meta
 from tests._base import IsolatedCase
@@ -100,7 +101,13 @@ class Content(IsolatedCase):
         self.assertFalse(content.draft_now_asked(self.conn), "the press is taken once")
         self.assertIsNone(settings.get(self.conn, content.LAST_ATTEMPT_KEY), "the morning run's record is not touched")
 
+    def every_network_on(self):
+        """The tests that pin every card: since 2026-11-02 a draft carries a card only for the networks it goes to."""
+        os.environ["POST_NETWORKS"] = "instagram,facebook,pinterest,linkedin"
+        config.reset()
+
     def test_dry_run_drafts_with_no_paid_call_and_cannot_be_approved_yet(self):
+        self.every_network_on()
         line = content.draft_one(self.ctx(), self.fetch, now=MONDAY_6AM)
         self.assertIn("DRY RUN drafted post", line)
         rows = self.queue()
@@ -146,12 +153,13 @@ class Content(IsolatedCase):
         posting the same photos again"). The rule is the designed drafts' (2026-10-15): fresh events first while one
         is left, then the rest; the repeat window on the photo itself is untouched."""
         when = (datetime.now(timezone.utc) - timedelta(days=3)).replace(microsecond=0).isoformat()
-        db.insert(self.conn, "content_queue", kind="photo", photo_ids="[999]", targets='["instagram"]', caption="{}",
+        on = json.dumps(list(payloads.posting_networks()))      # a post to every network that is on: the window counts per network (2026-11-02)
+        db.insert(self.conn, "content_queue", kind="photo", photo_ids="[999]", targets=on, caption="{}",
                   status="published", created_at=when, updated_at=when, rule_report=json.dumps({"event": "Katsucon"}))
         order = [r["id"] for r in content.candidates(self.conn, "event")]
         self.assertEqual(order[0], self.ids["e3"], "Otakon, which no post had lately, leads")
         self.assertEqual(sorted(order[1:]), sorted([self.ids["e1"], self.ids["e2"]]), "Katsucon follows instead of vanishing")
-        db.insert(self.conn, "content_queue", kind="photo", photo_ids=json.dumps([self.ids["e1"]]), targets='["instagram"]', caption="{}",
+        db.insert(self.conn, "content_queue", kind="photo", photo_ids=json.dumps([self.ids["e1"]]), targets=on, caption="{}",
                   status="published", created_at=when, updated_at=when, rule_report=json.dumps({"event": "Katsucon"}))
         self.assertNotIn(self.ids["e1"], [r["id"] for r in content.candidates(self.conn, "event")], "a photo on a post inside the window still sits out")
 
@@ -161,7 +169,8 @@ class Content(IsolatedCase):
         and off the front of the rotation."""
         self.conn.execute("UPDATE photos SET md5='samebytes' WHERE id IN (?, ?)", (self.ids["e1"], self.ids["e2"]))
         when = (datetime.now(timezone.utc) - timedelta(days=3)).replace(microsecond=0).isoformat()
-        db.insert(self.conn, "content_queue", kind="photo", photo_ids=json.dumps([self.ids["e1"]]), targets='["instagram"]', caption="{}",
+        db.insert(self.conn, "content_queue", kind="photo", photo_ids=json.dumps([self.ids["e1"]]), caption="{}",
+                  targets=json.dumps(list(payloads.posting_networks())),     # every network that is on (per network, 2026-11-02)
                   status="published", created_at=when, updated_at=when, rule_report=json.dumps({"event": "Katsucon"}))
         used, _, _ = content.recent_use(self.conn, 30)
         self.assertEqual(used, {self.ids["e1"], self.ids["e2"]}, "the copy counts as used")
@@ -279,6 +288,7 @@ def say(verdict, x=0.5, y=0.42, notes="Fine.", pictures=("Looks fine.",)):
 class ArtDirector(Content):
     def setUp(self):
         super().setUp()
+        self.every_network_on()          # the eye sees both cards, the 4:5 and the 2:3 (ArtClient pins two pictures)
         # the art director's redo reworks a crop, which only the single photo card has (a phone send uses it); since
         # 2026-10-15 no day of the week is the single, so these drafts keep Tuesday on it to pin the redo itself
         from unittest import mock
@@ -497,6 +507,7 @@ class NewDesigns(Content):
         return row, json.loads(row["rule_report"]), json.loads(row["render_paths"]), json.loads(row["photo_ids"])
 
     def test_monday_is_the_spotlight_with_the_best_photo_first(self):
+        self.every_network_on()
         line = content.draft_one(self.ctx(), self.fetch, now=SUNDAY)
         self.assertIn("spotlight with 3 photo(s)", line)
         _, meta_, renders, ids = self.last()
@@ -518,6 +529,7 @@ class NewDesigns(Content):
         self.assertEqual(len(renders["4:5"]), 1)
 
     def test_too_few_photos_for_the_select_is_a_one_photo_day_never_the_same_as_its_neighbours(self):
+        self.every_network_on()
         line = content.draft_one(self.ctx(), self.fetch, now=THURSDAY)
         self.assertIn("select wanted but too few photos passed", line)
         _, meta_, renders, ids = self.last()
@@ -528,6 +540,7 @@ class NewDesigns(Content):
     def test_every_design_has_a_pinterest_card(self):
         """2026-10-13: spotlight, carousel and fan rendered 4:5 only; Pinterest then fell back to the photo's own copy,
         a .img file the publisher refuses, and the whole post failed on every network once a board was set."""
+        self.every_network_on()
         for did in ("e4", "e5"):
             self.add_event_photo(did, f"{did} Con")
         for now, design in ((SUNDAY, "spotlight"), (WEDNESDAY, "cascade"), (THURSDAY, "select")):

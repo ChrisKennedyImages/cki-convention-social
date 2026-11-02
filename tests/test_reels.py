@@ -276,6 +276,8 @@ class Eye(ArtClientAny):
 class Saturday(IsolatedCase):
     def setUp(self):
         super().setUp()
+        os.environ["POST_NETWORKS"] = "instagram,facebook,pinterest,linkedin"   # every network on: these tests pin every card (2026-11-02)
+        config.reset()
         self.conn = db.connect()
         self.addCleanup(self.conn.close)
         now = db.utcnow()

@@ -67,6 +67,8 @@ class Eye:
 class DraftCase(IsolatedCase):
     def setUp(self):
         super().setUp()
+        os.environ["POST_NETWORKS"] = "instagram,facebook,pinterest,linkedin"   # every network on: these tests pin every card (2026-11-02)
+        config.reset()
         self.conn = db.connect()
         now = db.utcnow()
         db.insert(self.conn, "drive_folders", drive_id="fe", name="Con", clearance="cleared", first_seen_at=now, last_seen_at=now)

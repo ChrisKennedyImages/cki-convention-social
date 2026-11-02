@@ -16,7 +16,7 @@ from typing import Optional
 from zoneinfo import ZoneInfo
 
 from ..buffer import payloads
-from ..core import config, db, settings
+from ..core import config, db, previews, settings
 from . import alerts
 
 # plain words for each state a post can be in (2026-10-15: "rejected" became Skipped, "would publish" a practice run)
@@ -59,16 +59,16 @@ def choosable(item: dict) -> bool:
 
 
 def card_path(row) -> Optional[str]:
-    """The address of a post's first card: a reel's cover, else the 4:5 card, else the 2:3 card."""
-    try:
-        renders = json.loads(row["render_paths"] or "{}")
-    except (TypeError, ValueError):
-        return None
-    order = ("cover", "4:5", "2:3") if renders.get("9:16") else ("4:5", "2:3", "cover")
-    for aspect in order:
-        if renders.get(aspect):
-            return f"/media/render/{row['id']}/{aspect.replace(':', 'x')}/1"
-    return None
+    """The address of the one image a post shows: what its first ticked network receives (core/previews, 2026-11-02): a
+    LinkedIn-only draft's photo as shot, a reel's cover, else the card; None when no ticked network has a file."""
+    first = previews.lead(row)
+    return first.url(row["id"]) if first else None
+
+
+def card_label(row) -> str:
+    """"LinkedIn: the photo as shot", "Instagram: the card": the network the shown image goes to, and what it is."""
+    first = previews.lead(row)
+    return first.label if first else ""
 
 
 def local_now(now: Optional[datetime] = None) -> datetime:
@@ -106,7 +106,7 @@ def week(conn: sqlite3.Connection, now: Optional[datetime] = None) -> list[dict]
             continue
         out[when.date()].append({"id": r["id"], "time": clock(when),
                                  "at": when, "status": r["status"], "words": STATUS_WORDS.get(r["status"], r["status"]),
-                                 "card": card_path(r), "video": _is_reel(r)})
+                                 "card": card_path(r), "label": card_label(r), "video": _is_reel(r)})
     return [{"day": d, "label": "Today" if i == 0 else ("Tomorrow" if i == 1 else f"{d:%A}"), "date": f"{d:%b} {d.day}",
              "items": sorted(out[d], key=lambda x: x["at"])} for i, d in enumerate(days)]
 
@@ -141,6 +141,7 @@ def went_out(conn: sqlite3.Connection, n: int = WENT_OUT) -> list[dict]:
         known.update(h["buffer_post_id"] for h in hist)
         at, when = _local_when(g["sent"])
         out.append({"id": g["queue_id"], "when": when, "at": at, "card": card_path(row) if row else None,
+                    "label": card_label(row) if row else "",
                     "links": [{"service": h["service"], "href": h["external_link"]} for h in hist],
                     "video": _is_reel(row) if row else False, "text": ""})
     known.update(h["buffer_post_id"] for h in db.rows(conn, "SELECT buffer_post_id FROM post_history"))

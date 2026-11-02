@@ -66,11 +66,12 @@ section{margin-bottom:28px}
       {% if it.video %}
       <div class="reel-box"><video class="reel" src="/media/render/{{ it.id }}/9x16/1"{% if it.cover %} poster="/media/render/{{ it.id }}/cover/1"{% endif %} controls playsinline loop preload="metadata"></video></div>
       <div class="muted hint">{{ 'Tap to play it with its sound. Music: ' + it.music if it.music else 'Tap to play it. No music.' }}</div>
-      {% elif it.renders.get('4:5') and it.renders['4:5']|length > 1 %}
-      <div class="slides">{% for i in it.renders['4:5'] %}<img class="media" src="/media/render/{{ it.id }}/4x5/{{ i }}" alt="slide {{ i }}" loading="lazy">{% endfor %}</div>
-      <div class="muted hint">{{ it.renders['4:5']|length }} slides: swipe to see each.</div>
+      {% elif it.slides|length > 1 %}
+      <div class="slides">{% for i in it.slides %}<img class="media" src="/media/render/{{ it.id }}/4x5/{{ i }}" alt="slide {{ i }}" loading="lazy">{% endfor %}</div>
+      <div class="muted hint">{{ it.card_label }}: swipe to see each.</div>
       {% elif it.card %}
-      <a href="/queue/{{ it.id }}"><img class="media" src="{{ it.card }}" alt="the post" loading="lazy"></a>
+      <a href="/queue/{{ it.id }}"><img class="media" src="{{ it.card }}" alt="{{ it.card_label }}" loading="lazy"></a>
+      <div class="muted hint">{{ it.card_label }}</div>
       {% endif %}
       {% set cap = it.captions.get('instagram') or ((it.captions.values()|list)[0] if it.captions else '') %}
       {% if cap %}<div class="cap">{{ cap.split('\n\n')[0] }}</div>{% endif %}
@@ -125,7 +126,7 @@ section{margin-bottom:28px}
     <div class="day{{ ' today' if loop.first else '' }}">
       <div><div class="day-name">{{ d.label }}</div><div class="muted">{{ d.date }}</div></div>
       <div class="slots">
-      {% for s in d['items'] %}<a class="slot" href="/queue/{{ s.id }}">{% if s.card %}<img src="{{ s.card }}" alt="post {{ s.id }}" loading="lazy">{% endif %}<span class="t">{{ s.time }}<br><span class="muted">{{ s.words }}</span></span></a>
+      {% for s in d['items'] %}<a class="slot" href="/queue/{{ s.id }}">{% if s.card %}<img src="{{ s.card }}" alt="post {{ s.id }}, {{ s.label }}" title="{{ s.label }}" loading="lazy">{% endif %}<span class="t">{{ s.time }}<br><span class="muted">{{ s.words }}</span></span></a>
       {% else %}<div class="muted" style="margin-top:6px">Nothing set</div>{% endfor %}
       </div>
     </div>
@@ -152,7 +153,7 @@ section{margin-bottom:28px}
   <div class="went">
   {% for w in went %}
     <div class="card">
-      <div class="thumb">{% if w.id %}<a href="/queue/{{ w.id }}">{% if w.card %}<img src="{{ w.card }}" alt="post {{ w.id }}" loading="lazy">{% endif %}</a>
+      <div class="thumb">{% if w.id %}<a href="/queue/{{ w.id }}">{% if w.card %}<img src="{{ w.card }}" alt="post {{ w.id }}, {{ w.label }}" title="{{ w.label }}" loading="lazy">{% endif %}</a>
       {% else %}<div class="from">{{ w.text[:140] }}{{ '…' if w.text|length > 140 else '' }}</div>{% endif %}</div>
       <div class="muted" style="margin-top:6px">{{ w.when }}{% if not w.id %}<br>Sent from Buffer, not made here{% endif %}</div>
       {% set ig = (w.links|selectattr('href')|list) %}

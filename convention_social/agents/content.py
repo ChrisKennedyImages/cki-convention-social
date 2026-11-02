@@ -534,12 +534,21 @@ def middle_first(items: list, hero) -> list:
     return rest[:k] + [hero] + rest[k:]
 
 
+def aspects_for(targets, skipped=()) -> set[str]:
+    """The render keys a draft needs: what each network it goes to receives (payloads.ASPECT_FOR), for the networks that are
+    ticked, on (POST_NETWORKS) and not held off or skipped. Nothing is drawn for a network the draft is not going to
+    (Chris, 2026-11-02: a LinkedIn-only draft's page led with the Instagram card, "a completely fully branded photo")."""
+    on = payloads.posting_networks()
+    return {payloads.ASPECT_FOR[n] for n in targets if n in on and n not in skipped and n in payloads.ASPECT_FOR}
+
+
 def make_renderer(conn: sqlite3.Connection, agent: str, *, design: str, rows: list, hero: dict, images: dict, day: date,
-                  track, out_dir: Path, seo, reel_style: Optional[str] = None, linkedin: bool = True) -> tuple[Callable[[tuple], dict], list]:
+                  track, out_dir: Path, seo, reel_style: Optional[str] = None, aspects: Optional[set] = None) -> tuple[Callable[[tuple], dict], list]:
     """The day's design on its photos, as `render(focus) -> {aspect: [paths]}` for the art director, and the
     list a failed reel is written to (the same photos then go out as a carousel). Shared by the fresh draft
-    and the mend, so a redrawn card is the same card the day would have made. `linkedin` False: no LinkedIn photo
-    (the hero's main subject is a recognisable public figure, 2026-11-01)."""
+    and the mend, so a redrawn card is the same card the day would have made. `aspects`: the render keys wanted
+    (aspects_for), the design at 4:5 for Instagram and Facebook (a reel there when the design is one), the 2:3 card
+    for Pinterest, the photo as shot for LinkedIn; None draws everything."""
     from ..render import bold, design_samples, motion, photo, reels3d
     words = confirmed_rooms(conn, [r["id"] for r in rows])
     kicker = kicker_for(hero).upper()
@@ -551,16 +560,18 @@ def make_renderer(conn: sqlite3.Connection, agent: str, *, design: str, rows: li
     tag = f"{hero['id']}-{design}"
     reel_failed: list[str] = []
     bare: dict = {}
+    wanted = set(aspects) if aspects is not None else {"4:5", "2:3", photo.LINKEDIN_PHOTO}
+    feed = "4:5" in wanted                   # Instagram or Facebook is going: the design (or the reel) is drawn
 
     def single(focus, aspects=("4:5", "2:3")):
         shot = shot_for(hero, images[hero["id"]], focus, words[hero["id"]])
         return {a: [str(motion.single_post(shot, copy, out=out_dir / f"{tag}-{a.replace(':', '')}.jpg", aspect=a,
-                                           kicker=kicker, meta=seo))] for a in aspects}
+                                           kicker=kicker, meta=seo))] for a in aspects if a in wanted}
 
     def as_shot():
         """LinkedIn's image beside the day's design: the hero as shot, no card (render_paths "linkedin"; 2026-11-01 evening,
         "Let's do that"), written once however often the crop is reworked."""
-        if linkedin and not bare:
+        if photo.LINKEDIN_PHOTO in wanted and not bare:
             bare[photo.LINKEDIN_PHOTO] = [str(photo.as_shot(images[hero["id"]], out_dir / f"{tag}-linkedin.jpg", meta=seo))]
         return dict(bare)
 
@@ -571,8 +582,8 @@ def make_renderer(conn: sqlite3.Connection, agent: str, *, design: str, rows: li
         if design in bold.DESIGNS:
             # the four bold designs (2026-10-15), each with its own 2:3 card for Pinterest; the hero first, the photos whole
             return {**{a: [str(bold.post(design, shots, copy, out=out_dir / f"{tag}-{a.replace(':', '')}.jpg", aspect=a, meta=seo))]
-                       for a in ("4:5", "2:3")}, **as_shot()}
-        if design == "reel" and not reel_failed:
+                       for a in ("4:5", "2:3") if a in wanted}, **as_shot()}
+        if design == "reel" and feed and not reel_failed:
             # Instagram and Facebook get the reel (render_paths "9:16"), with its cover; Pinterest the
             # hero as a 2:3 card and LinkedIn the hero as shot; the art director looks at the cover and the stills, never the mp4
             try:
@@ -587,6 +598,8 @@ def make_renderer(conn: sqlite3.Connection, agent: str, *, design: str, rows: li
                         "stills": [str(p) for p in stills[1:]]}
         # every design carries the hero as a 2:3 card for Pinterest (2026-10-13: without one the publisher fell back
         # to the photo's own .img copy, which it refuses, and the whole post failed on every network)
+        if not feed:                               # neither Instagram nor Facebook is going: no design at all
+            return {**single(focus, ("2:3",)), **as_shot()}
         if design in ("carousel", "reel"):        # the reel's fallback takes the same 4 to 6 photos
             return {"4:5": [str(p) for p in motion.carousel(shots, copy, out_dir=out_dir / tag, meta=seo)], **single(focus, ("2:3",)), **as_shot()}
         ordered = middle_first(shots, shots[0])
@@ -623,10 +636,11 @@ def brief_for(design: str, style: Optional[str], paths: dict) -> str:
     return BRIEFS[design]
 
 
-def redraw(conn: sqlite3.Connection, row, meta: dict, *, agent: str = "content") -> tuple[Optional[dict], str]:
+def redraw(conn: sqlite3.Connection, row, meta: dict, *, agent: str = "content", only: Optional[set] = None) -> tuple[Optional[dict], str]:
     """The card of a queued draft drawn again with today's design copy, from the copies of its photos on
     this machine (the cards from before 2026-10-11 said "coverage", a word a card no longer carries).
-    (new render_paths, note); None when a photo copy is missing, and the old card stays, said so."""
+    (new render_paths, note); None when a photo copy is missing, and the old card stays, said so. `only`: draw
+    just these render keys and keep the rest (a network ticked after the draft, 2026-11-02)."""
     cfg = config.get_config()
     pids = [int(x) for x in json.loads(row["photo_ids"] or "[]")] if row["photo_ids"] else []
     rows = [db.one(conn, """SELECT p.*, c.subject, c.event_kind, c.shot_type, c.convention_name FROM photos p
@@ -651,9 +665,10 @@ def redraw(conn: sqlite3.Connection, row, meta: dict, *, agent: str = "content")
     style = meta["reel"] if meta.get("reel") in reels3d.STYLES else (reel_style(conn) if design == "reel" else None)
     out_dir = cfg.data_root / "renders" / "posts" / day.isoformat()
     out_dir.mkdir(parents=True, exist_ok=True)
+    targets = [n for n in json.loads(row["targets"] or "[]") if not (n == "linkedin" and hero.get("prominent_logo"))]
     render, reel_failed = make_renderer(conn, agent, design=design, rows=rows, hero=hero, images=images, day=day, track=track,
                                         out_dir=out_dir, seo=image_meta.for_photo(conn, hero), reel_style=style,
-                                        linkedin=not hero.get("prominent_logo"))
+                                        aspects=only if only is not None else aspects_for(targets, meta.get("skipped") or {}))
     art = meta.get("art") or {}
     focus = tuple(art["focus"]) if isinstance(art.get("focus"), list) and len(art["focus"]) == 2 else (0.5, 0.42)
     paths = render(focus)
@@ -662,7 +677,28 @@ def redraw(conn: sqlite3.Connection, row, meta: dict, *, agent: str = "content")
         meta["reel"] = style
     if reel_failed:
         meta["design"], meta["reel_failed"] = "carousel", reel_failed[0]
+    if only is not None:
+        return {**json.loads(row["render_paths"] or "{}"), **paths}, "drawn for the networks ticked now"
     return paths, "card drawn again with today's words"
+
+
+def draw_missing(conn: sqlite3.Connection, row, *, agent: str = "content") -> str:
+    """A ticked network whose file is missing (ticked after the draft, or turned on since) gets it drawn now, so the draft
+    page shows what it will receive (2026-11-02). On a reel row the video stands in for the 4:5 design. The note, or ""
+    when nothing was missing."""
+    meta = json.loads(row["rule_report"] or "{}") if row["rule_report"] else {}
+    meta = meta if isinstance(meta, dict) else {}
+    have = {k for k, v in json.loads(row["render_paths"] or "{}").items() if v}
+    if "9:16" in have:
+        have.add("4:5")
+    missing = aspects_for(json.loads(row["targets"] or "[]"), meta.get("skipped") or {}) - have
+    if not missing:
+        return ""
+    paths, note = redraw(conn, row, meta, agent=agent, only=missing)
+    if paths is not None:
+        conn.execute("UPDATE content_queue SET render_paths=?, rule_report=?, updated_at=? WHERE id=?",
+                     (json.dumps(paths), json.dumps(meta), db.utcnow(), row["id"]))
+    return note
 
 
 def draft_one(ctx: runner.Context, fetch: Callable[[dict], bytes], *, now: Optional[datetime] = None,
@@ -781,14 +817,19 @@ def make_draft(ctx: runner.Context, day: date, chosen: list[tuple[dict, bytes]],
     out_dir = ctx.cfg.data_root / "renders" / "posts" / day.isoformat()
     seo = image_meta.for_photo(ctx.conn, hero)
     style = reel_style(ctx.conn) if design == "reel" else None
+    photo_ids = [r["id"] for r, _ in chosen]
+    people = [c for r, _ in chosen for c in (r["credit"] or "").split()]
+    # the networks the window holds are known before anything is drawn, so no card exists for a network the draft is not
+    # going to (2026-11-02); the save checks the window again, in its own transaction, for a post made meanwhile
+    held = held_on(ctx.conn, photo_ids, config.repeat_window(ctx.cfg), people, ctx.cfg.variety_days)
     render, reel_failed = make_renderer(ctx.conn, ctx.agent, design=design, rows=[r for r, _ in chosen], hero=hero, images=images,
-                                        day=day, track=track, out_dir=out_dir, seo=seo, reel_style=style, linkedin="linkedin" in targets)
+                                        day=day, track=track, out_dir=out_dir, seo=seo, reel_style=style,
+                                        aspects=aspects_for([n for n in targets if n not in held]))
     render_paths, art = art_director.direct(ctx.conn, render, brief=lambda paths: brief_for(design, style, paths),
                                             dry_run=ctx.dry_run, client=art_client, agent=ctx.agent,
                                             allow_redo=design == "single", max_files=4)
     if reel_failed:
         design = "carousel"
-    photo_ids = [r["id"] for r, _ in chosen]
     reel_meta = {"reel": style, "music": track.name} if design == "reel" else {}
     if art.get("verdict") == "reject":
         # the photos do not hold up: they sit out like used ones
@@ -801,7 +842,6 @@ def make_draft(ctx: runner.Context, day: date, chosen: list[tuple[dict, bytes]],
                           created_at=now_r, updated_at=now_r)
         report.record_use(ctx.conn, "post", photo_ids, ref=f"post:{qid_r}")
         return qid_r, art, f"art director turned back photo {hero['id']}: {art.get('notes', '')}"
-    people = [c for r, _ in chosen for c in (r["credit"] or "").split()]
     meta = {"for_day": day.isoformat(), "subject": hero["subject"], "event": hero.get("convention_name") or "",
             "people": people, "model": writer, "rules": reports, "wanted": want, "art": art, "design": design,
             "design_wanted": asked, "seo": seo_record, "alt_text": alt, **reel_meta, **({"skipped": skipped} if skipped else {}),
