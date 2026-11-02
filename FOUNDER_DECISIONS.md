@@ -2368,3 +2368,16 @@ are two totally different platforms. That rule only applies to each platform Ind
 - **The variety rule (VARIETY_DAYS, no event or person twice) is read the same way, per network,** since the same reasoning
   applies: a person credited on an Instagram post inside the window may be on a LinkedIn post. This reading is the suite's,
   not his words; he can correct it here.
+## 2026-11-02: the dashboard never scrolls sideways on a phone
+
+Chris, with a screenshot of the Buffer page on his phone (the channel list wider than the screen, the LinkedIn page's
+"not your own profile" note squeezed into a column one word wide): "I also need you to fix the formatting for this page and
+check the others too."
+
+- Every dashboard page was opened at 375, 393 and 430 px wide from a copy of the live data. Before: Buffer, Music, Scout
+  and Search were wider than the screen (long web addresses and a table), and the five top tabs ran 35 px past a 393 px
+  screen, so Settings was cut off. After: no page is wider than the screen at any of the three widths and the tabs fit.
+- A web address or a note wraps instead of pushing the page wider; a badge ("ok", "in use") never breaks inside itself.
+- Buffer page: each channel shows its name, its address under it and, for one the suite does not use, the reason under
+  that; the Use, In use and Stop controls stay beside it or drop below it on a narrow screen.
+- A checkbox stays on the line of its words (Music, Calendar).
