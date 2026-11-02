@@ -36,7 +36,7 @@ from PIL import Image
 
 from ..ai import claude as claude_mod
 from ..ai import spend
-from ..core import config, runner, secrets
+from ..core import config, db, runner, secrets
 from ..render.motion import LINKEDIN_CARD
 
 MODEL = "claude-opus-5"
@@ -69,8 +69,9 @@ SCHEMA = {
 }
 
 
-def _block(path: Path) -> dict:
-    with Image.open(path) as im:
+def _block(image) -> dict:
+    """`image`: a rendered file's path, or a photo's own bytes."""
+    with Image.open(io.BytesIO(image) if isinstance(image, (bytes, bytearray)) else image) as im:
         im = im.convert("RGB")
         im.thumbnail((EDGE, EDGE))
         buf = io.BytesIO()
@@ -117,6 +118,63 @@ def look(conn: sqlite3.Connection, paths: list[Path], *, brief: str, client=None
     data["focus_x"] = max(0.0, min(1.0, float(data.get("focus_x") or 0.5)))
     data["focus_y"] = max(0.0, min(1.0, float(data.get("focus_y") or 0.42)))
     return data
+
+
+# Chris, 2026-11-01: "LinkedIn posts avoid photos whose main subject is a recognisable public figure; Instagram stays as it
+# is." The art director judges a photo once, by looking, never by a name: the model is told to name no one, and nothing
+# here compares names. The judgement is stored on the photo (photos.public_figure) and never asked again.
+FIGURE_SYSTEM = """You look at one photograph for a photography company and answer one question: is the main subject of this photograph a recognisable public figure, someone a general audience would know by sight (a politician, a celebrity, a broadcaster, a well-known executive)? The main subject is the person the photograph is of, by its composition, not someone in the background or in a crowd. Judge only by what the picture shows. Never write a name, a title or who you think anyone is. Return JSON only."""
+FIGURE_SCHEMA = {"type": "object", "properties": {"public_figure": {"type": "boolean"}}, "required": ["public_figure"],
+                 "additionalProperties": False}
+FIGURE_SKIP = "the photo's main subject is a recognisable public figure; LinkedIn posts avoid those (Chris, 2026-11-01)"
+FIGURE_WAIT = "the photo has not been judged for a public figure yet; LinkedIn waits (the next live run with budget judges it)"
+
+
+def public_figure(conn: sqlite3.Connection, photo_id: int, image, *, client=None, agent: str = "content") -> Optional[bool]:
+    """Is this photo's main subject a recognisable public figure? The stored judgement when the photo has one; else one look
+    through the till, stored on the photo with the time and never asked again. `image`: the photo's bytes or its file.
+    None when it is not judged and cannot be now (no key, the cap reached, a refusal, the API): then the photo does not go
+    to LinkedIn until it is (agents/publisher.linkedin_hold)."""
+    row = db.one(conn, "SELECT public_figure FROM photos WHERE id=?", (photo_id,))
+    if row is None:
+        return None
+    if row["public_figure"] is not None:
+        return bool(row["public_figure"])
+    if spend.cap_reached(conn):
+        return None
+    if client is None:
+        if not secrets.get_secret("ANTHROPIC_API_KEY"):
+            return None
+        import anthropic
+        client = anthropic.Anthropic(api_key=secrets.get_secret("ANTHROPIC_API_KEY"))
+    model = config.getenv("ART_MODEL") or MODEL
+    held = spend.reserve(conn, agent, model)
+    if held is None:
+        return None
+    try:
+        response = client.beta.messages.create(
+            model=model, max_tokens=1500, betas=[claude_mod.FALLBACK_BETA], fallbacks="default", thinking={"type": "adaptive"},
+            output_config={"effort": "low", "format": {"type": "json_schema", "schema": FIGURE_SCHEMA}},
+            system=[{"type": "text", "text": FIGURE_SYSTEM}],
+            messages=[{"role": "user", "content": [_block(image), {"type": "text", "text": "Is the main subject of this photograph a recognisable public figure?"}]}])
+    except Exception as e:  # noqa: BLE001  the API or the network: not judged, said once; LinkedIn waits
+        spend.release(conn, held)
+        runner.record_error_once(conn, agent, "public_figure",
+                                 f"The public figure check could not run ({type(e).__name__}: {e}); LinkedIn waits for it.")
+        return None
+    u = response.usage
+    spend.record(conn, agent, getattr(response, "model", None) or model, int(u.input_tokens or 0), int(u.output_tokens or 0),
+                 "public figure", reservation=held)
+    text = next((b.text for b in response.content if b.type == "text"), None)
+    if response.stop_reason == "refusal" or not text:
+        return None
+    answer = json.loads(text).get("public_figure") if text.strip().startswith("{") else None
+    if not isinstance(answer, bool):
+        return None                      # not the answer asked for: not judged, nothing stored
+    verdict = answer
+    conn.execute("UPDATE photos SET public_figure=?, public_figure_at=? WHERE id=? AND public_figure IS NULL",
+                 (int(verdict), db.utcnow(), photo_id))
+    return verdict
 
 
 def direct(conn: sqlite3.Connection, render: Callable[[tuple], dict], *, brief: Callable[[dict], str], dry_run: bool,
