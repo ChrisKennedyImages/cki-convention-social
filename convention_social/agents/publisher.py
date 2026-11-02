@@ -299,10 +299,11 @@ def _eligibility_module():
     return importlib.import_module(ELIGIBILITY_MODULE)
 
 
-def repeat_of(conn, row, ids: list[int], days: int, *, include_dry: bool = False) -> Optional[tuple[int, int]]:
+def repeat_of(conn, row, ids: list[int], days: int, *, include_dry: bool = False, network: Optional[str] = None) -> Optional[tuple[int, int]]:
     """(photo id, post id) when one of these photos went out within `days`: a post scheduled or published,
     or any post with a sent network in post_history (a post that half failed still went out).
-    `include_dry` also counts dry-run rows (would_publish), so a dry run turns back what a live one would."""
+    `include_dry` also counts dry-run rows (would_publish), so a dry run turns back what a live one would.
+    With `network`, only a post that targets it or was sent to it: the window counts per network (Chris, 2026-11-02)."""
     if not ids or days <= 0:
         return None
     cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).replace(microsecond=0).isoformat()
@@ -311,10 +312,14 @@ def repeat_of(conn, row, ids: list[int], days: int, *, include_dry: bool = False
     wanted = set(ids)
     meta = _json(row["rule_report"], {}) if "rule_report" in row.keys() else {}
     story_of = meta.get("feed_of") if isinstance(meta, dict) else None     # a feed post's own Story is not a repeat (2026-10-15)
-    for other in db.rows(conn, f"SELECT id, photo_ids FROM content_queue WHERE id != ? AND ("
+    from . import content
+    for other in db.rows(conn, f"SELECT id, photo_ids, targets, rule_report FROM content_queue WHERE id != ? AND ("
                                f"(status IN ({marks}) AND COALESCE(published_at, updated_at) >= ?) "
                                "OR id IN (SELECT queue_id FROM post_history WHERE sent_at >= ?)) ORDER BY id DESC",
                          (row["id"], *statuses, cutoff, cutoff)):
+        if network and network not in content.networks_of(other) and not db.one(
+                conn, "SELECT 1 FROM post_history WHERE queue_id=? AND service=? AND sent_at >= ?", (other["id"], network, cutoff)):
+            continue
         hit = wanted & set(photo_ids_of(other) or [])
         if hit and other["id"] != story_of:
             return min(hit), other["id"]
@@ -348,17 +353,21 @@ def door(ctx: runner.Context, row) -> Optional[tuple[str, str]]:
                 return "hold", f"The photo check could not run for photo {pid} ({type(e).__name__}: {e}). Nothing was sent."
             if not ok:
                 return "back", f"Photo {pid} can no longer be used: {why}. Pick another photo."
-    held = held_by(ctx, row, ids)
-    if held:
-        return "back", held_words(ctx, held)
+    # the window counts per network (Chris, 2026-11-02): back only when every network this post goes to holds its photo;
+    # a network that holds while others are free is left out at usable_networks, with the reason on the draft page
+    going = [n for n in targets_of(row) if n in payloads.posting_networks()] or targets_of(row)
+    held = {net: hit for net in going if (hit := held_by(ctx, row, ids, net))}
+    if held and len(held) == len(going):
+        return "back", held_words(ctx, next(iter(held.values())))
     return None
 
 
-def held_by(ctx: runner.Context, row, ids: Optional[list[int]] = None) -> Optional[dict]:
+def held_by(ctx: runner.Context, row, ids: Optional[list[int]] = None, network: Optional[str] = None) -> Optional[dict]:
     """{photo, post, went_out} when a photo of this row is on another post that is set to go out or went out inside the
-    repeat window (the longer of PHOTO_REPEAT_DAYS and VARIETY_DAYS, 2026-10-15), else None."""
+    repeat window (the longer of PHOTO_REPEAT_DAYS and VARIETY_DAYS, 2026-10-15), else None. With `network`, on that
+    network only (Chris, 2026-11-02: the window counts per network)."""
     ids = photo_ids_of(row) if ids is None else ids
-    repeat = repeat_of(ctx.conn, row, ids or [], config.repeat_window(ctx.cfg), include_dry=ctx.dry_run)
+    repeat = repeat_of(ctx.conn, row, ids or [], config.repeat_window(ctx.cfg), include_dry=ctx.dry_run, network=network)
     if not repeat:
         return None
     pid, qid = repeat
@@ -384,7 +393,7 @@ def held_words(ctx: runner.Context, held: dict) -> str:
         except ValueError:
             on = ""
         return (f"Photo {pid} already went out as post #{qid}{on}. "
-                f"A photo goes out once inside {config.repeat_window(ctx.cfg)} days.")
+                f"A photo goes out once a network inside {config.repeat_window(ctx.cfg)} days.")
     due = due_at(other) if other is not None else None
     if due is None and other is not None and other["scheduled_for"]:
         try:
@@ -549,7 +558,8 @@ def usable_networks(ctx: runner.Context, row, judge_client=None) -> tuple[dict[s
     """({network: channel row} that can go, {network: why not} for the rest, {network: why a rule holds it}). A network
     switched off on the Keys page (POST_NETWORKS; Instagram only by default, 2026-10-15) is left out quietly: no channel is
     expected for it. A hold (LinkedIn on a photo judged a public figure, or not judged yet; 2026-11-01) is said on the
-    draft page, never recorded as a fault."""
+    draft page, never recorded as a fault. So is the repeat window, per network (Chris, 2026-11-02): a photo that went
+    out on one network inside the window goes to the others."""
     active, skipped, held = {}, {}, {}
     on = payloads.posting_networks()
     for net in targets_of(row):
@@ -564,6 +574,10 @@ def usable_networks(ctx: runner.Context, row, judge_client=None) -> tuple[dict[s
             continue
         if net == "pinterest" and not payloads.pinterest_board_id():
             skipped[net] = "PINTEREST_BOARD_ID is not set"
+            continue
+        hit = held_by(ctx, row, None, net)
+        if hit:                                 # the photo is on another post for this network inside the window (per network, 2026-11-02)
+            held[net] = held_words(ctx, hit)
             continue
         if net == "linkedin":
             why = linkedin_hold(ctx, row, judge_client)

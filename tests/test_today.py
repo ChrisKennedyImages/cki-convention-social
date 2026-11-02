@@ -403,7 +403,7 @@ class Variety(Case):
             stop = publisher.door(ctx, db.one(self.conn, "SELECT * FROM content_queue WHERE id=?", (qid,)))
             self.assertIsNotNone(stop, f"{source or 'daily'}: twenty days ago is inside the thirty")
             self.assertIn(f"already went out as post #{old} on ", stop[1])
-            self.assertIn("A photo goes out once inside 30 days.", stop[1])
+            self.assertIn("A photo goes out once a network inside 30 days.", stop[1])
         self.assertEqual(config.repeat_window(config.get_config()), 30)
 
     def test_designed_drafts_never_take_a_photo_already_on_a_post(self):
@@ -547,7 +547,7 @@ class OnePhotoOnePost(Case):
         pid, other, _, stop, _, sent = self.held(went_out=True)
         local = sent.astimezone(self.tz)
         self.assertEqual(stop[1], f"Photo {pid} already went out as post #{other} on {local:%a} {local:%b} {local.day}. "
-                                  f"A photo goes out once inside {config.repeat_window(config.get_config())} days.")
+                                  f"A photo goes out once a network inside {config.repeat_window(config.get_config())} days.")
 
     def test_the_publisher_records_who_holds_the_photo_for_the_draft_page(self):
         from convention_social.buffer.client import BufferClient

@@ -2352,3 +2352,19 @@ The lines he approved, the writer's examples now (ai/linkedin.py):
   gendered pronoun before a caption is kept; on any doubt, or when the look cannot run, the caption is written again with
   none ("the speaker", or no one), and after two misses the fallback, which has none, stands in.
 - LinkedIn only. Instagram, Facebook and Pinterest are untouched.
+
+## 2026-11-02: the repeat window counts per network
+
+Chris, asked whether Monday's LinkedIn photo may be one that went out on Instagram four days earlier: "LinkedIn and insta
+are two totally different platforms. That rule only applies to each platform Individually not all together".
+
+- **PHOTO_REPEAT_DAYS counts per network.** A photo that aired on Instagram stays off Instagram for the window and may go
+  to LinkedIn (and Facebook or Pinterest) if it has not aired there. The candidate list, the designed lane, Post this and
+  the Send page count a photo out only when it is inside the window on every network that is on; the draft maker drops
+  only the networks where a photo of the post is inside that network's window, with the reason on the draft page, and
+  refuses the photos only when they are held on every network that is on, as before; the publisher's door holds a post
+  back only when every network it goes to is held, else it leaves the held networks out, with the reason on the draft
+  page, and sends the rest (agents/content.held_on, agents/publisher.repeat_of).
+- **The variety rule (VARIETY_DAYS, no event or person twice) is read the same way, per network,** since the same reasoning
+  applies: a person credited on an Instagram post inside the window may be on a LinkedIn post. This reading is the suite's,
+  not his words; he can correct it here.

@@ -33,6 +33,7 @@ from zoneinfo import ZoneInfo
 from PIL import Image
 
 from ..ai import claude, copy_rules, linkedin, names, seo_plan
+from ..buffer import payloads
 from ..core import approve_token, config, db, notify, runner, settings
 from ..library import classify, eligibility, report
 
@@ -126,10 +127,11 @@ DRAFTING_WAIT = 15 * 60          # seconds the daily draft and Post this wait fo
 
 
 class PhotosTaken(Exception):
-    """A photo chosen for this draft went into another post while this one was being made."""
+    """A photo chosen for this draft went into another post while this one was being made (or, per network since
+    2026-11-02, a person on it did), on every network the draft was for."""
 
-    def __init__(self, photo: int, post: int):
-        super().__init__(f"photo {photo} went into post #{post} while this one was being drafted")
+    def __init__(self, photo: int, post: int, why: str = ""):
+        super().__init__(why or f"photo {photo} went into post #{post} while this one was being drafted")
         self.photo, self.post = photo, post
 
 
@@ -146,15 +148,18 @@ def drafting_lock(wait: float):
     return lock
 
 
-def photo_holder(conn: sqlite3.Connection, photo_ids, days: int) -> Optional[tuple[int, int]]:
+def photo_holder(conn: sqlite3.Connection, photo_ids, days: int, network: Optional[str] = None) -> Optional[tuple[int, int]]:
     """(photo id, post id) when one of these photos is on another post inside the window, by the same rule as
-    recent_use (open, sent, turned back by the art director or set aside by the do-not-use list; a skipped one is not)."""
+    recent_use (open, sent, turned back by the art director or set aside by the do-not-use list; a skipped one is not).
+    With `network`, only a post that targets it: the window counts per network (Chris, 2026-11-02)."""
     wanted = {int(p) for p in photo_ids}
     since = (datetime.now(timezone.utc) - timedelta(days=days)).replace(microsecond=0).isoformat()
-    for r in db.rows(conn, "SELECT id, status, photo_ids, rule_report FROM content_queue WHERE created_at >= ? AND "
+    for r in db.rows(conn, "SELECT id, status, photo_ids, targets, rule_report FROM content_queue WHERE created_at >= ? AND "
                            "(status != 'rejected' OR rule_report LIKE '%\"verdict\": \"reject\"%' "
                            "OR rule_report LIKE '%\"rejected_by\"%') ORDER BY id", (since,)):
         if r["status"] == "rejected" and f'"rejected_by": "{SKIPPED}"' in (r["rule_report"] or ""):
+            continue
+        if network and network not in networks_of(r):
             continue
         hit = wanted & {int(p) for p in json.loads(r["photo_ids"] or "[]")}
         if hit:
@@ -162,19 +167,54 @@ def photo_holder(conn: sqlite3.Connection, photo_ids, days: int) -> Optional[tup
     return None
 
 
-def recent_use(conn: sqlite3.Connection, days: int) -> tuple[set, set, set]:
+def networks_of(row) -> set[str]:
+    """The networks a queue row counts on for the windows: its targets less the ones it was not sent to (rule_report
+    skipped, the hold or skip said on the draft page). A row whose targets cannot be read counts everywhere."""
+    try:
+        targets = {str(n) for n in json.loads(row["targets"] or "[]")}
+        meta = json.loads(row["rule_report"] or "{}")
+    except (TypeError, ValueError):
+        return set(payloads.NETWORKS)
+    skipped = meta.get("skipped") if isinstance(meta, dict) and isinstance(meta.get("skipped"), dict) else {}
+    return targets - set(skipped) if targets else set(payloads.NETWORKS)
+
+
+def held_on(conn: sqlite3.Connection, photo_ids, days: int, people, variety_days: int) -> dict[str, dict]:
+    """{network: {photo, post, why}} for every network a post of these photos may not go to now: a photo of it is on
+    another post inside the repeat window that targets that network, or a person credited on it was on such a post
+    inside VARIETY_DAYS. Chris, 2026-11-02: "LinkedIn and insta are two totally different platforms. That rule only
+    applies to each platform Individually not all together"; the variety rule is read the same way."""
+    out = {}
+    for net in TARGETS:
+        hit = photo_holder(conn, photo_ids, days, net)
+        if hit:
+            out[net] = {"photo": hit[0], "post": hit[1], "why": f"photo {hit[0]} was on post #{hit[1]} inside the last {days} days; "
+                                                                 f"a photo goes out once a network inside that window"}
+            continue
+        _, _, used_people = recent_use(conn, variety_days, net)
+        named = next((c for c in people if c.lower() in used_people), None)
+        if named:
+            out[net] = {"photo": None, "post": 0, "why": f"{named} was on a post here inside the last {variety_days} days; "
+                                                        "no person twice a network inside that window"}
+    return out
+
+
+def recent_use(conn: sqlite3.Connection, days: int, network: Optional[str] = None) -> tuple[set, set, set]:
     """(photo ids, event names, credited people) used by posts drafted inside the window, by any road (the daily
     draft, a designed draft, Post this, the phone): every post not rejected, the ones the art director turned back,
     and the photos of the ones set aside by the do-not-use list (`rule_report.rejected_by`; the event and the people
     of a set-aside post are not "used", since nothing of it aired). A post Chris skipped is not counted at all
     (2026-10-15: "Skip puts the photos back in rotation"): its photos come round again, after the others, since
-    their use stays on the rotation's record (library/report.photo_use)."""
+    their use stays on the rotation's record (library/report.photo_use). With `network`, only the posts that target it:
+    the window counts per network (Chris, 2026-11-02)."""
     since = (datetime.now(timezone.utc) - timedelta(days=days)).replace(microsecond=0).isoformat()
     photos, events, people = set(), set(), set()
-    for r in db.rows(conn, "SELECT status, photo_ids, rule_report FROM content_queue WHERE created_at >= ? AND "
+    for r in db.rows(conn, "SELECT status, photo_ids, targets, rule_report FROM content_queue WHERE created_at >= ? AND "
                            "(status != 'rejected' OR rule_report LIKE '%\"verdict\": \"reject\"%' "
                            "OR rule_report LIKE '%\"rejected_by\"%')", (since,)):
         if r["status"] == "rejected" and f'"rejected_by": "{SKIPPED}"' in (r["rule_report"] or ""):
+            continue
+        if network and network not in networks_of(r):
             continue
         photos.update(int(p) for p in json.loads(r["photo_ids"] or "[]"))
         if r["status"] == "rejected" and '"verdict": "reject"' not in (r["rule_report"] or ""):
@@ -184,6 +224,14 @@ def recent_use(conn: sqlite3.Connection, days: int) -> tuple[set, set, set]:
             events.add(meta["event"].lower())
         people.update(x.lower() for x in meta.get("people") or [])
     return copies(conn, photos), events, people
+
+
+def used_everywhere(conn: sqlite3.Connection, days: int, networks) -> tuple[set, set, set]:
+    """(photos, events, people) used inside `days` on every one of `networks` (the ones that are on): the window counts per
+    network (Chris, 2026-11-02), so only a photo or a person held everywhere that is on is out of the running; the events
+    are the union, since they only order."""
+    per = [recent_use(conn, days, net) for net in networks] or [recent_use(conn, days)]
+    return (set.intersection(*(p[0] for p in per)), set.union(*(p[1] for p in per)), set.intersection(*(p[2] for p in per)))
 
 
 def copies(conn: sqlite3.Connection, photo_ids: set) -> set:
@@ -200,8 +248,9 @@ def copies(conn: sqlite3.Connection, photo_ids: set) -> set:
 
 def candidates(conn: sqlite3.Connection, subject: str) -> list[dict]:
     cfg = config.get_config()
-    used_photos, _, _ = recent_use(conn, config.repeat_window(cfg))
-    _, used_events, used_people = recent_use(conn, cfg.variety_days)
+    on = payloads.posting_networks()
+    used_photos, _, _ = used_everywhere(conn, config.repeat_window(cfg), on)
+    _, used_events, used_people = used_everywhere(conn, cfg.variety_days, on)
     rows = db.rows(conn, """SELECT p.*, c.subject, c.convention_name, c.event_kind, c.shot_type, c.quality, c.people_count, c.summary
                             FROM photos p JOIN classifications c ON c.photo_id = p.id
                             WHERE p.trashed = 0 AND c.subject = ? AND c.method IN ('ollama','vision')
@@ -765,11 +814,21 @@ def make_draft(ctx: runner.Context, day: date, chosen: list[tuple[dict, bytes]],
     began = not ctx.conn.in_transaction
     if began:
         ctx.conn.execute("BEGIN IMMEDIATE")
-    held = photo_holder(ctx.conn, photo_ids, config.repeat_window(ctx.cfg))
-    if held:
+    # the window counts per network (Chris, 2026-11-02): the networks where a photo of this post, or a person on it, was on
+    # another post inside the window drop off, with the reason on the draft page; held on every network that is on
+    # (POST_NETWORKS), the photos are refused, since a post for switched-off networks alone goes nowhere
+    held = held_on(ctx.conn, photo_ids, config.repeat_window(ctx.cfg), people, ctx.cfg.variety_days)
+    going = [n for n in targets if n in payloads.posting_networks()] or targets
+    targets = [n for n in targets if n not in held]
+    if all(n in held for n in going):
         if began:
             ctx.conn.execute("ROLLBACK")
-        raise PhotosTaken(*held)
+        first = next(iter(held.values()))
+        raise PhotosTaken(first["photo"] or photo_ids[0], first["post"], f"{first['why']} (on every network this post was for)")
+    if held:
+        captions = {n: t for n, t in captions.items() if n in targets}
+        meta["rules"] = {n: r for n, r in meta["rules"].items() if n in targets}
+        meta["skipped"] = {**(meta.get("skipped") or {}), **{n: h["why"] for n, h in held.items()}}
     qid = db.insert(ctx.conn, "content_queue", kind="photo", photo_ids=json.dumps(photo_ids), targets=json.dumps(targets),
                     caption=json.dumps(captions), render_paths=json.dumps(render_paths), rule_report=json.dumps(meta),
                     created_at=now_s, updated_at=now_s)
@@ -789,6 +848,7 @@ def make_draft(ctx: runner.Context, day: date, chosen: list[tuple[dict, bytes]],
     fell = (f", the reel could not be made ({reel_failed[0]})" if reel_failed
             else f", {asked} wanted but too few photos passed" if asked != design else "")
     fell += ", LinkedIn skipped" if skipped else f", LinkedIn {linkedin.STYLE_WORDS[li_style]}" if li_style else ""
+    fell += f", held off {' and '.join(payloads.name_of(n) for n in held)}" if held else ""
     line = (f"{'DRY RUN ' if ctx.dry_run else ''}drafted post #{qid} for {day} ({kind_used}"
             f"{', instead of ' + want if kind_used != want else ''}): {design} with {len(photo_ids)} photo(s){fell}, "
             f"photo {hero['id']} first{' (' + why + ')' if why else ''}, captions by {writer} for \"{plan.primary}\", "
