@@ -2515,3 +2515,35 @@ approved notes left at 14:01:48 and 14:01:50 UTC.
   comes (agents/outreach.send_paced), under the outreach agent's own dry-run setting, with the opt-outs pulled first (a
   live send holds without them). One sender at a time: a lock keeps the two from sending together.
 - The daily cap (OUTREACH_DAILY_SENDS) stands; ten notes fit inside the hours.
+
+## 2026-11-02: the swipe review is one photo per card; To review leaves out the do-not-use list, and Claude's scores lead
+
+Asked whether a swipe card holds one photo or several frames taken close together (the renders showed a 10-minute card
+holding 13 different moments of a gala, and 30-second cards with a different family in every frame of a photo line), Chris
+chose "One photo per card (Recommended)". On the page picker: "Yes, merge it". On the renders of the swipe card: "Yes, merge
+(Recommended)". Asked whether to queue the photos only the old model scored for Claude's re-sort at about $8.50, he chose
+"Yes, spend ~$8.50 (Recommended)": on 2 November the 1,698 of them still on To review (239 events, 1,459 buildings;
+the rest had been decided or sorted again since) were marked for the sorter's second look (`classifications.rejudge`),
+a change to the data, not the code. The hourly sorter takes them under the monthly cap, at $0.00486 a look as
+measured over 2026-10-30 to 11-02.
+
+- **Photos, To review, Swipe through them** (`/library/swipe`): To review one photo at a time, in its own order. Swipe right,
+  the Use button or → is his Use (cleared); swipe left, Don't use or ← is Don't use for good (blocked, every copy). Each
+  swipe is saved the moment it is made; the counter says how many are left; the next cards' pictures load ahead. Undo
+  (the button, the bar under the buttons, or U) takes back the last swipe only and puts that photo back to undecided,
+  unless something changed it since; the Blocked list and its Unblock stay the way back. A photo is cleared only by his
+  right swipe: opening the page decides nothing, and a swipe on a photo that is not waiting on To review is refused.
+- **The card's picture** is Drive's own preview at 1200 px on its long side, read only like every other preview, kept
+  beside the small ones under the same 500 MB cap and let go once that card is swiped.
+- **Never use takes a photo off To review.** To review leaves out everything the do-not-use list covers (the photo, a
+  folder above it, a person or handle credited on it), by the same rule the publisher's door follows
+  (`eligibility.do_not_use_photos`, pinned against `blocked_by_list`). Three photos on the list had stayed on To review.
+- **Claude's scores lead To review.** The local model that sorted first gave almost everything top marks, so its photos
+  led "strongest first" (the first ten cards were studio headshots it scored 10 of 10). Every photo Claude scored now
+  comes first, strongest first; a photo only the old model scored follows them, strongest first, until Claude sorts it
+  again and it takes its place by Claude's score. On 2 November: 11,924 event photos with Claude's score, then 888 with
+  the old one, 636 of them already waiting for Claude's second look; the other 252, and 1,459 of the 1,466 buildings,
+  were not in the sorter's queue (a paid look each, about half a cent), and were queued the same day on his word (above).
+- **A sorted photo with no kind of shot says so.** It read "not sorted yet". Now: "kind of shot: being sorted again" for
+  the 2,899 on To review that lost an old label and wait for Claude's second look, "kind of shot not named" for any other,
+  and "not sorted yet" only for a photo no model has looked at.

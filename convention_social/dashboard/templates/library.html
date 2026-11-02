@@ -11,13 +11,18 @@
 .pager select{width:auto;min-width:72px;padding:0 8px}
 /* a badge that holds a sentence wraps like one: on a phone it pushed the Approved page 380 px past the screen */
 .badge.says{white-space:normal;overflow-wrap:anywhere}
+.go{display:flex;flex-direction:column;gap:2px;margin:0 0 12px;padding:12px 16px;border-radius:12px;background:var(--accent);color:#fff;text-decoration:none}
+.go strong{font-size:18px}.go span{font-size:14px;opacity:.92}
 </style>
 <h1>{{ {'review': 'To review', 'approved': 'Approved', 'blocked': 'Blocked'}[view] }} <span class="muted">{{ total }}</span></h1>
 <div class="row" style="margin-bottom:12px">
   {% for key, label in subject_words %}<a class="btn{{ ' primary' if subject == key else '' }}" href="/library?view={{ view }}&subject={{ key }}">{{ label }} ({{ subject_counts[key] }})</a>{% endfor %}
 </div>
+{% if view == 'review' and total %}
+<a class="go" href="/library/swipe?subject={{ subject }}"><strong>Swipe through them</strong><span>One photo at a time, the strongest first. {{ "{:,}".format(total) }} to go.</span></a>
+{% endif %}
 <div class="card muted">
-  {% if view == 'review' %}Only what you approve is ever used. These are the sorted photos you have not decided on yet, strongest first. Use approves one; Don't use keeps it out for good. Photos with a readable plate, house number or street sign never show here and are never used. A name badge or a name in the photo is fine.
+  {% if view == 'review' %}Only what you approve is ever used. These are the sorted photos you have not decided on yet, strongest first: Claude's scores lead, and a photo only the old sorter scored comes after them until Claude sorts it again. Use approves one; Don't use keeps it out for good. Photos with a readable plate, house number or street sign never show here and are never used. A name badge or a name in the photo is fine.
   {% elif view == 'approved' %}Everything you approved, one photo at a time or by its folder. Only these are ever used: in posts, the designed drafts and on the website, and every one of them gets its turn, the least recently used first. Undo puts a photo back to review; Don't use keeps it out for good. Site hero makes a photo the website's main photo; Site gallery puts it at the front of the website's gallery, in the order you tap them, and a second tap takes it off.
   {% else %}Photos you marked Don't use. Unblock puts one back where it was (to review, or approved by its folder). Never use adds it to the do-not-use list for good.{% endif %}
 </div>
@@ -83,7 +88,7 @@
 {% for p in items %}
   <div class="card{% if p.clearance == 'blocked' %} off{% endif %}" id="p{{ p.id }}" style="padding:8px;margin:0">
     <img src="/media/thumb/{{ p.id }}" loading="lazy" alt="">
-    <div class="muted" style="margin-top:6px">{{ (p.shot_type or 'not sorted yet').replace('_',' ') }}</div>
+    <div class="muted" style="margin-top:6px">{{ p.kind }}</div>
     <a class="muted" href="/library/folder/{{ p.folder_id }}">{{ p.folder_name or '' }}</a>
     {% if view == 'approved' %}<div class="state"><span class="badge says {{ 'ok' if p.why[0] else 'blocked' }}">{{ 'ready to use' if p.why[0] else p.why[1] }}</span>{% if hero_id == p.id %} <span class="badge ok">site hero</span>{% endif %}{% if p.site_pick_at %} <span class="badge ok site-gallery">site gallery</span>{% endif %}</div>
     <div class="muted use-line">{{ p.use_line }}</div>{% endif %}
