@@ -2415,3 +2415,21 @@ branded photo." The publisher was right (it sends LinkedIn the photo as shot, by
   "To approve" card (his phone showed the branded card there too, with the LinkedIn caption under it), the draft page,
   All posts, the phone ping's card and the approve-by-token page. Each shows what its first ticked network receives,
   labeled; for a LinkedIn-only draft, the photo as shot labeled LinkedIn.
+
+## 2026-11-02: no automatic post is held off Instagram while a photo free on Instagram remains
+
+Live at 14:26 UTC the designed agent drafted post #62: "reel with 6 photo(s), LinkedIn ..., held off Instagram and
+Facebook and Pinterest, photo 6622 first (designed draft; last used 2026-10-16; 1945 ready, least recently used first)".
+The cause was the per-network window as first built: the candidate list dropped a photo only when it was held on every
+network that is on, so photos already on Instagram but free on LinkedIn sat in one pool with fresh ones, and the
+rotation picked them, with about 1,800 photos free on Instagram ready.
+
+- **Candidates free on every network that is on come first.** A photo free only on some networks comes after all of
+  them; one held on Instagram, the first network in the posting order, comes last (`agents/content.candidates`,
+  `instagram_first`; the designed drafts' pool the same way).
+- **No automatic post is held off Instagram while any candidate free on Instagram remains:** the daily draft, Draft
+  now, the designed drafts and reels take only candidates free on Instagram while one is left (`content.free_on_first`).
+  Only when Instagram truly has nothing left does a post go without it, and the run line says so ("no photo free on
+  Instagram is left, so this post is held off it").
+- **A LinkedIn-only post happens when Chris chooses it,** as with #61, or on the Send page and Post this, where the
+  photos are his pick and go wherever they are free, with the reason on the draft page.

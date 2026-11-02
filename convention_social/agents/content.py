@@ -246,27 +246,60 @@ def copies(conn: sqlite3.Connection, photo_ids: set) -> set:
     return out
 
 
+def held_on_networks(conn: sqlite3.Connection, networks) -> Callable[[int, str], list[str]]:
+    """`held(photo id, credit line) -> [networks]`: the networks, in posting order, where the photo is inside the repeat
+    window or a person credited on it is inside VARIETY_DAYS (per network, Chris, 2026-11-02). Empty: free everywhere."""
+    cfg = config.get_config()
+    photos_on = {n: recent_use(conn, config.repeat_window(cfg), n)[0] for n in networks}
+    people_on = {n: recent_use(conn, cfg.variety_days, n)[2] for n in networks}
+
+    def held(pid: int, credit: str) -> list[str]:
+        names = [c.lower() for c in credit.split()]
+        return [n for n in networks if pid in photos_on[n] or any(c in people_on[n] for c in names)]
+    return held
+
+
+def instagram_first(rows: list[dict], networks) -> list[dict]:
+    """The order kept inside each group: photos free on every network that is on, then the ones held only on a later
+    network, then the ones held on the first (Instagram). 2026-11-02: the designed agent drafted post #62 as a reel held
+    off Instagram, Facebook and Pinterest because photos already on Instagram but free on LinkedIn sat in one pool with
+    fresh ones and the rotation picked them, with about 1,800 photos free on Instagram ready."""
+    first = networks[0] if networks else ""
+    return ([r for r in rows if not r.get("held_on")] + [r for r in rows if r.get("held_on") and first not in r["held_on"]]
+            + [r for r in rows if first in (r.get("held_on") or [])])
+
+
+def free_on_first(pool: list[dict], networks) -> tuple[list[dict], bool]:
+    """(the photos a post may take, whether it had to fall back): the candidates free on the first network that is on
+    (Instagram) while any is left; only when none is does a post go without it (2026-11-02). A post Chris chooses himself
+    (Post this, the Send page, #61) is his to send where its photo is free."""
+    first = networks[0] if networks else ""
+    free = [r for r in pool if first not in (r.get("held_on") or [])]
+    return (free, False) if free or not pool else (pool, True)
+
+
 def candidates(conn: sqlite3.Connection, subject: str) -> list[dict]:
     cfg = config.get_config()
     on = payloads.posting_networks()
-    used_photos, _, _ = used_everywhere(conn, config.repeat_window(cfg), on)
-    _, used_events, used_people = used_everywhere(conn, cfg.variety_days, on)
+    held = held_on_networks(conn, on)
+    _, used_events, _ = used_everywhere(conn, cfg.variety_days, on)
     rows = db.rows(conn, """SELECT p.*, c.subject, c.convention_name, c.event_kind, c.shot_type, c.quality, c.people_count, c.summary
                             FROM photos p JOIN classifications c ON c.photo_id = p.id
                             WHERE p.trashed = 0 AND c.subject = ? AND c.method IN ('ollama','vision')
                             ORDER BY COALESCE(c.quality,0) DESC, COALESCE(c.people_count,0) DESC, p.id""", (subject,))
     fresh, lately = [], []
     for r in rows:
-        if r["id"] in used_photos or not eligibility.is_candidate(conn, r["id"])[0]:
+        if not eligibility.is_candidate(conn, r["id"])[0]:
             continue
         credit = eligibility.credit_line(conn, r["id"])
-        if any(c.lower() in used_people for c in credit.split()):
+        held_here = held(r["id"], credit)
+        if len(held_here) == len(on):                  # inside the window on every network that is on: out of the running
             continue
         # an event a post had inside VARIETY_DAYS comes after every other event, not never: the designed drafts' rule
         # (2026-10-15, "while one is left"), now the daily draft's too. 2026-10-26: 1,481 of the 1,796 approved event
         # photos are one event, so the wall here left six candidates and the same six on every draft.
         shown = subject == "event" and bool(r["convention_name"]) and r["convention_name"].lower() in used_events
-        (lately if shown else fresh).append({**dict(r), "credit": credit})
+        (lately if shown else fresh).append({**dict(r), "credit": credit, "held_on": held_here})
     # what the learner found works, inside the founder's bounds
     def score(r):
         return -(r.get("quality") or 0) * learner.weight_for(conn, r.get("shot_type"), r.get("event_kind"))
@@ -279,13 +312,15 @@ def candidates(conn: sqlite3.Connection, subject: str) -> list[dict]:
         for r in group:
             r["last_use"] = last.get(r["id"])
         return report.rotate(conn, group, last=last, alike=score)
-    return in_turn(fresh) + in_turn(lately)
+    return instagram_first(in_turn(fresh) + in_turn(lately), on)
 
 
 def use_why(hero: dict, ready: int) -> str:
     """Why this photo led, for the run line on the Agents page: its last use, and how many were ready."""
     when = f"last used {hero['last_use'][:10]}" if hero.get("last_use") else "never used before"
-    return f"{when}; {ready} ready, least recently used first"
+    held = hero.get("held_on") or []
+    off = f"; no photo free on {' or '.join(payloads.name_of(n) for n in held)} is left, so this post is held off it" if held else ""
+    return f"{when}; {ready} ready, least recently used first{off}"
 
 
 def write_captions(drafter, facts: claude.PostFacts, photo: Path, known_names, *, conn=None,
@@ -720,6 +755,7 @@ def draft_one(ctx: runner.Context, fetch: Callable[[dict], bytes], *, now: Optio
         pool = candidates(ctx.conn, kind_used)
     if not pool:
         return f"no photo ready for {day}: clear folders on the Library page (nothing drafted)"
+    pool, _ = free_on_first(pool, payloads.posting_networks())   # never held off Instagram while a photo free there is left (2026-11-02)
     track = music.current(ctx.conn)
     design = design_for(day, kind_used, track is not None)
     pool = order_pool(pool, design)

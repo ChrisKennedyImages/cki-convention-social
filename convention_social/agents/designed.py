@@ -178,20 +178,21 @@ def pool(conn: sqlite3.Connection) -> list[dict]:
     cfg = config.get_config()
     from ..buffer import payloads
     on = payloads.posting_networks()         # the window counts per network (Chris, 2026-11-02): held everywhere that is on
-    used, _, _ = content.used_everywhere(conn, config.repeat_window(cfg), on)
-    _, _, people = content.used_everywhere(conn, cfg.variety_days, on)
+    held = content.held_on_networks(conn, on)
     out = []
     for r in db.rows(conn, PHOTO_SQL):
-        if r["id"] in used or not eligibility.is_candidate(conn, r["id"])[0]:
+        if not eligibility.is_candidate(conn, r["id"])[0]:
             continue
         credit = eligibility.credit_line(conn, r["id"])
-        if any(c.lower() in people for c in credit.split()):
+        held_here = held(r["id"], credit)
+        if len(held_here) == len(on):
             continue
-        out.append({**dict(r), "credit": credit})
+        out.append({**dict(r), "credit": credit, "held_on": held_here})
     last = report.last_uses(conn)
     for r in out:
         r["last_use"] = last.get(r["id"])
-    return report.rotate(conn, out, last=last, alike=lambda r: (r["quality"], r["people_count"]))   # PHOTO_SQL's order
+    # free on every network first, then free on a later one, then held on Instagram (2026-11-02, post #62)
+    return content.instagram_first(report.rotate(conn, out, last=last, alike=lambda r: (r["quality"], r["people_count"])), on)
 
 
 def room_of(row: dict) -> str:
@@ -295,6 +296,8 @@ def _draft(ctx: runner.Context, fetch: Callable[[dict], bytes], *, now: Optional
     rows_ = pool(conn)
     if not rows_:
         return "no designed draft: no approved photo is free (every one is on a post inside the repeat window, or none is approved)"
+    from ..buffer import payloads
+    rows_, _ = content.free_on_first(rows_, payloads.posting_networks())   # never held off Instagram while one free there is left
     lately = recent_events(conn, ctx.cfg.variety_days)
     order = spread(rows_, content.TAKES[design] + MAX_TRIES, fresh_events=lambda e: e not in lately,
                    taken_rooms=todays_hero_rooms(conn, day))
