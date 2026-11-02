@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import types
 from datetime import date, datetime, timezone
 
@@ -287,6 +288,8 @@ class Rooms(Drafting):
 
 class Drafts(Drafting):
     def test_each_new_design_drafts_at_4_5_with_its_own_2_3_card(self):
+        os.environ["POST_NETWORKS"] = "instagram,facebook,pinterest,linkedin"   # every network on: this test pins every card (2026-11-02)
+        config.reset()
         for did in ("e4", "e5", "e6"):
             self.add(did)
         for now, design in ((datetime(2026, 10, 19, 10, 0, tzinfo=timezone.utc), "poster"),
