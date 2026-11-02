@@ -2381,3 +2381,20 @@ check the others too."
 - Buffer page: each channel shows its name, its address under it and, for one the suite does not use, the reason under
   that; the Use, In use and Stop controls stay beside it or drop below it on a narrow screen.
 - A checkbox stays on the line of its words (Music, Calendar).
+
+## 2026-11-02: check what goes out before telling Chris to post; look at the photo before writing about it
+
+Post #61 (photo 921, LinkedIn only) showed the branded Instagram card on Today and on its draft page, because the draft
+maker still built cards for networks the post was not going to, while the publisher would have sent LinkedIn the bare
+photo. A Claude session told him "You can tap Post now on #61 safely" from reading the code. Chris: "And you said go
+ahead and post it without checking ... Check you SHIT BEFORE YOU EBWR TELL ME TO POST THE WEONG THING AGAIN!" and "Put
+that in memory or a rules file in the suite!" Nothing had gone out.
+
+- No session tells him a post is ready, safe or to tap Post now / Approve until it has run the publisher's own builder on
+  that row without sending (what image and caption each ticked network would get) and seen that the screen he approves
+  from shows the same. If the screen differs, he holds and the screen is fixed first. Reading the code is not a check.
+  This is a law in CLAUDE.md.
+- The same night a caption called the woman on the main stage "he": "the 1st image is a women which is VERY VERY VERY
+  important not to mess up." Every caption is written from the opened photo, listed in the photos' order and labelled
+  with who is in it; he or she only when the photo clearly shows it. Also a law in CLAUDE.md, and the LinkedIn writer's
+  pronoun gate (2026-11-01, late evening).
