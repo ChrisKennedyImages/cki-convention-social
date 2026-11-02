@@ -393,14 +393,19 @@ ONE_COPY = "(p.md5 IS NULL OR p.id = (SELECT MIN(p2.id) FROM photos p2 WHERE p2.
 PAGE_FROM = """FROM photos p LEFT JOIN classifications c ON c.photo_id = p.id
                LEFT JOIN drive_folders f ON f.drive_id = p.folder_id
                LEFT JOIN temp.folder_decision fd ON fd.drive_id = p.folder_id"""
+# Claude's scores lead (2026-11-02): the local model that sorted first gave almost everything top marks ("best first"
+# ranked nothing, 2026-10-25), so a photo it scored waits behind every photo Claude scored until Claude sorts it again.
+CLAUDE_FIRST = "CASE WHEN c.method = 'vision' THEN 0 ELSE 1 END"
 VIEWS = {
     # Sorted photos Chris has not decided on that could ever be used: no readable personal detail
-    # (temp.hidden_photo). No age filter: he judges every photo himself (2026-10-15). Strongest first.
+    # (temp.hidden_photo), nothing the do-not-use list covers (temp.listed_photo, 2026-11-02). No age filter: he judges
+    # every photo himself (2026-10-15). Claude's scores first, strongest first.
     "review": (f"p.trashed = 0 AND {ONE_COPY} AND {SORTED} AND {DECISION} = 'not_cleared' "
                "AND COALESCE(c.costume, 0) = 0 "
                "AND COALESCE(c.event_kind, '') NOT IN ('wedding', 'private') "
-               "AND p.id NOT IN (SELECT id FROM temp.hidden_photo)",
-               f"({STRENGTH}) DESC, p.id"),
+               "AND p.id NOT IN (SELECT id FROM temp.hidden_photo) "
+               "AND p.id NOT IN (SELECT id FROM temp.listed_photo)",
+               f"{CLAUDE_FIRST}, ({STRENGTH}) DESC, p.id"),
     # Everything Chris cleared, by the photo itself or by its folder. Sorted ones first, strongest first.
     "approved": (f"p.trashed = 0 AND {ONE_COPY} AND {DECISION} = 'cleared'",
                  f"CASE WHEN {SORTED} THEN 0 ELSE 1 END, CASE WHEN {SORTED} THEN ({STRENGTH}) ELSE 0 END DESC, p.id"),
@@ -410,12 +415,16 @@ VIEWS = {
 
 
 def prepare_photo_views(conn, decisions) -> None:
-    """Per connection: each folder's decision, and the photos a readable personal detail keeps off
-    the review list (eligibility.blocking_details, read only for the few photos that list any)."""
+    """Per connection: each folder's decision, the photos a readable personal detail keeps off the review list
+    (eligibility.blocking_details, read only for the few photos that list any), and the photos the do-not-use list
+    covers (eligibility.do_not_use_photos)."""
     conn.execute("CREATE TEMP TABLE IF NOT EXISTS folder_decision (drive_id TEXT PRIMARY KEY, decision TEXT NOT NULL)")
     conn.execute("CREATE TEMP TABLE IF NOT EXISTS hidden_photo (id INTEGER PRIMARY KEY)")
+    conn.execute("CREATE TEMP TABLE IF NOT EXISTS listed_photo (id INTEGER PRIMARY KEY)")
     conn.execute("DELETE FROM temp.folder_decision")
     conn.execute("DELETE FROM temp.hidden_photo")
+    conn.execute("DELETE FROM temp.listed_photo")
+    conn.executemany("INSERT INTO temp.listed_photo VALUES (?)", [(i,) for i in eligibility.do_not_use_photos(conn)])
     conn.executemany("INSERT INTO temp.folder_decision VALUES (?, ?)", [(k, v) for k, v in decisions.items() if v != "not_cleared"])
     hidden = []
     for r in db.rows(conn, "SELECT c.photo_id, c.personal_details, c.subject FROM classifications c "
@@ -448,10 +457,52 @@ def photo_page(conn, view: str, page: int, size: int = PAGE, subject: Optional[s
     """One page of a photo list, read straight from the database: the Photos tab never loads the
     whole library (Chris, 2026-10-11: "Photos tab is dead")."""
     where, order = _where(view, subject), VIEWS[view][1]
-    return [dict(r) for r in db.rows(conn, f"""SELECT p.*, c.method, c.subject, c.shot_type, c.quality, c.sharp, c.light, c.moment,
-                                                      c.personal_details, f.name AS folder_name
+    rows = [dict(r) for r in db.rows(conn, f"""SELECT p.*, c.method, c.subject, c.shot_type, c.quality, c.sharp, c.light, c.moment,
+                                                      c.personal_details, c.rejudge, f.name AS folder_name
                                                {PAGE_FROM} WHERE {where} ORDER BY {order} LIMIT ? OFFSET ?""",
                                      (size, (page - 1) * size))]
+    for r in rows:
+        r["kind"] = kind_words(r)
+    return rows
+
+
+def kind_words(photo: dict) -> str:
+    """The kind of shot, in the words on a photo's card. A sorted photo the sorter gave no kind is said as it is
+    (2026-11-02: 3,157 sorted photos read "not sorted yet"); most lost an old label and wait for Claude's second look."""
+    if photo.get("shot_type"):
+        return photo["shot_type"].replace("_", " ")
+    if photo.get("method") not in eligibility.SORTED_METHODS:
+        return "not sorted yet"
+    return "kind of shot: being sorted again" if photo.get("rejudge") else "kind of shot not named"
+
+
+# Chris, 2026-11-02: "Maybe a swipe left or right to keep or discard of?" To review one photo at a time, from the top of
+# the list. Right is his Use; left is Don't use for good ("If I swipe to not use it, it's out of the pool forevwr").
+# Nothing is cleared but by a right swipe. Undo takes back the last swipe only; Blocked and its Unblock stay the way back.
+SWIPE_AHEAD = 4                          # cards the page holds: the one on screen and three behind it, pictures loaded ahead
+SWIPE_STATES = ("cleared", "blocked")
+SWIPE_KEYS = {"ArrowRight": "cleared", "ArrowLeft": "blocked", "u": "undo", "U": "undo"}
+SWIPE_LAST = "library.swipe_last"        # the last swipe, the only one Undo takes back
+SWIPE_WORDS = {"cleared": "Approved.", "blocked": "Kept out for good."}
+PREVIEW_EDGE = 1200                      # the card's picture, long side in pixels: a phone screen at 3x is about 1180 wide
+
+
+def swipe_card(p: dict) -> dict:
+    return {"id": p["id"], "big": f"/media/preview/{p['id']}", "small": f"/media/thumb/{p['id']}",
+            "kind": p["kind"], "folder": p.get("folder_name") or ""}
+
+
+def swipe_state(conn, subject: str) -> dict:
+    """What the deck needs next: how many are left, the next cards in To review's order, and whether a swipe can be
+    undone. Read after the views are prepared on this connection."""
+    return {"left": count_photos(conn, "review", subject),
+            "next": [swipe_card(p) for p in photo_page(conn, "review", 1, size=SWIPE_AHEAD, subject=subject)],
+            "undo": bool(settings.get(conn, SWIPE_LAST))}
+
+
+def on_review(conn, photo_id: int, subject: str) -> bool:
+    """The photo is on To review now (undecided, offered, not on the do-not-use list): the only photos a swipe decides."""
+    return db.one(conn, f"SELECT 1 AS x {PAGE_FROM} WHERE {_where('review', subject)} AND p.id = ?", (photo_id,)) is not None
 
 
 # The Photos tab asks for 48 previews at once. Each Drive fetch happens once per photo (a second
@@ -463,20 +514,26 @@ _thumb_locks: dict[str, threading.Lock] = {}
 _thumb_locks_guard = threading.Lock()
 
 
-def _thumb_lock(drive_id: str) -> threading.Lock:
+def _thumb_lock(name: str) -> threading.Lock:
     with _thumb_locks_guard:
-        return _thumb_locks.setdefault(drive_id, threading.Lock())
+        return _thumb_locks.setdefault(name, threading.Lock())
 
 
-def cached_thumb(drive_id: str, fetch) -> Optional[Path]:
+def thumb_file(drive_id: str, edge: Optional[int] = None) -> Path:
+    """Where a preview is kept: DATA_ROOT/thumbs/<drive id>.jpg for the 400 px one the lists show, <drive id>-<edge>.jpg
+    for a larger one (the swipe card's). Both live under the one cap the nightly sweep keeps (storage.THUMBS_CAP_MB)."""
+    return config.get_config().data_root / "thumbs" / (f"{drive_id}.jpg" if edge is None else f"{drive_id}-{edge}.jpg")
+
+
+def cached_thumb(drive_id: str, fetch, edge: Optional[int] = None) -> Optional[Path]:
     """The preview's file, fetched with `fetch(drive_id) -> bytes` only when it is not cached yet.
     None when there is nothing to show (no fetch, or Drive could not give it)."""
-    path = config.get_config().data_root / "thumbs" / f"{drive_id}.jpg"
+    path = thumb_file(drive_id, edge)
     if path.is_file() and path.stat().st_size > 0:
         return path
     if fetch is None:
         return None
-    with _thumb_lock(drive_id):
+    with _thumb_lock(path.name):
         if path.is_file() and path.stat().st_size > 0:
             return path
         try:
@@ -1100,6 +1157,19 @@ def create_app() -> FastAPI:
             raise HTTPException(404)
         return FileResponse(path, media_type="image/jpeg")
 
+    @app.get("/media/preview/{photo_id}")
+    def media_preview(photo_id: int, user: str = Depends(require_user), conn=Depends(conn_dep)):
+        """The swipe card's picture: Drive's own preview at PREVIEW_EDGE (read only, the original is never touched),
+        cached beside the small ones under the same cap; the small one when Drive cannot give it."""
+        row = db.one(conn, "SELECT drive_id, thumbnail_link FROM photos WHERE id=?", (photo_id,))
+        if not row:
+            raise HTTPException(404)
+        path = cached_thumb(row["drive_id"], drive_thumb_fetch(conn, PREVIEW_EDGE) if row["thumbnail_link"] else None,
+                            edge=PREVIEW_EDGE)
+        if path is None:
+            return media_thumb(photo_id, user, conn)
+        return FileResponse(path, media_type="image/jpeg")
+
     # ------------------------------------------------------------------ library
     @app.get("/library", response_class=HTMLResponse)
     def library(request: Request, user: str = Depends(require_user), conn=Depends(conn_dep), view: str = "review",
@@ -1326,6 +1396,66 @@ def create_app() -> FastAPI:
         if ids:
             photos_changed(conn)
         return RedirectResponse(safe_back(form.get("back") or "/library"), status_code=303)
+
+    # ------------------------------------------------------------------ swipe review
+    def swipe_subject(subject: str) -> str:
+        return subject if subject in SUBJECTS else "event"
+
+    def swipe_answer(request: Request, conn, subject: str, words: str, status_code: int = 200, **more):
+        """JSON for the page's script (the words, how many are left, the next cards); the plain form gets the page back."""
+        if "application/json" in request.headers.get("accept", ""):
+            return JSONResponse({"words": words, **more, **swipe_state(conn, subject)}, status_code=status_code)
+        return RedirectResponse(f"/library/swipe?subject={subject}&msg={quote_plus(words)}", status_code=303)
+
+    @app.get("/library/swipe", response_class=HTMLResponse)
+    def swipe_page(request: Request, user: str = Depends(require_user), conn=Depends(conn_dep), subject: str = "event",
+                   msg: str = ""):
+        """To review, one photo at a time (Chris, 2026-11-02). A GET decides nothing."""
+        subject = swipe_subject(subject)
+        prepare_photo_views(conn, eligibility.folder_decisions(conn))
+        state = swipe_state(conn, subject)
+        other = next(s for s, _ in SUBJECT_WORDS if s != subject)
+        return render(request, "swipe.html", subject=subject, subject_word=dict(SUBJECT_WORDS)[subject], msg=msg,
+                      other=other, other_word=dict(SUBJECT_WORDS)[other], other_left=count_photos(conn, "review", other),
+                      deck={**state, "subject": subject, "word": dict(SUBJECT_WORDS)[subject], "keys": SWIPE_KEYS})
+
+    @app.post("/library/swipe/undo")
+    def swipe_undo(request: Request, user: str = Depends(require_user), conn=Depends(conn_dep), subject: str = Form("event")):
+        """Takes back the last swipe only: its photo (every copy) is undecided again, if nothing has changed it since."""
+        subject = swipe_subject(subject)
+        prepare_photo_views(conn, eligibility.folder_decisions(conn))
+        try:
+            last = json.loads(settings.get(conn, SWIPE_LAST) or "null")
+        except ValueError:
+            last = None
+        settings.set(conn, SWIPE_LAST, "")
+        if not last:
+            return swipe_answer(request, conn, subject, "Nothing to undo.")
+        row = db.one(conn, "SELECT clearance FROM photos WHERE id=?", (last["id"],))
+        if row is None or row["clearance"] != last["state"]:
+            return swipe_answer(request, conn, subject, "That photo was changed since; nothing undone.")
+        decide(conn, int(last["id"]), "inherit", db.utcnow())
+        photos_changed(conn)
+        return swipe_answer(request, conn, subject, "Undone. That photo is undecided again.", undone=last["id"])
+
+    @app.post("/library/swipe/{pid}")
+    def swipe(pid: int, request: Request, user: str = Depends(require_user), conn=Depends(conn_dep), state: str = Form(...),
+              subject: str = Form("event")):
+        """One swipe, saved at once: right (cleared) is his Use, left (blocked) is Don't use for good. Only a photo that
+        is on To review now can be swiped; anything else is refused and nothing changes (fail closed)."""
+        if state not in SWIPE_STATES:
+            raise HTTPException(400)
+        subject = swipe_subject(subject)
+        prepare_photo_views(conn, eligibility.folder_decisions(conn))
+        if not on_review(conn, pid, subject):
+            return swipe_answer(request, conn, subject, "That photo is not waiting for review any more; nothing changed.",
+                                status_code=409)
+        decide(conn, pid, state, db.utcnow())
+        settings.set(conn, SWIPE_LAST, json.dumps({"id": pid, "state": state}))
+        photos_changed(conn)
+        row = db.one(conn, "SELECT drive_id FROM photos WHERE id=?", (pid,))
+        thumb_file(row["drive_id"], PREVIEW_EDGE).unlink(missing_ok=True)     # the big picture was for this card only
+        return swipe_answer(request, conn, subject, SWIPE_WORDS[state], id=pid, state=state)
 
     def publish_now() -> str:
         """Chris, 2026-10-12: a hero he sends, removes or picks reaches the site by itself, with nobody at a

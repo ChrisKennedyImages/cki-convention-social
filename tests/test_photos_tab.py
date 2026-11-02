@@ -41,7 +41,8 @@ def old_lists(conn):
         if eligibility.blocking_details(details, r["subject"]):
             continue
         review.append(r)
-    review.sort(key=lambda r: -report.strength(r))
+    # 2026-11-02: Claude's scores lead; a photo only the old local sorter scored follows them until Claude sorts it again
+    review.sort(key=lambda r: (0 if r["method"] == "vision" else 1, -report.strength(r)))
     approved = [r for r in rows if eligibility.decision_of(r, decisions) == "cleared"]
     approved.sort(key=lambda r: (0 if srt(r) else 1, -report.strength(r) if srt(r) else 0))
     return [r["id"] for r in review], [r["id"] for r in approved]

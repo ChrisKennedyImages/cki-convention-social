@@ -1,0 +1,200 @@
+{% extends "base.html" %}
+{% block title %}Swipe · {{ subject_word }}{% endblock %}
+{% block body %}
+{#- Chris, 2026-11-02: "Maybe a swipe left or right to keep or discard of?" To review, one photo at a time, Claude's
+    strongest first. Right is Use; left is Don't use for good. Each swipe is saved at once; Undo takes back the last
+    one only. Without the script, the two buttons and Undo are plain forms and the page comes back. -#}
+<style>
+html,body{overflow-x:clip}
+.deck-top{display:flex;align-items:center;gap:10px;margin:0 0 10px}
+.deck-top h1{margin:0;font-size:20px}
+.deck-top .left{color:var(--muted);font-size:14px}
+.deck-top form{margin-left:auto}
+.deck-top button[disabled],.undo-bar button[disabled]{opacity:.45}
+.stage{position:relative;height:min(520px,calc(100svh - 300px));min-height:300px}
+.swipe{position:absolute;inset:0;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:10px;display:flex;
+       flex-direction:column;box-shadow:0 6px 18px rgba(0,0,0,.08);transform-origin:50% 120%;touch-action:pan-y;user-select:none;-webkit-user-select:none}
+.swipe.behind{transform:scale(.96) translateY(10px);box-shadow:none}
+.swipe.behind .about{visibility:hidden}
+.swipe.gone{transition:transform .25s ease-in;pointer-events:none}
+.swipe.back{transition:transform .2s ease-out}
+.swipe .pic{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;background:#f7f7f5;border-radius:10px;overflow:hidden}
+.swipe .pic img{width:100%;height:100%;object-fit:contain;display:block;-webkit-user-drag:none}
+.swipe .about{display:flex;justify-content:space-between;gap:8px;margin-top:8px;font-size:14px;color:var(--muted)}
+.swipe .about b{color:var(--ink);font-weight:600}
+.verdict{position:absolute;top:-14px;padding:4px 14px;border-radius:999px;font-weight:700;font-size:15px;letter-spacing:.04em;color:#fff;z-index:2;opacity:0}
+.verdict.use{left:16px;background:var(--ok)}
+.verdict.out{right:16px;background:var(--bad)}
+.empty{position:absolute;inset:0;display:flex;flex-direction:column;justify-content:center;align-items:flex-start;gap:10px;margin:0}
+.choices2{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}
+.choices2 form{display:contents}
+.choices2 button{min-height:56px;font-size:17px;width:100%}
+.hint{text-align:center;color:var(--muted);font-size:13px;margin-top:8px}
+.undo-bar{margin-top:10px;background:var(--ink);color:#fff;border-radius:12px;padding:8px 8px 8px 14px;display:flex;align-items:center;gap:10px;font-size:15px}
+.undo-bar[hidden],.choices2[hidden],.hint[hidden]{display:none}
+.undo-bar form{margin-left:auto}
+.undo-bar button{background:#fff;color:var(--ink);min-height:44px}
+</style>
+{% if msg %}<div class="msg">{{ msg }}</div>{% endif %}
+<div class="deck-top">
+  <h1>Swipe</h1>
+  <span class="left" id="left">{{ "{:,}".format(deck.left) }} left · {{ subject_word }}</span>
+  <form method="post" action="/library/swipe/undo" class="undo"><input type="hidden" name="subject" value="{{ subject }}">
+    <button class="small" type="submit" {{ '' if deck.undo else 'disabled' }}>Undo</button></form>
+</div>
+<div class="stage" id="stage">
+  {% if deck.next %}
+  {% for c in deck.next[:2]|reverse %}
+  <div class="swipe{{ ' behind' if not loop.last else '' }}" data-id="{{ c.id }}">
+    <span class="verdict use">Use</span><span class="verdict out">Don't use</span>
+    <div class="pic"><img src="{{ c.big }}" alt="" onerror="this.onerror=null;this.src='{{ c.small }}'"></div>
+    <div class="about"><span>{% if c.kind %}<b>{{ c.kind }}</b>{% endif %}{% if c.folder %} · {{ c.folder }}{% endif %}</span></div>
+  </div>
+  {% endfor %}
+  {% else %}
+  <div class="card empty" id="empty">
+    <strong>Nothing left to review in {{ subject_word }}.</strong>
+    <span class="muted">Every photo here has your Use or Don't use. New photos from Drive show up here once they are sorted.</span>
+    <a class="btn" href="/library/swipe?subject={{ other }}">{{ other_word }} ({{ "{:,}".format(other_left) }} left)</a>
+    <a class="btn" href="/library?view=review&subject={{ subject }}">Back to To review</a>
+  </div>
+  {% endif %}
+</div>
+<div class="choices2" id="choices"{{ ' hidden' if not deck.next else '' }}>
+  {% for state, label, cls in [('blocked', "✕ Don't use", 'danger'), ('cleared', '✓ Use', 'ok')] %}
+  <form method="post" action="/library/swipe/{{ deck.next[0].id if deck.next else 0 }}" class="decide">
+    <input type="hidden" name="subject" value="{{ subject }}"><input type="hidden" name="state" value="{{ state }}">
+    <button class="{{ cls }}" type="submit">{{ label }}</button>
+  </form>
+  {% endfor %}
+</div>
+<div class="hint" id="hint"{{ ' hidden' if not deck.next else '' }}>Swipe right to use it, left to keep it out for good. On a computer: → and ←, U to undo.</div>
+<div class="undo-bar" id="undo-bar" hidden><span id="said"></span>
+  <form method="post" action="/library/swipe/undo" class="undo"><input type="hidden" name="subject" value="{{ subject }}"><button type="submit">Undo</button></form>
+</div>
+<script type="application/json" id="deck-data">{{ deck|tojson }}</script>
+<script>
+(function () {
+  var data = JSON.parse(document.getElementById('deck-data').textContent);
+  var KEYS = data.keys;                         // the keyboard: ArrowRight is Use, ArrowLeft is Don't use, U is Undo
+  var subject = data.subject, cards = data.next.slice(), left = data.left, canUndo = data.undo;
+  var pending = 0, decided = {};
+  var stage = document.getElementById('stage'), leftEl = document.getElementById('left'), choices = document.getElementById('choices');
+  var hint = document.getElementById('hint'), bar = document.getElementById('undo-bar'), said = document.getElementById('said');
+  var word = data.word, emptyHtml = document.getElementById('empty');
+  emptyHtml = emptyHtml ? emptyHtml.outerHTML : null;
+
+  function el(tag, cls, text) { var e = document.createElement(tag); if (cls) { e.className = cls; } if (text) { e.textContent = text; } return e; }
+  function cardEl(c, behind) {
+    var d = el('div', 'swipe' + (behind ? ' behind' : '')), pic = el('div', 'pic'), img = new Image(), about = el('div', 'about'), s = el('span');
+    d.dataset.id = c.id;
+    d.append(el('span', 'verdict use', 'Use'), el('span', 'verdict out', "Don't use"));
+    img.alt = ''; img.draggable = false; img.src = c.big;
+    img.onerror = function () { img.onerror = null; img.src = c.small; };
+    pic.append(img);
+    if (c.kind) { s.append(el('b', '', c.kind)); }
+    if (c.folder) { s.append(document.createTextNode((c.kind ? ' · ' : '') + c.folder)); }
+    about.append(s); d.append(pic, about);
+    return d;
+  }
+  function preload() { cards.slice(1, 4).forEach(function (c) { var i = new Image(); i.src = c.big; }); }
+  function setUndo(on) { canUndo = on; document.querySelectorAll('form.undo button').forEach(function (b) { b.disabled = !on; }); }
+  function draw() {
+    stage.querySelectorAll('.swipe:not(.gone), .empty, .waiting').forEach(function (n) { n.remove(); });
+    leftEl.textContent = left.toLocaleString('en-US') + ' left · ' + word;
+    choices.hidden = !cards.length;
+    if (!cards.length) { hint.hidden = true; }
+    if (!cards.length) {
+      if (pending) { stage.append(el('div', 'card empty waiting', 'Saving…')); }
+      else if (emptyHtml) { stage.insertAdjacentHTML('beforeend', emptyHtml); }
+      else { location.reload(); }
+      return;
+    }
+    if (cards[1]) { stage.append(cardEl(cards[1], true)); }
+    var front = cardEl(cards[0], false);
+    stage.append(front);
+    drag(front);
+    preload();
+  }
+  function say(words) { said.textContent = words; bar.hidden = false; hint.hidden = true; }
+  function post(url, fields) {
+    var body = new FormData();
+    Object.keys(fields).forEach(function (k) { body.append(k, fields[k]); });
+    // an answer in words (saved, or refused because the photo is no longer waiting) comes back as JSON; anything else,
+    // or no answer, is a failure and nothing is assumed saved
+    return fetch(url, {method: 'POST', body: body, headers: {'Accept': 'application/json'}}).then(function (r) { return r.json(); });
+  }
+  function merge(d) {
+    d.next.forEach(function (n) {
+      if (!decided[n.id] && !cards.some(function (c) { return c.id === n.id; })) { cards.push(n); }
+    });
+    if (!pending) { left = d.left; }
+  }
+  function decide(state, front) {
+    var c = cards[0];
+    if (!c) { return; }
+    front = front || stage.querySelector('.swipe:not(.behind):not(.gone)');
+    if (front) {
+      var w = stage.clientWidth * 1.4 * (state === 'cleared' ? 1 : -1);
+      front.querySelector(state === 'cleared' ? '.verdict.use' : '.verdict.out').style.opacity = 1;
+      front.classList.add('gone');
+      front.style.transform = 'translateX(' + w + 'px) rotate(' + (state === 'cleared' ? 18 : -18) + 'deg)';
+      setTimeout(function () { front.remove(); }, 300);
+    }
+    cards.shift(); decided[c.id] = true; left = Math.max(0, left - 1); pending += 1; setUndo(false);
+    draw();
+    post('/library/swipe/' + c.id, {state: state, subject: subject}).then(function (d) {
+      pending -= 1;
+      var wasEmpty = !cards.length;
+      merge(d); setUndo(d.undo); say(d.words);
+      if (wasEmpty) { draw(); }
+    }, function () {
+      pending = Math.max(0, pending - 1);
+      cards.unshift(c); delete decided[c.id]; left += 1; draw();
+      say('Not saved: the dashboard did not answer. Try again.');
+    });
+  }
+  function undo() {
+    if (pending || !canUndo) { return; }
+    setUndo(false);
+    post('/library/swipe/undo', {subject: subject}).then(function (d) {
+      decided = {}; cards = d.next.slice(); left = d.left; setUndo(d.undo); draw(); say(d.words);
+    }).catch(function () { say('Not undone: the dashboard did not answer.'); setUndo(true); });
+  }
+  function drag(card) {
+    var x0 = null, dx = 0, id = null, use = card.querySelector('.verdict.use'), out = card.querySelector('.verdict.out');
+    card.addEventListener('pointerdown', function (e) { x0 = e.clientX; dx = 0; id = e.pointerId; card.setPointerCapture(id); card.classList.remove('back'); });
+    card.addEventListener('pointermove', function (e) {
+      if (x0 === null || e.pointerId !== id) { return; }
+      dx = e.clientX - x0;
+      card.style.transform = 'translateX(' + dx + 'px) rotate(' + (dx / 20) + 'deg)';
+      var k = Math.min(1, Math.abs(dx) / (stage.clientWidth * 0.28));
+      use.style.opacity = dx > 0 ? k : 0; out.style.opacity = dx < 0 ? k : 0;
+    });
+    function end(e) {
+      if (x0 === null || e.pointerId !== id) { return; }
+      x0 = null;
+      if (Math.abs(dx) > stage.clientWidth * 0.28) { decide(dx > 0 ? 'cleared' : 'blocked', card); return; }
+      card.classList.add('back'); card.style.transform = ''; use.style.opacity = 0; out.style.opacity = 0;
+    }
+    card.addEventListener('pointerup', end);
+    card.addEventListener('pointercancel', end);
+  }
+  document.querySelectorAll('form.decide').forEach(function (f) {
+    f.addEventListener('submit', function (e) { e.preventDefault(); decide(f.querySelector('[name=state]').value); });
+  });
+  document.querySelectorAll('form.undo').forEach(function (f) {
+    f.addEventListener('submit', function (e) { e.preventDefault(); undo(); });
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.metaKey || e.ctrlKey || e.altKey || /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) { return; }
+    var act = KEYS[e.key];
+    if (!act) { return; }
+    e.preventDefault();
+    if (act === 'undo') { undo(); } else { decide(act); }
+  });
+  setUndo(canUndo);
+  draw();
+}());
+</script>
+{% endblock %}

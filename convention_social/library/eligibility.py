@@ -135,6 +135,41 @@ def blocked_by_list(conn: sqlite3.Connection, photo: sqlite3.Row) -> str | None:
     return None
 
 
+def do_not_use_photos(conn: sqlite3.Connection) -> set[int]:
+    """The ids of every photo the do-not-use list covers, by the rule blocked_by_list follows photo by photo: the photo
+    itself, a folder anywhere above it, or a person or handle credited on it or on a folder above it. One pass for the
+    whole library (2026-11-02: a photo he had put on the list with Never use still waited on To review)."""
+    listed = {(r["kind"], r["value"]) for r in db.rows(conn, "SELECT kind, value FROM do_not_use")}
+    if not listed:
+        return set()
+    photo_ids = {v for k, v in listed if k == "photo"}
+    folder_ids = {v for k, v in listed if k == "folder"}
+    if any(k in ("person", "handle") for k, _ in listed):
+        for c in db.rows(conn, "SELECT scope, drive_id, person_name, handle FROM credits"):
+            if any(v and (k, v.strip().lower()) in listed for k, v in (("person", c["person_name"]), ("handle", c["handle"]))):
+                (photo_ids if c["scope"] == "photo" else folder_ids).add(c["drive_id"])
+    parents = {r["drive_id"]: r["parent_id"] for r in db.rows(conn, "SELECT drive_id, parent_id FROM drive_folders")}
+    memo: dict[str, bool] = {}
+
+    def covered(fid) -> bool:
+        """The folder, or one above it, is listed (folder_chain's walk, remembered for the folders it passes)."""
+        path, hit = [], False
+        while fid and fid in parents and len(path) < MAX_DEPTH:
+            if fid in memo:
+                hit = memo[fid]
+                break
+            path.append(fid)
+            if fid in folder_ids:
+                hit = True
+                break
+            fid = parents[fid]
+        for f in path:
+            memo[f] = hit
+        return hit
+    return {r["id"] for r in db.rows(conn, "SELECT id, drive_id, folder_id FROM photos")
+            if r["drive_id"] in photo_ids or (folder_ids and covered(r["folder_id"]))}
+
+
 # A street number or a street name on a building Chris photographed is not a personal detail:
 # they are public buildings and he holds releases for them (Chris, 2026-10-10). On a photo of
 # people it still blocks, because there the number says where somebody lives.
