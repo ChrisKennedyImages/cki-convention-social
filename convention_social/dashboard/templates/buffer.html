@@ -1,6 +1,8 @@
 {% extends "base.html" %}
 {% block body %}
-<style>.line{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:9px 0;border-top:1px solid var(--line)}.line:first-of-type{border-top:0}</style>
+<style>.line{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:9px 0;border-top:1px solid var(--line)}.line:first-of-type{border-top:0}.line>*{min-width:0}
+.chan{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:6px 10px;padding:10px 0;border-top:1px solid var(--line)}
+.chan-who{flex:1 1 200px;min-width:0}.chan-who .muted{display:block}.chan-act{flex:none}</style>
 <h1>Buffer</h1>
 {% if msg %}<div class="msg">{{ msg }}</div>{% endif %}
 <div class="card"><strong>Ready to post?</strong>
@@ -44,10 +46,12 @@
 <div class="card" style="margin-top:12px"><strong>Channels in Buffer</strong>
   <div class="muted">Tap Use only on this company's own accounts. Nothing is linked by itself.</div>
   {% for c in b.found %}
-  <div class="line"><span>{{ c.service|network }}: {{ c.displayName or c.name }}{% if c.externalLink %} <span class="muted">{{ c.externalLink }}</span>{% endif %}{% if c.isDisconnected %} <span class="badge failed">disconnected</span>{% endif %}{% if c.isLocked %} <span class="badge failed">locked</span>{% endif %}</span>
-    {% if c.refused %}<span class="muted">{{ c.refused }}</span>
-    {% elif c.id in b.linked_ids %}<form method="post" action="/buffer/unlink" class="inline"><input type="hidden" name="service" value="{{ c.service }}"><span class="badge ok">in use</span> <button class="small" type="submit">Stop</button></form>
-    {% else %}<form method="post" action="/buffer/link" class="inline"><input type="hidden" name="channel_id" value="{{ c.id }}"><button class="small" type="submit">Use for {{ c.service|network }}</button></form>{% endif %}
+  <div class="chan"><div class="chan-who">{{ c.service|network }}: {{ c.displayName or c.name }}{% if c.isDisconnected %} <span class="badge failed">disconnected</span>{% endif %}{% if c.isLocked %} <span class="badge failed">locked</span>{% endif %}
+      {% if c.externalLink %}<span class="muted">{{ c.externalLink }}</span>{% endif %}
+      {% if c.refused %}<span class="muted">Not used: {{ c.refused }}</span>{% endif %}</div>
+    {% if c.refused %}
+    {% elif c.id in b.linked_ids %}<form method="post" action="/buffer/unlink" class="chan-act"><input type="hidden" name="service" value="{{ c.service }}"><span class="badge ok">in use</span> <button class="small" type="submit">Stop</button></form>
+    {% else %}<form method="post" action="/buffer/link" class="chan-act"><input type="hidden" name="channel_id" value="{{ c.id }}"><button class="small" type="submit">Use for {{ c.service|network }}</button></form>{% endif %}
   </div>
   {% endfor %}
 </div>

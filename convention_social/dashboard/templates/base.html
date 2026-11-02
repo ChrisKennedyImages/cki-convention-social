@@ -7,7 +7,9 @@
 <style>
 :root{--ink:#17171a;--bg:#f4f4f2;--card:#fff;--line:#e2e1dc;--accent:#1f4fd1;--ok:#2e7d32;--warn:#a85d00;--bad:#c62828;--muted:#66666b}
 *{box-sizing:border-box}
-body{margin:0;font:16px/1.45 -apple-system,BlinkMacSystemFont,"Helvetica Neue",Arial,sans-serif;color:var(--ink);background:var(--bg)}
+body{margin:0;font:16px/1.45 -apple-system,BlinkMacSystemFont,"Helvetica Neue",Arial,sans-serif;color:var(--ink);background:var(--bg);overflow-wrap:break-word}
+/* a phone screen never scrolls sideways (Chris, 2026-11-02): a web address, a note or a table cell wraps instead */
+a,.muted{overflow-wrap:anywhere}
 header{position:sticky;top:0;background:var(--ink);color:#fff;padding:6px 12px;display:flex;gap:8px;align-items:center;z-index:3;min-height:56px}
 header .brand{font-weight:700;white-space:nowrap}
 nav{display:flex;gap:2px;overflow-x:auto;white-space:nowrap;margin-left:auto;scrollbar-width:none}
@@ -15,7 +17,8 @@ nav::-webkit-scrollbar{display:none}
 nav a{color:#fff;text-decoration:none;border-radius:8px;font-size:15px;padding:0 12px;min-height:44px;display:inline-flex;align-items:center}
 nav a.on{background:rgba(255,255,255,.18)}
 header .out{background:transparent;color:#bbb;min-height:44px;padding:0 8px;font-size:14px}
-@media (max-width:560px){header .brand,header .out{display:none}nav{margin-left:0;flex:1;justify-content:space-between}nav a{padding:0 10px;font-size:16px}}
+@media (max-width:560px){header .brand,header .out{display:none}nav{margin-left:0;flex:1;justify-content:space-between;gap:0}nav a{padding:0 8px;font-size:15px}}
+@media (max-width:400px){header{padding:6px 6px}nav a{padding:0 6px;font-size:14px}}
 .sub{position:sticky;top:56px;z-index:2;background:var(--bg);border-bottom:1px solid var(--line)}
 .chips{display:flex;gap:6px;overflow-x:auto;white-space:nowrap;padding:6px 12px;max-width:1100px;margin:0 auto;scrollbar-width:none}
 .chips::-webkit-scrollbar{display:none}
@@ -30,13 +33,15 @@ header .out{background:transparent;color:#bbb;min-height:44px;padding:0 8px;font
 main{padding:14px;max-width:880px;margin:0 auto}
 main.wide{max-width:1100px}
 .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin:0 0 14px}
-.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.row>*{min-width:0}
+/* a checkbox stays on the line of its words, however long they run */
+label.check{flex-wrap:nowrap}label.check input[type=checkbox]{flex:none}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
 .grid img,.thumbs img{width:100%;border-radius:8px;border:1px solid var(--line);display:block}
 .card.off img{opacity:.35}
 .thumbs{display:flex;gap:8px;overflow-x:auto}.thumbs img{height:180px;width:auto;flex:none}
 .reel{display:block;height:420px;max-width:100%;aspect-ratio:9/16;background:#000;border-radius:8px;border:1px solid var(--line);margin:10px 0}
-.badge{display:inline-block;padding:2px 9px;border-radius:999px;font-size:13px;font-weight:600;background:#eee}
+.badge{display:inline-block;padding:2px 9px;border-radius:999px;font-size:13px;font-weight:600;background:#eee;white-space:nowrap;overflow-wrap:normal}
 .badge.draft,.badge.not_cleared,.badge.dry{background:#fff3e0;color:var(--warn)}
 .badge.approved,.badge.scheduled,.badge.cleared,.badge.ok{background:#e8f5e9;color:var(--ok)}
 .badge.published{background:#e3f2fd;color:#1565c0}

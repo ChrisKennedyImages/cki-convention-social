@@ -11,8 +11,8 @@
   <label>City</label><input type="text" name="city" value="{{ current.city if current and current.city else '' }}">
   <label>Venue</label><input type="text" name="venue" value="{{ current.venue if current and current.venue else '' }}">
   <label>Event website</label><input type="url" name="url" value="{{ current.url if current and current.url else '' }}">
-  <label class="row"><input type="checkbox" name="attending" {{ 'checked' if current and current.attending else '' }}> I will be there</label>
-  <label class="row"><input type="checkbox" name="official" {{ 'checked' if current and current.official else '' }}> I am the official photographer (confirmed)</label>
+  <label class="row check"><input type="checkbox" name="attending" {{ 'checked' if current and current.attending else '' }}> I will be there</label>
+  <label class="row check"><input type="checkbox" name="official" {{ 'checked' if current and current.official else '' }}> I am the official photographer (confirmed)</label>
   <label>Notes</label><input type="text" name="notes" value="{{ current.notes if current and current.notes else '' }}">
   <div class="row" style="margin-top:12px"><button class="primary" type="submit">Save</button></div>
 </form>
