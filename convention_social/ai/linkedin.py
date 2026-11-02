@@ -57,8 +57,10 @@ REFLECTION = re.compile(r"\b(?:still gets? (?:me|us)|never gets old|half the sto
                         r"|years of (?:this|doing)|more than \w+ years)\b", re.IGNORECASE)
 TAGLINE = re.compile(r"(?:^|[.!?]\s+)(?:love (?:it|when|that|this)|that'?s how it should|that'?s (?:the job|the work|what we do)|what a (?:day|room|moment|night)"
                      r"|still love it|good stuff|never gets old)[^.!?]*[.!?]*\s*$", re.IGNORECASE)
+# the light in any of its words is the shot explained: voice5-2 passed with "the sun sitting right on the brim" (2026-11-01)
 TECHNIQUE = re.compile(
-    r"\b(?:light(?:ing|s)?|lit|backlit|downlight|angles?|lens(?:es)?|shutter|bursts?|exposure|iso|aperture|f/\d|focal|\d+ ?mm|tripod"
+    r"\b(?:light(?:ing|s)?|lit|backlit|downlight|rim light|sun(?:light|set|rise)?|shadows?|glow(?:ing)?|silhouettes?|silhouetted"
+    r"|golden hour|flares?|haze|angles?|lens(?:es)?|shutter|bursts?|exposure|iso|aperture|f/\d|focal|\d+ ?mm|tripod"
     r"|flash|bokeh|depth of field|composition|composed|cropp?(?:ed|ing)?|framed|framing|in the (?:same )?frame|shot (?:from|low|wide|at)"
     r"|wide open|stopped down|separation|positioned|from the (?:house|floor|back|side|wings))\b", re.IGNORECASE)
 SHE = re.compile(r"\b(?:she|her|hers|herself)\b", re.IGNORECASE)

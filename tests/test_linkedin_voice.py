@@ -43,6 +43,9 @@ REJECTED = (
     "they are being seen.",
     "Love when that happens!",
     "The crowd is half the story at any conference.",
+    # voice5-2 passed the first gate with the light described, the exact thing he never does ("I don't explain shots")
+    "Opening ceremony outside, crowd pushing in close, the sun sitting right on the brim. We got the shot, and the client had it out for promo "
+    "before the ceremony was over.",
     "You can't plan that kind of thing, you just have to be ready for it.",
 )
 
@@ -95,6 +98,10 @@ class Golden(IsolatedCase):
         self.assertIn("he says we", why("Room goes quiet, we got the shot, and my favorite part is the hallway."))
         self.assertIn(f"under {linkedin.MAX_WORDS}", why("Room goes quiet, " * 14 + "we got the shot."))
         self.assertIn("explains the shot", why("Room goes quiet, we got the shot from the back wall with the lights down."))
+        for text in ("Crowd pushing in close, the sun sitting right on the brim, we got the shot.", "Golden hour on the terrace, we got it.",
+                     "Long shadows across the stage, we got the shot.", "Her silhouette against the screen, we got it.",
+                     "A little haze in the room and the glow of the screen, we got the shot."):
+            self.assertIn("explains the shot", why(text), text)
         self.assertEqual(why("Doors open, the room fills, the speaker steps up, we got it, and the attendees have theirs before they hit the hallway.", "attendees"), "")
 
     def test_finish_is_his_words_then_the_address_then_two_hashtags(self):
@@ -224,6 +231,14 @@ class PronounGate(AgentCase):
         self.assertEqual(caption, linkedin.FALLBACK["moment"] + TAIL)
         self.assertEqual(judge.calls, 0, "no look under the cap")
         self.assertIn("could not run", " | ".join(record["tries"][0]["missed"]))
+
+    def test_a_line_that_describes_the_light_falls_back(self):
+        line = ("Opening ceremony outside, crowd pushing in close, the sun sitting right on the brim. We got the shot, and the client had it "
+                "out for promo before the ceremony was over.")
+        caption, record, by, writer = self.write(line, judge := Judge("unclear"))
+        self.assertEqual(caption, linkedin.FALLBACK["moment"] + TAIL)
+        self.assertIn("explains the shot ('sun')", " | ".join(record["tries"][0]["missed"]))
+        self.assertEqual((by, writer.calls, judge.calls), ("template", 2, 0), "no pronoun, so no look; two misses, the fallback")
 
     def test_a_caption_with_no_pronoun_needs_no_look(self):
         line = "Doors open, the room fills up, the speaker steps up, we got the shot."
