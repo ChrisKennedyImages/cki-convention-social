@@ -20,6 +20,7 @@ from convention_social.core import config, db, runner
 from convention_social.library import classify
 from convention_social.render import bold, design_samples, meta, motion, palette as pal
 from convention_social.render.posts import CopyRefused
+from tests._fakes import camera_time
 from tests._base import IsolatedCase
 from tests._photos import jpeg_bytes
 
@@ -70,7 +71,7 @@ class Drafting(IsolatedCase):
     def add(self, did, folder="fe", subject="event", q=3):
         now = db.utcnow()
         pid = db.insert(self.conn, "photos", drive_id=did, name=f"{did}.jpg", folder_id=folder, width=3000, height=2000,
-                        taken_at="2025:02:14 10:00:00", first_seen_at=now, last_seen_at=now)
+                        taken_at=camera_time(), first_seen_at=now, last_seen_at=now)
         db.insert(self.conn, "classifications", photo_id=pid, method="ollama", subject=subject, convention_name=None,
                   is_convention=int(subject == "event"), quality=q, possible_minor=0, personal_details="[]", space="exterior",
                   residential=0, empty_room=0, sharp=1, light=4, moment=4, shot_type="portrait" if subject == "event" else "building_exterior",

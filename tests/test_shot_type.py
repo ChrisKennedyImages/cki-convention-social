@@ -18,7 +18,7 @@ from convention_social.dashboard import app as dash
 from convention_social.dashboard.app import COOKIE, create_app, make_token
 from convention_social.library import classify
 from tests._base import IsolatedCase
-from tests._fakes import add_photo, add_post
+from tests._fakes import camera_time, add_photo, add_post
 from tests._photos import jpeg_bytes
 from tests.test_content import ArtClientAny, say
 
@@ -41,7 +41,7 @@ def stage_photo_called_a_portrait(conn) -> int:
     now = db.utcnow()
     db.insert(conn, "drive_folders", drive_id="fe", name="Conference", clearance="cleared", first_seen_at=now, last_seen_at=now)
     pid = db.insert(conn, "photos", drive_id="e1", name="e1.jpg", folder_id="fe", width=3000, height=2000,
-                    taken_at="2025:02:14 10:00:00", first_seen_at=now, last_seen_at=now)
+                    taken_at=camera_time(), first_seen_at=now, last_seen_at=now)
     db.insert(conn, "classifications", photo_id=pid, method="ollama", subject="event", convention_name="Liberty Summit",
               event_kind="business", is_convention=1, quality=5, possible_minor=0, personal_details="[]", space="exterior",
               residential=0, empty_room=0, sharp=1, light=4, moment=4, shot_type="portrait", classified_at=now)

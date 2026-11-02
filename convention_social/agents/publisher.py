@@ -308,7 +308,8 @@ def repeat_of(conn, row, ids: list[int], days: int, *, include_dry: bool = False
     cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).replace(microsecond=0).isoformat()
     statuses = ("scheduled", "published") + (("would_publish",) if include_dry else ())
     marks = ",".join("?" for _ in statuses)
-    wanted = set(ids)
+    from ..library import moments
+    wanted = moments.siblings(conn, ids)        # a frame of the same moment counts as the photo itself (2026-11-02)
     meta = _json(row["rule_report"], {}) if "rule_report" in row.keys() else {}
     story_of = meta.get("feed_of") if isinstance(meta, dict) else None     # a feed post's own Story is not a repeat (2026-10-15)
     from . import content
@@ -357,7 +358,7 @@ def door(ctx: runner.Context, row) -> Optional[tuple[str, str]]:
     going = [n for n in targets_of(row) if n in payloads.posting_networks()] or targets_of(row)
     held = {net: hit for net in going if (hit := held_by(ctx, row, ids, net))}
     if held and len(held) == len(going):
-        return "back", held_words(ctx, next(iter(held.values())))
+        return "back", held_words(ctx, next(iter(held.values())), ids)
     return None
 
 
@@ -375,13 +376,15 @@ def held_by(ctx: runner.Context, row, ids: Optional[list[int]] = None, network: 
     return {"photo": pid, "post": qid, "went_out": went}
 
 
-def held_words(ctx: runner.Context, held: dict) -> str:
+def held_words(ctx: runner.Context, held: dict, ids: Optional[list[int]] = None) -> str:
     """What the door says (Chris, 2026-10-16: "Why why why is it giving me this error when nothing was posted with this
     image!?"): "already went out ... on <date>" only when the other post did; else where the photo is, when that post goes
     out, and the way out."""
     from zoneinfo import ZoneInfo
     tz = ZoneInfo(ctx.cfg.timezone)
     pid, qid = held["photo"], held["post"]
+    # the hold may be a sibling frame of the post's photo (a moment is one photo, 2026-11-02): said as such
+    frame = f"Photo {pid}" if ids is None or pid in ids else f"Photo {pid}, a frame of the same moment as one on this post,"
     other = db.one(ctx.conn, "SELECT * FROM content_queue WHERE id=?", (qid,))
     if held["went_out"]:
         sent = db.one(ctx.conn, "SELECT MIN(sent_at) AS s FROM post_history WHERE queue_id=?", (qid,))
@@ -391,7 +394,7 @@ def held_words(ctx: runner.Context, held: dict) -> str:
             on = f" on {local:%a} {local:%b} {local.day}"
         except ValueError:
             on = ""
-        return (f"Photo {pid} already went out as post #{qid}{on}. "
+        return (f"{frame} already went out as post #{qid}{on}. "
                 f"A photo goes out once a network inside {config.repeat_window(ctx.cfg)} days.")
     due = due_at(other) if other is not None else None
     if due is None and other is not None and other["scheduled_for"]:
@@ -404,7 +407,7 @@ def held_words(ctx: runner.Context, held: dict) -> str:
         set_for = f", set to go out {local:%a} {local:%b} {local.day} at {pacing._clock(local.time())}"
     else:
         set_for = ", which is set to go out"
-    return f"Photo {pid} is already in post #{qid}{set_for}. Pull post #{qid} back to use it here, or Skip this one."
+    return f"{frame} is already in post #{qid}{set_for}. Pull post #{qid} back to use it here, or Skip this one."
 
 
 def check_in(ctx: runner.Context, row) -> tuple[Optional[tuple[str, str]], object]:
@@ -576,7 +579,7 @@ def usable_networks(ctx: runner.Context, row, judge_client=None) -> tuple[dict[s
             continue
         hit = held_by(ctx, row, None, net)
         if hit:                                 # the photo is on another post for this network inside the window (per network, 2026-11-02)
-            held[net] = held_words(ctx, hit)
+            held[net] = held_words(ctx, hit, photo_ids_of(row))
             continue
         if net == "linkedin":
             why = linkedin_hold(ctx, row, judge_client)

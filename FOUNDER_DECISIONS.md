@@ -2466,3 +2466,35 @@ picker at the top to jump too."
   - Open: which frames make one card. Time alone puts different people on one card (one 10-minute card held 13 different
     scenes of a gala; at 30 seconds, a photo line held a different family in every frame), so with "block the rest" the
     grouping waits for his choice on the renders.
+
+## 2026-11-02: the frames of one burst are one picture, and a post draws across shoots
+
+Chris, furious: "You keep using the same fucking photos for reels! You MUST figure this out too. I'm tired of asking the
+same fucking question!"
+
+The audit of the live data (every post that went out, is scheduled or approved, ids 2 to 61): no photo id went out
+twice, but 97 times a frame went out within ten minutes of a frame from the same Drive folder already used in another
+post (9508, 9509, 9510, 9511 and 9512, folder 17Zw3zkK, 2021-07-11 10:21:19 to 10:22:29, went out on posts 45, 39, 37,
+35 and 40 in ten days). Of 1,945 event candidates, 1,501 come from one folder, which supplied photos to 20 of the 32
+posts; two others supplied 15 and 14.
+
+Later the same day, on whether a photo is ever used again: "I wouldn't say never. If we go through ever photo over
+months of posting then we will maybe reuse photos in different formats and mixed with other different images." So
+nothing here holds a photo forever: a moment is held off a network for the repeat window only, and after it a photo
+may come back in another design, mixed with other photos.
+
+- **The moment rule.** Frames in the same Drive folder with `taken_at` within `MOMENT_MINUTES` (10; the .env can change
+  it) are one moment. For the repeat window (`PHOTO_REPEAT_DAYS`, per network; never longer) a moment counts as one photo:
+  once any frame of it airs on a network, its siblings stay off that network for the window, on every road (the candidate list,
+  the designed drafts, the Send page and Post this, the draft maker's own check, the publisher's door). A single post
+  never holds two frames of one moment (the picker passes the second frame over; the draft maker leaves one out by any
+  road and says so). A reel's wall of fillers carries no frame of the post's own moments and no two of one moment. A
+  photo with no `taken_at`, or no folder, is its own moment (`library/moments`).
+- **Shoot rotation.** Candidates come in order of the shoot's (Drive folder's) last use on a post for the networks that
+  are on, the least recently used shoot first, then the photo's own last use on any surface, then quality
+  (`agents/content.in_turn`, `shoot_uses`). One post takes at most `FOLDER_CAP` (2; the .env can change it) photos from
+  one shoot, unless fewer shoots are free than the post needs; then they are spread as evenly as they can be and the run
+  line says so ("2 shoots free for 6 photos, so up to 3 from one"). A photo with no folder counts under its event.
+- **Read into the rules, for him to correct:** the shoot's last use counts posts only (what he sees on the networks),
+  while the photo's own order still counts every surface (site, samples, grids), as since 2026-10-14; the wall of fillers
+  keeps its own spread (one per room per shoot) and is not under the cap.
