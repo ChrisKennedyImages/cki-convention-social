@@ -76,6 +76,16 @@ class TheMoment(Case):
         self.assertEqual(moments.siblings(self.conn, [untimed]), {untimed})
         self.assertEqual(moments.siblings(self.conn, [self.pid]), {self.pid})
 
+    def test_each_photo_sent_from_the_phone_is_its_own_moment(self):
+        """Every phone send is filed under one folder id: two sends a minute apart are two pictures he chose, never one
+        moment (CI, 2026-11-02: a second share-sheet send was refused on every network)."""
+        first = self.photo(moments.PHONE_FOLDER, "2025:02:14 10:00:00")
+        second = self.photo(moments.PHONE_FOLDER, "2025:02:14 10:01:00")
+        self.assertEqual(moments.siblings(self.conn, [first]), {first})
+        self.assertFalse(moments.same_moment(db.one(self.conn, "SELECT * FROM photos WHERE id=?", (first,)),
+                                             db.one(self.conn, "SELECT * FROM photos WHERE id=?", (second,))))
+        self.assertEqual(moments.siblings(self.conn, [self.pid]), {self.pid}, "a Drive shoot keeps its moments")
+
     def test_one_post_never_holds_two_frames_of_one_moment(self):
         sibling = self.photo("fe", "2025:02:14 10:03:00")
         apart = self.photo("fe", "2025:02:14 10:40:00")

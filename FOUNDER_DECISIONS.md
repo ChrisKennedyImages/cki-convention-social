@@ -2489,7 +2489,9 @@ may come back in another design, mixed with other photos.
   the designed drafts, the Send page and Post this, the draft maker's own check, the publisher's door). A single post
   never holds two frames of one moment (the picker passes the second frame over; the draft maker leaves one out by any
   road and says so). A reel's wall of fillers carries no frame of the post's own moments and no two of one moment. A
-  photo with no `taken_at`, or no folder, is its own moment (`library/moments`).
+  photo with no `taken_at`, or no folder, is its own moment (`library/moments`), and so is every photo he sends from the
+  phone: they all sit under one folder id that is no shoot, and the first build held a second share-sheet send made a
+  minute after the first off every network (caught by CI before merge).
 - **Shoot rotation.** Candidates come in order of the shoot's (Drive folder's) last use on a post for the networks that
   are on, the least recently used shoot first, then the photo's own last use on any surface, then quality
   (`agents/content.in_turn`, `shoot_uses`). One post takes at most `FOLDER_CAP` (2; the .env can change it) photos from

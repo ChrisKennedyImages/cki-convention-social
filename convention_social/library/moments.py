@@ -8,7 +8,9 @@ five posts in ten days), and one folder supplied photos to 20 of 32 posts.
 - A **moment** is the frames of one Drive folder taken within MOMENT_MINUTES of each other (ten unless the .env says
   otherwise). For the repeat window a moment counts as one photo: once any frame of it airs on a network, its siblings
   stay off that network for the window (agents/content.recent_use, photo_holder; agents/publisher.repeat_of). A single
-  post never holds two frames of one moment. A photo with no taken_at, or no folder, is its own moment.
+  post never holds two frames of one moment. A photo with no taken_at, or no folder, is its own moment, and so is every
+  photo sent from the phone: they are all filed under one folder id (PHONE_FOLDER) that is no shoot, and a second send
+  minutes after the first is another picture he chose.
 - A **shoot** is a Drive folder. A post takes at most FOLDER_CAP photos from one shoot (two unless the .env says
   otherwise), unless fewer shoots are free than the post needs; then they are spread as evenly as they can be and the
   run line says so (agents/content.Picker). Candidates come in order of the shoot's last use on the networks that are
@@ -25,6 +27,7 @@ from ..core import config, db
 
 DEFAULT_MINUTES = 10
 DEFAULT_FOLDER_CAP = 2
+PHONE_FOLDER = "phone"                   # agents/phone files every photo sent from the phone here
 
 
 def minutes() -> int:
@@ -55,7 +58,9 @@ def taken(value) -> Optional[datetime]:
 
 
 def shoot_of(row) -> str:
-    return str(row["folder_id"] or "") if "folder_id" in row.keys() else ""
+    """The Drive folder of a photo row, or "" when it has none (a photo sent from the phone has none)."""
+    folder = str(row["folder_id"] or "") if "folder_id" in row.keys() else ""
+    return "" if folder == PHONE_FOLDER else folder
 
 
 def same_moment(a, b) -> bool:
@@ -69,7 +74,7 @@ def same_moment(a, b) -> bool:
 
 def siblings(conn: sqlite3.Connection, photo_ids: Iterable[int]) -> set[int]:
     """These photos and every frame of their moments: the same Drive folder, taken within MOMENT_MINUTES of one of them.
-    A photo with no taken_at or no folder brings only itself."""
+    A photo with no taken_at or no Drive folder brings only itself."""
     ids = {int(p) for p in photo_ids}
     if not ids:
         return set()
@@ -79,8 +84,8 @@ def siblings(conn: sqlite3.Connection, photo_ids: Iterable[int]) -> set[int]:
     by_folder: dict[str, list[datetime]] = {}
     for r in seeds:
         t = taken(r["taken_at"])
-        if r["folder_id"] and t is not None:
-            by_folder.setdefault(r["folder_id"], []).append(t)
+        if shoot_of(r) and t is not None:
+            by_folder.setdefault(shoot_of(r), []).append(t)
     if not by_folder:
         return out
     span = minutes() * 60

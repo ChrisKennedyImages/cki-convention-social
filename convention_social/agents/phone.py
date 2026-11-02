@@ -51,9 +51,9 @@ from .. import storage
 from ..ai import names
 from ..buffer import payloads
 from ..core import approve_token, config, db, notify, runner, settings
-from ..library import classify, eligibility
+from ..library import classify, eligibility, moments
 
-FOLDER_ID = "phone"
+FOLDER_ID = moments.PHONE_FOLDER              # one folder for every photo sent from the phone; no shoot
 FOLDER_NAME = "From the phone"
 PREFIX = "phone-"
 MIN_WIDTH = 1200                 # the shorter side may be less; a post needs one side this long
