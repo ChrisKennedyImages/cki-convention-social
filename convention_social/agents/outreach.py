@@ -26,14 +26,20 @@
    only 7 days or more after the first). A first note whose event is now
    under three months away is not sent, and never goes. Dry run writes the
    complete email to DATA_ROOT/outbox-dry (status would_send) and never sends.
+   Paced (Chris, 2026-11-02): one note at a time, 20 to 40 minutes apart,
+   9:00 to 4:30 on weekdays. This run sends the first that is due; the inbox
+   agent, every 10 minutes, sends each next one when its turn comes
+   (send_paced).
 """
 from __future__ import annotations
 
+import logging
+import random
 from datetime import date, datetime, time, timedelta, timezone
 from typing import Optional
 from zoneinfo import ZoneInfo
 
-from ..core import config, db, mail, notify, runner
+from ..core import config, db, mail, notify, runner, settings
 from ..outreach import compliance, dates, draft, emails, keys
 from ..outreach.site import UnsubscribeAPI
 from . import scout
@@ -77,6 +83,37 @@ def sending_day(cfg: config.Config, now: datetime | None = None) -> bool:
 
 
 WEEKEND_NOTE = "Held for Monday: organizer notes go out Monday to Friday only."
+
+# Chris, 2026-11-02: "when sending outreach, make sure they are paced sends so Google doesn't think I'm email blasting
+# people." Before this, the 09:00 run sent every approved note in the same second (two on 2 November, 2 s apart).
+SEND_HOURS = (time(9, 0), time(16, 30))       # local to TIMEZONE, weekdays only (sending_day)
+GAP_MINUTES = (20, 40)                         # between two notes; a different wait each time
+PACED_NOTE = "Waiting its turn: organizer notes go out one at a time, 20 to 40 minutes apart, 9:00 to 4:30 on weekdays."
+AFTER_HOURS_NOTE = "Held until 9:00: organizer notes go out between 9:00 and 4:30 on weekdays."
+
+
+def sending_hours(cfg: config.Config, now: datetime | None = None) -> bool:
+    """09:00 to 16:30 in the founder's zone."""
+    local = (now or now_utc()).astimezone(_tz(cfg)).time()
+    return SEND_HOURS[0] <= local < SEND_HOURS[1]
+
+
+def gap_after(outreach_id: int) -> timedelta:
+    """The wait after a note goes out before the next may: 20 to 40 minutes, a different length each time, fixed for a
+    given note (seeded by its id) so a rerun never shortens it."""
+    return timedelta(minutes=random.Random(outreach_id).uniform(*GAP_MINUTES))
+
+
+def next_send_at(conn) -> Optional[datetime]:
+    """When the next note may go: the last one out plus its gap; None when nothing has gone out yet."""
+    row = db.one(conn, "SELECT id, last_attempt_at FROM outreach WHERE status IN ('sent','would_send') "
+                       "AND last_attempt_at IS NOT NULL ORDER BY last_attempt_at DESC, id DESC LIMIT 1")
+    if not row:
+        return None
+    last = datetime.fromisoformat(row["last_attempt_at"].replace("Z", "+00:00"))
+    if last.tzinfo is None:
+        last = last.replace(tzinfo=timezone.utc)
+    return last + gap_after(row["id"])
 
 
 def start_of_today(cfg: config.Config, now: datetime | None = None) -> str:
@@ -289,14 +326,34 @@ def draft_new(ctx: runner.Context) -> dict:
 # ---------------------------------------------------------------------- 3. sends
 def send_approved(ctx: runner.Context, *, opt_outs_synced: bool) -> dict:
     stats = {"sent": 0, "would_send": 0, "failed": 0, "held": 0, "redrafted": 0, "opted_out": 0, "never": 0, "too_soon": 0,
-             "over_cap": 0, "weekend": 0}
+             "over_cap": 0, "weekend": 0, "after_hours": 0, "paced": 0, "busy": 0}
     if not sending_day(ctx.cfg):
         for row in db.rows(ctx.conn, "SELECT id FROM outreach WHERE status='approved' ORDER BY id"):
             ctx.conn.execute("UPDATE outreach SET notes=?, updated_at=? WHERE id=?", (WEEKEND_NOTE, db.utcnow(), row["id"]))
             stats["weekend"] += 1
         return stats
+    clock = now_utc()
+    if not sending_hours(ctx.cfg, clock):
+        for row in db.rows(ctx.conn, "SELECT id FROM outreach WHERE status='approved' ORDER BY id"):
+            ctx.conn.execute("UPDATE outreach SET notes=?, updated_at=? WHERE id=?", (AFTER_HOURS_NOTE, db.utcnow(), row["id"]))
+            stats["after_hours"] += 1
+        return stats
+    # one sender at a time: the 09:00 outreach run and the inbox agent's turn can meet at the same minute
+    lock = runner.Lock("outreach_send")
+    if not lock.acquire():
+        stats["busy"] += 1
+        return stats
+    try:
+        return _send_in_turn(ctx, stats, clock, opt_outs_synced=opt_outs_synced)
+    finally:
+        lock.release()
+
+
+def _send_in_turn(ctx: runner.Context, stats: dict, clock: datetime, *, opt_outs_synced: bool) -> dict:
+    due = next_send_at(ctx.conn)
+    turn = due is None or due <= clock
     used = db.one(ctx.conn, "SELECT COUNT(*) n FROM outreach WHERE status IN ('sent','would_send') AND last_attempt_at >= ?",
-                  (start_of_today(ctx.cfg),))["n"]
+                  (start_of_today(ctx.cfg, clock),))["n"]
     room = max(0, daily_sends() - used)
     earliest = earliest_start(ctx.cfg)
     for row in db.rows(ctx.conn, "SELECT * FROM outreach WHERE status='approved' ORDER BY approved_at, id"):
@@ -336,26 +393,56 @@ def send_approved(ctx: runner.Context, *, opt_outs_synced: bool) -> dict:
         if room <= 0:
             stats["over_cap"] += 1
             continue
+        if not turn:                               # paced: one note, then the next only after its gap
+            ctx.conn.execute("UPDATE outreach SET notes=?, updated_at=? WHERE id=?", (PACED_NOTE, now, row["id"]))
+            stats["paced"] += 1
+            continue
         msg = compliance.build(row, ctx.cfg)
         res = mail.send(msg.subject, msg.html, to=row["email"], plain=msg.plain, reply_to=ctx.cfg.brand_from_email,
                         headers=msg.headers, dry_run=ctx.dry_run)
-        now = db.utcnow()
+        now = clock.astimezone(timezone.utc).replace(microsecond=0).isoformat()   # the agent's clock: the gap counts from it
         if res.sent:
             ctx.conn.execute("UPDATE outreach SET status='sent', sent_at=?, last_attempt_at=?, message_id=?, notes=NULL, updated_at=? WHERE id=?",
                              (now, now, res.message_id, now, row["id"]))
             stats["sent"] += 1
             room -= 1
+            turn = False
         elif res.dry_run:
             ctx.conn.execute("UPDATE outreach SET status='would_send', last_attempt_at=?, notes=?, updated_at=? WHERE id=?",
                              (now, f"dry run: written to {res.path.name if res.path else 'outbox'}", now, row["id"]))
             stats["would_send"] += 1
             room -= 1
+            turn = False
         else:
             ctx.conn.execute("UPDATE outreach SET status='failed', last_attempt_at=?, notes=?, updated_at=? WHERE id=?",
                              (now, res.error, now, row["id"]))
             runner.record_error(ctx.conn, ctx.agent, "outreach_send", f"outreach {row['id']}: {res.error}")
             stats["failed"] += 1
     return stats
+
+
+def send_paced(conn, cfg: config.Config, api: UnsubscribeAPI | None = None) -> str:
+    """The inbox agent's turn, every 10 minutes: the next approved organizer note, once its gap has passed, inside the
+    sending hours on a weekday. Under the outreach agent's own dry-run setting, never the inbox's; the opt-outs are
+    pulled first, so a live send without them holds (fail closed). One line for the inbox's run summary."""
+    if not db.one(conn, "SELECT 1 FROM outreach WHERE status='approved' LIMIT 1"):
+        return "organizer notes: none approved"
+    clock = now_utc()
+    due = next_send_at(conn)
+    if not sending_day(cfg, clock) or not sending_hours(cfg, clock) or (due is not None and due > clock):
+        return "organizer notes: waiting their turn"
+    ctx = runner.Context("outreach", conn, logging.getLogger("outreach"), cfg, settings.dry_run(conn, "outreach"), 0)
+    api = api or UnsubscribeAPI.from_config()
+    synced = False
+    if api is not None:
+        try:
+            sync_opt_outs(ctx, api)
+            synced = True
+        except Exception as e:  # noqa: BLE001  the site down: a live send holds, said once
+            runner.record_error_once(conn, "outreach", "opt_out_pull", f"{type(e).__name__}: {e}")
+    s = send_approved(ctx, opt_outs_synced=synced)
+    return (f"organizer notes: sent={s['sent']} would_send={s['would_send']} held={s['held']} waiting their turn={s['paced']}"
+            f"{' failed=' + str(s['failed']) if s['failed'] else ''}")
 
 
 def run(ctx: runner.Context, api: UnsubscribeAPI | None = None, client=None) -> str:
@@ -394,7 +481,7 @@ def run(ctx: runner.Context, api: UnsubscribeAPI | None = None, client=None) -> 
             f"under three months={d['too_soon']}); "
             f"sent={s['sent']} would_send={s['would_send']} failed={s['failed']} held={s['held']} back to draft={s['redrafted']} "
             f"opted out={s['opted_out']} never={s['never']} under three months={s['too_soon']} over the daily cap={s['over_cap']} "
-            f"held for Monday={s['weekend']}")
+            f"held for Monday={s['weekend']} waiting their turn={s['paced']} held until 9:00={s['after_hours']}")
 
 
 if __name__ == "__main__":

@@ -131,6 +131,10 @@ def run(ctx: runner.Context, api: SiteAPI | None = None, client=None) -> str:
     shared = sends_waiting(api) if site_ok else ""
     drafted = draft_new(ctx, client=client)
     sent = send_approved(ctx)
+    # 2026-11-02: approved organizer notes go out paced, one every 20 to 40 minutes on weekdays; this agent runs every 10
+    # minutes, so it gives each next note its turn (agents/outreach.send_paced, under outreach's own dry-run setting)
+    from . import outreach
+    notes = outreach.send_paced(ctx.conn, ctx.cfg)
     if site_ok:
         try:
             cal = sync_availability(ctx, api)
@@ -139,7 +143,8 @@ def run(ctx: runner.Context, api: SiteAPI | None = None, client=None) -> str:
                                      f"The booked dates could not be sent to the site: {type(e).__name__}: {e}")
             cal = f"the calendar could not be sent to the site ({type(e).__name__})"
     return (f"{'DRY RUN ' if ctx.dry_run else ''}requests new={new} acked={acked}; drafted={drafted}; "
-            f"replies sent={sent['sent']} would_send={sent['would_send']} failed={sent['failed']} held={sent['held']}; {cal}{shared}")
+            f"replies sent={sent['sent']} would_send={sent['would_send']} failed={sent['failed']} held={sent['held']}; {cal}{shared}; "
+            f"{notes}")
 
 
 def sends_waiting(api: SiteAPI) -> str:

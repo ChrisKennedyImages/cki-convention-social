@@ -480,15 +480,82 @@ class Sending(OutreachCase):
         self.assertEqual(len(self.outbox()), 1)
 
     def test_daily_send_cap(self):
+        """At most OUTREACH_DAILY_SENDS a day, and still one at a time (paced, 2026-11-02): each call sends one, then the
+        next waits for its turn."""
         for i in range(12):
             self.row(email=f"p{i}@con{i}.example", name=f"Con {i}")
-        stats = outreach.send_approved(self.ctx(), opt_outs_synced=True)
-        self.assertEqual((stats["would_send"], stats["over_cap"]), (10, 2))
+        clock = MONDAY.replace(hour=14, minute=0)            # 9:00 in Washington (EST, UTC-5, after 1 November)
+        for _ in range(10):
+            with mock.patch.object(outreach, "now_utc", lambda c=clock: c):
+                self.assertEqual(outreach.send_approved(self.ctx(), opt_outs_synced=True)["would_send"], 1)
+            clock = outreach.next_send_at(self.conn) + timedelta(minutes=1)
         self.assertEqual(len(self.outbox()), 10)
-        self.assertEqual(outreach.send_approved(self.ctx(), opt_outs_synced=True)["would_send"], 0)
-        os.environ["OUTREACH_DAILY_SENDS"] = "11"
-        config.reset()
+        self.assertLess(clock, MONDAY.replace(hour=21, minute=30), "ten notes fit inside 9:00 to 4:30")
+        with mock.patch.object(outreach, "now_utc", lambda: clock):
+            stats = outreach.send_approved(self.ctx(), opt_outs_synced=True)
+            self.assertEqual((stats["would_send"], stats["over_cap"]), (0, 2))
+            os.environ["OUTREACH_DAILY_SENDS"] = "11"
+            config.reset()
+            self.assertEqual(outreach.send_approved(self.ctx(), opt_outs_synced=True)["would_send"], 1)
+
+    def test_paced_one_at_a_time_20_to_40_minutes_apart(self):
+        """Chris, 2026-11-02: "when sending outreach, make sure they are paced sends so Google doesn't think I'm email
+        blasting people." Two approved notes: the first goes, the second waits its turn with a note, then goes once its
+        gap has passed. The gap is 20 to 40 minutes, different from note to note, fixed for a given note."""
+        first, second = self.row(email="a@one.example", name="One Con"), self.row(email="b@two.example", name="Two Con")
+        stats = outreach.send_approved(self.ctx(), opt_outs_synced=True)
+        self.assertEqual((stats["would_send"], stats["paced"]), (1, 1))
+        self.assertEqual((self.status(first), self.status(second)), ("would_send", "approved"))
+        self.assertEqual(db.one(self.conn, "SELECT notes FROM outreach WHERE id=?", (second,))["notes"], outreach.PACED_NOTE)
+        due = outreach.next_send_at(self.conn)
+        self.assertEqual(due, MONDAY + outreach.gap_after(first))
+        with mock.patch.object(outreach, "now_utc", lambda: due - timedelta(minutes=1)):
+            self.assertEqual(outreach.send_approved(self.ctx(), opt_outs_synced=True)["would_send"], 0)
+        with mock.patch.object(outreach, "now_utc", lambda: due):
+            self.assertEqual(outreach.send_approved(self.ctx(), opt_outs_synced=True)["would_send"], 1)
+        self.assertEqual(self.status(second), "would_send")
+        gaps = [outreach.gap_after(i) for i in range(1, 60)]
+        self.assertTrue(all(timedelta(minutes=20) <= g <= timedelta(minutes=40) for g in gaps))
+        self.assertGreater(len({int(g.total_seconds()) for g in gaps}), 30, "a different wait each time")
+        self.assertEqual(outreach.gap_after(7), outreach.gap_after(7), "fixed for a given note")
+
+    def test_only_inside_sending_hours(self):
+        """9:00 to 4:30 in his zone: before 9:00 or from 4:30 an approved note waits with a note, nothing leaves."""
+        oid = self.row()
+        for hour, minute in ((13, 59), (21, 30), (23, 59)):         # 8:59 am, 4:30 pm and 6:59 pm on Monday in Washington (EST)
+            with mock.patch.object(outreach, "now_utc", lambda h=hour, m=minute: MONDAY.replace(hour=h, minute=m)):
+                stats = outreach.send_approved(self.ctx(), opt_outs_synced=True)
+            self.assertEqual((stats["after_hours"], stats["would_send"]), (1, 0), (hour, minute))
+            self.assertEqual(db.one(self.conn, "SELECT notes FROM outreach WHERE id=?", (oid,))["notes"], outreach.AFTER_HOURS_NOTE)
+        self.assertEqual(self.outbox(), [])
+        with mock.patch.object(outreach, "now_utc", lambda: MONDAY.replace(hour=14, minute=0)):     # 9:00
+            self.assertEqual(outreach.send_approved(self.ctx(), opt_outs_synced=True)["would_send"], 1)
+
+    def test_one_sender_at_a_time(self):
+        """The 09:00 run and the inbox's turn can meet: while one holds the send lock the other sends nothing."""
+        self.row()
+        held = runner.Lock("outreach_send")
+        self.assertTrue(held.acquire())
+        try:
+            stats = outreach.send_approved(self.ctx(), opt_outs_synced=True)
+            self.assertEqual((stats["busy"], stats["would_send"]), (1, 0))
+        finally:
+            held.release()
         self.assertEqual(outreach.send_approved(self.ctx(), opt_outs_synced=True)["would_send"], 1)
+
+    def test_the_inbox_gives_each_next_note_its_turn(self):
+        """send_paced, called by the inbox agent every 10 minutes: under outreach's own dry-run setting, opt-outs pulled
+        first, the next note once its gap has passed."""
+        from convention_social.core import settings
+        settings.set(self.conn, "outreach.dry_run", "true")
+        first, second = self.row(email="a@one.example", name="One Con"), self.row(email="b@two.example", name="Two Con")
+        self.assertIn("would_send=1", outreach.send_paced(self.conn, config.get_config(), api=self.api()))
+        self.assertEqual(outreach.send_paced(self.conn, config.get_config(), api=self.api()), "organizer notes: waiting their turn")
+        due = outreach.next_send_at(self.conn)
+        with mock.patch.object(outreach, "now_utc", lambda: due):
+            self.assertIn("would_send=1", outreach.send_paced(self.conn, config.get_config(), api=self.api()))
+        self.assertEqual((self.status(first), self.status(second)), ("would_send", "would_send"))
+        self.assertEqual(outreach.send_paced(self.conn, config.get_config(), api=self.api()), "organizer notes: none approved")
 
     def test_live_sends_hold_when_opt_outs_cannot_be_checked(self):
         oid = self.row()
