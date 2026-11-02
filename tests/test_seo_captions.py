@@ -44,6 +44,10 @@ class Plans(IsolatedCase):
                 self.assertEqual(seo_plan.problems(caps, plan), [], plan)
                 for net, text in caps.items():
                     self.assertTrue(copy_rules.check(text, names=list(names.ALWAYS), social=True).ok, (net, text))
+                    if net == "linkedin":          # his voice, outside the search rules (2026-11-01 evening; tests/test_linkedin_voice.py)
+                        self.assertEqual(seo_plan.linkedin.problems(text), [], text)
+                        self.assertEqual(len(seo_plan.HASHTAG.findall(text)), 2)
+                        continue
                     self.assertIn(plan.primary.lower(), seo_plan.first_sentence(text).lower())
                 self.assertEqual(len(seo_plan.HASHTAG.findall(caps["instagram"])), 5)
                 self.assertEqual(len(seo_plan.HASHTAG.findall(caps["pinterest"])), 3)

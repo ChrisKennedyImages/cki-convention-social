@@ -21,7 +21,7 @@ from convention_social.buffer.client import BufferClient
 from convention_social.core import auth, config, db
 from convention_social.dashboard import app as app_module
 from convention_social.dashboard.app import COOKIE, create_app, make_token
-from convention_social.render.motion import LINKEDIN_CARD
+from convention_social.render.photo import LINKEDIN_PHOTO
 from tests._fakes import AgentCase, FakeBuffer, add_channels, add_photo, add_post, all_eligible, make_ctx, write_render
 
 NY = ZoneInfo("America/New_York")
@@ -42,7 +42,7 @@ class Switch(AgentCase):
     def post(self):
         pid = add_photo(self.conn, self.root / "photos", seed=1)
         renders = {"4:5": [write_render(self.root / "renders", "r-45.jpg")], "2:3": [write_render(self.root / "renders", "r-23.jpg")],
-                   LINKEDIN_CARD: [write_render(self.root / "renders", "r-linkedin.jpg")]}
+                   LINKEDIN_PHOTO: [write_render(self.root / "renders", "r-linkedin.jpg")]}
         return add_post(self.conn, [pid], ("instagram", "linkedin"), render_paths=renders)
 
     def row(self, qid):
@@ -72,8 +72,8 @@ class Switch(AgentCase):
         config.reset()
         add_channels(self.conn, "instagram", "linkedin")
         qid = self.post()
-        # 2026-11-01: a photo goes to LinkedIn only once judged not to show a public figure (tests/test_public_figure.py)
-        self.conn.execute("UPDATE photos SET public_figure=0")
+        # 2026-11-01: a photo goes to LinkedIn only once judged for a prominent name or logo (tests/test_linkedin_logo.py)
+        self.conn.execute("UPDATE photos SET prominent_logo=0")
         publisher.publish_ready(make_ctx(self.conn), now=FRIDAY_8AM)
         payload = json.loads(self.row(qid)["payload"])
         self.assertEqual(set(payload), {"instagram", "linkedin"})
@@ -172,60 +172,53 @@ class Pacing(AgentCase):
 
 
 class Captions(AgentCase):
-    """In his voice, built for search like the rest, and through the same gate."""
+    """In his voice (2026-11-01 evening; tests/test_linkedin_voice.py has the rest), and through the same gate."""
 
     def plan(self):
         return seo_plan.plan_for(subject="event", event_kind="business", shot_type="main_stage")
 
-    def test_the_writer_is_asked_for_a_linkedin_caption_in_the_first_person(self):
+    def test_the_writer_is_asked_for_his_voice_not_the_search_plan(self):
         self.assertIn("linkedin", claude.NETWORKS)
         self.assertIn("linkedin", claude.OUTPUT_SCHEMA["properties"]["captions"]["required"])
-        facts = claude.PostFacts(brand_name="Event Caliber", event_kind="business", shot_type="main_stage", quote_link="eventcaliber.com/book")
+        facts = claude.PostFacts(brand_name="Event Caliber", event_kind="business", shot_type="main_stage", quote_link="eventcaliber.com/book",
+                                 linkedin_style="client")
         facts.plan = self.plan()
-        self.assertIn("linkedin (two or three short paragraphs in the first person singular", claude.user_text(facts))
-        self.assertIn("first person singular", claude.SYSTEM_PROMPT)
-        self.assertIn("under 200 characters", claude.SYSTEM_PROMPT)
+        text = claude.user_text(facts)
+        self.assertIn("LinkedIn, on the photographer's own profile, in his own words.", text)
+        self.assertIn("Never say how the photo was made", text)
+        self.assertIn("He steps up to the podium.", text, "his line for this style")
+        self.assertIn("Say \"we\"", text)
+        self.assertIn("You never know when the right moment will come!", text, "his own posts")
+        self.assertIn("every caption but LinkedIn's", text, "the search phrase is not LinkedIn's rule")
+        self.assertIn("never says how the photo was made", claude.SYSTEM_PROMPT)
+        self.assertNotIn("first sentence under 200", text)
 
-    def test_the_template_meets_the_plan_and_finish_keeps_paragraphs_adds_the_link_and_three_hashtags(self):
+    def test_the_template_is_one_of_his_lines_and_the_others_are_what_they_were(self):
         plan = self.plan()
-        caps = seo_plan.template_captions(plan, "eventcaliber.com/book", "Event Caliber")
-        self.assertIn("linkedin", caps)
+        caps = seo_plan.template_captions(plan, "eventcaliber.com/book", "Event Caliber", "moment")
+        self.assertEqual(caps["linkedin"], "Some speakers just own the room!\n\neventcaliber.com\n\n#eventphotography #conferencephotography")
         self.assertEqual(seo_plan.problems(caps, plan), [])
-        self.assertEqual(len(seo_plan.HASHTAG.findall(caps["linkedin"])), 3)
-        self.assertIn("eventcaliber.com/book", caps["linkedin"])
-        done = seo_plan.finish({"linkedin": "Conference photography, from the floor. #x\n\nAn event photographer is in the room before the doors open."},
-                               plan, "eventcaliber.com/book")
-        self.assertEqual(done["linkedin"], "Conference photography, from the floor.\n\nAn event photographer is in the room before the doors open. "
-                                           "eventcaliber.com/book\n\n" + " ".join(plan.hashtags[:3]))
-        self.assertEqual(seo_plan.problems(done, plan), [])
-        self.assertNotIn("\n", seo_plan.finish({"facebook": "One.\n\nTwo."}, plan, "")["facebook"], "Facebook as it was")
-
-    def test_the_phrase_must_show_before_see_more(self):
-        plan = self.plan()
-        late = {"linkedin": "A long opening sentence " + "that says nothing in particular, " * 8 + "conference photography. Event photographer."}
-        got = " | ".join(seo_plan.problems(late, plan))
-        self.assertIn("on LinkedIn", got)
-        self.assertIn("falls below the fold (the first 200 characters)", got)
-        long = {"linkedin": "Conference photography, from the floor. Event photographer. " + "More words. " * 300}
-        self.assertIn("the LinkedIn caption is over 3000 characters", seo_plan.problems(long, plan))
+        body = "Conference photography: a speaker on the main stage. Event Caliber, event photographer. Request a quote at eventcaliber.com/book."
+        self.assertEqual(caps["facebook"], body)
+        self.assertEqual(caps["instagram"], body + "\n\n" + " ".join(plan.hashtags[:5]))
+        self.assertEqual(caps["pinterest"], body + " " + " ".join(plan.hashtags[:3]))
 
     def test_the_same_gate_as_every_caption(self):
         """His rules hold on LinkedIn too: no dash as punctuation, nothing about services or delivery, nothing promised."""
-        ok = ("Conference photography, from the floor of a packed main stage. I stood at the side for this one and waited for "
-              "the room to settle. Request a quote for your event.")
+        ok = "Some speakers just own the room!\n\neventcaliber.com\n\n#eventphotography #conferencephotography"
         self.assertTrue(copy_rules.check(ok, social=True).ok)
-        for text, rule in (("Conference photography — from the floor.", "dash"), ("Every attendee leaves with their photos.", "claims"),
+        for text, rule in (("Some speakers just own the room — every time.", "dash"), ("Every attendee leaves with their photos.", "claims"),
                            ("We offer full coverage of your event.", "offer"), ("Headshots from $150.", "price")):
             self.assertIn(rule, [b.rule for b in copy_rules.check(text, social=True).blocks], text)
 
 
 class Card(AgentCase):
-    """The hero alone on the single card at 4:5, every design; the art director does not look at it a second time."""
+    """The hero as shot, every design; the art director does not look at it a second time (the cards show the photo)."""
 
-    def test_the_art_director_skips_the_linkedin_card_and_still_passes_it_on(self):
+    def test_the_art_director_skips_the_linkedin_photo_and_still_passes_it_on(self):
         conn = self.connect()
         folder = self.root / "r"
-        paths = {"4:5": [write_render(folder, "a.jpg")], "2:3": [write_render(folder, "p.jpg")], LINKEDIN_CARD: [write_render(folder, "l.jpg")]}
+        paths = {"4:5": [write_render(folder, "a.jpg")], "2:3": [write_render(folder, "p.jpg")], LINKEDIN_PHOTO: [write_render(folder, "l.jpg")]}
         seen = []
 
         def look(conn_, files, *, brief, client, agent):
@@ -236,7 +229,7 @@ class Card(AgentCase):
             out, verdict = art_director.direct(conn, lambda focus: paths, brief=lambda p: "the single card", dry_run=False, max_files=4)
         self.assertEqual(seen, [["a.jpg", "p.jpg"]])
         self.assertEqual(verdict["verdict"], "pass")
-        self.assertEqual(out, paths, "the card still goes out with the draft")
+        self.assertEqual(out, paths, "the photo still goes out with the draft")
 
 
 class Channel(AgentCase):

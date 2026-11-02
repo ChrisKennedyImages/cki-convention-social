@@ -26,6 +26,14 @@ Blocks:
               match, selfie, "we cover", "your vendors", "every room". Chris, 2026-10-11: "keep to
               specifics and not talk about what is offered or what is a service, specifically in
               captions and social media". A post is about the photo; the rest is between him and the client.
+  brothers    social copy only: the word brother or brothers, in any form ("my brother and I", "two brothers"). Chris,
+              2026-11-01: "Never use "brothers" use "we". It's fine on the website, but I don't want it to be a part of
+              posts". The site and outreach may still say it.
+  linkedin    (callers pass `linkedin=True`, with `social`): Chris, 2026-11-01 evening, "Yes, on LinkedIn only": a LinkedIn
+              caption may hint, lightly, at how fast clients get their photos ("you've already got the promo", the same
+              day, delivered). Never the steps and never how it works (face match, selfies, badges, scanning; his
+              2026-10-12 rule), never a price, and nothing else of the offer rule moves. Every other surface keeps the
+              2026-10-11 rules as they are.
 """
 from __future__ import annotations
 
@@ -49,19 +57,24 @@ AFFILIATION = re.compile(
     re.IGNORECASE,
 )
 PROMISE = re.compile(r"\bguarantee(?:d|s)?\b|#1\b|\bnumber one\b|\bbest in\b|\baward[- ]winning\b", re.IGNORECASE)
-CLAIMS = re.compile(
-    r"\binclud(?:e|es|ed|ing|ive)\b|\bcomes?\s+with\b|\bcame\s+with\b|\bleaves?\s+with\b|\bleft\s+with\b|\bwalks?\s+away\s+with\b"
-    r"|\bpackages?\b|\bbundles?\b|\badd[- ]ons?\b|\bturnaround\b|\bunlimited\b|\b(?:same|next)[- ]day\b"
-    r"|\bwithin\s+(?!24\s+hours\b|the\s+hour\b)(?:minutes|hours|an?\s+(?:hour|day|week)|\d+)\b|\bin\s+(?:a\s+few\s+|just\s+|under\s+)?minutes\b",
-    re.IGNORECASE,
-)
-OFFER = re.compile(
-    r"\bwe\s+(?:offer|cover|deliver|provide|shoot|photograph|also|do|bring|make)\b|\boffer(?:s|ed|ing|ings)?\b"
-    r"|\bour\s+services?\b|\bservices?\b|\bcoverage\b|\bcovered\b|\bdeliver(?:y|ed|s|ing)?\b|\bprovid(?:e|es|ed|ing)\b"
-    r"|\bface\s+match\b|\bselfies?\b|\bgets?\s+their\s+(?:photos?|shots?|pictures?)\b"
-    r"|\byour\s+(?:vendors|exhibitors|guests|staff|team|attendees|speakers|sponsors)\b|\bevery\s+(?:room|guest|attendee)\b",
-    re.IGNORECASE,
-)
+_CLAIMS = (r"\binclud(?:e|es|ed|ing|ive)\b", r"\bcomes?\s+with\b", r"\bcame\s+with\b", r"\bleaves?\s+with\b", r"\bleft\s+with\b",
+           r"\bwalks?\s+away\s+with\b", r"\bpackages?\b", r"\bbundles?\b", r"\badd[- ]ons?\b", r"\bunlimited\b")
+# how fast the photos come: a claim everywhere but in a LinkedIn caption, where Chris allows a light, human hint (2026-11-01)
+_SPEED_CLAIMS = (r"\bturnaround\b", r"\b(?:same|next)[- ]day\b",
+                 r"\bwithin\s+(?!24\s+hours\b|the\s+hour\b)(?:minutes|hours|an?\s+(?:hour|day|week)|\d+)\b",
+                 r"\bin\s+(?:a\s+few\s+|just\s+|under\s+)?minutes\b")
+CLAIMS = re.compile("|".join(_CLAIMS + _SPEED_CLAIMS), re.IGNORECASE)
+CLAIMS_LINKEDIN = re.compile("|".join(_CLAIMS), re.IGNORECASE)
+_OFFER = (r"\bwe\s+(?:offer|cover|deliver|provide|shoot|photograph|also|do|bring|make)\b", r"\boffer(?:s|ed|ing|ings)?\b",
+          r"\bour\s+services?\b", r"\bservices?\b", r"\bcoverage\b", r"\bcovered\b", r"\bprovid(?:e|es|ed|ing)\b",
+          r"\bface\s+match\b", r"\bselfies?\b",
+          r"\byour\s+(?:vendors|exhibitors|guests|staff|team|attendees|speakers|sponsors)\b", r"\bevery\s+(?:room|guest|attendee)\b")
+_SPEED_OFFER = (r"\bdeliver(?:y|ed|s|ing)?\b", r"\bgets?\s+their\s+(?:photos?|shots?|pictures?)\b")
+# the steps, how it works: never in a LinkedIn caption either (his 2026-10-12 rule), though the site may say them plainly
+_STEPS = (r"\bbadges?\b", r"\bscan(?:s|ned|ning)?\b", r"\bqr\s+codes?\b")
+OFFER = re.compile("|".join(_OFFER + _SPEED_OFFER), re.IGNORECASE)
+BROTHERS = re.compile(r"\bbrothers?\b", re.IGNORECASE)        # a post says we (Chris, 2026-11-01); the website may say brothers
+OFFER_LINKEDIN = re.compile("|".join(_OFFER + _STEPS), re.IGNORECASE)
 
 
 @dataclass
@@ -82,10 +95,12 @@ class Report:
         return {"ok": self.ok, "blocks": [{"rule": b.rule, "message": b.message} for b in self.blocks]}
 
 
-def check(text: str, *, official: bool = False, allow_price: bool = False, names=None, social: bool = False) -> Report:
+def check(text: str, *, official: bool = False, allow_price: bool = False, names=None, social: bool = False,
+          linkedin: bool = False) -> Report:
     """`allow_price` only for a private quote reply Chris wrote the price into himself; never for public copy.
     `names` (ai/names.public_names) for public copy: no event, company or person is named in it.
-    `social` for captions and cards: nothing about what is offered or what a service is."""
+    `social` for captions and cards: nothing about what is offered or what a service is.
+    `linkedin` for a LinkedIn caption only: a light hint at how fast the photos come is allowed, the steps are not."""
     report = Report()
     text = text or ""
     m = None if allow_price else PRICE.search(text)
@@ -99,14 +114,17 @@ def check(text: str, *, official: bool = False, allow_price: bool = False, names
     m = PROMISE.search(text)
     if m:
         report.blocks.append(Block("promise", f"makes a claim the company cannot back ({m.group(0)!r})"))
-    m = CLAIMS.search(text)
+    m = (CLAIMS_LINKEDIN if linkedin else CLAIMS).search(text)
     if m:
         report.blocks.append(Block("claims", f"says something about the company Chris has not stated ({m.group(0)!r}); nothing includes "
                                              "anything, and nothing about how the work is done, what comes with it or when"))
-    m = OFFER.search(text) if social else None
+    m = (OFFER_LINKEDIN if linkedin else OFFER).search(text) if social else None
     if m:
         report.blocks.append(Block("offer", f"talks about what is offered ({m.group(0)!r}); a post keeps to what the photo shows, "
-                                            "never a service"))
+                                            "never a service" + (" and never the steps" if linkedin else "")))
+    m = BROTHERS.search(text) if social else None
+    if m:
+        report.blocks.append(Block("brothers", f"says {m.group(0)!r}; a post says we, never brothers (Chris, 2026-11-01)"))
     if names is not None:
         from .names import mentions
         hit = mentions(text, names)
