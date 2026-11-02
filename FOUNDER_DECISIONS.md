@@ -2433,3 +2433,36 @@ rotation picked them, with about 1,800 photos free on Instagram ready.
   Instagram is left, so this post is held off it").
 - **A LinkedIn-only post happens when Chris chooses it,** as with #61, or on the Send page and Post this, where the
   photos are his pick and go wherever they are free, with the reason on the draft page.
+## 2026-11-02: a page picker on the photo lists; the swipe review, as Chris ruled it
+
+Chris: "Send an agent to figure out how to actually go through these 240+ pages of photos for me to approve! The photos I
+don't approve never go away so the pages never shrink. Also, I'd like to be able to skip to any page I want - like a page
+picker at the top to jump too."
+
+- **Why the pages never shrink.** To review is every sorted photo with neither Use nor Don't use on it, strongest first.
+  A photo he looks at and passes over stays exactly where it was, so the first pages are always the ones he has already
+  passed; and after a Use the photos behind slide forward, so Next skips the ones that slid onto the page he left. The list
+  grew from "40+ pages" (2026-10-21) to 267 (12,815 event photos; the buildings are 1,466 more, 31 pages) because Claude
+  sorted the library from 2026-10-25 while about 410 photos were decided in all. The sort now only re-checks photos already
+  on the list (2,813 waiting, every one a re-sort), so the list is at its full size.
+- **The page picker (built).** Above the photos and again under them, on To review, Approved and Blocked: Previous,
+  Page [n] of N, Next. Picking a page opens it (the phone's own wheel); without a script, Go does.
+- **A badge that holds a sentence wraps.** The hero's note ("the site's hero; Claude looks at it ...") sat in one unbroken
+  badge and pushed the Approved page past a 393 px phone screen, against the morning's ruling that no page scrolls sideways.
+- **The swipe review, his rulings (built after he has seen it rendered):**
+  - "Maybe a swipe left or right to keep or discard of?" One photo at a time, large. Right is his Use (cleared), left is
+    Don't use; plain Use and Don't use buttons too, and the arrow keys on a computer. Each swipe is saved as it happens.
+    A photo is cleared only by his right swipe, never by default.
+  - Left: "If I swipe to not use it, it's out of the pool forevwr unless I open a new session on here and rescan, but I
+    don't think that will ever happen". Left is Don't use, clearance blocked, out of every pool on every road a photo
+    takes into a post. An Undo for the last swipe only, since a mis-swipe on a phone is easy; the Blocked list and its
+    Unblock stay the deliberate way back, and no other way back is added.
+  - A card that stands for several frames: asked "When you keep the best of a burst of near-identical shots, what happens
+    to the other frames?", he chose "Block the rest". Right keeps the frame shown and blocks every other frame on the card;
+    left blocks every frame on it; Undo puts the whole card back to undecided.
+  - "I wouldn't say never. If we go through ever photo over months of posting then we will maybe reuse photos in different
+    formats and mixed with other different images." That is about posting kept photos again once the repeat window has
+    passed; it does not change the swipe rule.
+  - Open: which frames make one card. Time alone puts different people on one card (one 10-minute card held 13 different
+    scenes of a gala; at 30 seconds, a photo line held a different family in every frame), so with "block the rest" the
+    grouping waits for his choice on the renders.

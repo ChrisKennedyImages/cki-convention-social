@@ -4,6 +4,14 @@
 {% if drive_state != 'ok' and view in ('review', 'approved') %}<div class="msg bad">The pictures cannot load: Google Drive is {{ 'not signed in yet' if drive_state == 'missing' else 'signed out (the sign-in expired)' }}. Sign in on the <a href="/drive">Drive page</a>; the photos and your choices are all still here.</div>{% endif %}
 
 {% if view in ('review', 'approved', 'blocked') %}
+<style>
+.pager{margin:0 0 12px}
+.pager .pick{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.pager label{display:inline;margin:0;font-size:15px;color:var(--ink)}
+.pager select{width:auto;min-width:72px;padding:0 8px}
+/* a badge that holds a sentence wraps like one: on a phone it pushed the Approved page 380 px past the screen */
+.badge.says{white-space:normal;overflow-wrap:anywhere}
+</style>
 <h1>{{ {'review': 'To review', 'approved': 'Approved', 'blocked': 'Blocked'}[view] }} <span class="muted">{{ total }}</span></h1>
 <div class="row" style="margin-bottom:12px">
   {% for key, label in subject_words %}<a class="btn{{ ' primary' if subject == key else '' }}" href="/library?view={{ view }}&subject={{ key }}">{{ label }} ({{ subject_counts[key] }})</a>{% endfor %}
@@ -27,7 +35,7 @@
     {% if st.engines %}Last publish: {{ st.engines }}.{% elif site.indexnow %}Bing and the other IndexNow engines are told after every publish.{% else %}The IndexNow key is made on the first publish.{% endif %}</div>
   <div class="row" style="margin-top:8px">
     {% if site.ready[0] %}<form method="post" action="/site/publish" class="inline"><button class="primary" type="submit" {{ 'disabled' if st.state == 'running' else '' }}>Publish the site</button></form>
-    {% else %}<span class="badge blocked">{{ site.ready[1] }}</span>{% endif %}
+    {% else %}<span class="badge blocked says">{{ site.ready[1] }}</span>{% endif %}
   </div>
 </div>
 <div class="card">
@@ -35,7 +43,7 @@
   <div class="muted">The website's main photo. A photo you send here is the hero, and the site publishes itself with it. It wins over a Site hero pick below while it is here. Claude looks at it during the publish, for the alt text and a note here, never to hold it back.</div>
   {% if hero_upload.present %}
   <div class="row" style="margin-top:8px"><span>{{ 'Uploaded' if hero_upload.source == 'phone' else 'With the code, the photo you sent on 2026-10-12' }}: {{ hero_upload.width }} × {{ hero_upload.height }}</span>
-    <span class="badge {{ 'ok' if not hero_upload.notes else 'draft' }}">{{ hero_upload.why }}</span>
+    <span class="badge says {{ 'ok' if not hero_upload.notes else 'draft' }}">{{ hero_upload.why }}</span>
     {% if hero_upload.source == 'phone' %}<form method="post" action="/library/hero/remove" class="inline" onsubmit="return confirm('Remove the hero you sent? The site is published again without it.')"><button class="small danger" type="submit">Remove</button></form>{% endif %}
   </div>
   {% endif %}
@@ -45,6 +53,23 @@
   </form>
 </div>
 {% endif %}
+{#- Chris, 2026-11-02: "I'd like to be able to skip to any page I want - like a page picker at the top to jump too".
+    Above the photos and again under them: Previous, every page in one list (the phone's own wheel), Next. Picking a
+    page opens it; without a script, Go does. -#}
+{% macro pager(where) %}
+<form class="row pager" method="get" action="/library" aria-label="Pages">
+  <input type="hidden" name="view" value="{{ view }}"><input type="hidden" name="subject" value="{{ subject }}">
+  {% if page > 1 %}<a class="btn small" href="/library?view={{ view }}&subject={{ subject }}&page={{ page - 1 }}">Previous</a>{% endif %}
+  <span class="pick"><label for="page-{{ where }}">Page</label>
+    <select id="page-{{ where }}" name="page" onchange="this.form.submit()">
+      {% for n in range(1, pages + 1) %}<option value="{{ n }}"{{ ' selected' if n == page else '' }}>{{ n }}</option>{% endfor %}
+    </select>
+    <span>of {{ pages }}</span>
+    <noscript><button class="small" type="submit">Go</button></noscript></span>
+  {% if page < pages %}<a class="btn small" href="/library?view={{ view }}&subject={{ subject }}&page={{ page + 1 }}">Next</a>{% endif %}
+</form>
+{% endmacro %}
+{% if pages > 1 %}{{ pager('top') }}{% endif %}
 {% if not items %}<div class="card muted">{{ ('No event photos to review right now.' if subject == 'event' else 'No building photos to review right now.') if view == 'review' else (('No event photos approved yet. Tap Use on a photo in To review, or Clear a whole folder in Folders.' if subject == 'event' else 'No building photos approved yet.') if view == 'approved' else 'Nothing blocked.') }}</div>{% endif %}
 {% if items and view != 'blocked' %}
 <form id="bulk" method="post" action="/library/photos/clearance" class="row" style="margin-bottom:10px">
@@ -60,7 +85,7 @@
     <img src="/media/thumb/{{ p.id }}" loading="lazy" alt="">
     <div class="muted" style="margin-top:6px">{{ (p.shot_type or 'not sorted yet').replace('_',' ') }}</div>
     <a class="muted" href="/library/folder/{{ p.folder_id }}">{{ p.folder_name or '' }}</a>
-    {% if view == 'approved' %}<div class="state"><span class="badge {{ 'ok' if p.why[0] else 'blocked' }}">{{ 'ready to use' if p.why[0] else p.why[1] }}</span>{% if hero_id == p.id %} <span class="badge ok">site hero</span>{% endif %}{% if p.site_pick_at %} <span class="badge ok site-gallery">site gallery</span>{% endif %}</div>
+    {% if view == 'approved' %}<div class="state"><span class="badge says {{ 'ok' if p.why[0] else 'blocked' }}">{{ 'ready to use' if p.why[0] else p.why[1] }}</span>{% if hero_id == p.id %} <span class="badge ok">site hero</span>{% endif %}{% if p.site_pick_at %} <span class="badge ok site-gallery">site gallery</span>{% endif %}</div>
     <div class="muted use-line">{{ p.use_line }}</div>{% endif %}
     <div class="row" style="margin-top:6px">
     {% if view != 'blocked' %}<label class="inline" style="margin:0"><input type="checkbox" form="bulk" name="ids" value="{{ p.id }}" style="width:auto;transform:scale(1.4)"></label>{% endif %}
@@ -90,11 +115,7 @@
   </div>
 {% endfor %}
 </div>
-{% if pages > 1 %}<div class="row" style="margin-top:14px">
-  {% if page > 1 %}<a class="btn" href="/library?view={{ view }}&subject={{ subject }}&page={{ page - 1 }}">Previous</a>{% endif %}
-  <span class="muted">Page {{ page }} of {{ pages }}</span>
-  {% if page < pages %}<a class="btn" href="/library?view={{ view }}&subject={{ subject }}&page={{ page + 1 }}">Next</a>{% endif %}
-</div>{% endif %}
+{% if pages > 1 %}<div style="margin-top:14px">{{ pager('bottom') }}</div>{% endif %}
 <script>
 // A tap answers in place (2026-10-13: one tap was one full page). Without this script, or when the request
 // fails, the form submits as before and the page reloads.
