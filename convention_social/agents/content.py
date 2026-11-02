@@ -35,7 +35,7 @@ from PIL import Image
 from ..ai import claude, copy_rules, linkedin, names, seo_plan
 from ..buffer import payloads
 from ..core import approve_token, config, db, notify, runner, settings
-from ..library import classify, eligibility, report
+from ..library import classify, eligibility, moments, report
 
 from . import art_director, learner
 from .. import music
@@ -152,7 +152,7 @@ def photo_holder(conn: sqlite3.Connection, photo_ids, days: int, network: Option
     """(photo id, post id) when one of these photos is on another post inside the window, by the same rule as
     recent_use (open, sent, turned back by the art director or set aside by the do-not-use list; a skipped one is not).
     With `network`, only a post that targets it: the window counts per network (Chris, 2026-11-02)."""
-    wanted = {int(p) for p in photo_ids}
+    wanted = moments.siblings(conn, photo_ids)          # a frame of the same moment on another post holds these too (2026-11-02)
     since = (datetime.now(timezone.utc) - timedelta(days=days)).replace(microsecond=0).isoformat()
     for r in db.rows(conn, "SELECT id, status, photo_ids, targets, rule_report FROM content_queue WHERE created_at >= ? AND "
                            "(status != 'rejected' OR rule_report LIKE '%\"verdict\": \"reject\"%' "
@@ -188,7 +188,9 @@ def held_on(conn: sqlite3.Connection, photo_ids, days: int, people, variety_days
     for net in TARGETS:
         hit = photo_holder(conn, photo_ids, days, net)
         if hit:
-            out[net] = {"photo": hit[0], "post": hit[1], "why": f"photo {hit[0]} was on post #{hit[1]} inside the last {days} days; "
+            ours = {int(p) for p in photo_ids}
+            frame = f"photo {hit[0]}" if hit[0] in ours else f"photo {hit[0]}, a frame of the same moment as one of these,"
+            out[net] = {"photo": hit[0], "post": hit[1], "why": f"{frame} was on post #{hit[1]} inside the last {days} days; "
                                                                  f"a photo goes out once a network inside that window"}
             continue
         _, _, used_people = recent_use(conn, variety_days, net)
@@ -223,7 +225,8 @@ def recent_use(conn: sqlite3.Connection, days: int, network: Optional[str] = Non
         if meta.get("event"):
             events.add(meta["event"].lower())
         people.update(x.lower() for x in meta.get("people") or [])
-    return copies(conn, photos), events, people
+    # a moment is one photo (2026-11-02): the frames of one folder within MOMENT_MINUTES of a used one are used too
+    return copies(conn, moments.siblings(conn, photos)), events, people
 
 
 def used_everywhere(conn: sqlite3.Connection, days: int, networks) -> tuple[set, set, set]:
@@ -303,16 +306,103 @@ def candidates(conn: sqlite3.Connection, subject: str) -> list[dict]:
     # what the learner found works, inside the founder's bounds
     def score(r):
         return -(r.get("quality") or 0) * learner.weight_for(conn, r.get("shot_type"), r.get("event_kind"))
-    # then the rotation (2026-10-14, "the same photos for everything"): the least recently used photo first, on any
-    # surface, so every approved photo gets its turn; the score above only breaks ties, and equal photos come by chance
-    last = report.last_uses(conn)
+    # then the rotation (2026-10-14, "the same photos for everything"; 2026-11-02, the shoot least recently used first):
+    # the Drive folder least recently on a post for the networks that are on, then the least recently used photo on any
+    # surface, so every shoot and every approved photo gets its turn; the score above only breaks ties, by chance
+    last, shoots_last = report.last_uses(conn), shoot_uses(conn, on)
+    return instagram_first(in_turn(conn, fresh, alike=score, last=last, shoots_last=shoots_last)
+                           + in_turn(conn, lately, alike=score, last=last, shoots_last=shoots_last), on)
 
-    def in_turn(group: list[dict]) -> list[dict]:
-        group.sort(key=score)
-        for r in group:
-            r["last_use"] = last.get(r["id"])
-        return report.rotate(conn, group, last=last, alike=score)
-    return instagram_first(in_turn(fresh) + in_turn(lately), on)
+
+def shoot_uses(conn: sqlite3.Connection, networks) -> dict[str, str]:
+    """{shoot (Drive folder): when a post for one of `networks` last took a photo of it}, by the posts recent_use counts
+    (open, sent, turned back by the art director or the do-not-use list; a skipped one is not), all time. A photo with no
+    folder is its event's shoot (designed.shoot_of)."""
+    from . import designed
+    wanted = set(networks)
+    by_photo: dict[int, str] = {}
+    for r in db.rows(conn, "SELECT status, photo_ids, targets, rule_report, created_at FROM content_queue WHERE "
+                           "(status != 'rejected' OR rule_report LIKE '%\"verdict\": \"reject\"%' "
+                           "OR rule_report LIKE '%\"rejected_by\"%') ORDER BY created_at"):
+        if r["status"] == "rejected" and f'"rejected_by": "{SKIPPED}"' in (r["rule_report"] or ""):
+            continue
+        if wanted and not (networks_of(r) & wanted):
+            continue
+        try:
+            ids = [int(p) for p in json.loads(r["photo_ids"] or "[]")]
+        except (TypeError, ValueError):
+            continue
+        for pid in ids:
+            by_photo[pid] = max(by_photo.get(pid) or "", r["created_at"] or "")
+    if not by_photo:
+        return {}
+    marks = ",".join("?" * len(by_photo))
+    out: dict[str, str] = {}
+    for p in db.rows(conn, f"SELECT p.id, p.folder_id, c.convention_name FROM photos p LEFT JOIN classifications c ON c.photo_id = p.id "
+                           f"WHERE p.id IN ({marks})", list(by_photo)):
+        shoot = designed.shoot_of(dict(p))
+        out[shoot] = max(out.get(shoot) or "", by_photo[p["id"]])
+    return out
+
+
+def in_turn(conn: sqlite3.Connection, rows: list[dict], *, alike: Callable, last: Optional[dict] = None,
+            shoots_last: Optional[dict] = None, rng=None) -> list[dict]:
+    """The order a picker tries photos (2026-11-02, shoot rotation): the shoot least recently on a post first (never, then
+    the oldest), then the photo least recently used on any surface (report.last_uses), then the caller's order (`alike`,
+    the key it sorts by; photos it holds equal come in a chance order, as report.rotate has done since 2026-10-23)."""
+    import random
+    from . import designed
+    last = report.last_uses(conn) if last is None else last
+    shoots_last = shoot_uses(conn, payloads.posting_networks()) if shoots_last is None else shoots_last
+    rng = rng or random.Random()
+    rows = sorted(rows, key=alike)
+    rank, prev, keyed = 0, object(), []
+    for k, r in enumerate(rows):
+        key = alike(r)
+        if k and key != prev:
+            rank += 1
+        prev = key
+        r["last_use"] = last.get(r["id"])
+        keyed.append((shoots_last.get(designed.shoot_of(r)) or "", last.get(r["id"]) or "", rank, rng.random(), k))
+    return [rows[i] for *_, i in sorted(keyed)]
+
+
+class Picker:
+    """The photos a post takes, in the pool's order, under the rules of 2026-11-02: never two frames of one moment, and
+    at most moments.cap_for(need, shoots) photos from one shoot (FOLDER_CAP while enough shoots are free; more, spread
+    evenly, when fewer shoots are free than the post needs, and `words()` says so for the run line). `candidates()`
+    yields the rows worth trying next, against what `take()` has kept so far."""
+
+    def __init__(self, pool: list[dict], design: str):
+        from . import designed
+        self.pool, self.need, self.taken = list(pool), TAKES[design], []
+        self.shoot = designed.shoot_of
+        sizes: dict[str, int] = {}
+        for r in self.pool:
+            sizes[self.shoot(r)] = sizes.get(self.shoot(r), 0) + 1
+        self.shoots = len(sizes)
+        self.cap = moments.cap_for(self.need, sizes.values())
+
+    def fits(self, row: dict) -> bool:
+        if any(r["id"] == row["id"] for r in self.taken) or any(moments.same_moment(row, r) for r in self.taken):
+            return False
+        return sum(1 for r in self.taken if self.shoot(r) == self.shoot(row)) < self.cap
+
+    def candidates(self):
+        for row in self.pool:
+            if len(self.taken) >= self.need:
+                return
+            if self.fits(row):
+                yield row
+
+    def take(self, row: dict) -> None:
+        self.taken.append(row)
+
+    def words(self) -> str:
+        """For the run line: when fewer shoots were free than the post needed, so one shoot gave more than FOLDER_CAP."""
+        if self.cap <= moments.folder_cap() or self.need <= 1:
+            return ""
+        return f"{self.shoots} shoot{'s' if self.shoots != 1 else ''} free for {self.need} photos, so up to {self.cap} from one"
 
 
 def use_why(hero: dict, ready: int) -> str:
@@ -761,7 +851,11 @@ def draft_one(ctx: runner.Context, fetch: Callable[[dict], bytes], *, now: Optio
     pool = order_pool(pool, design)
     chosen: list[tuple[dict, bytes]] = []
     check_errors: list[str] = []
-    for row in pool[:TAKES[design] + MAX_TRIES - 1]:
+    picker, tries = Picker(pool, design), 0            # one frame per moment, at most the cap per shoot (2026-11-02)
+    for row in picker.candidates():
+        if tries >= TAKES[design] + MAX_TRIES - 1:
+            break
+        tries += 1
         data = fetch(row)
         if not ctx.dry_run:
             try:
@@ -777,9 +871,8 @@ def draft_one(ctx: runner.Context, fetch: Callable[[dict], bytes], *, now: Optio
                 row["shot_type"] = verdict["shot_type"]       # what the photo shows, by the model that looked at it in full
             if verdict.get("event_kind") in classify.KINDS and verdict["event_kind"] != "unknown":
                 row["event_kind"] = verdict["event_kind"]     # and what kind of occasion, likewise
+        picker.take(row)
         chosen.append((row, data))
-        if len(chosen) >= TAKES[design]:
-            break
     if not chosen:
         if check_errors:
             return f"the final check could not run for {day} ({check_errors[-1]})"
@@ -796,6 +889,7 @@ def draft_one(ctx: runner.Context, fetch: Callable[[dict], bytes], *, now: Optio
     except PhotosTaken as e:
         # said, and the watchdog's draft window tries the day again ("could not" is a passing reason)
         return f"the photos for {day} could not be kept: {e}; the day is drafted again"
+    line += f"; {picker.words()}" if picker.words() else ""
     if art.get("verdict") == "reject":
         # the photos do not hold up: they sit out like used ones (make_draft kept the row), and this run drafts again
         if _depth + 1 >= MAX_TRIES:
@@ -828,6 +922,13 @@ def make_draft(ctx: runner.Context, day: date, chosen: list[tuple[dict, bytes]],
         if not cache.exists():
             cache.write_bytes(data)
         ctx.conn.execute("UPDATE photos SET local_path=? WHERE id=?", (str(cache), row["id"]))
+    # never two frames of one moment on one post, by any road (2026-11-02): the later frame is left out, said in the line
+    kept: list[tuple[dict, bytes]] = []
+    left_out = [r["id"] for r, d in chosen if any(moments.same_moment(r, k) for k, _ in kept) or kept.append((r, d))]
+    if left_out:
+        chosen = kept
+        if len(chosen) < NEEDS.get(design, 1):
+            design, chosen = fallback_for(day), chosen[:1]
     hero = chosen[0][0]
     # Chris, 2026-11-01 evening: LinkedIn skips a photo where an organization's name or logo is prominent. The art director
     # judges the hero once (stored on the photo; none in a dry run): judged so, the draft has no LinkedIn caption, photo or
@@ -925,6 +1026,7 @@ def make_draft(ctx: runner.Context, day: date, chosen: list[tuple[dict, bytes]],
             else f", {asked} wanted but too few photos passed" if asked != design else "")
     fell += ", LinkedIn skipped" if skipped else f", LinkedIn {linkedin.STYLE_WORDS[li_style]}" if li_style else ""
     fell += f", held off {' and '.join(payloads.name_of(n) for n in held)}" if held else ""
+    fell += f", left out photo {' and '.join(str(p) for p in left_out)} (the same moment as another on this post)" if left_out else ""
     line = (f"{'DRY RUN ' if ctx.dry_run else ''}drafted post #{qid} for {day} ({kind_used}"
             f"{', instead of ' + want if kind_used != want else ''}): {design} with {len(photo_ids)} photo(s){fell}, "
             f"photo {hero['id']} first{' (' + why + ')' if why else ''}, captions by {writer} for \"{plan.primary}\", "

@@ -67,7 +67,8 @@ def used_lately(conn: sqlite3.Connection, photo_ids: list[int]) -> Optional[str]
     used, _, _ = content.used_everywhere(conn, days, payloads.posting_networks())    # per network (Chris, 2026-11-02)
     again = [int(p) for p in photo_ids if int(p) in used]
     if again:
-        return f"photo {again[0]} is already on a post inside {days} days, and a photo goes out once inside that window"
+        return (f"photo {again[0]}, or a frame of the same moment, is already on a post inside {days} days, "
+                "and a photo goes out once a network inside that window")
     return None
 
 

@@ -14,6 +14,7 @@ from convention_social.agents import content
 from convention_social.buffer import payloads
 from convention_social.core import config, db, runner
 from convention_social.render import meta
+from tests._fakes import camera_time
 from tests._base import IsolatedCase
 from tests._photos import jpeg_bytes
 
@@ -53,7 +54,7 @@ class Content(IsolatedCase):
         for n, (did, folder, subject, event, q) in enumerate((("e1", "fe", "event", "Katsucon", 5), ("e2", "fe", "event", "Katsucon", 4),
                                                               ("e3", "fe", "event", "Otakon", 3), ("a1", "fa", "architecture", None, 5))):
             pid = db.insert(self.conn, "photos", drive_id=did, name=f"{did}.jpg", folder_id=folder, width=3000, height=2000,
-                            taken_at="2025:02:14 10:00:00", first_seen_at=now, last_seen_at=now)
+                            taken_at=camera_time(), first_seen_at=now, last_seen_at=now)
             db.insert(self.conn, "classifications", photo_id=pid, method="ollama", subject=subject, convention_name=event,
                       is_convention=int(subject == "event"), quality=q, possible_minor=0, personal_details="[]",
                       space="exterior", residential=0, empty_room=0, sharp=1, light=4, moment=4, classified_at=now)

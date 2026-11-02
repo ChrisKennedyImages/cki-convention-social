@@ -16,6 +16,7 @@ from convention_social.dashboard import app as dash
 from convention_social.library import classify, eligibility
 from convention_social.render import design_samples
 from convention_social.site import build
+from tests._fakes import camera_time
 from tests._base import IsolatedCase
 from tests._photos import jpeg_bytes
 from tests.test_content import ArtClientAny, say
@@ -44,7 +45,7 @@ def event_photo(conn, drive_id, *, kind="unknown", quality=5, sharp=1, light=4, 
     if db.one(conn, "SELECT 1 FROM drive_folders WHERE drive_id=?", (folder,)) is None:
         db.insert(conn, "drive_folders", drive_id=folder, name="Con", clearance="cleared", first_seen_at=now, last_seen_at=now)
     pid = db.insert(conn, "photos", drive_id=drive_id, name=f"{drive_id}.jpg", folder_id=folder, width=width, height=height,
-                    taken_at="2025:02:14 10:00:00", first_seen_at=now, last_seen_at=now)
+                    taken_at=camera_time(), first_seen_at=now, last_seen_at=now)
     db.insert(conn, "classifications", photo_id=pid, method="ollama", subject="event", convention_name="Liberty Summit",
               event_kind=kind, is_convention=0 if kind in classify.NOT_OFFERED_KINDS else 1, quality=quality, possible_minor=0,
               personal_details="[]", space="exterior", residential=0, empty_room=0, sharp=sharp, light=light, moment=moment,

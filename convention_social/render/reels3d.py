@@ -195,10 +195,10 @@ def fillers(conn: sqlite3.Connection, *, exclude: Sequence[int] = (), n: int = G
     "grid" surface, so the next reel's wall reaches for other photos: Chris, 2026-10-26, "it keeps posting the same
     photos again" — the strongest 28 had stood on every reel's wall."""
     from ..core import config
-    from ..library import eligibility, report
+    from ..library import eligibility, moments, report
     from . import design_samples
     cache = config.get_config().data_root / "photos"
-    seen = set(exclude)
+    seen = moments.siblings(conn, exclude)          # never a frame of the post's own moments on its wall (2026-11-02)
     usable = []
     for r in report.best(conn, 600, cap=None):
         path = Path(r["local_path"]) if r["local_path"] else cache / f"{r['drive_id']}.img"
@@ -217,7 +217,10 @@ def fillers(conn: sqlite3.Connection, *, exclude: Sequence[int] = (), n: int = G
     while any(by_shoot.values()) and len(picked) < n:
         for queue in by_shoot.values():
             if queue and len(picked) < n:
-                picked.append(queue.pop(0))
+                r = queue.pop(0)
+                if any(moments.same_moment(r, p) for p in picked):       # one frame of a moment on the wall (2026-11-02)
+                    continue
+                picked.append(r)
     if picked:
         report.record_use(conn, "grid", [r["id"] for r in picked], ref=f"grid:{report.use_stamp()}")
     return [r["path"] for r in picked]

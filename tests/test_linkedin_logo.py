@@ -20,7 +20,7 @@ from convention_social.core import auth, config, db, runner
 from convention_social.dashboard.app import COOKIE, create_app, make_token
 from convention_social.render.photo import LINKEDIN_PHOTO
 from tests._base import IsolatedCase
-from tests._fakes import FakeBuffer, add_channels, add_photo, add_post, all_eligible, make_ctx, write_render
+from tests._fakes import camera_time, FakeBuffer, add_channels, add_photo, add_post, all_eligible, make_ctx, write_render
 from tests._photos import jpeg_bytes
 
 MONDAY_6AM = datetime(2026, 10, 12, 10, 0, tzinfo=timezone.utc)      # tomorrow is Tuesday: an event day
@@ -73,7 +73,7 @@ class DraftCase(IsolatedCase):
         now = db.utcnow()
         db.insert(self.conn, "drive_folders", drive_id="fe", name="Con", clearance="cleared", first_seen_at=now, last_seen_at=now)
         self.pid = db.insert(self.conn, "photos", drive_id="e1", name="e1.jpg", folder_id="fe", width=3000, height=2000,
-                             taken_at="2025:02:14 10:00:00", first_seen_at=now, last_seen_at=now)
+                             taken_at=camera_time(), first_seen_at=now, last_seen_at=now)
         db.insert(self.conn, "classifications", photo_id=self.pid, method="ollama", subject="event", convention_name="Katsucon",
                   is_convention=1, quality=5, possible_minor=0, personal_details="[]", space="exterior", residential=0,
                   empty_room=0, sharp=1, light=4, moment=4, classified_at=now)

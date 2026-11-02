@@ -35,7 +35,7 @@ from convention_social.dashboard.app import COOKIE, create_app, make_token
 from convention_social.library import report
 from convention_social.render import motion
 from tests._base import IsolatedCase
-from tests._fakes import write_render
+from tests._fakes import camera_time, write_render
 from tests._photos import jpeg_bytes
 from tests.test_content import ArtClientAny, say
 from tests.test_hero_upload import LookClient
@@ -67,7 +67,7 @@ class Case(IsolatedCase):
         if db.one(self.conn, "SELECT 1 FROM drive_folders WHERE drive_id='fe'") is None:
             db.insert(self.conn, "drive_folders", drive_id="fe", name="Con", clearance="cleared", first_seen_at=now, last_seen_at=now)
         pid = db.insert(self.conn, "photos", drive_id=f"d{n}", name=f"d{n}.jpg", folder_id="fe", width=3000, height=2000,
-                        thumbnail_link="t", taken_at="2025:02:14 10:00:00", first_seen_at=now, last_seen_at=now)
+                        thumbnail_link="t", taken_at=camera_time(), first_seen_at=now, last_seen_at=now)
         db.insert(self.conn, "classifications", photo_id=pid, method="ollama", subject="event", convention_name=event, event_kind="business",
                   is_convention=1, quality=quality, possible_minor=0, personal_details="[]", space="interior", residential=0,
                   empty_room=0, sharp=1, light=4, moment=4, shot_type=room, classified_at=now)
@@ -460,7 +460,7 @@ class Variety(Case):
         db.insert(case.conn, "content_queue", kind="photo", photo_ids=json.dumps(photos[:1]), targets=json.dumps(["instagram"]),
                   caption="{}", status="draft", rule_report="{}", created_at=now, updated_at=now)
         line = sample.run(case.ctx(), fetch=case.fetch, check_client=LookClient(), art_client=ArtClientAny([say("pass")] * 4))
-        self.assertIn(f"photo {photos[0]} is already on a post", line)
+        self.assertIn(f"photo {photos[0]}, or a frame of the same moment, is already on a post", line)
         self.assertEqual(db.one(case.conn, "SELECT COUNT(*) n FROM content_queue")["n"], 1, "nothing drafted")
 
 

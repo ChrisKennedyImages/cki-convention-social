@@ -7,7 +7,7 @@ the daily draft's road and gates (agents/sample.py's path is the model), never a
 
 - the photos: approved and candidates (eligibility), never on any post inside the repeat window by any road (the
   daily draft, a designed draft, Post this, the phone; content.recent_use with config.repeat_window), no credited
-  person twice inside VARIETY_DAYS, the least recently used first on any surface (library/report.rotate), and spread:
+  person twice inside VARIETY_DAYS, the shoot least recently on a post first, then the least recently used photo (content.in_turn, 2026-11-02), and spread:
   one room and one event before any repeats, and a hero from an event no post had inside VARIETY_DAYS when one is
   left (spread). A designed draft never takes an event away from the daily post: the approved library holds 34
   events, most with one to four photos, and four posts a day under the daily post's hard 14-day event rule would
@@ -35,7 +35,7 @@ from typing import Callable, Optional
 from zoneinfo import ZoneInfo
 
 from ..core import config, db, runner, settings
-from ..library import classify, eligibility, report
+from ..library import classify, eligibility
 from .. import music
 
 SOURCE = "designed"
@@ -188,11 +188,10 @@ def pool(conn: sqlite3.Connection) -> list[dict]:
         if len(held_here) == len(on):
             continue
         out.append({**dict(r), "credit": credit, "held_on": held_here})
-    last = report.last_uses(conn)
-    for r in out:
-        r["last_use"] = last.get(r["id"])
-    # free on every network first, then free on a later one, then held on Instagram (2026-11-02, post #62)
-    return content.instagram_first(report.rotate(conn, out, last=last, alike=lambda r: (r["quality"], r["people_count"])), on)
+    # the shoot least recently on a post first, then the photo (2026-11-02, shoot rotation), PHOTO_SQL's order breaking
+    # ties; and free on every network first, then free on a later one, then held on Instagram (2026-11-02, post #62)
+    return content.instagram_first(content.in_turn(conn, out, alike=lambda r: (-(r["quality"] or 0), -(r["people_count"] or 0)),
+                                                   shoots_last=content.shoot_uses(conn, on)), on)
 
 
 def room_of(row: dict) -> str:
@@ -299,10 +298,13 @@ def _draft(ctx: runner.Context, fetch: Callable[[dict], bytes], *, now: Optional
     from ..buffer import payloads
     rows_, _ = content.free_on_first(rows_, payloads.posting_networks())   # never held off Instagram while one free there is left
     lately = recent_events(conn, ctx.cfg.variety_days)
-    order = spread(rows_, content.TAKES[design] + MAX_TRIES, fresh_events=lambda e: e not in lately,
-                   taken_rooms=todays_hero_rooms(conn, day))
+    order = spread(rows_, len(rows_), fresh_events=lambda e: e not in lately, taken_rooms=todays_hero_rooms(conn, day))
     chosen: list[tuple[dict, bytes]] = []
-    for row in order:
+    picker, tries = content.Picker(order, design), 0       # one frame per moment, at most the cap per shoot (2026-11-02)
+    for row in picker.candidates():
+        if tries >= content.TAKES[design] + MAX_TRIES:
+            break
+        tries += 1
         try:
             data = fetch(row)
         except Exception as e:  # noqa: BLE001  Drive or the disk, not the photo: said once; the next hourly run tries again
@@ -321,11 +323,10 @@ def _draft(ctx: runner.Context, fetch: Callable[[dict], bytes], *, now: Optional
             row["shot_type"] = verdict["shot_type"]          # what the photo shows, by the model that looked at it in full
         if verdict.get("event_kind") in classify.KINDS and verdict["event_kind"] != "unknown":
             row["event_kind"] = verdict["event_kind"]
+        picker.take(row)
         chosen.append((row, data))
-        if len(chosen) >= content.TAKES[design]:
-            break
     if not chosen:
-        return f"no designed draft: no photo passed the final check (tried {len(order)})"
+        return f"no designed draft: no photo passed the final check (tried {tries})"
     asked = design
     if len(chosen) < content.NEEDS[design]:
         design, chosen = content.fallback_for(day), chosen[:1]      # too few passed: the day's one-photo design
@@ -338,7 +339,7 @@ def _draft(ctx: runner.Context, fetch: Callable[[dict], bytes], *, now: Optional
             ping=content.ping_words(ctx.cfg.brand_name, design, len(chosen), "today", designed=True))
     except content.PhotosTaken as e:
         return f"no designed draft: {e}; the next one comes within the hour"
-    return line
+    return line + (f"; {picker.words()}" if picker.words() else "")
 
 
 def run(ctx: runner.Context, fetch: Optional[Callable[[dict], bytes]] = None, **clients) -> str:

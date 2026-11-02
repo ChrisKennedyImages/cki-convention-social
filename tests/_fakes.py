@@ -5,6 +5,9 @@ BUFFER_API_KEY or MEDIA_UPLOAD_TOKEN may live there, and a test must never be
 able to pick one up and reach a real service.
 """
 from __future__ import annotations
+import itertools
+from datetime import datetime, timedelta
+from typing import Optional
 
 import json
 import re
@@ -274,3 +277,14 @@ def read_mail(path: Path):
     html_part = msg.get_body(preferencelist=("html",))
     plain_part = msg.get_body(preferencelist=("plain",))
     return msg, html_part.get_content() if html_part else "", plain_part.get_content() if plain_part else ""
+
+
+_CAMERA = itertools.count()
+
+
+def camera_time(n: Optional[int] = None) -> str:
+    """A camera clock for a test photo, EXIF style, each call a quarter of an hour after the last (or slot `n`): the
+    frames of one folder within MOMENT_MINUTES are one moment (library/moments, 2026-11-02), so a fixture that stamped
+    every photo 10:00:00 would be one burst. A test that wants a burst passes its own times."""
+    slot = next(_CAMERA) if n is None else n
+    return (datetime(2025, 2, 14, 10, 0, 0) + timedelta(minutes=15 * slot)).strftime("%Y:%m:%d %H:%M:%S")

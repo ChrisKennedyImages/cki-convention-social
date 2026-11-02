@@ -15,6 +15,7 @@ from convention_social.agents import content
 from convention_social.ai import claude, copy_rules
 from convention_social.core import auth, config, db, runner
 from convention_social.dashboard.app import COOKIE, create_app, make_token
+from tests._fakes import camera_time
 from tests._base import IsolatedCase
 from tests._photos import jpeg_bytes
 
@@ -49,7 +50,7 @@ class Mend(IsolatedCase):
         now = db.utcnow()
         db.insert(self.conn, "drive_folders", drive_id="fe", name="Con", clearance="cleared", first_seen_at=now, last_seen_at=now)
         self.pid = db.insert(self.conn, "photos", drive_id="e1", name="e1.jpg", folder_id="fe", width=3000, height=2000,
-                             taken_at="2025:02:14 10:00:00", first_seen_at=now, last_seen_at=now)
+                             taken_at=camera_time(), first_seen_at=now, last_seen_at=now)
         db.insert(self.conn, "classifications", photo_id=self.pid, method="ollama", subject="event", convention_name="Liberty Summit",
                   event_kind="business", shot_type="stage_panel", is_convention=1, quality=5, possible_minor=0, personal_details="[]",
                   classified_at=now)
