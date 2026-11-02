@@ -260,9 +260,6 @@ def grain_still(img: Image.Image) -> Image.Image:
 
 
 POST_SIZES = {"4:5": (1080, 1350), "2:3": (1000, 1500)}
-# the LinkedIn card (a render_paths key, like "story" and "cover"): the hero alone on the single card at 4:5, whatever the
-# day's design, the way Pinterest has the hero at 2:3 (2026-11-01: one photo per post on Chris's own profile)
-LINKEDIN_CARD = "linkedin"
 
 
 def single_post(shot: Shot, copy: MotionCopy, *, out: Path, aspect: str = "4:5", kicker: str = "", official: bool = False,

@@ -7,10 +7,10 @@ For each targeted network there must be a connected row in `channels`
 PINTEREST_BOARD_ID. Each network gets its own time from pacing.py unless
 Chris chose one on the draft. Media: the rendered design for the network's
 aspect (render_paths {aspect: [paths]}: instagram and facebook 4:5,
-pinterest 2:3, linkedin the hero's own 4:5 card under "linkedin"), else the photo's own local copy. A reel (render_paths "9:16"
+pinterest 2:3, linkedin the hero as shot under "linkedin"), else the photo's own local copy. A reel (render_paths "9:16"
 holds an mp4, "cover" its cover) goes to Instagram and Facebook as a video
 post whose fields are read from Buffer's live schema first
-(BufferClient.video_asset_fields); Pinterest and LinkedIn still get their cards.
+(BufferClient.video_asset_fields); Pinterest still gets the 2:3 card and LinkedIn the hero as shot.
 
 Dry run (the default): the exact payloads are stored on the row, status
 becomes 'would_publish', nothing is uploaded or sent. Live: media uploaded,
@@ -31,14 +31,14 @@ from ..ai import copy_rules, names
 from ..buffer import budget, media, payloads
 from ..buffer.client import BufferBudgetExceeded, BufferClient, BufferError, BufferRateLimited, BufferUnknownOutcome
 from ..core import config, db, notify, runner, settings
-from ..render.motion import LINKEDIN_CARD
+from ..render.photo import LINKEDIN_PHOTO
 from . import art_director, pacing
 
 READY_SQL = "SELECT * FROM content_queue WHERE status = 'approved' ORDER BY COALESCE(approved_at, created_at), id"
 TERMINAL_OK = {"sent"}
 TERMINAL_BAD = {"error"}
-# the render_paths key each network posts: LinkedIn the hero alone on its 4:5 card (2026-11-01, one photo per post)
-ASPECT_FOR = {"instagram": "4:5", "facebook": "4:5", "pinterest": "2:3", "linkedin": LINKEDIN_CARD}
+# the render_paths key each network posts: LinkedIn the hero as shot, no card (2026-11-01 evening, "Let's do that")
+ASPECT_FOR = {"instagram": "4:5", "facebook": "4:5", "pinterest": "2:3", "linkedin": LINKEDIN_PHOTO}
 POSTABLE_SUFFIXES = {".jpg", ".jpeg", ".png"}
 VIDEO_ASPECT = "9:16"
 # A dry run asks Buffer nothing: it builds the reel with the fields last read from Buffer (the Buffer
@@ -299,10 +299,11 @@ def _eligibility_module():
     return importlib.import_module(ELIGIBILITY_MODULE)
 
 
-def repeat_of(conn, row, ids: list[int], days: int, *, include_dry: bool = False) -> Optional[tuple[int, int]]:
+def repeat_of(conn, row, ids: list[int], days: int, *, include_dry: bool = False, network: Optional[str] = None) -> Optional[tuple[int, int]]:
     """(photo id, post id) when one of these photos went out within `days`: a post scheduled or published,
     or any post with a sent network in post_history (a post that half failed still went out).
-    `include_dry` also counts dry-run rows (would_publish), so a dry run turns back what a live one would."""
+    `include_dry` also counts dry-run rows (would_publish), so a dry run turns back what a live one would.
+    With `network`, only a post that targets it or was sent to it: the window counts per network (Chris, 2026-11-02)."""
     if not ids or days <= 0:
         return None
     cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).replace(microsecond=0).isoformat()
@@ -311,10 +312,14 @@ def repeat_of(conn, row, ids: list[int], days: int, *, include_dry: bool = False
     wanted = set(ids)
     meta = _json(row["rule_report"], {}) if "rule_report" in row.keys() else {}
     story_of = meta.get("feed_of") if isinstance(meta, dict) else None     # a feed post's own Story is not a repeat (2026-10-15)
-    for other in db.rows(conn, f"SELECT id, photo_ids FROM content_queue WHERE id != ? AND ("
+    from . import content
+    for other in db.rows(conn, f"SELECT id, photo_ids, targets, rule_report FROM content_queue WHERE id != ? AND ("
                                f"(status IN ({marks}) AND COALESCE(published_at, updated_at) >= ?) "
                                "OR id IN (SELECT queue_id FROM post_history WHERE sent_at >= ?)) ORDER BY id DESC",
                          (row["id"], *statuses, cutoff, cutoff)):
+        if network and network not in content.networks_of(other) and not db.one(
+                conn, "SELECT 1 FROM post_history WHERE queue_id=? AND service=? AND sent_at >= ?", (other["id"], network, cutoff)):
+            continue
         hit = wanted & set(photo_ids_of(other) or [])
         if hit and other["id"] != story_of:
             return min(hit), other["id"]
@@ -330,7 +335,7 @@ def door(ctx: runner.Context, row) -> Optional[tuple[str, str]]:
     official = is_official(ctx.conn, row["convention_id"])
     known_names = names.public_names(ctx.conn)          # no event or person is named (ai/names.py)
     for net in targets_of(row):
-        report = copy_rules.check(captions.get(net, ""), official=official, names=known_names, social=True)
+        report = copy_rules.check(captions.get(net, ""), official=official, names=known_names, social=True, linkedin=net == "linkedin")
         if not report.ok:
             return "back", f"The {net} {CAPTION_BACK}: {report.blocks[0].message}."
     ids = photo_ids_of(row)
@@ -348,17 +353,21 @@ def door(ctx: runner.Context, row) -> Optional[tuple[str, str]]:
                 return "hold", f"The photo check could not run for photo {pid} ({type(e).__name__}: {e}). Nothing was sent."
             if not ok:
                 return "back", f"Photo {pid} can no longer be used: {why}. Pick another photo."
-    held = held_by(ctx, row, ids)
-    if held:
-        return "back", held_words(ctx, held)
+    # the window counts per network (Chris, 2026-11-02): back only when every network this post goes to holds its photo;
+    # a network that holds while others are free is left out at usable_networks, with the reason on the draft page
+    going = [n for n in targets_of(row) if n in payloads.posting_networks()] or targets_of(row)
+    held = {net: hit for net in going if (hit := held_by(ctx, row, ids, net))}
+    if held and len(held) == len(going):
+        return "back", held_words(ctx, next(iter(held.values())))
     return None
 
 
-def held_by(ctx: runner.Context, row, ids: Optional[list[int]] = None) -> Optional[dict]:
+def held_by(ctx: runner.Context, row, ids: Optional[list[int]] = None, network: Optional[str] = None) -> Optional[dict]:
     """{photo, post, went_out} when a photo of this row is on another post that is set to go out or went out inside the
-    repeat window (the longer of PHOTO_REPEAT_DAYS and VARIETY_DAYS, 2026-10-15), else None."""
+    repeat window (the longer of PHOTO_REPEAT_DAYS and VARIETY_DAYS, 2026-10-15), else None. With `network`, on that
+    network only (Chris, 2026-11-02: the window counts per network)."""
     ids = photo_ids_of(row) if ids is None else ids
-    repeat = repeat_of(ctx.conn, row, ids or [], config.repeat_window(ctx.cfg), include_dry=ctx.dry_run)
+    repeat = repeat_of(ctx.conn, row, ids or [], config.repeat_window(ctx.cfg), include_dry=ctx.dry_run, network=network)
     if not repeat:
         return None
     pid, qid = repeat
@@ -384,7 +393,7 @@ def held_words(ctx: runner.Context, held: dict) -> str:
         except ValueError:
             on = ""
         return (f"Photo {pid} already went out as post #{qid}{on}. "
-                f"A photo goes out once inside {config.repeat_window(ctx.cfg)} days.")
+                f"A photo goes out once a network inside {config.repeat_window(ctx.cfg)} days.")
     due = due_at(other) if other is not None else None
     if due is None and other is not None and other["scheduled_for"]:
         try:
@@ -528,27 +537,29 @@ def reel_urls(row, fields: list[dict], *, live: bool, uploader=None) -> str:
 
 # ------------------------------------------------------------------ publishing
 
-def linkedin_hold(ctx: runner.Context, row, figure_client=None) -> Optional[str]:
-    """Why this post does not go to LinkedIn, or None. Chris, 2026-11-01: LinkedIn posts avoid photos whose main subject is
-    a recognisable public figure. The hero photo's judgement (photos.public_figure, the art director's one look) decides; a
-    photo not judged yet is judged here once when the run is live and the till allows, else LinkedIn waits. Fails closed."""
+def linkedin_hold(ctx: runner.Context, row, judge_client=None) -> Optional[str]:
+    """Why this post does not go to LinkedIn, or None. Chris, 2026-11-01 evening: LinkedIn skips a photo where an
+    organization's name or logo is prominent. The hero photo's answer (photos.prominent_logo, the art director's one look)
+    decides; a photo not judged yet is judged here once when the run is live and the till allows, else LinkedIn waits.
+    Fails closed."""
     ids = photo_ids_of(row) or []
-    photo = db.one(ctx.conn, "SELECT id, public_figure, local_path FROM photos WHERE id=?", (ids[0],)) if ids else None
+    photo = db.one(ctx.conn, "SELECT id, prominent_logo, local_path FROM photos WHERE id=?", (ids[0],)) if ids else None
     if photo is None:
-        return "no photo to judge for a public figure"
-    verdict = None if photo["public_figure"] is None else bool(photo["public_figure"])
+        return "no photo to judge for LinkedIn"
+    verdict = None if photo["prominent_logo"] is None else bool(photo["prominent_logo"])
     if verdict is None and not ctx.dry_run and photo["local_path"] and Path(photo["local_path"]).is_file():
-        verdict = art_director.public_figure(ctx.conn, photo["id"], Path(photo["local_path"]), client=figure_client, agent=ctx.agent)
+        verdict = art_director.prominent_logo(ctx.conn, photo["id"], Path(photo["local_path"]), client=judge_client, agent=ctx.agent)
     if verdict is None:
-        return art_director.FIGURE_WAIT
-    return art_director.FIGURE_SKIP if verdict else None
+        return art_director.WAIT
+    return art_director.LOGO_SKIP if verdict else None
 
 
-def usable_networks(ctx: runner.Context, row, figure_client=None) -> tuple[dict[str, dict], dict[str, str], dict[str, str]]:
+def usable_networks(ctx: runner.Context, row, judge_client=None) -> tuple[dict[str, dict], dict[str, str], dict[str, str]]:
     """({network: channel row} that can go, {network: why not} for the rest, {network: why a rule holds it}). A network
     switched off on the Keys page (POST_NETWORKS; Instagram only by default, 2026-10-15) is left out quietly: no channel is
     expected for it. A hold (LinkedIn on a photo judged a public figure, or not judged yet; 2026-11-01) is said on the
-    draft page, never recorded as a fault."""
+    draft page, never recorded as a fault. So is the repeat window, per network (Chris, 2026-11-02): a photo that went
+    out on one network inside the window goes to the others."""
     active, skipped, held = {}, {}, {}
     on = payloads.posting_networks()
     for net in targets_of(row):
@@ -564,8 +575,12 @@ def usable_networks(ctx: runner.Context, row, figure_client=None) -> tuple[dict[
         if net == "pinterest" and not payloads.pinterest_board_id():
             skipped[net] = "PINTEREST_BOARD_ID is not set"
             continue
+        hit = held_by(ctx, row, None, net)
+        if hit:                                 # the photo is on another post for this network inside the window (per network, 2026-11-02)
+            held[net] = held_words(ctx, hit)
+            continue
         if net == "linkedin":
-            why = linkedin_hold(ctx, row, figure_client)
+            why = linkedin_hold(ctx, row, judge_client)
             if why:
                 held[net] = why
                 continue
@@ -611,7 +626,7 @@ def build_all(ctx: runner.Context, row, channels: dict[str, dict], when: dict[st
 
 
 def publish_ready(ctx: runner.Context, client: Optional[BufferClient] = None, uploader=None,
-                  now: Optional[datetime] = None, figure_client=None) -> dict:
+                  now: Optional[datetime] = None, judge_client=None) -> dict:
     live = not ctx.dry_run
     stats = {"would_publish": 0, "scheduled": 0, "failed": 0, "turned_back": 0, "held": 0, "skipped_networks": 0}
     rows = db.rows(ctx.conn, READY_SQL)
@@ -711,7 +726,7 @@ def publish_ready(ctx: runner.Context, client: Optional[BufferClient] = None, up
                             priority="default", click=notify.link(f"/queue/{row['id']}"), conn=ctx.conn, agent=ctx.agent)
                 stats["held"] += 1
                 continue
-        channels, skipped, held = usable_networks(ctx, row, figure_client)
+        channels, skipped, held = usable_networks(ctx, row, judge_client)
         if fmt == "story":
             skipped.update({n: "a Story goes to Instagram only" for n in channels if n != "instagram"})
             channels = {n: ch for n, ch in channels.items() if n == "instagram"}

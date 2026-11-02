@@ -32,7 +32,8 @@ from zoneinfo import ZoneInfo
 
 from PIL import Image
 
-from ..ai import claude, copy_rules, names, seo_plan
+from ..ai import claude, copy_rules, linkedin, names, seo_plan
+from ..buffer import payloads
 from ..core import approve_token, config, db, notify, runner, settings
 from ..library import classify, eligibility, report
 
@@ -55,6 +56,7 @@ LAST_ATTEMPT_KEY = "content.last_attempt"
 NO_DRAFT_PINGED_KEY = "content.no_draft_pinged"       # "day|reason": the phone hears each reason once a day
 DRAFT_NOW_KEY = "content.draft_now_asked_at"          # Chris pressed Draft now on Today (2026-10-31); the next run drafts one more
 REEL_STYLE_KEY = "reel.last_style"                     # the style the last reel was given, written the moment it is chosen
+LINKEDIN_STYLE_KEY = "linkedin.last_style"             # the LinkedIn style the last draft was given (ai/linkedin.py), likewise
 TRANSIENT_WORDS = ("could not run", "could not", "not signed in")
 
 
@@ -125,10 +127,11 @@ DRAFTING_WAIT = 15 * 60          # seconds the daily draft and Post this wait fo
 
 
 class PhotosTaken(Exception):
-    """A photo chosen for this draft went into another post while this one was being made."""
+    """A photo chosen for this draft went into another post while this one was being made (or, per network since
+    2026-11-02, a person on it did), on every network the draft was for."""
 
-    def __init__(self, photo: int, post: int):
-        super().__init__(f"photo {photo} went into post #{post} while this one was being drafted")
+    def __init__(self, photo: int, post: int, why: str = ""):
+        super().__init__(why or f"photo {photo} went into post #{post} while this one was being drafted")
         self.photo, self.post = photo, post
 
 
@@ -145,15 +148,18 @@ def drafting_lock(wait: float):
     return lock
 
 
-def photo_holder(conn: sqlite3.Connection, photo_ids, days: int) -> Optional[tuple[int, int]]:
+def photo_holder(conn: sqlite3.Connection, photo_ids, days: int, network: Optional[str] = None) -> Optional[tuple[int, int]]:
     """(photo id, post id) when one of these photos is on another post inside the window, by the same rule as
-    recent_use (open, sent, turned back by the art director or set aside by the do-not-use list; a skipped one is not)."""
+    recent_use (open, sent, turned back by the art director or set aside by the do-not-use list; a skipped one is not).
+    With `network`, only a post that targets it: the window counts per network (Chris, 2026-11-02)."""
     wanted = {int(p) for p in photo_ids}
     since = (datetime.now(timezone.utc) - timedelta(days=days)).replace(microsecond=0).isoformat()
-    for r in db.rows(conn, "SELECT id, status, photo_ids, rule_report FROM content_queue WHERE created_at >= ? AND "
+    for r in db.rows(conn, "SELECT id, status, photo_ids, targets, rule_report FROM content_queue WHERE created_at >= ? AND "
                            "(status != 'rejected' OR rule_report LIKE '%\"verdict\": \"reject\"%' "
                            "OR rule_report LIKE '%\"rejected_by\"%') ORDER BY id", (since,)):
         if r["status"] == "rejected" and f'"rejected_by": "{SKIPPED}"' in (r["rule_report"] or ""):
+            continue
+        if network and network not in networks_of(r):
             continue
         hit = wanted & {int(p) for p in json.loads(r["photo_ids"] or "[]")}
         if hit:
@@ -161,19 +167,54 @@ def photo_holder(conn: sqlite3.Connection, photo_ids, days: int) -> Optional[tup
     return None
 
 
-def recent_use(conn: sqlite3.Connection, days: int) -> tuple[set, set, set]:
+def networks_of(row) -> set[str]:
+    """The networks a queue row counts on for the windows: its targets less the ones it was not sent to (rule_report
+    skipped, the hold or skip said on the draft page). A row whose targets cannot be read counts everywhere."""
+    try:
+        targets = {str(n) for n in json.loads(row["targets"] or "[]")}
+        meta = json.loads(row["rule_report"] or "{}")
+    except (TypeError, ValueError):
+        return set(payloads.NETWORKS)
+    skipped = meta.get("skipped") if isinstance(meta, dict) and isinstance(meta.get("skipped"), dict) else {}
+    return targets - set(skipped) if targets else set(payloads.NETWORKS)
+
+
+def held_on(conn: sqlite3.Connection, photo_ids, days: int, people, variety_days: int) -> dict[str, dict]:
+    """{network: {photo, post, why}} for every network a post of these photos may not go to now: a photo of it is on
+    another post inside the repeat window that targets that network, or a person credited on it was on such a post
+    inside VARIETY_DAYS. Chris, 2026-11-02: "LinkedIn and insta are two totally different platforms. That rule only
+    applies to each platform Individually not all together"; the variety rule is read the same way."""
+    out = {}
+    for net in TARGETS:
+        hit = photo_holder(conn, photo_ids, days, net)
+        if hit:
+            out[net] = {"photo": hit[0], "post": hit[1], "why": f"photo {hit[0]} was on post #{hit[1]} inside the last {days} days; "
+                                                                 f"a photo goes out once a network inside that window"}
+            continue
+        _, _, used_people = recent_use(conn, variety_days, net)
+        named = next((c for c in people if c.lower() in used_people), None)
+        if named:
+            out[net] = {"photo": None, "post": 0, "why": f"{named} was on a post here inside the last {variety_days} days; "
+                                                        "no person twice a network inside that window"}
+    return out
+
+
+def recent_use(conn: sqlite3.Connection, days: int, network: Optional[str] = None) -> tuple[set, set, set]:
     """(photo ids, event names, credited people) used by posts drafted inside the window, by any road (the daily
     draft, a designed draft, Post this, the phone): every post not rejected, the ones the art director turned back,
     and the photos of the ones set aside by the do-not-use list (`rule_report.rejected_by`; the event and the people
     of a set-aside post are not "used", since nothing of it aired). A post Chris skipped is not counted at all
     (2026-10-15: "Skip puts the photos back in rotation"): its photos come round again, after the others, since
-    their use stays on the rotation's record (library/report.photo_use)."""
+    their use stays on the rotation's record (library/report.photo_use). With `network`, only the posts that target it:
+    the window counts per network (Chris, 2026-11-02)."""
     since = (datetime.now(timezone.utc) - timedelta(days=days)).replace(microsecond=0).isoformat()
     photos, events, people = set(), set(), set()
-    for r in db.rows(conn, "SELECT status, photo_ids, rule_report FROM content_queue WHERE created_at >= ? AND "
+    for r in db.rows(conn, "SELECT status, photo_ids, targets, rule_report FROM content_queue WHERE created_at >= ? AND "
                            "(status != 'rejected' OR rule_report LIKE '%\"verdict\": \"reject\"%' "
                            "OR rule_report LIKE '%\"rejected_by\"%')", (since,)):
         if r["status"] == "rejected" and f'"rejected_by": "{SKIPPED}"' in (r["rule_report"] or ""):
+            continue
+        if network and network not in networks_of(r):
             continue
         photos.update(int(p) for p in json.loads(r["photo_ids"] or "[]"))
         if r["status"] == "rejected" and '"verdict": "reject"' not in (r["rule_report"] or ""):
@@ -183,6 +224,14 @@ def recent_use(conn: sqlite3.Connection, days: int) -> tuple[set, set, set]:
             events.add(meta["event"].lower())
         people.update(x.lower() for x in meta.get("people") or [])
     return copies(conn, photos), events, people
+
+
+def used_everywhere(conn: sqlite3.Connection, days: int, networks) -> tuple[set, set, set]:
+    """(photos, events, people) used inside `days` on every one of `networks` (the ones that are on): the window counts per
+    network (Chris, 2026-11-02), so only a photo or a person held everywhere that is on is out of the running; the events
+    are the union, since they only order."""
+    per = [recent_use(conn, days, net) for net in networks] or [recent_use(conn, days)]
+    return (set.intersection(*(p[0] for p in per)), set.union(*(p[1] for p in per)), set.intersection(*(p[2] for p in per)))
 
 
 def copies(conn: sqlite3.Connection, photo_ids: set) -> set:
@@ -199,8 +248,9 @@ def copies(conn: sqlite3.Connection, photo_ids: set) -> set:
 
 def candidates(conn: sqlite3.Connection, subject: str) -> list[dict]:
     cfg = config.get_config()
-    used_photos, _, _ = recent_use(conn, config.repeat_window(cfg))
-    _, used_events, used_people = recent_use(conn, cfg.variety_days)
+    on = payloads.posting_networks()
+    used_photos, _, _ = used_everywhere(conn, config.repeat_window(cfg), on)
+    _, used_events, used_people = used_everywhere(conn, cfg.variety_days, on)
     rows = db.rows(conn, """SELECT p.*, c.subject, c.convention_name, c.event_kind, c.shot_type, c.quality, c.people_count, c.summary
                             FROM photos p JOIN classifications c ON c.photo_id = p.id
                             WHERE p.trashed = 0 AND c.subject = ? AND c.method IN ('ollama','vision')
@@ -239,15 +289,24 @@ def use_why(hero: dict, ready: int) -> str:
 
 
 def write_captions(drafter, facts: claude.PostFacts, photo: Path, known_names, *, conn=None,
-                   agent: str = "content") -> tuple[dict, str, dict, str]:
+                   agent: str = "content", judge_client=None) -> tuple[dict, str, dict, str]:
     """(captions, alt text, what happened, who wrote them). Chris, 2026-10-11: "Make sure the captions are SEO
     optimized painstakingly". The writer gets the post's search plan (ai/seo_plan.py); the hashtags and the
     link are put in place for it; a draft that misses the plan or breaks a rule is written once more with
     the misses named, and after a second miss the template, which meets the plan by construction, stands in.
     A writer that cannot write at all (the cap, a refusal, the API, the network) is the same: the template
-    writes, and with `conn` the reason is recorded once (2026-10-13: never a dead run)."""
+    writes, and with `conn` the reason is recorded once (2026-10-13: never a dead run). The LinkedIn caption passes two more
+    gates (ai/linkedin.py, 2026-11-01): his rhythm, and a he or she only when a separate look at the photo (`judge_client`,
+    the art director's) says so; a miss is a miss like any other, and the LinkedIn fallback is a fixed line in his rhythm."""
     plan, link = facts.plan, facts.quote_link
     tries, notes, draft, caps, misses, writer_error = [], (), None, {}, [], ""
+    looked: list = []                 # the photo's main person, as the art director sees it, asked once per write
+
+    def main_subject():
+        if not looked:
+            looked.append(art_director.subject_of(conn, photo, client=judge_client, agent=agent)
+                          if conn is not None and photo.is_file() else None)
+        return looked[0]
     for _ in range(2):
         try:
             draft = drafter.draft(facts, photo, notes=notes)
@@ -260,21 +319,23 @@ def write_captions(drafter, facts: claude.PostFacts, photo: Path, known_names, *
                                          f"The caption writer could not write ({writer_error}); the template wrote instead.")
             break
         caps = seo_plan.finish(draft.captions, plan, link)
-        misses = seo_plan.problems(caps, plan) + [f"the {n} caption {b.message}" for n, t in caps.items()
-                                                  for b in copy_rules.check(t, names=known_names, social=True).blocks]
+        misses = seo_plan.problems(caps, plan, facts.linkedin_style) + [f"the {n} caption {b.message}" for n, t in caps.items()
+                                                  for b in copy_rules.check(t, names=known_names, social=True, linkedin=n == "linkedin").blocks]
+        if "linkedin" in caps and linkedin.pronouns_in(caps["linkedin"]):
+            misses += linkedin.pronoun_problems(caps["linkedin"], main_subject())
         tries.append({"by": draft.model, "missed": misses})
         if not misses or draft.model == "template":
             break
         notes = misses
     writer = draft.model if draft is not None else "template"
     if misses:
-        caps, writer = seo_plan.template_captions(plan, link, facts.brand_name), "template"
+        caps, writer = seo_plan.template_captions(plan, link, facts.brand_name, facts.linkedin_style), "template"
     from ..seo.photo_text import SHOT_WORDS
     alt = draft.alt_text if draft is not None else ""
     if not alt or len(alt) > 125 or not copy_rules.check(alt, names=known_names, social=True).ok:
         alt = seo_plan.alt_text(plan, SHOT_WORDS.get(facts.shot_type, ""), facts.brand_name)
     record = {"primary": plan.primary, "related": list(plan.related), "hashtags": list(plan.hashtags), "area": plan.area,
-              "tries": tries, "fell_back": bool(misses)}
+              "tries": tries, "fell_back": bool(misses), **({"subject_check": looked[0]} if looked else {})}
     if writer_error:
         record["writer_error"] = writer_error
     return caps, alt, record, writer
@@ -306,7 +367,7 @@ def mend_captions(conn: sqlite3.Connection, row, *, drafter=None, agent: str = "
         meta = json.loads(row["rule_report"] or "{}")
     except ValueError:
         captions, meta = {}, {}
-    broken = {n: [b.message for b in copy_rules.check(t, official=official, names=known_names, social=True).blocks]
+    broken = {n: [b.message for b in copy_rules.check(t, official=official, names=known_names, social=True, linkedin=n == "linkedin").blocks]
               for n, t in captions.items()}
     broken = {n: m for n, m in broken.items() if m}
     if not broken or row["kind"] != "photo":
@@ -319,7 +380,8 @@ def mend_captions(conn: sqlite3.Connection, row, *, drafter=None, agent: str = "
     design = meta.get("design") or "single"
     facts = claude.PostFacts(brand_name=cfg.brand_name, event_kind=(hero["event_kind"] if hero else None) or "unknown",
                              shot_type=(hero["shot_type"] if hero else None) or "", subject=subject, official=official,
-                             quote_link=f"{cfg.brand_domain}/book" if cfg.brand_domain else "")
+                             quote_link=f"{cfg.brand_domain}/book" if cfg.brand_domain else "",
+                             linkedin_style=meta.get("linkedin_style") or linkedin.STYLES[0])     # the draft keeps its style
     facts.plan = seo_plan.plan_for(subject=subject, event_kind=facts.event_kind, shot_type=facts.shot_type, design=design)
     photo = Path(hero["local_path"]) if hero and hero["local_path"] else (cfg.data_root / "photos" / f"{hero['drive_id']}.img" if hero else None)
     if drafter is None:
@@ -328,7 +390,7 @@ def mend_captions(conn: sqlite3.Connection, row, *, drafter=None, agent: str = "
     # the cap, a refusal, the API: the template stands in and the record says so (write_captions)
     fixed, alt, record, writer = write_captions(drafter, facts, photo or Path("none"), known_names, conn=conn, agent=agent)
     fixed = {n: t for n, t in fixed.items() if n in captions}      # a network the draft never had (LinkedIn skipped) stays out
-    reports = {n: copy_rules.check(t, names=known_names, social=True).as_dict() for n, t in fixed.items()}
+    reports = {n: copy_rules.check(t, names=known_names, social=True, linkedin=n == "linkedin").as_dict() for n, t in fixed.items()}
     mend = {"at": db.utcnow(), "by": writer, "fixed": broken, "was": {n: captions[n] for n in broken}}
     # the card comes from the same day as the captions: drawn again with today's words where the photos are here
     try:
@@ -420,6 +482,20 @@ def reel_style(conn: sqlite3.Connection, rng=None) -> str:
     return style
 
 
+def linkedin_style(conn: sqlite3.Connection) -> str:
+    """The next LinkedIn style round robin (Chris, 2026-11-01 evening: "Mix all three"), chosen and recorded in one write under
+    the database's write lock, like the reel's, so two drafts made at once never read the same way."""
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        style = linkedin.next_style(settings.get(conn, LINKEDIN_STYLE_KEY))
+        settings.set(conn, LINKEDIN_STYLE_KEY, style)
+        conn.execute("COMMIT")
+    except BaseException:
+        conn.execute("ROLLBACK")
+        raise
+    return style
+
+
 def order_pool(pool: list, design: str) -> list:
     """The order to try the photos in: for a post of several, one per shoot (Drive folder) and per room before any
     repeats (2026-10-23: post 27 took four frames of one folder), else as the rotation gave them."""
@@ -462,9 +538,9 @@ def make_renderer(conn: sqlite3.Connection, agent: str, *, design: str, rows: li
                   track, out_dir: Path, seo, reel_style: Optional[str] = None, linkedin: bool = True) -> tuple[Callable[[tuple], dict], list]:
     """The day's design on its photos, as `render(focus) -> {aspect: [paths]}` for the art director, and the
     list a failed reel is written to (the same photos then go out as a carousel). Shared by the fresh draft
-    and the mend, so a redrawn card is the same card the day would have made. `linkedin` False: no LinkedIn card
+    and the mend, so a redrawn card is the same card the day would have made. `linkedin` False: no LinkedIn photo
     (the hero's main subject is a recognisable public figure, 2026-11-01)."""
-    from ..render import bold, design_samples, motion, reels3d
+    from ..render import bold, design_samples, motion, photo, reels3d
     words = confirmed_rooms(conn, [r["id"] for r in rows])
     kicker = kicker_for(hero).upper()
     if kicker == words[hero["id"]][0] or words[hero["id"]] == design_samples.UNCONFIRMED:
@@ -474,27 +550,31 @@ def make_renderer(conn: sqlite3.Connection, agent: str, *, design: str, rows: li
     copy = motion.MotionCopy(kicker=kicker)
     tag = f"{hero['id']}-{design}"
     reel_failed: list[str] = []
-    # every design carries the hero alone on the single card twice over: at 2:3 for Pinterest and at 4:5 for LinkedIn
-    # (render_paths "linkedin"; 2026-11-01, one photo per post there)
-    hero_cards = ("2:3", motion.LINKEDIN_CARD) if linkedin else ("2:3",)
-    card_aspect = {motion.LINKEDIN_CARD: "4:5"}
+    bare: dict = {}
 
-    def single(focus, cards=("4:5", *hero_cards)):
+    def single(focus, aspects=("4:5", "2:3")):
         shot = shot_for(hero, images[hero["id"]], focus, words[hero["id"]])
-        return {c: [str(motion.single_post(shot, copy, out=out_dir / f"{tag}-{c.replace(':', '')}.jpg", aspect=card_aspect.get(c, c),
-                                           kicker=kicker, meta=seo))] for c in cards}
+        return {a: [str(motion.single_post(shot, copy, out=out_dir / f"{tag}-{a.replace(':', '')}.jpg", aspect=a,
+                                           kicker=kicker, meta=seo))] for a in aspects}
+
+    def as_shot():
+        """LinkedIn's image beside the day's design: the hero as shot, no card (render_paths "linkedin"; 2026-11-01 evening,
+        "Let's do that"), written once however often the crop is reworked."""
+        if linkedin and not bare:
+            bare[photo.LINKEDIN_PHOTO] = [str(photo.as_shot(images[hero["id"]], out_dir / f"{tag}-linkedin.jpg", meta=seo))]
+        return dict(bare)
 
     def render(focus):
         if design == "single":
-            return single(focus)
+            return {**single(focus), **as_shot()}
         shots = [shot_for(r, images[r["id"]], words=words[r["id"]]) for r in rows]
         if design in bold.DESIGNS:
             # the four bold designs (2026-10-15), each with its own 2:3 card for Pinterest; the hero first, the photos whole
             return {**{a: [str(bold.post(design, shots, copy, out=out_dir / f"{tag}-{a.replace(':', '')}.jpg", aspect=a, meta=seo))]
-                       for a in ("4:5", "2:3")}, **(single(focus, (motion.LINKEDIN_CARD,)) if linkedin else {})}
+                       for a in ("4:5", "2:3")}, **as_shot()}
         if design == "reel" and not reel_failed:
             # Instagram and Facebook get the reel (render_paths "9:16"), with its cover; Pinterest the
-            # hero as a 2:3 card and LinkedIn the hero still; the art director looks at the cover and the stills, never the mp4
+            # hero as a 2:3 card and LinkedIn the hero as shot; the art director looks at the cover and the stills, never the mp4
             try:
                 grid = reels3d.fillers(conn, exclude=[r["id"] for r in rows])
                 video = reels3d.render(reel_style, shots, out=out_dir / f"{tag}-{reel_style}.mp4", audio=track, grid=grid)
@@ -503,19 +583,19 @@ def make_renderer(conn: sqlite3.Connection, agent: str, *, design: str, rows: li
                 reel_failed.append(f"{type(e).__name__}: {e}")
                 runner.record_error(conn, agent, "reel", f"the {reel_style} reel for {day} was not made: {e}")
             else:
-                return {"9:16": [str(video)], "cover": [str(stills[0])], **single(focus, hero_cards),
+                return {"9:16": [str(video)], "cover": [str(stills[0])], **single(focus, ("2:3",)), **as_shot(),
                         "stills": [str(p) for p in stills[1:]]}
         # every design carries the hero as a 2:3 card for Pinterest (2026-10-13: without one the publisher fell back
         # to the photo's own .img copy, which it refuses, and the whole post failed on every network)
         if design in ("carousel", "reel"):        # the reel's fallback takes the same 4 to 6 photos
-            return {"4:5": [str(p) for p in motion.carousel(shots, copy, out_dir=out_dir / tag, meta=seo)], **single(focus, hero_cards)}
+            return {"4:5": [str(p) for p in motion.carousel(shots, copy, out_dir=out_dir / tag, meta=seo)], **single(focus, ("2:3",)), **as_shot()}
         ordered = middle_first(shots, shots[0])
         mid = ordered.index(shots[0])
         if design == "fan":
             return {"4:5": [str(motion.fan_post(ordered, copy, out=out_dir / f"{tag}.jpg", focus=mid, meta=seo))],
-                    **single(focus, hero_cards)}
+                    **single(focus, ("2:3",)), **as_shot()}
         return {"4:5": [str(motion.spotlight_post(ordered, copy, out=out_dir / f"{tag}.jpg", index=mid, meta=seo))],
-                **single(focus, hero_cards)}
+                **single(focus, ("2:3",)), **as_shot()}
 
     return render, reel_failed
 
@@ -573,7 +653,7 @@ def redraw(conn: sqlite3.Connection, row, meta: dict, *, agent: str = "content")
     out_dir.mkdir(parents=True, exist_ok=True)
     render, reel_failed = make_renderer(conn, agent, design=design, rows=rows, hero=hero, images=images, day=day, track=track,
                                         out_dir=out_dir, seo=image_meta.for_photo(conn, hero), reel_style=style,
-                                        linkedin=not hero.get("public_figure"))
+                                        linkedin=not hero.get("prominent_logo"))
     art = meta.get("art") or {}
     focus = tuple(art["focus"]) if isinstance(art.get("focus"), list) and len(art["focus"]) == 2 else (0.5, 0.42)
     paths = render(focus)
@@ -586,7 +666,7 @@ def redraw(conn: sqlite3.Connection, row, meta: dict, *, agent: str = "content")
 
 
 def draft_one(ctx: runner.Context, fetch: Callable[[dict], bytes], *, now: Optional[datetime] = None,
-              check_client=None, drafter=None, art_client=None, figure_client=None, extra: bool = False, _depth: int = 0) -> str:
+              check_client=None, drafter=None, art_client=None, judge_client=None, extra: bool = False, _depth: int = 0) -> str:
     """`extra`: one more post for the day, asked for with Draft now (2026-10-31); it skips the one-a-day gate and is
     marked so it never counts as the day's post."""
     from ..render import motion
@@ -637,7 +717,7 @@ def draft_one(ctx: runner.Context, fetch: Callable[[dict], bytes], *, now: Optio
         design, chosen = fallback_for(day), chosen[:1]
     try:
         qid, art, line = make_draft(ctx, day, chosen, design, want=want, kind_used=kind_used, asked=asked, track=track,
-                                    drafter=drafter, art_client=art_client, figure_client=figure_client, why=use_why(chosen[0][0], len(pool)),
+                                    drafter=drafter, art_client=art_client, judge_client=judge_client, why=use_why(chosen[0][0], len(pool)),
                                     extra_meta={"source": "draft_now"} if extra else None,
                                     ping=(f"{ctx.cfg.brand_name}: the post you asked for, to approve",
                                           f"Drafted now, as you asked. Post now, follow the pace, or skip. Tap to see it.") if extra else None)
@@ -649,7 +729,7 @@ def draft_one(ctx: runner.Context, fetch: Callable[[dict], bytes], *, now: Optio
         if _depth + 1 >= MAX_TRIES:
             return f"{line}; no photo passed for {day} after {MAX_TRIES} tries"
         return line + "; " + draft_one(ctx, fetch, now=now, check_client=check_client, drafter=drafter,
-                                       art_client=art_client, figure_client=figure_client, extra=extra, _depth=_depth + 1)
+                                       art_client=art_client, judge_client=judge_client, extra=extra, _depth=_depth + 1)
     return line
 
 
@@ -662,7 +742,7 @@ def photo_file(cfg, row) -> Path:
 
 
 def make_draft(ctx: runner.Context, day: date, chosen: list[tuple[dict, bytes]], design: str, *, want: str, kind_used: str,
-               asked: str, track, drafter=None, art_client=None, figure_client=None, why: str = "", note: str = "",
+               asked: str, track, drafter=None, art_client=None, judge_client=None, why: str = "", note: str = "",
                extra_meta: Optional[dict] = None, ping: Optional[tuple[str, str]] = None, quiet: bool = False) -> tuple[int, dict, str]:
     """One draft from photos already chosen and checked: the captions, the design, the art director, the queue row and
     the ping. (queue id, the art director's verdict, the run line). The daily draft (draft_one) and a photo sent from
@@ -677,24 +757,26 @@ def make_draft(ctx: runner.Context, day: date, chosen: list[tuple[dict, bytes]],
             cache.write_bytes(data)
         ctx.conn.execute("UPDATE photos SET local_path=? WHERE id=?", (str(cache), row["id"]))
     hero = chosen[0][0]
-    # Chris, 2026-11-01: LinkedIn posts avoid photos whose main subject is a recognisable public figure. The art director judges
-    # the hero once (stored on the photo; none in a dry run): judged so, the draft has no LinkedIn caption, card or tick, and
-    # the draft page says why. Not judged yet: the publisher holds LinkedIn until it is (publisher.linkedin_hold).
-    figure = None if ctx.dry_run else art_director.public_figure(ctx.conn, hero["id"], chosen[0][1], client=figure_client, agent=ctx.agent)
-    targets = [n for n in TARGETS if not (n == "linkedin" and figure)]
-    skipped = {"linkedin": art_director.FIGURE_SKIP} if figure else {}
+    # Chris, 2026-11-01 evening: LinkedIn skips a photo where an organization's name or logo is prominent. The art director
+    # judges the hero once (stored on the photo; none in a dry run): judged so, the draft has no LinkedIn caption, photo or
+    # tick, and the draft page says why. Not judged yet: the publisher holds LinkedIn until it is (publisher.linkedin_hold).
+    logo = None if ctx.dry_run else art_director.prominent_logo(ctx.conn, hero["id"], chosen[0][1], client=judge_client, agent=ctx.agent)
+    targets = [n for n in TARGETS if not (n == "linkedin" and logo)]
+    skipped = {"linkedin": art_director.LOGO_SKIP} if logo else {}
+    li_style = linkedin_style(ctx.conn) if "linkedin" in targets else ""   # his voice rotates (2026-11-01 evening)
     facts = claude.PostFacts(brand_name=ctx.cfg.brand_name, event_kind=hero.get("event_kind") or "unknown",
                              shot_type=hero.get("shot_type") or "", subject=hero["subject"],
-                             quote_link=f"{ctx.cfg.brand_domain}/book" if ctx.cfg.brand_domain else "", note=note)
+                             quote_link=f"{ctx.cfg.brand_domain}/book" if ctx.cfg.brand_domain else "", note=note,
+                             linkedin_style=li_style)
     drafter = drafter or (claude.TemplateDrafter() if ctx.dry_run else claude.get_drafter(ctx.conn, agent=ctx.agent))
     known_names = names.public_names(ctx.conn)
     plan = seo_plan.plan_for(subject=hero["subject"], event_kind=hero.get("event_kind"), shot_type=hero.get("shot_type"),
                              design=design)
     facts.plan = plan
     captions, alt, seo_record, writer = write_captions(drafter, facts, photo_file(ctx.cfg, hero), known_names, conn=ctx.conn,
-                                                       agent=ctx.agent)
+                                                       agent=ctx.agent, judge_client=judge_client)
     captions = {n: t for n, t in captions.items() if n in targets}
-    reports = {n: copy_rules.check(t, names=known_names, social=True).as_dict() for n, t in captions.items()}
+    reports = {n: copy_rules.check(t, names=known_names, social=True, linkedin=n == "linkedin").as_dict() for n, t in captions.items()}
     images = {r["id"]: Image.open(io.BytesIO(d)) for r, d in chosen}
     out_dir = ctx.cfg.data_root / "renders" / "posts" / day.isoformat()
     seo = image_meta.for_photo(ctx.conn, hero)
@@ -723,7 +805,7 @@ def make_draft(ctx: runner.Context, day: date, chosen: list[tuple[dict, bytes]],
     meta = {"for_day": day.isoformat(), "subject": hero["subject"], "event": hero.get("convention_name") or "",
             "people": people, "model": writer, "rules": reports, "wanted": want, "art": art, "design": design,
             "design_wanted": asked, "seo": seo_record, "alt_text": alt, **reel_meta, **({"skipped": skipped} if skipped else {}),
-            **(extra_meta or {})}
+            **({"linkedin_style": li_style} if li_style else {}), **(extra_meta or {})}
     if reel_failed:
         meta["reel_failed"] = reel_failed[0]
     now_s = db.utcnow()
@@ -732,11 +814,21 @@ def make_draft(ctx: runner.Context, day: date, chosen: list[tuple[dict, bytes]],
     began = not ctx.conn.in_transaction
     if began:
         ctx.conn.execute("BEGIN IMMEDIATE")
-    held = photo_holder(ctx.conn, photo_ids, config.repeat_window(ctx.cfg))
-    if held:
+    # the window counts per network (Chris, 2026-11-02): the networks where a photo of this post, or a person on it, was on
+    # another post inside the window drop off, with the reason on the draft page; held on every network that is on
+    # (POST_NETWORKS), the photos are refused, since a post for switched-off networks alone goes nowhere
+    held = held_on(ctx.conn, photo_ids, config.repeat_window(ctx.cfg), people, ctx.cfg.variety_days)
+    going = [n for n in targets if n in payloads.posting_networks()] or targets
+    targets = [n for n in targets if n not in held]
+    if all(n in held for n in going):
         if began:
             ctx.conn.execute("ROLLBACK")
-        raise PhotosTaken(*held)
+        first = next(iter(held.values()))
+        raise PhotosTaken(first["photo"] or photo_ids[0], first["post"], f"{first['why']} (on every network this post was for)")
+    if held:
+        captions = {n: t for n, t in captions.items() if n in targets}
+        meta["rules"] = {n: r for n, r in meta["rules"].items() if n in targets}
+        meta["skipped"] = {**(meta.get("skipped") or {}), **{n: h["why"] for n, h in held.items()}}
     qid = db.insert(ctx.conn, "content_queue", kind="photo", photo_ids=json.dumps(photo_ids), targets=json.dumps(targets),
                     caption=json.dumps(captions), render_paths=json.dumps(render_paths), rule_report=json.dumps(meta),
                     created_at=now_s, updated_at=now_s)
@@ -755,7 +847,8 @@ def make_draft(ctx: runner.Context, day: date, chosen: list[tuple[dict, bytes]],
                     agent=ctx.agent, **ping_extras(ctx.conn, {"id": qid, "updated_at": now_s}, art))
     fell = (f", the reel could not be made ({reel_failed[0]})" if reel_failed
             else f", {asked} wanted but too few photos passed" if asked != design else "")
-    fell += ", LinkedIn skipped (a public figure)" if skipped else ""
+    fell += ", LinkedIn skipped" if skipped else f", LinkedIn {linkedin.STYLE_WORDS[li_style]}" if li_style else ""
+    fell += f", held off {' and '.join(payloads.name_of(n) for n in held)}" if held else ""
     line = (f"{'DRY RUN ' if ctx.dry_run else ''}drafted post #{qid} for {day} ({kind_used}"
             f"{', instead of ' + want if kind_used != want else ''}): {design} with {len(photo_ids)} photo(s){fell}, "
             f"photo {hero['id']} first{' (' + why + ')' if why else ''}, captions by {writer} for \"{plan.primary}\", "

@@ -62,8 +62,9 @@ def used_lately(conn: sqlite3.Connection, photo_ids: list[int]) -> Optional[str]
     road (Chris, 2026-10-15: "we keep reusing the same photos too"; config.repeat_window)."""
     from ..core import config
     from . import content
+    from ..buffer import payloads
     days = config.repeat_window(config.get_config())
-    used, _, _ = content.recent_use(conn, days)
+    used, _, _ = content.used_everywhere(conn, days, payloads.posting_networks())    # per network (Chris, 2026-11-02)
     again = [int(p) for p in photo_ids if int(p) in used]
     if again:
         return f"photo {again[0]} is already on a post inside {days} days, and a photo goes out once inside that window"

@@ -176,8 +176,10 @@ def pool(conn: sqlite3.Connection) -> list[dict]:
     road, and no credited person who was on a post inside VARIETY_DAYS."""
     from . import content
     cfg = config.get_config()
-    used, _, _ = content.recent_use(conn, config.repeat_window(cfg))
-    _, _, people = content.recent_use(conn, cfg.variety_days)
+    from ..buffer import payloads
+    on = payloads.posting_networks()         # the window counts per network (Chris, 2026-11-02): held everywhere that is on
+    used, _, _ = content.used_everywhere(conn, config.repeat_window(cfg), on)
+    _, _, people = content.used_everywhere(conn, cfg.variety_days, on)
     out = []
     for r in db.rows(conn, PHOTO_SQL):
         if r["id"] in used or not eligibility.is_candidate(conn, r["id"])[0]:
