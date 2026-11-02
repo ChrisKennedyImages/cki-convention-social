@@ -40,6 +40,8 @@ class Writer:
 class Mend(IsolatedCase):
     def setUp(self):
         super().setUp()
+        os.environ["POST_NETWORKS"] = "instagram,facebook,pinterest,linkedin"   # every network on: these tests pin every card (2026-11-02)
+        config.reset()
         self.conn = db.connect()
         self.addCleanup(self.conn.close)
         os.environ["BRAND_DOMAIN"] = "eventcaliber.com"
@@ -223,7 +225,7 @@ class TheCard(Mend):
         mend = content.mend_captions(self.conn, self.row(qid), drafter=Writer([CLEAN]))
         self.assertEqual(mend["card"], "card drawn again with today's words")
         paths = json.loads(self.row(qid)["render_paths"])
-        self.assertEqual(sorted(paths), ["2:3", "4:5", "linkedin"])
+        self.assertEqual(sorted(paths), ["2:3", "4:5"], "the networks this row goes to; it never had LinkedIn (2026-11-02)")
         for files in paths.values():
             for f in files:
                 self.assertNotEqual(f, str(old))

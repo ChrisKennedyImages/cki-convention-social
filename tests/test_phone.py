@@ -171,6 +171,8 @@ class Draft(IsolatedCase):
         return row, (json.loads(row["rule_report"]) if row else {})
 
     def test_dry_run_with_the_free_sorter_drafts_a_single_post_for_today(self):
+        os.environ["POST_NETWORKS"] = "instagram,pinterest"      # the pin card is drawn only while Pinterest is on (2026-11-02)
+        config.reset()
         sid = self.send()
         pid = db.one(self.conn, "SELECT photo_id FROM phone_sends WHERE id=?", (sid,))["photo_id"]
         own = db.one(self.conn, "SELECT local_path FROM photos WHERE id=?", (pid,))["local_path"]

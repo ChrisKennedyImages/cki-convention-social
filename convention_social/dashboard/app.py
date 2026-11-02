@@ -37,10 +37,9 @@ from ..ai import names as ai_names
 from ..ai.claude import NETWORKS
 from ..buffer import payloads as buffer_payloads
 from ..buffer.client import BufferBudgetExceeded, BufferClient, BufferError, BufferRateLimited
-from ..core import access, approve_token, auth, config, db, runner, secrets, settings, state_io
+from ..core import access, approve_token, auth, config, db, previews, runner, secrets, settings, state_io
 from .. import music
 from ..library import eligibility, report
-from ..render.photo import LINKEDIN_PHOTO
 from . import alerts
 from . import today as today_view
 
@@ -238,9 +237,6 @@ def official_for(conn, row) -> bool:
     return _official(conn, row)
 
 
-NOT_THUMBS = ("9:16", "cover", "stills")   # a reel plays as a video with its cover; the stills are for the art director
-
-
 def queue_view(conn, row) -> dict:
     captions = json.loads(row["caption"] or "{}")
     targets = json.loads(row["targets"] or "[]")
@@ -257,6 +253,8 @@ def queue_view(conn, row) -> dict:
     art = meta.get("art") or {}
     mended = meta.get("mended") or []
     on = alerts.networks_on()
+    skipped = meta.get("skipped") if isinstance(meta.get("skipped"), dict) else {}      # {network: why it is not sent} (2026-11-01)
+    shown = previews.shows(row)
     held = meta.get("held_by") if row["status"] == "draft" and isinstance(meta.get("held_by"), dict) else None
     holder = db.one(conn, "SELECT status FROM content_queue WHERE id=?", (int(held.get("post") or 0),)) if held else None
     released = bool(held) and (holder is None or holder["status"] not in ("scheduled", "published", "would_publish"))
@@ -268,7 +266,7 @@ def queue_view(conn, row) -> dict:
         link = f"Pull post #{int(held.get('post') or 0)} back"
         held_html = Markup(escape(row["last_error"])).replace(link, Markup(f'<a href="/queue/{int(held["post"])}">{link}</a>'))
     return {**dict(row), "art": art, "captions": captions, "targets": targets, "reports": reports, "official": official,
-            "skipped": meta.get("skipped") if isinstance(meta.get("skipped"), dict) else {},   # {network: why it is not sent} (2026-11-01)
+            "skipped": skipped,
             "linkedin_style": linkedin.STYLE_WORDS.get(meta.get("linkedin_style") or "", ""),   # how its LinkedIn line reads (2026-11-01 evening)
             "held_html": held_html, "held_post": int(held["post"]) if held_html else None,
             **({"last_error": None} if released else {}),
@@ -279,9 +277,8 @@ def queue_view(conn, row) -> dict:
             "video": any(str(x).lower().endswith(".mp4") for x in renders.get("9:16") or []), "cover": bool(renders.get("cover")),
             "music": music.credit(conn, meta.get("music")),          # the track the reel was made with, named under its player
             "instant_format": meta.get("format", "") if meta.get("instant") else "",   # an instant photo's Story or feed post (2026-10-15)
-            "renders": {a: list(range(1, len(ps) + 1)) for a, ps in renders.items()
-                        if a not in NOT_THUMBS and (a != "2:3" or "pinterest" in on)
-                        and (a != LINKEDIN_PHOTO or "linkedin" in on)}}     # the pin card only while Pinterest is on, the LinkedIn photo while LinkedIn is
+            "slides": list(range(1, shown[0].count + 1)) if shown and shown[0].key == "4:5" else [],   # a carousel's swipe on Today
+            "previews": shown}     # what each ticked network receives, by the publisher's map (core/previews, 2026-11-02)
 
 
 MEDIA_TYPES = {".mp4": "video/mp4", ".png": "image/png"}
@@ -734,7 +731,8 @@ def create_app() -> FastAPI:
         drafts = []
         for r in db.rows(conn, "SELECT * FROM content_queue WHERE kind='photo' AND status='draft' ORDER BY id DESC LIMIT 30"):
             item = queue_view(conn, r)
-            item.update(origin=today_view.origin(r), choosable=today_view.choosable(item), card=today_view.card_path(r))
+            item.update(origin=today_view.origin(r), choosable=today_view.choosable(item), card=today_view.card_path(r),
+                        card_label=today_view.card_label(r))
             pace = today_view.pace_slot(conn, r) if item["choosable"] else None
             item["pace_words"] = f"{today_view.day_words(pace)} {today_view.clock(pace)}" if pace else ""
             drafts.append(item)
@@ -763,7 +761,7 @@ def create_app() -> FastAPI:
         else:
             show, where, params = "all", "1=1", ()
         rows = db.rows(conn, f"SELECT * FROM content_queue WHERE {where} ORDER BY id DESC LIMIT 200", params)
-        items = [{**dict(r), "origin": today_view.origin(r), "card": today_view.card_path(r)} for r in rows]
+        items = [{**dict(r), "origin": today_view.origin(r), "card": today_view.card_path(r), "card_label": today_view.card_label(r)} for r in rows]
         return render(request, "history.html", items=items, show=show, trend=metrics.trend(conn, 12),
                       filters=[("all", "All")] + [(k, today_view.STATUS_WORDS[k]) for k in
                                                   ("draft", "approved", "scheduled", "published", "would_publish", "rejected", "failed")])
@@ -912,6 +910,8 @@ def create_app() -> FastAPI:
         scheduled = (form.get("scheduled_for") or "").strip() or None
         conn.execute("UPDATE content_queue SET caption=?, targets=?, scheduled_for=?, updated_at=? WHERE id=?",
                      (json.dumps(captions), json.dumps(targets), scheduled, db.utcnow(), qid))
+        from ..agents import content
+        content.draw_missing(conn, load_queue_row(conn, qid))     # a network ticked now gets its file, so the preview follows (2026-11-02)
         do = form.get("do") or "save"
         if do in ("approve", "now", "pace"):
             row = load_queue_row(conn, qid)
@@ -978,8 +978,10 @@ def create_app() -> FastAPI:
     def queue_choose_by_token_page(qid: int, request: Request, conn=Depends(conn_dep), token: str = "", how: str = ""):
         """A GET never decides anything (a link preview, a browser prefetch): a page with the buttons, and nothing more."""
         row = load_queue_row(conn, qid)
+        first = previews.lead(row)            # the image this page shows: what the first ticked network receives (2026-11-02)
+        card = f"/media/card/{qid}/{approve_token.card_key(row, token)}.jpg" if first and token.count(".") == 2 else None
         return render(request, "approve_token.html", qid=qid, token=token, status=row["status"], choices=CHOICE_WORDS,
-                      how=how if how in CHOICE_WORDS else "")
+                      how=how if how in CHOICE_WORDS else "", card=card, card_label=first.label if first else "")
 
     from .team_routes import token_of                     # at most a token's worth, refused before it is read
 
@@ -1076,14 +1078,12 @@ def create_app() -> FastAPI:
         row = db.one(conn, "SELECT * FROM content_queue WHERE id=?", (qid,))
         if row is None or not approve_token.check_card(conn, row, name[:-4]):
             raise HTTPException(404)
-        renders = json.loads(row["render_paths"] or "{}")
-        # a reel's own cover first (2026-10-15: the ping showed the reel's Pinterest card); an instant photo's Story (the
-        # card that goes out, 2026-10-15); else the post's card
-        for aspect in (("cover", "4:5", "2:3") if renders.get("9:16") else ("story", "4:5", "2:3", "cover")):
-            paths = renders.get(aspect) or []
-            if paths and inside_data_root(Path(paths[0])):
-                return FileResponse(paths[0], media_type=MEDIA_TYPES.get(Path(paths[0]).suffix.lower(), "image/jpeg"))
-        raise HTTPException(404)
+        # what the first ticked network receives (core/previews, 2026-11-02): a LinkedIn-only draft's photo as shot, a reel's
+        # own cover, an instant photo's Story card, else the post's card; never a card for a network the post is not going to
+        path = previews.lead_file(row)
+        if path is None or not inside_data_root(path):
+            raise HTTPException(404)
+        return FileResponse(path, media_type=MEDIA_TYPES.get(path.suffix.lower(), "image/jpeg"))
 
     @app.get("/media/thumb/{photo_id}")
     def media_thumb(photo_id: int, user: str = Depends(require_user), conn=Depends(conn_dep)):

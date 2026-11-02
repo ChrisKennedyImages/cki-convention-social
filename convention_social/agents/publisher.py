@@ -31,14 +31,13 @@ from ..ai import copy_rules, names
 from ..buffer import budget, media, payloads
 from ..buffer.client import BufferBudgetExceeded, BufferClient, BufferError, BufferRateLimited, BufferUnknownOutcome
 from ..core import config, db, notify, runner, settings
-from ..render.photo import LINKEDIN_PHOTO
 from . import art_director, pacing
 
 READY_SQL = "SELECT * FROM content_queue WHERE status = 'approved' ORDER BY COALESCE(approved_at, created_at), id"
 TERMINAL_OK = {"sent"}
 TERMINAL_BAD = {"error"}
 # the render_paths key each network posts: LinkedIn the hero as shot, no card (2026-11-01 evening, "Let's do that")
-ASPECT_FOR = {"instagram": "4:5", "facebook": "4:5", "pinterest": "2:3", "linkedin": LINKEDIN_PHOTO}
+ASPECT_FOR = payloads.ASPECT_FOR        # the one map, shared with the draft page (buffer/payloads.py)
 POSTABLE_SUFFIXES = {".jpg", ".jpeg", ".png"}
 VIDEO_ASPECT = "9:16"
 # A dry run asks Buffer nothing: it builds the reel with the fields last read from Buffer (the Buffer

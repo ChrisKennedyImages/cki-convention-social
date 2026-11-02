@@ -217,6 +217,8 @@ def direct(conn: sqlite3.Connection, render: Callable[[tuple], dict], *, brief: 
     while True:
         # the LinkedIn photo is the hero as shot, which the cards already show: not looked at twice
         files = [Path(p) for key, ps in paths.items() if key != LINKEDIN_PHOTO for p in ps if Path(p).suffix.lower() in STILLS][:max_files]
+        if not files:                  # no card to judge: the draft goes to LinkedIn alone, the photo as shot (2026-11-02)
+            return paths, {"verdict": "not reviewed", "notes": "No card to look at: the photo goes as shot.", "rounds": rounds}
         verdict = look(conn, files, brief=brief(paths), client=client, agent=agent)
         rounds += 1
         if verdict is None:

@@ -7,8 +7,8 @@
 {% if not items %}<div class="card muted">No post is {{ '' if show == 'all' else status_words.get(show, show)|lower }} yet.</div>{% endif %}
 {% for it in items %}
 <a class="card row" href="/queue/{{ it.id }}" style="text-decoration:none;color:inherit;align-items:flex-start">
-  {% if it.card %}<img src="{{ it.card }}" alt="" style="width:72px;aspect-ratio:4/5;object-fit:cover;border-radius:6px;border:1px solid var(--line)" loading="lazy">{% endif %}
-  <span style="flex:1 1 180px"><strong>{{ it.origin }}</strong><br><span class="muted">post {{ it.id }}, made {{ it.created_at[:10] }}</span>
+  {% if it.card %}<img src="{{ it.card }}" alt="{{ it.card_label }}" title="{{ it.card_label }}" style="width:72px;aspect-ratio:4/5;object-fit:cover;border-radius:6px;border:1px solid var(--line)" loading="lazy">{% endif %}
+  <span style="flex:1 1 180px"><strong>{{ it.origin }}</strong><br><span class="muted">post {{ it.id }}, made {{ it.created_at[:10] }}{% if it.card_label %}; {{ it.card_label }}{% endif %}</span>
     {% if it.last_error and it.status in ('failed', 'rejected', 'draft') %}<br><span class="muted">{{ it.last_error }}</span>{% endif %}</span>
   <span class="badge {{ it.status }}">{{ status_words.get(it.status, it.status) }}</span>
 </a>

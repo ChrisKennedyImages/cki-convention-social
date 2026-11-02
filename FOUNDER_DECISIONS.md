@@ -2398,3 +2398,20 @@ that in memory or a rules file in the suite!" Nothing had gone out.
   important not to mess up." Every caption is written from the opened photo, listed in the photos' order and labelled
   with who is in it; he or she only when the photo clearly shows it. Also a law in CLAUDE.md, and the LinkedIn writer's
   pronoun gate (2026-11-01, late evening).
+## 2026-11-02: a draft's page shows each network what it will receive, and nothing is drawn for a network it is not going to
+
+Chris, on the live dashboard, on draft #61 (photo 921, LinkedIn only, under the per-network window): the page led with the
+branded Instagram 4:5 card, then the 2:3 pin card, the photo as shot last. "The LinkedIn photo is a completely fully
+branded photo." The publisher was right (it sends LinkedIn the photo as shot, by `ASPECT_FOR`); the page misled.
+
+- **Nothing is drawn for a network the draft is not going to:** held off by the per-network window, skipped (the logo
+  rule), unticked, or switched off in `POST_NETWORKS`. A LinkedIn-only draft renders the photo as shot alone
+  (`agents/content.aspects_for`, `make_renderer`); with no card to judge, the art director spends no look.
+- **The draft page shows what each ticked network will receive, labeled by network** ("Instagram: the card", "LinkedIn:
+  the photo as shot"), by the same map the publisher sends by (`buffer/payloads.ASPECT_FOR`), so the page can never show a
+  network something other than what is sent. A network unticked, held off or switched off shows no image. When a tick
+  changes and is saved, the preview follows; a ticked network whose file is missing gets it drawn then.
+- **Every place that shows a draft's image follows the same rule**, through one helper (`core/previews`): Today's
+  "To approve" card (his phone showed the branded card there too, with the LinkedIn caption under it), the draft page,
+  All posts, the phone ping's card and the approve-by-token page. Each shows what its first ticked network receives,
+  labeled; for a LinkedIn-only draft, the photo as shot labeled LinkedIn.

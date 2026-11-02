@@ -29,8 +29,9 @@
 {% elif item.last_error %}<div class="msg bad">{{ item.last_error }}</div>{% endif %}
 {% if item.video %}<div class="card" style="display:flex;flex-direction:column;align-items:center"><video class="reel"{% if play %} autoplay muted{% endif %} src="/media/render/{{ item.id }}/9x16/1"{% if item.cover %} poster="/media/render/{{ item.id }}/cover/1"{% endif %} controls playsinline loop preload="metadata" style="height:min(620px,72vh)"></video>
 <div class="muted">{{ 'Tap to play it with its sound. Music: ' + item.music if item.music else 'No music' }}</div></div>
-{% endif %}{% if item.renders %}<div class="card"><div class="thumbs">{% for aspect, idx in item.renders.items() %}{% for i in idx %}<a href="/media/render/{{ item.id }}/{{ aspect.replace(':','x') }}/{{ i }}"><img src="/media/render/{{ item.id }}/{{ aspect.replace(':','x') }}/{{ i }}" alt="{{ aspect }}"></a>{% endfor %}{% endfor %}</div>
-<div class="muted" style="margin-top:6px">{{ 'Swipe to see every card. ' if item.renders|length > 1 or (item.renders.values()|list)[0]|length > 1 else '' }}Tap a card to open it full size.</div></div>{% endif %}
+{% endif %}{% if item.previews %}<div class="card">{% for p in item.previews %}<div style="margin:2px 0 4px"><strong>{{ p.network|network }}:</strong> {{ p.words }}</div>
+<div class="thumbs" style="margin-bottom:10px">{% for i in range(1, p.count + 1) %}<a href="{{ p.url(item.id, i) }}"><img src="{{ p.url(item.id, i) }}" alt="{{ p.label }}"></a>{% endfor %}</div>{% endfor %}
+<div class="muted">What each ticked network receives, exactly as it is sent. Tap one to open it full size.</div></div>{% endif %}
 {% if item.status == 'draft' and item.held_post %}
 <div class="card muted">Once post #{{ item.held_post }} is pulled back, Post now and Follow the pace come back here.</div>
 {% elif item.status == 'draft' %}

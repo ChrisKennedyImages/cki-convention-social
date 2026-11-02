@@ -50,9 +50,15 @@ from datetime import datetime, timezone
 from typing import Optional
 from zoneinfo import ZoneInfo
 
+from ..render.photo import LINKEDIN_PHOTO
 from ..core import config
 
 NETWORKS = ("instagram", "facebook", "pinterest", "linkedin")
+# what each network receives, by render_paths key: Instagram and Facebook the 4:5 design (a reel row sends its video instead),
+# Pinterest the 2:3 card, LinkedIn the hero as shot. The publisher sends by this map and the draft page shows by it, so the
+# page can never show a network something other than what is sent (Chris, 2026-11-02, on a LinkedIn-only draft whose page
+# led with the Instagram card: "The LinkedIn photo is a completely fully branded photo.")
+ASPECT_FOR = {"instagram": "4:5", "facebook": "4:5", "pinterest": "2:3", "linkedin": LINKEDIN_PHOTO}
 NAMES = {"instagram": "Instagram", "facebook": "Facebook", "pinterest": "Pinterest", "linkedin": "LinkedIn"}
 ONE_IMAGE = ("pinterest", "linkedin")   # one image per post: a pin (more was never verified), a LinkedIn post (2026-11-01)
 LINKEDIN_CHANNEL_TYPE = "profile"       # ChannelType in the live schema (2026-11-01): account | business | channel | group | page | profile
