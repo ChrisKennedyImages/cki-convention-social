@@ -2593,3 +2593,46 @@ some of them, and 45 of the 56 photos on eventcaliber.com.
 
 On the renders: "Yes, merge (Recommended)".
 
+## 2026-11-02: one card per picture, the copies saved as other files included
+
+Chris: "And I thought you got rid of the duplicates and I still see so many". Identical files (the same bytes) had been
+one card since 2026-10-26, and none was left on To review; what he saw was the same picture saved as another file: a
+low-res export beside the original ("Stone_Point-14.jpg", 916x600 in "Low-Res Images" and 7867x5151 in "Stone Point
+Apartments"), and a client's copies filed into one folder per person ("1-Texas_2022NICL4065-TEXAS2022.jpg", 5472x3648, in
+"Scott Hall" and in "Steven"). Counted when he was asked: 620 pictures, 825 extra cards on To review. Asked "Duplicates:
+show one card per picture (the largest file), with your Use or Never use applying to every copy of it?", he chose "Yes,
+one card each (Recommended)": "The 825 extra cards leave To review. A decision on the one card applies to all its copies,
+and the post uses the largest file. Copies are matched by same file name, same camera second and same shape."
+
+- **What a copy is** (`library/copies.py`): the same bytes, or the same file name (any case, without Drive's "Copy of "
+  and the extension, and without a download counter written with a space, "acura (1).jpg") taken in the same second by
+  the camera's clock (both known), in the same shape: the smaller file is the larger one resized, its sides the larger's
+  scaled down to within a pixel. A copy of a copy is a copy. A crop is another picture, however slight (CK6_0180.jpg at
+  7344x4931 is the 8256x5504 frame with a man cut at the edge, 0.7% off its shape; 28 such pairs stay apart). The frames
+  of a burst stay different pictures: the camera numbers every frame (DSC_6552 and DSC_6553 in one second), and a phone
+  counts its frames inside one second with no space ("20170811_204436(1).jpg"), which is never taken off. Finder's
+  "X copy.jpg" is an edit, not a copy (the ten in the library differ from their originals in shape or time).
+- **The card** is the photo that stands for the picture (`photos.picture`, migration 0096): its largest file, the lowest
+  id on a tie, of the files still in Drive the sorter has looked at. Read into his ruling, for him to correct: the largest
+  file of all would have taken 53 pictures off To review, because one file sat in a folder the sorter never reads while
+  the copy it had sorted sat elsewhere (50 of them the same size; in three, Consolidtaed_Commercial-8, -11 and -14, the
+  card is the low-res file until the original is sorted). A larger copy takes the card at the hourly pass after it is
+  sorted. The scanner links new photos to their copies after every inventory pass.
+- **A decision on the card is on every copy**: Use, Don't use, the swipe and its Undo, as since 10-26; and a photo on the
+  do-not-use list (Never use) keeps every copy of its picture out, at the publisher's door too. The pass gives the copies
+  their picture's decision. Where copies disagreed (15 pictures on 2 November: Use on one file, Never use on its
+  duplicate), asked which should stand, he chose "Approved (Recommended)": his Use on any copy wins; a Never use spreads
+  to every copy where no copy has a Use.
+- **A post takes the card's file**: the daily draft and the designed drafts are offered only the photo that stands for
+  each picture, and so are a reel's wall, the design samples and the website. A picture that went out went out, whichever
+  of its files was on the post (the repeat window and the rotation).
+- **On a copy of the live data** (2 November, 23:05): To review went from 13,769 cards to 12,907 (events 12,331 to 11,846,
+  buildings 1,438 to 1,061). 854 cards left as copies of 650 pictures that keep one card each; 15 left because another
+  copy already had his decision; 7 pictures came back that the old rule had hidden (of identical files it showed the
+  lowest id, which the sorter had never looked at). In the whole library 1,089 pictures are held in files of different
+  bytes (1,397 extra files). The pass gave 19 copies their picture's decision: 15 his Use, 3 his
+  Don't use, and one he had Used in "Thursday" took the Don't use he gave its copy in "CPAC 2016 Photos" (IMG_5514.jpg).
+  The posts' pool before the repeat window went from 1,979 event pictures to 1,974 (IMG_5514; and four whose card the
+  sorter called a private occasion while it called the other copy an event: CK1_5184, CK1_4797 and CK1_5107 in
+  "headshots", CK1_0673), and from 15 building pictures to 14 (Claude judged the large file of Baldwin_Apartments-21
+  somebody's home).

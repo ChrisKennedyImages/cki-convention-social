@@ -22,7 +22,7 @@ from typing import Callable, Optional
 from PIL import Image, ImageDraw, ImageOps
 
 from ..core import config, db, settings
-from . import eligibility
+from . import copies, eligibility
 from ..render import fonts
 
 PER_EVENT_CAP = 4
@@ -126,11 +126,11 @@ def ensure_use_history(conn: sqlite3.Connection) -> int:
 def last_uses(conn: sqlite3.Connection) -> dict[int, str]:
     """{photo id: when it was last used, on any surface}; a photo never used is absent."""
     ensure_use_history(conn)
-    # a use of one copy of a picture is a use of every copy (same md5), so a twin never leads as if never shown
+    # a use of one copy of a picture is a use of every copy (library/copies.py), so a copy never leads as if never shown
     return {r["photo_id"]: r["last"] for r in db.rows(conn, """
         SELECT p2.id AS photo_id, MAX(u.used_at) AS last FROM photo_use u
         JOIN photos p ON p.id = u.photo_id
-        JOIN photos p2 ON p2.id = p.id OR (p.md5 IS NOT NULL AND p2.md5 = p.md5 AND p2.trashed = 0)
+        JOIN photos p2 ON p2.id = p.id OR (p2.picture = p.picture AND p2.trashed = 0)
         GROUP BY p2.id""")}
 
 
@@ -207,7 +207,8 @@ def ranking(r) -> tuple:
 
 
 def best(conn: sqlite3.Connection, n: int = 30, *, subject: str = "event", cap: int | None = PER_EVENT_CAP) -> list[sqlite3.Row]:
-    """The strongest frames, at most PER_EVENT_CAP per event.
+    """The strongest frames, at most PER_EVENT_CAP per event, one file per picture (the one that stands for it,
+    library/copies.py: a reel's wall and the samples never show a picture twice or its small copy).
 
     `subject` is "event" for convention work or "architecture" for Chris's building work. The
     same safety filters apply to both: sorted by a model, no readable
@@ -216,7 +217,7 @@ def best(conn: sqlite3.Connection, n: int = 30, *, subject: str = "event", cap: 
     """
     source = architecture_rows if subject == "architecture" else convention_rows
     rows = [r for r in source(conn)
-            if r["method"] in ("vision", "ollama") and r["thumbnail_link"]
+            if r["method"] in ("vision", "ollama") and r["thumbnail_link"] and copies.stands_for_its_picture(r)
             and not eligibility.blocking_details(json.loads(r["personal_details"] or "[]"), subject)
             and not (subject == "architecture" and eligibility.building_blocked(r))]
     rows.sort(key=ranking)

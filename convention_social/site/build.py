@@ -173,20 +173,22 @@ def shot_of(row: dict) -> str:
 
 def one_per_picture(rows: list[dict], last: dict[int, str], keep: Optional[set] = None) -> tuple[list[dict], dict[int, str]]:
     """The same picture under two ids is one photo (Chris, 2026-10-14, on the live strip: "same picked twice"; the
-    library holds the same file in two Drive folders, or a copy in a shared gallery, 1,431 such groups that day).
-    One row stands for each md5 group, the first in the order given (an id in `keep`, Chris's own hero pick, wins),
-    and the group's last use on any surface is the latest of its rows', so a picture shown under one id sits out
-    under the others too. A row with no md5 (a photo from the phone) is its own group."""
-    groups: dict[str, list[dict]] = {}
+    library holds the same file in two Drive folders, or a copy in a shared gallery, 1,431 such groups that day; and,
+    2026-11-02, the same picture saved as another file). One row stands for each picture (library/copies.py): an id in
+    `keep`, Chris's own hero pick, else the file that stands for the picture (its largest sorted file), else the first in
+    the order given; and the picture's last use on any surface is the latest of its rows', so a picture shown under one id
+    sits out under the others too. A row the scanner has not linked yet is its own picture."""
+    groups: dict[int, list[dict]] = {}
     for r in rows:
-        groups.setdefault(r.get("md5") or f"id:{r['id']}", []).append(r)
+        groups.setdefault(r.get("picture") or r["id"], []).append(r)
     kept, shared = [], dict(last)
-    for members in groups.values():
+    for picture, members in groups.items():
         latest = max((last.get(m["id"]) or "" for m in members), default="")
         if latest:
             for m in members:
                 shared[m["id"]] = latest
-        kept.append(next((m for m in members if keep and m["id"] in keep), members[0]))
+        kept.append(next((m for m in members if keep and m["id"] in keep), None)
+                    or next((m for m in members if m["id"] == picture), members[0]))
     return kept, shared
 
 
@@ -205,14 +207,14 @@ def site_picks(conn: sqlite3.Connection, pool: list[dict], *, hero_id: Optional[
     longer holds (blocked, gone from Drive, unsorted, a building) is left out and said, and so is a pick that is the
     hero (the gallery never shows the hero again). One picture under two ids is one pick. (picks, what to say)"""
     by_id = {r["id"]: r for r in pool}
-    by_md5 = {r["md5"]: r for r in pool if r.get("md5")}
+    by_picture = {r.get("picture") or r["id"]: r for r in pool}
     picks, said, seen = [], [], set()
-    for w in db.rows(conn, "SELECT id, md5 FROM photos WHERE site_pick_at IS NOT NULL ORDER BY site_pick_at, id"):
-        key = w["md5"] or f"id:{w['id']}"
-        if key in seen:
+    for w in db.rows(conn, "SELECT id, picture FROM photos WHERE site_pick_at IS NOT NULL ORDER BY site_pick_at, id"):
+        picture = w["picture"] or w["id"]
+        if picture in seen:
             continue
-        seen.add(key)
-        row = by_id.get(w["id"]) or by_md5.get(w["md5"])
+        seen.add(picture)
+        row = by_id.get(w["id"]) or by_picture.get(picture)
         if row is None:
             ok, why = eligibility.is_eligible(conn, w["id"])
             said.append(f"your Site gallery pick (photo {w['id']}) could not be used: {why if not ok else 'not an event photo in the library'}")

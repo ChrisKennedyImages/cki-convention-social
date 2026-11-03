@@ -18,7 +18,7 @@ from fastapi.testclient import TestClient
 from convention_social.core import auth, config, db, settings
 from convention_social.dashboard import app as dash
 from convention_social.dashboard.app import COOKIE, create_app, make_token
-from convention_social.library import eligibility
+from convention_social.library import copies, eligibility
 from tests._base import IsolatedCase
 from tests._fakes import add_post
 from tests.test_photos_tab import build_library
@@ -64,6 +64,7 @@ class Deck(IsolatedCase):
         self.photo(2, quality=4)
         self.photo(3, quality=5, md5="same")
         self.photo(4, quality=1, md5="same")          # the same picture twice: one card, both copies decided
+        copies.link(self.conn)                         # the scanner's pass after the inventory
         r = self.swipe(1, "cleared")
         self.assertEqual(r.status_code, 200)
         self.assertEqual(self.clearance(1), "cleared")

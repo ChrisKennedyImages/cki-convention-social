@@ -39,7 +39,7 @@ from ..buffer import payloads as buffer_payloads
 from ..buffer.client import BufferBudgetExceeded, BufferClient, BufferError, BufferRateLimited
 from ..core import access, approve_token, auth, config, db, previews, runner, secrets, settings, state_io
 from .. import music
-from ..library import eligibility, report
+from ..library import copies, eligibility, report
 from . import alerts
 from . import today as today_view
 
@@ -387,9 +387,10 @@ STRENGTH = """CASE WHEN c.light IS NULL AND c.moment IS NULL THEN COALESCE(c.qua
                                   - CASE WHEN c.sharp = 0 THEN 6 ELSE 0 END) * 10.0 / 15) END"""
 DECISION = ("CASE WHEN p.clearance = 'blocked' THEN 'blocked' WHEN fd.decision = 'excluded' THEN 'excluded' "
             "WHEN p.clearance = 'cleared' THEN 'cleared' ELSE COALESCE(fd.decision, 'not_cleared') END")
-# One card per picture: of identical copies (same md5) the lowest id stands for all; a tap on it decides every copy
-# (2026-10-26: "when I click Use the photo reappears": its twin did, 31 groups were half decided).
-ONE_COPY = "(p.md5 IS NULL OR p.id = (SELECT MIN(p2.id) FROM photos p2 WHERE p2.md5 = p.md5 AND p2.trashed = 0))"
+# One card per picture (library/copies.py): its largest sorted file stands for every copy, identical or saved as another
+# file, and a tap on it decides every copy (2026-10-26: "when I click Use the photo reappears": its twin did; 2026-11-02:
+# "I still see so many": the copies saved as other files).
+ONE_COPY = f"({copies.STANDS_FOR_ITS_PICTURE})"
 PAGE_FROM = """FROM photos p LEFT JOIN classifications c ON c.photo_id = p.id
                LEFT JOIN drive_folders f ON f.drive_id = p.folder_id
                LEFT JOIN temp.folder_decision fd ON fd.drive_id = p.folder_id"""

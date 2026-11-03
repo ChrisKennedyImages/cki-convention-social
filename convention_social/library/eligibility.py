@@ -58,11 +58,11 @@ NOT_OFFERED_KIND_WHY = "a wedding or a private occasion: Event Caliber photograp
 
 
 def copies_of(conn: sqlite3.Connection, photo_id: int) -> list[int]:
-    """The live photos that are this one, byte for byte (Drive holds the same file in several places: 2,916 photos
-    in 1,432 identical copies on 2026-10-26, "Copy of" exports and re-uploads). A decision is on the picture, so it
-    is written to every copy; the one photo is always in the list."""
-    return [r["id"] for r in db.rows(conn, "SELECT id FROM photos WHERE id = ? OR (trashed = 0 AND md5 IS NOT NULL "
-                                           "AND md5 = (SELECT md5 FROM photos WHERE id = ?))", (photo_id, photo_id))]
+    """The live photos that are this one's picture (library/copies.py: identical files, 2,916 photos in 1,432 groups on
+    2026-10-26, and the same picture saved as another file, 2026-11-02). A decision is on the picture, so it is written
+    to every copy; the one photo is always in the list."""
+    return [r["id"] for r in db.rows(conn, "SELECT id FROM photos WHERE id = ? OR (trashed = 0 "
+                                           "AND picture = (SELECT picture FROM photos WHERE id = ?))", (photo_id, photo_id))]
 
 
 def clearance_of(conn: sqlite3.Connection, photo: sqlite3.Row) -> str:
@@ -120,6 +120,10 @@ def credits_for(conn: sqlite3.Connection, photo: sqlite3.Row) -> list[sqlite3.Ro
 def blocked_by_list(conn: sqlite3.Connection, photo: sqlite3.Row) -> str | None:
     if db.one(conn, "SELECT 1 FROM do_not_use WHERE kind='photo' AND value=?", (photo["drive_id"],)):
         return "this photo is on the do-not-use list"
+    # Never use on the one card is on every copy of the picture (Chris, 2026-11-02; library/copies.py)
+    if photo["picture"] is not None and db.one(conn, "SELECT 1 FROM do_not_use d JOIN photos p ON p.drive_id = d.value "
+                                                     "WHERE d.kind='photo' AND p.picture=?", (photo["picture"],)):
+        return "another copy of this picture is on the do-not-use list"
     for f in folder_chain(conn, photo["folder_id"]):
         if db.one(conn, "SELECT 1 FROM do_not_use WHERE kind='folder' AND value=?", (f["drive_id"],)):
             return "its folder is on the do-not-use list"
@@ -132,12 +136,14 @@ def blocked_by_list(conn: sqlite3.Connection, photo: sqlite3.Row) -> str | None:
 
 def do_not_use_photos(conn: sqlite3.Connection) -> set[int]:
     """The ids of every photo the do-not-use list covers, by the rule blocked_by_list follows photo by photo: the photo
-    itself, a folder anywhere above it, or a person or handle credited on it or on a folder above it. One pass for the
-    whole library (2026-11-02: a photo he had put on the list with Never use still waited on To review)."""
+    itself or a copy of its picture, a folder anywhere above it, or a person or handle credited on it or on a folder above
+    it. One pass for the whole library (2026-11-02: a photo he had put on the list with Never use still waited on To review)."""
     listed = {(r["kind"], r["value"]) for r in db.rows(conn, "SELECT kind, value FROM do_not_use")}
     if not listed:
         return set()
     photo_ids = {v for k, v in listed if k == "photo"}
+    pictures = {r["picture"] for r in db.rows(conn, "SELECT picture FROM photos WHERE picture IS NOT NULL AND drive_id IN "
+                                                    "(SELECT value FROM do_not_use WHERE kind='photo')")}
     folder_ids = {v for k, v in listed if k == "folder"}
     if any(k in ("person", "handle") for k, _ in listed):
         for c in db.rows(conn, "SELECT scope, drive_id, person_name, handle FROM credits"):
@@ -161,8 +167,8 @@ def do_not_use_photos(conn: sqlite3.Connection) -> set[int]:
         for f in path:
             memo[f] = hit
         return hit
-    return {r["id"] for r in db.rows(conn, "SELECT id, drive_id, folder_id FROM photos")
-            if r["drive_id"] in photo_ids or (folder_ids and covered(r["folder_id"]))}
+    return {r["id"] for r in db.rows(conn, "SELECT id, drive_id, folder_id, picture FROM photos")
+            if r["drive_id"] in photo_ids or r["picture"] in pictures or (folder_ids and covered(r["folder_id"]))}
 
 
 # A street number or a street name on a building Chris photographed is not a personal detail:

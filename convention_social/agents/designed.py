@@ -47,10 +47,6 @@ RETRIES = 3                     # turned back by the art director: tried again i
 MAX_TRIES = 5                   # photos beyond the design's own count tried when the final check passes some over
 DRY_RUN = ("the content lane is in practice run, so Claude cannot give the photos their final check and no designed "
            "draft is made (switch the content lane live: Settings, Agents)")
-PHOTO_SQL = """SELECT p.*, c.subject, c.convention_name, c.event_kind, c.shot_type, c.quality, c.people_count, c.summary
-               FROM photos p JOIN classifications c ON c.photo_id = p.id
-               WHERE p.trashed = 0 AND c.subject = 'event' AND c.method IN ('ollama', 'vision')
-               ORDER BY COALESCE(c.quality, 0) DESC, COALESCE(c.people_count, 0) DESC, p.id"""
 
 
 def per_day() -> int:
@@ -172,15 +168,15 @@ def next_design(conn: sqlite3.Connection, has_music: bool) -> str:
 
 def pool(conn: sqlite3.Connection) -> list[dict]:
     """Every event photo a designed draft may take, the least recently used first on any surface, quality breaking
-    ties: a candidate (approved, sorted, nothing that keeps it out), never on a post inside the repeat window by any
-    road, and no credited person who was on a post inside VARIETY_DAYS."""
+    ties: a candidate (approved, sorted, nothing that keeps it out) that stands for its picture (content.CANDIDATE_SQL),
+    never on a post inside the repeat window by any road, and no credited person who was on a post inside VARIETY_DAYS."""
     from . import content
     cfg = config.get_config()
     from ..buffer import payloads
     on = payloads.posting_networks()         # the window counts per network (Chris, 2026-11-02): held everywhere that is on
     held = content.held_on_networks(conn, on)
     out = []
-    for r in db.rows(conn, PHOTO_SQL):
+    for r in db.rows(conn, content.CANDIDATE_SQL, ("event",)):
         if not eligibility.is_candidate(conn, r["id"])[0]:
             continue
         credit = eligibility.credit_line(conn, r["id"])
@@ -188,8 +184,8 @@ def pool(conn: sqlite3.Connection) -> list[dict]:
         if len(held_here) == len(on):
             continue
         out.append({**dict(r), "credit": credit, "held_on": held_here})
-    # the shoot least recently on a post first, then the photo (2026-11-02, shoot rotation), PHOTO_SQL's order breaking
-    # ties; and free on every network first, then free on a later one, then held on Instagram (2026-11-02, post #62)
+    # the shoot least recently on a post first, then the photo (2026-11-02, shoot rotation), the candidate query's order
+    # breaking ties; and free on every network first, then free on a later one, then held on Instagram (2026-11-02, post #62)
     return content.instagram_first(content.in_turn(conn, out, alike=lambda r: (-(r["quality"] or 0), -(r["people_count"] or 0)),
                                                    shoots_last=content.shoot_uses(conn, on)), on)
 

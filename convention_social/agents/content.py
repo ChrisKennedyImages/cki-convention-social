@@ -35,7 +35,7 @@ from PIL import Image
 from ..ai import claude, copy_rules, linkedin, names, seo_plan
 from ..buffer import payloads
 from ..core import approve_token, config, db, notify, runner, settings
-from ..library import classify, eligibility, moments, report
+from ..library import classify, copies, eligibility, moments, report
 
 from . import art_director, learner
 from .. import music
@@ -225,8 +225,9 @@ def recent_use(conn: sqlite3.Connection, days: int, network: Optional[str] = Non
         if meta.get("event"):
             events.add(meta["event"].lower())
         people.update(x.lower() for x in meta.get("people") or [])
-    # a moment is one photo (2026-11-02): the frames of one folder within MOMENT_MINUTES of a used one are used too
-    return copies(conn, moments.siblings(conn, photos)), events, people
+    # a moment is one photo (2026-11-02): the frames of one folder within MOMENT_MINUTES of a used one are used too, and a
+    # picture that went out went out, whichever of its files was on the post (library/copies.py)
+    return copies.every_copy(conn, moments.siblings(conn, photos)), events, people
 
 
 def used_everywhere(conn: sqlite3.Connection, days: int, networks) -> tuple[set, set, set]:
@@ -235,18 +236,6 @@ def used_everywhere(conn: sqlite3.Connection, days: int, networks) -> tuple[set,
     are the union, since they only order."""
     per = [recent_use(conn, days, net) for net in networks] or [recent_use(conn, days)]
     return (set.intersection(*(p[0] for p in per)), set.union(*(p[1] for p in per)), set.intersection(*(p[2] for p in per)))
-
-
-def copies(conn: sqlite3.Connection, photo_ids: set) -> set:
-    """The ids with every identical copy of each added (same md5): a picture that went out went out, whichever of
-    its files was on the post (2026-10-26)."""
-    out = set(photo_ids)
-    ids = sorted(photo_ids)
-    for k in range(0, len(ids), 500):
-        marks = ",".join("?" * len(ids[k:k + 500]))
-        out.update(r["id"] for r in db.rows(conn, f"SELECT id FROM photos WHERE trashed = 0 AND md5 IS NOT NULL AND md5 IN "
-                                                  f"(SELECT md5 FROM photos WHERE id IN ({marks}))", ids[k:k + 500]))
-    return out
 
 
 def held_on_networks(conn: sqlite3.Connection, networks) -> Callable[[int, str], list[str]]:
@@ -281,15 +270,21 @@ def free_on_first(pool: list[dict], networks) -> tuple[list[dict], bool]:
     return (free, False) if free or not pool else (pool, True)
 
 
+# The photos a post may take, before the rules: sorted, in Drive, and only the file that stands for its picture (its largest
+# sorted file), so a post never takes a small copy or two copies of one picture (library/copies.py, 2026-11-02). The designed
+# drafts read it too.
+CANDIDATE_SQL = f"""SELECT p.*, c.subject, c.convention_name, c.event_kind, c.shot_type, c.quality, c.people_count, c.summary
+                    FROM photos p JOIN classifications c ON c.photo_id = p.id
+                    WHERE p.trashed = 0 AND {copies.STANDS_FOR_ITS_PICTURE} AND c.subject = ? AND c.method IN ('ollama', 'vision')
+                    ORDER BY COALESCE(c.quality, 0) DESC, COALESCE(c.people_count, 0) DESC, p.id"""
+
+
 def candidates(conn: sqlite3.Connection, subject: str) -> list[dict]:
     cfg = config.get_config()
     on = payloads.posting_networks()
     held = held_on_networks(conn, on)
     _, used_events, _ = used_everywhere(conn, cfg.variety_days, on)
-    rows = db.rows(conn, """SELECT p.*, c.subject, c.convention_name, c.event_kind, c.shot_type, c.quality, c.people_count, c.summary
-                            FROM photos p JOIN classifications c ON c.photo_id = p.id
-                            WHERE p.trashed = 0 AND c.subject = ? AND c.method IN ('ollama','vision')
-                            ORDER BY COALESCE(c.quality,0) DESC, COALESCE(c.people_count,0) DESC, p.id""", (subject,))
+    rows = db.rows(conn, CANDIDATE_SQL, (subject,))
     fresh, lately = [], []
     for r in rows:
         if not eligibility.is_candidate(conn, r["id"])[0]:
