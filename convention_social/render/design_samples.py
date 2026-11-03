@@ -86,15 +86,10 @@ def read_status() -> dict:
 
 
 def waiting_for_sort(conn) -> int:
-    """Approved photos (by the photo or its folder) the sorter has not looked at yet; it does these first."""
-    cleared = [(fid,) for fid, d in eligibility.folder_decisions(conn).items() if d == "cleared"]
-    conn.execute("CREATE TEMP TABLE IF NOT EXISTS cleared_folder (drive_id TEXT PRIMARY KEY)")
-    conn.execute("DELETE FROM temp.cleared_folder")
-    conn.executemany("INSERT INTO temp.cleared_folder VALUES (?)", cleared)
+    """Approved photos the sorter has not looked at yet; it does these first."""
     return db.one(conn, """SELECT COUNT(*) AS n FROM photos p LEFT JOIN classifications c ON c.photo_id = p.id
                            WHERE p.trashed = 0 AND COALESCE(c.method, '') NOT IN ('ollama', 'vision')
-                             AND (p.clearance = 'cleared'
-                                  OR (p.clearance = 'inherit' AND p.folder_id IN (SELECT drive_id FROM temp.cleared_folder)))""")["n"]
+                             AND p.clearance = 'cleared'""")["n"]
 
 
 def readiness(conn) -> dict:

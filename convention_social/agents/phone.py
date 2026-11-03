@@ -164,8 +164,8 @@ def keep(conn: sqlite3.Connection, data: bytes, note: str = "", *, now: Optional
     write_thumb(im, thumb_path(drive_id))
     kept = out.read_bytes()
     if db.one(conn, "SELECT 1 FROM drive_folders WHERE drive_id=?", (FOLDER_ID,)) is None:
-        db.insert(conn, "drive_folders", drive_id=FOLDER_ID, name=FOLDER_NAME, path=FOLDER_NAME, clearance="cleared",
-                  clearance_at=now, first_seen_at=now, last_seen_at=now)
+        db.insert(conn, "drive_folders", drive_id=FOLDER_ID, name=FOLDER_NAME, path=FOLDER_NAME, first_seen_at=now,
+                  last_seen_at=now)          # a folder never approves (2026-11-02); each photo sent is his own Use
     pid = db.insert(conn, "photos", drive_id=drive_id, name=out.name, mime_type="image/jpeg", md5=hashlib.md5(kept).hexdigest(),
                     size_bytes=len(kept), folder_id=FOLDER_ID, width=im.width, height=im.height, taken_at=taken,
                     clearance="cleared", clearance_at=now, local_path=str(out), source="phone", first_seen_at=now, last_seen_at=now)

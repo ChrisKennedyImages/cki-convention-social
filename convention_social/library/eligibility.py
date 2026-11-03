@@ -13,9 +13,10 @@ Two answers, both failing closed:
 
 A photo is a candidate only when ALL of these hold:
   1. it is still in Drive (not trashed) and is a postable image;
-  2. Chris cleared it: the photo itself is 'cleared', or it is 'inherit' and
-     the nearest folder above it with a decision is 'cleared' (an 'excluded'
-     folder nearer to the photo wins; no decision anywhere means not cleared);
+  2. Chris cleared it: his own Use on the photo ('cleared'), and no folder above
+     it excluded. A folder never approves its photos (2026-11-02: "MANY of the
+     approved photos, I never approved": two folders approved whole had made
+     1,648 photos ready to use that he had never looked at);
   3. a model sorted it (method ollama or vision; the free folder row is a no);
   4. no readable personal detail (badge name, plate, screen, document) was seen;
   5. nothing on the do-not-use list covers it: the photo, any folder above it,
@@ -66,26 +67,20 @@ def copies_of(conn: sqlite3.Connection, photo_id: int) -> list[int]:
 
 def clearance_of(conn: sqlite3.Connection, photo: sqlite3.Row) -> str:
     """'cleared' | 'blocked' | 'excluded' | 'not_cleared' — the decision that applies to this photo. Fail
-    closed (2026-10-13): Don't use on the photo wins over everything; an excluded folder anywhere above it
-    wins over a Use on the photo ("kept out, even photos you tapped Use on"); then the photo's own Use; then
-    the nearest cleared folder."""
+    closed (2026-10-13): Never use on the photo wins over everything; an excluded folder anywhere above it
+    wins over a Use on the photo ("kept out, even photos you tapped Use on"); then the photo's own Use."""
     if photo["clearance"] == "blocked":
         return "blocked"
     chain = folder_chain(conn, photo["folder_id"])
     if any(f["clearance"] == "excluded" for f in chain):
         return "excluded"
-    if photo["clearance"] == "cleared":
-        return "cleared"
-    for f in chain:
-        if f["clearance"] == "cleared":
-            return "cleared"
-    return "not_cleared"
+    return "cleared" if photo["clearance"] == "cleared" else "not_cleared"
 
 
 def folder_decisions(conn: sqlite3.Connection) -> dict[str, str]:
     """For every folder, the decision that reaches it: 'excluded' when it or any folder above it is
-    excluded, else its own 'cleared', else the nearest cleared folder above, else 'not_cleared'. One pass
-    for the whole library, the same rule clearance_of follows photo by photo."""
+    excluded, else 'not_cleared' (a folder never approves, 2026-11-02). One pass for the whole library, the
+    same rule clearance_of follows photo by photo."""
     rows = {r["drive_id"]: (r["parent_id"], r["clearance"]) for r in db.rows(conn, "SELECT drive_id, parent_id, clearance FROM drive_folders")}
     out: dict[str, str] = {}
 
@@ -96,7 +91,7 @@ def folder_decisions(conn: sqlite3.Connection) -> dict[str, str]:
             return out[fid]
         parent, own = rows[fid]
         above = resolve(parent, depth + 1)
-        out[fid] = "excluded" if own == "excluded" or above == "excluded" else ("cleared" if own == "cleared" else above)
+        out[fid] = "excluded" if own == "excluded" or above == "excluded" else "not_cleared"
         return out[fid]
     for fid in rows:
         resolve(fid)

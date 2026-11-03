@@ -20,7 +20,7 @@ the daily draft's road and gates (agents/sample.py's path is the model), never a
   pace, Skip. The photos' use is recorded for the rotation.
 
 The draft is for today. Nothing posts without one of his two approve choices. Skip sets it aside and its photos go
-back into the rotation (never Don't use). The hourly scanner starts this agent from 08:00 to 20:00 while today has
+back into the rotation (a Skip is never Never use). The hourly scanner starts this agent from 08:00 to 20:00 while today has
 fewer than DESIGNED_PER_DAY designed drafts and fewer than that many still wait for him (when he has not answered
 them, no more pile up). The lane follows the content lane's dry-run switch: in dry run nothing is drafted, since
 the final check is a paid look and a designed draft is never made without it.
