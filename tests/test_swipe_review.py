@@ -182,7 +182,9 @@ class Deck(IsolatedCase):
         self.assertIn('href="/library/swipe?subject=architecture">Buildings (1 left)</a>', page)
         self.assertIn('<div class="choices2" id="choices" hidden>', page, "no Use or Never use with nothing to decide")
         self.assertIn('<div class="hint" id="hint" hidden>', page)
-        self.assertIn(".choices2[hidden],.hint[hidden]{display:none}", page, "hidden stays hidden under the page's own display")
+        self.assertIn('<div class="kindrow" id="kindrow" hidden>', page, "no kind of shot to set with nothing on top")
+        self.assertIn(".choices2[hidden],.hint[hidden],.kindrow[hidden]{display:none}", page,
+                      "hidden stays hidden under the page's own display")
 
     def test_to_review_has_the_way_in(self):
         self.photo(1)
@@ -282,8 +284,10 @@ class ToReviewList(IsolatedCase):
         client = TestClient(create_app())
         client.cookies.set(COOKIE, make_token("chris"))
         page = client.get("/library?view=review").text
-        words = re.findall(r'<div class="muted" style="margin-top:6px">([^<]*)</div>', page)
-        self.assertEqual(words, ["kind of shot: being sorted again", "kind of shot not named", "main stage"])
+        # 2026-11-02: the words are the kind picker's on each card (he can set the kind there)
+        unnamed = re.findall(r'<option value="" selected disabled>([^<]*)</option>', page)
+        self.assertEqual(unnamed, ["kind of shot: being sorted again", "kind of shot not named"])
+        self.assertIn('<option value="main_stage" selected>Main stage</option>', page)
         self.assertNotIn("not sorted yet", page)
         self.assertEqual(dash.kind_words({"method": "folder", "shot_type": None}), "not sorted yet")
 
