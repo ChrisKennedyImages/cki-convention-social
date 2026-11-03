@@ -16,7 +16,7 @@ from convention_social.ai import copy_rules, seo_plan
 from convention_social.core import auth, config, db, runner
 from convention_social.dashboard import app as dash
 from convention_social.dashboard.app import COOKIE, create_app, make_token
-from convention_social.library import classify
+from convention_social.library import classify, copies
 from tests._base import IsolatedCase
 from tests._fakes import camera_time, add_photo, add_post
 from tests._photos import jpeg_bytes
@@ -179,6 +179,7 @@ class HisWord(CorrectionCase):
                          taken_at=camera_time(), first_seen_at=now, last_seen_at=now)
         db.insert(self.conn, "classifications", photo_id=twin, method="ollama", subject="event", is_convention=1, quality=5,
                   possible_minor=0, personal_details="[]", shot_type="candid", classified_at=now)
+        copies.link(self.conn)                         # the scanner's pass makes them one picture
         page = self.client.get("/library?view=approved").text
         self.assertIn(f'action="/library/photo/{self.pid}/shot"', page)
         self.assertIn('<option value="portrait" selected>Portrait</option>', page)
