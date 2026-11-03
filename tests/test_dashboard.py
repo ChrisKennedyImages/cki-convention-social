@@ -234,6 +234,7 @@ class Dashboard(IsolatedCase):
         approved = self.draft(photo_ids=[pid])
         c.post(f"/queue/{approved}/approve")
         other = self.draft()
+        unrelated = self.draft(photo_ids=[999999])        # its photo is not eligible for a reason of its own
         status = lambda q: db.one(self.conn, "SELECT status FROM content_queue WHERE id=?", (q,))["status"]
         self.assertEqual((status(waiting), status(approved), status(other)), ("draft", "approved", "draft"))
         self.assertEqual(popen.call_count, 0)
@@ -245,6 +246,8 @@ class Dashboard(IsolatedCase):
             self.assertEqual(row["last_error"], "A photo in this post is now Never use. Set aside; a new one is being drafted.")
             self.assertEqual(json.loads(row["rule_report"])["rejected_by"], "neveruse")
         self.assertEqual(status(other), "draft", "a post without the photo is left alone")
+        self.assertEqual(status(unrelated), "draft", "a Never use sets aside only the posts holding that photo, never "
+                         "another post for a reason of its own under its name")
         self.assertEqual(popen.call_args[0][0][-2:], ["run", "content"])
         self.assertEqual(popen.call_count, 1, "one new draft run for every post set aside")
         # Put back and Use set nothing aside

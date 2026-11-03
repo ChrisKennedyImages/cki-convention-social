@@ -2559,3 +2559,37 @@ To review: duplicates, costumes, readable details), about $1.75 at $0.0049 a loo
 - **The sorter's queue** (`library/classify.queue`) takes every photo marked `rejudge`, whatever its old subject; only
   the folder pass's own "other" stays out, unsorted and unpaid, as before. The 14 old-sorter "other" photos on To review
   that were not marked yet were marked the same day (a change to the data, not the code).
+
+## 2026-11-02: a photo is approved only by his own Use; Use or Never use, nothing else
+
+Chris: "Also, MANY of the approved photos, I never approved and say ready to use which is a very huge problem". Of 2,055
+approved photos, 408 had his own Use; 1,648 were approved only because two folders were: his iPhone had tapped Approve
+all on "CPAC 2022 Texas / All Final edited High-Res images" (1,562 photos) and "CPAC Portraits 2019" (225) on 2026-10-11
+at 18:11 and 18:15 UTC (the dashboard's request log; no session ran then). 13 published posts and 4 scheduled ones held
+some of them, and 45 of the 56 photos on eventcaliber.com.
+
+- **Taken back the same day, by hand.** Asked, he chose "Take back, keep what's live (Recommended)": both folders went
+  back to no decision; the 67 of those photos already live (45 on the website, 25 in posts he had approved) became his
+  own Use; the other 1,581 went back to To review. The scheduled posts all still pass.
+- **A folder never approves.** Asked whether to remove the folder Approve all, he chose "Yes, one by one only
+  (Recommended)": a photo is approved only by his Use on it. A folder can be excluded (it keeps its photos out, even ones
+  he tapped Use on) or left undecided. Eligibility, the sorter's queue, the samples count and the phone's own folder no
+  longer read a folder's approval; the folder route refuses one; migration 0095 takes back any still set.
+- **Use and Never use.** "The "don't use" photos I click should be never use (never use and don't use need to just be
+  never use - I've sorted many don't uses so those need to all turn to never use and moving forward it's just use and
+  never use." Don't use and the old Never use are one Never use: the photo's own decision on every copy, kept out of
+  every post, designed draft and the website. A Never use (the tap, Never use selected, a left swipe) also sets aside at
+  once any waiting draft or approved post holding that photo (never another post). The Blocked tab is Never use; asked
+  whether to keep a way back for a mistake, he chose "Yes, keep Put back (Recommended)". The photos on the old
+  do-not-use list became Never use too (migration 0095).
+- **Takedowns.** Asked whether to rename the do-not-use page beside it, he chose "Rename to Takedowns (Recommended)": a
+  person, a handle or a folder someone asked him to keep out, honoured everywhere, posts already approved included. A
+  single photo is Never use, so the page no longer takes one.
+- **The folder name on a card is for him only.** On the swipe card's "kind of shot · folder" line (his folders carry
+  the event names): "I don't care if it's there for reference, but want to make sure it's not there when posted or
+  anywhere else." Checked that day against every output: no event or folder name in any post's caption, alt text or
+  Buffer payload, in the metadata of any post image or site photo, or on any page of eventcaliber.com (the ACU logo on
+  the strip is his ruling of 2026-10-15).
+
+On the renders: "Yes, merge (Recommended)".
+

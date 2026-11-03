@@ -315,7 +315,7 @@ class TheDraftWindow(WatchCase):
     def test_the_same_inputs_after_a_try_that_found_nothing_wait_until_something_changes(self):
         from convention_social.agents import content
         settings.set(self.conn, content.LAST_ATTEMPT_KEY, json.dumps({
-            "day": self.tomorrow().isoformat(), "summary": "no photo ready for tomorrow: clear folders on the Library page",
+            "day": self.tomorrow().isoformat(), "summary": "no photo ready for tomorrow: tap Use on photos in Photos, To review",
             "fingerprint": content.inputs_fingerprint(self.conn), "transient": False}))
         start = mock.Mock()
         self.run_at(NINE_NY, start=start)

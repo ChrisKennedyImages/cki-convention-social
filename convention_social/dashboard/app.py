@@ -6,8 +6,8 @@ answers 503 to everything (fail closed).
 
 Four tabs (2026-10-15): Today (every draft waiting on Chris, each with Post now,
 Follow the pace and Skip, refused while a caption breaks a rule or a photo is no
-longer eligible; what is scheduled this week; what went out), Photos (clear or
-exclude folders, block single photos, music for reels, Do not use, Drive),
+longer eligible; what is scheduled this week; what went out), Photos (Use or
+Never use on each photo, exclude folders, music for reels, Takedowns, Drive),
 Bookings (requests, bookings, the calendar), Settings (Agents, Errors, Keys,
 Buffer; Outreach, Scout, Search, Learner).
 """
@@ -146,7 +146,7 @@ SECTIONS = (
     ("Today", "/", ("/queue", "/posts", "/send", "/history"), (("Today", "/"), ("Send a photo", "/send"), ("All posts", "/history"))),
     ("Photos", "/library", ("/library", "/donotuse", "/drive", "/music"),
      (("To review", "/library"), ("Approved", "/library?view=approved"), ("Never use", "/library?view=blocked"),
-      ("Folders", "/library?view=folders"), ("Music", "/music"), ("Do not use", "/donotuse"), ("Drive", "/drive"))),
+      ("Folders", "/library?view=folders"), ("Music", "/music"), ("Takedowns", "/donotuse"), ("Drive", "/drive"))),
     ("Bookings", "/inquiries", ("/inquiries", "/bookings", "/calendar"),
      (("Requests", "/inquiries"), ("Bookings", "/bookings"), ("Calendar", "/calendar"))),
     # 2026-11-01, Chris: "Can we put the outreach on the top navigation for easier access": a tab of its own, with the
@@ -1361,19 +1361,22 @@ def create_app() -> FastAPI:
         for cid in eligibility.copies_of(conn, pid):
             conn.execute("UPDATE photos SET clearance=?, clearance_at=? WHERE id=?", (state, now, cid))
 
-    def decided(conn, state: str) -> None:
-        """After his decisions: the site follows, and a Never use takes its photo out of anything waiting at once."""
+    def decided(conn, state: str, photo_ids) -> None:
+        """After his decisions: the site follows, and a Never use takes those photos (every copy) out of anything waiting."""
         photos_changed(conn)
         if state == "blocked":
-            set_aside_waiting(conn, by="neveruse",
-                              why="A photo in this post is now Never use. Set aside; a new one is being drafted.")
+            set_aside_waiting(conn, by="neveruse", why="A photo in this post is now Never use. Set aside; a new one is being drafted.",
+                              photos={c for pid in photo_ids for c in eligibility.copies_of(conn, pid)})
 
-    def set_aside_waiting(conn, *, by: str, why: str) -> None:
-        """Drafts and approved posts holding a photo that may no longer be posted are set aside with `why`, and the
-        day is drafted again."""
+    def set_aside_waiting(conn, *, by: str, why: str, photos: Optional[set] = None) -> None:
+        """Drafts and approved posts that may no longer go out are set aside with `why`, and the day is drafted again: the
+        ones holding one of `photos` (a Never use), or, without `photos`, any holding a photo no longer eligible (a
+        takedown, which can cover photos it does not name)."""
         hit = False
         for q in db.rows(conn, "SELECT * FROM content_queue WHERE status IN ('draft','approved')"):
-            if any(not eligibility.is_eligible(conn, int(p))[0] for p in json.loads(q["photo_ids"] or "[]")):
+            ids = [int(p) for p in json.loads(q["photo_ids"] or "[]")]
+            out = photos.intersection(ids) if photos is not None else any(not eligibility.is_eligible(conn, p)[0] for p in ids)
+            if out:
                 set_aside(conn, q, by=by, why=why)
                 hit = True
         if hit:
@@ -1396,7 +1399,7 @@ def create_app() -> FastAPI:
         if state not in TAP_WORDS:
             raise HTTPException(400)
         decide(conn, pid, state, db.utcnow())
-        decided(conn, state)
+        decided(conn, state, [pid])
         if "application/json" in request.headers.get("accept", ""):
             return {"id": pid, "state": state, "words": TAP_WORDS[state]}
         return RedirectResponse(safe_back(back), status_code=303)
@@ -1413,7 +1416,7 @@ def create_app() -> FastAPI:
         for pid in ids:
             decide(conn, pid, state, now)
         if ids:
-            decided(conn, state)
+            decided(conn, state, ids)
         return RedirectResponse(safe_back(form.get("back") or "/library"), status_code=303)
 
     # ------------------------------------------------------------------ swipe review
@@ -1471,7 +1474,7 @@ def create_app() -> FastAPI:
                                 status_code=409)
         decide(conn, pid, state, db.utcnow())
         settings.set(conn, SWIPE_LAST, json.dumps({"id": pid, "state": state}))
-        decided(conn, state)
+        decided(conn, state, [pid])
         row = db.one(conn, "SELECT drive_id FROM photos WHERE id=?", (pid,))
         thumb_file(row["drive_id"], PREVIEW_EDGE).unlink(missing_ok=True)     # the big picture was for this card only
         return swipe_answer(request, conn, subject, SWIPE_WORDS[state], id=pid, state=state)
@@ -1575,9 +1578,9 @@ def create_app() -> FastAPI:
     @app.post("/donotuse/add")
     def donotuse_add(user: str = Depends(require_user), conn=Depends(conn_dep), kind: str = Form(...), value: str = Form(...),
                      reason: str = Form(default=""), back: str = Form(default="")):
-        if kind not in ("photo", "folder", "person", "handle"):
+        if kind not in ("folder", "person", "handle"):       # a single photo is Never use, on the photo (2026-11-02)
             raise HTTPException(400)
-        value = drive_id_from(value) if kind in ("photo", "folder") else value.strip().lower()
+        value = drive_id_from(value) if kind == "folder" else value.strip().lower()
         if value:
             conn.execute("INSERT OR IGNORE INTO do_not_use (kind, value, reason, added_at) VALUES (?,?,?,?)",
                          (kind, value, reason.strip() or None, db.utcnow()))
