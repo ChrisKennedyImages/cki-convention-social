@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block title %}Pick the keepers · {{ subject_word }}{% endblock %}
+{% block body %}
+{#- Chris, 2026-11-03: "this is the most time consuming shitty way of doing things". He keeps about 1 photo in 7, so To
+    review comes a page at a time: tap the keepers, and one button makes them Use and the rest of the page Never use.
+    Undo takes the whole last page back. Without the script the tiles are plain checkboxes and the button still works. -#}
+<style>
+.keep-top{display:flex;align-items:center;gap:10px;margin:0 0 10px}
+.keep-top h1{margin:0;font-size:20px}
+.keep-top .left{color:var(--muted);font-size:14px}
+.keep-top form{margin-left:auto}
+.keep-top button[disabled]{opacity:.45}
+.tiles{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:0 0 104px}
+.tile{position:relative;display:block;margin:0;border-radius:10px;overflow:hidden;background:#f7f7f5;border:4px solid transparent;
+      aspect-ratio:1/1;cursor:pointer;-webkit-tap-highlight-color:transparent}
+.tile img{width:100%;height:100%;object-fit:contain;display:block}
+.tile input{position:absolute;opacity:0;pointer-events:none}
+.tile .mark{position:absolute;top:6px;right:6px;width:32px;height:32px;border-radius:50%;background:rgba(0,0,0,.35);color:#fff;
+            display:flex;align-items:center;justify-content:center;font-weight:700;font-size:18px}
+.tile .kind{position:absolute;left:6px;bottom:6px;background:rgba(0,0,0,.55);color:#fff;font-size:12px;padding:2px 6px;border-radius:6px}
+.tile:has(input:checked){border-color:var(--ok)}
+.tile:has(input:checked) .mark{background:var(--ok)}
+.keep-bar{position:fixed;left:0;right:0;bottom:0;z-index:2;padding:10px 16px calc(10px + env(safe-area-inset-bottom));
+          background:var(--bg);border-top:1px solid var(--line)}
+.keep-bar button{width:100%;min-height:56px;font-size:17px}
+</style>
+{% if msg %}<div class="msg">{{ msg }}</div>{% endif %}
+<div class="keep-top">
+  <h1>Pick the keepers</h1>
+  <span class="left">{{ "{:,}".format(left) }} left · {{ subject_word }}</span>
+  <form method="post" action="/library/keepers/undo"><input type="hidden" name="subject" value="{{ subject }}">
+    <button class="small" type="submit" {{ '' if undo else 'disabled' }}>Undo page</button></form>
+</div>
+{% if photos %}
+<form method="post" action="/library/keepers" id="page">
+  <input type="hidden" name="subject" value="{{ subject }}">
+  <div class="tiles">
+  {% for p in photos %}
+    <input type="hidden" name="shown" value="{{ p.id }}">
+    <label class="tile"><input type="checkbox" name="keep" value="{{ p.id }}">
+      <img src="/media/thumb/{{ p.id }}" alt="" loading="{{ 'eager' if loop.index <= 4 else 'lazy' }}">
+      <span class="mark">✓</span><span class="kind">{{ p.kind }}</span></label>
+  {% endfor %}
+  </div>
+  <div class="keep-bar"><button class="danger" type="submit" id="go">Use the ticked ones, Never use the rest</button></div>
+</form>
+{% else %}
+<div class="card">
+  <strong>Nothing left to review in {{ subject_word }}.</strong>
+  <p class="muted">Every photo here has your Use or Never use. New photos from Drive show up here once they are sorted.</p>
+  <a class="btn" href="/library/keepers?subject={{ other }}">{{ other_word }} ({{ "{:,}".format(other_left) }} left)</a>
+  <a class="btn" href="/library?view=review&subject={{ subject }}">Back to To review</a>
+</div>
+{% endif %}
+<script>
+(function () {
+  // the button says what it will do: how many become Use, how many Never use
+  var form = document.getElementById('page');
+  if (!form) { return; }
+  var go = document.getElementById('go'), boxes = form.querySelectorAll('input[name=keep]');
+  function say() {
+    var kept = Array.prototype.filter.call(boxes, function (b) { return b.checked; }).length, out = boxes.length - kept;
+    go.textContent = kept ? 'Use ' + kept + ' · Never use the other ' + out : 'Never use all ' + out;
+    go.className = kept ? 'ok' : 'danger';
+  }
+  boxes.forEach(function (b) { b.addEventListener('change', say); });
+  form.addEventListener('submit', function () { go.disabled = true; go.textContent = 'Saving…'; });
+  say();
+}());
+</script>
+{% endblock %}

@@ -2650,3 +2650,17 @@ Chris: "I also want to be able to change the type of shot that is miss labeled. 
   waiting draft holding the photo is set aside and drafted again with the right words, as the draft page's "Wrong? Fix
   and draft again" does; an approved post is not changed behind his back.
 
+## 2026-11-03: pick the keepers, 12 at a time
+
+Chris, swiping To review: "FYI - this is the most time consuming shitty way of doing things and you should have know that,
+but we've built it already unfortunately so I guess I'll spend my life approving this slow". That night he had tapped Use
+300 times and Never use 1,923 times: he keeps about 1 photo in 7. Asked how many taps 12 at a time would take for the whole
+deck: about 3,000 (1,117 pages of 12, about 2 keepers and one button each) against 13,393 swipes; six months of posts is
+about 1,500 approved (posts used 130 photos in two weeks), about 1,300 taps from where he stood. He chose "Yes, build it
+(Recommended)".
+
+- **Photos, To review, Pick the keepers** (`/library/keepers`): the top 12 of To review, strongest first, two to a row. A
+  tap ticks a keeper; one button makes the ticked ones his Use and the rest of the page Never use (every copy; a waiting
+  post holding a Never use photo is set aside, as everywhere), and the next 12 come. Only photos still waiting on To
+  review are decided. Undo page takes the whole last page back, unless a photo was changed since. The swipe stays.
+

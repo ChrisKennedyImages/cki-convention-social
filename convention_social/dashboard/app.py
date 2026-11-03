@@ -490,6 +490,10 @@ SWIPE_KEYS = {"ArrowRight": "cleared", "ArrowLeft": "blocked", "u": "undo", "U":
 SWIPE_LAST = "library.swipe_last"        # the last swipe, the only one Undo takes back
 SWIPE_WORDS = {"cleared": "Approved.", "blocked": "Never use."}
 PREVIEW_EDGE = 1200                      # the card's picture, long side in pixels: a phone screen at 3x is about 1180 wide
+# Chris, 2026-11-03: "this is the most time consuming shitty way of doing things". He keeps about 1 photo in 7, so To review
+# also comes a page at a time: he taps the keepers, and one button makes them Use and the rest of the page Never use.
+KEEPERS_PAGE = 12
+KEEPERS_LAST = "library.keepers_last"   # the last page decided, the only one its Undo takes back
 
 
 def swipe_card(p: dict) -> dict:
@@ -1475,6 +1479,60 @@ def create_app() -> FastAPI:
                       other=other, other_word=dict(SUBJECT_WORDS)[other], other_left=count_photos(conn, "review", other),
                       deck={**state, "subject": subject, "word": dict(SUBJECT_WORDS)[subject], "keys": SWIPE_KEYS,
                             "shots": SUBJECT_SHOTS[subject]})
+
+    @app.get("/library/keepers", response_class=HTMLResponse)
+    def keepers_page(request: Request, user: str = Depends(require_user), conn=Depends(conn_dep), subject: str = "event",
+                     msg: str = ""):
+        """To review, a page of KEEPERS_PAGE at a time, the strongest first (2026-11-03). A GET decides nothing."""
+        subject = swipe_subject(subject)
+        prepare_photo_views(conn, eligibility.folder_decisions(conn))
+        other = next(s for s, _ in SUBJECT_WORDS if s != subject)
+        return render(request, "keepers.html", subject=subject, subject_word=dict(SUBJECT_WORDS)[subject], msg=msg,
+                      photos=photo_page(conn, "review", 1, size=KEEPERS_PAGE, subject=subject),
+                      left=count_photos(conn, "review", subject), undo=bool(settings.get(conn, KEEPERS_LAST)),
+                      other=other, other_word=dict(SUBJECT_WORDS)[other], other_left=count_photos(conn, "review", other))
+
+    @app.post("/library/keepers")
+    async def keepers_decide(request: Request, user: str = Depends(require_user), conn=Depends(conn_dep)):
+        """One page at once: the photos he ticked are his Use, every other photo the page showed is Never use. Only a photo
+        still waiting on To review is decided (fail closed); the page's Undo takes the whole page back."""
+        form = await request.form()
+        subject = swipe_subject(form.get("subject") or "event")
+        shown = [int(x) for x in form.getlist("shown") if str(x).isdigit()]
+        keep = {int(x) for x in form.getlist("keep") if str(x).isdigit()}
+        prepare_photo_views(conn, eligibility.folder_decisions(conn))
+        page = [(pid, "cleared" if pid in keep else "blocked") for pid in shown if on_review(conn, pid, subject)]
+        now = db.utcnow()
+        for pid, state in page:
+            decide(conn, pid, state, now)
+        if page:
+            settings.set(conn, KEEPERS_LAST, json.dumps(page))
+            decided(conn, "blocked", [pid for pid, state in page if state == "blocked"])
+        kept = sum(1 for _, state in page if state == "cleared")
+        words = f"{kept} Use, {len(page) - kept} Never use."
+        if len(page) < len(shown):
+            words += f" {len(shown) - len(page)} were no longer waiting and were left as they were."
+        return RedirectResponse(f"/library/keepers?subject={subject}&msg={quote_plus(words)}", status_code=303)
+
+    @app.post("/library/keepers/undo")
+    def keepers_undo(user: str = Depends(require_user), conn=Depends(conn_dep), subject: str = Form("event")):
+        """Takes back the last page: each of its photos (every copy) is undecided again, if nothing has changed it since."""
+        subject = swipe_subject(subject)
+        try:
+            last = json.loads(settings.get(conn, KEEPERS_LAST) or "null")
+        except ValueError:
+            last = None
+        settings.set(conn, KEEPERS_LAST, "")
+        now, undone = db.utcnow(), 0
+        for pid, state in last or []:
+            row = db.one(conn, "SELECT clearance FROM photos WHERE id=?", (pid,))
+            if row is not None and row["clearance"] == state:
+                decide(conn, int(pid), "inherit", now)
+                undone += 1
+        if undone:
+            photos_changed(conn)
+        words = f"Undone: the last page's {undone} photos are undecided again." if last else "Nothing to undo."
+        return RedirectResponse(f"/library/keepers?subject={subject}&msg={quote_plus(words)}", status_code=303)
 
     @app.post("/library/swipe/undo")
     def swipe_undo(request: Request, user: str = Depends(require_user), conn=Depends(conn_dep), subject: str = Form("event")):

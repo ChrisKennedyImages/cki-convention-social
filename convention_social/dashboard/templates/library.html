@@ -19,6 +19,7 @@
   {% for key, label in subject_words %}<a class="btn{{ ' primary' if subject == key else '' }}" href="/library?view={{ view }}&subject={{ key }}">{{ label }} ({{ subject_counts[key] }})</a>{% endfor %}
 </div>
 {% if view == 'review' and total %}
+<a class="go" href="/library/keepers?subject={{ subject }}"><strong>Pick the keepers</strong><span>12 at a time: tap the ones you want, one button keeps the rest out. {{ "{:,}".format(total) }} to go.</span></a>
 <a class="go" href="/library/swipe?subject={{ subject }}"><strong>Swipe through them</strong><span>One photo at a time, the strongest first. {{ "{:,}".format(total) }} to go.</span></a>
 {% endif %}
 <div class="card muted">
