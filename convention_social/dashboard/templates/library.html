@@ -88,7 +88,15 @@
 {% for p in items %}
   <div class="card{% if p.clearance == 'blocked' %} off{% endif %}" id="p{{ p.id }}" style="padding:8px;margin:0">
     <img src="/media/thumb/{{ p.id }}" loading="lazy" alt="">
-    <div class="muted" style="margin-top:6px">{{ p.kind }}</div>
+    {% if view in ('review', 'approved') %}
+    <form method="post" action="/library/photo/{{ p.id }}/shot" class="kind" style="margin:6px 0 0">
+      <input type="hidden" name="back" value="{{ p.back }}">
+      <select name="shot_type" aria-label="Kind of shot">
+        {% if not p.shot_type %}<option value="" selected disabled>{{ p.kind }}</option>{% endif %}
+        {% for value, label in subject_shots['architecture' if p.subject == 'architecture' else 'event'] %}<option value="{{ value }}"{{ ' selected' if value == p.shot_type else '' }}>{{ label }}</option>{% endfor %}
+      </select>
+    </form>
+    {% else %}<div class="muted" style="margin-top:6px">{{ p.kind }}</div>{% endif %}
     <a class="muted" href="/library/folder/{{ p.folder_id }}">{{ p.folder_name or '' }}</a>
     {% if view == 'approved' %}<div class="state"><span class="badge says {{ 'ok' if p.why[0] else 'blocked' }}">{{ 'ready to use' if p.why[0] else p.why[1] }}</span>{% if hero_id == p.id %} <span class="badge ok">site hero</span>{% endif %}{% if p.site_pick_at %} <span class="badge ok site-gallery">site gallery</span>{% endif %}</div>
     <div class="muted use-line">{{ p.use_line }}</div>{% endif %}
@@ -129,6 +137,21 @@ document.querySelectorAll('form.tap').forEach(function (form) {
         card.querySelector('.tapped').textContent = d.words;
         card.querySelectorAll('form.tap').forEach(function (f) { f.remove(); });
         card.classList.toggle('off', d.state === 'blocked');
+      })
+      .catch(function () { form.submit(); });
+  });
+});
+// The kind of shot (2026-11-02, "Most backstage images are called candid"): a pick is saved at once and said on the card;
+// when the request fails, the form submits and the page comes back.
+document.querySelectorAll('form.kind select').forEach(function (select) {
+  select.addEventListener('change', function () {
+    var form = select.form, card = form.closest('.card');
+    fetch(form.action, {method: 'POST', body: new FormData(form), headers: {'Accept': 'application/json'}})
+      .then(function (r) { if (!r.ok) { throw new Error(r.status); } return r.json(); })
+      .then(function (d) {
+        card.querySelector('.tapped').textContent = d.words;
+        var unnamed = select.querySelector('option[value=""]');
+        if (unnamed) { unnamed.remove(); }
       })
       .catch(function () { form.submit(); });
   });

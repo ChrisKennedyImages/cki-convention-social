@@ -290,6 +290,9 @@ DESIGN_WORDS = {"single": "single photo"}       # every other design is called b
 SHOT_CHOICES = [("main_stage", "Main stage"), ("stage_panel", "Stage panel"), ("breakout", "Breakout"),
                 ("portrait", "Portrait"), ("backstage", "Backstage"), ("candid", "Candid"), ("reception", "Reception"),
                 ("building_exterior", "Building exterior"), ("building_interior", "Building interior")]
+# the kinds he may choose on a photo of each subject: the event rooms, or the two building views
+SUBJECT_SHOTS = {"event": [c for c in SHOT_CHOICES if not c[0].startswith("building_")],
+                 "architecture": [c for c in SHOT_CHOICES if c[0].startswith("building_")]}
 
 
 def shot_type_of(conn, photo_id: int) -> str:
@@ -491,7 +494,7 @@ PREVIEW_EDGE = 1200                      # the card's picture, long side in pixe
 
 def swipe_card(p: dict) -> dict:
     return {"id": p["id"], "big": f"/media/preview/{p['id']}", "small": f"/media/thumb/{p['id']}",
-            "kind": p["kind"], "folder": p.get("folder_name") or ""}
+            "kind": p["kind"], "shot": p.get("shot_type") or "", "folder": p.get("folder_name") or ""}
 
 
 def swipe_state(conn, subject: str) -> dict:
@@ -1081,6 +1084,14 @@ def create_app() -> FastAPI:
             conn.execute("UPDATE content_queue SET status='draft', last_error=NULL, payload=NULL, updated_at=? WHERE id=?", (db.utcnow(), qid))
         return RedirectResponse(f"/queue/{qid}?msg=requeued", status_code=303)
 
+    def redraft_for_shot(conn, row, pid: int, shot_type: str) -> None:
+        """A draft holding a photo whose kind of shot he corrected is set aside and drafted again with the right words;
+        its photos are first in line again, not last."""
+        words = dict(SHOT_CHOICES).get(shot_type, shot_type)
+        conn.execute("UPDATE content_queue SET status='rejected', last_error=?, updated_at=? WHERE id=?",
+                     (f"Set aside: photo {pid} shows {words}, not what the caption said. Drafted again.", db.utcnow(), row["id"]))
+        report.forget_use(conn, f"post:{row['id']}")
+
     @app.post("/queue/{qid}/photo/{pid}/shot")
     def queue_fix_shot(qid: int, pid: int, user: str = Depends(require_user), conn=Depends(conn_dep), shot_type: str = Form(...)):
         """Chris says what the photo shows. The word is corrected everywhere it is read, this draft is
@@ -1089,11 +1100,8 @@ def create_app() -> FastAPI:
         from ..library import classify
         if pid not in (photo_ids_of_row(row) or []) or not classify.set_shot_type(conn, pid, shot_type):
             raise HTTPException(400)
-        words = dict(SHOT_CHOICES).get(shot_type, shot_type)
         if row["status"] == "draft":
-            conn.execute("UPDATE content_queue SET status='rejected', last_error=?, updated_at=? WHERE id=?",
-                         (f"Set aside: photo {pid} shows {words}, not what the caption said. Drafted again.", db.utcnow(), qid))
-            report.forget_use(conn, f"post:{qid}")      # the draft is undone: its photos are first in line again, not last
+            redraft_for_shot(conn, row, pid, shot_type)
             start_agent("content")
             return RedirectResponse(f"/?msg=redraft", status_code=303)
         return RedirectResponse(f"/queue/{qid}?msg=saved", status_code=303)
@@ -1184,7 +1192,8 @@ def create_app() -> FastAPI:
         if view == "design":
             return RedirectResponse("/", status_code=303)       # 2026-10-15: the samples became designed drafts on Today
         prepare_photo_views(conn, eligibility.folder_decisions(conn))
-        common = dict(view=view, msg=msg, drive_state=settings.get(conn, "drive.auth_state") or "missing")
+        common = dict(view=view, msg=msg, drive_state=settings.get(conn, "drive.auth_state") or "missing",
+                      subject_shots=SUBJECT_SHOTS)
         if view == "folders":
             where = "conv > 0" if show == "events" else ("f.clearance='excluded'" if show == "excluded" else "1=1")
             rows = db.rows(conn, f"""
@@ -1405,6 +1414,30 @@ def create_app() -> FastAPI:
             return {"id": pid, "state": state, "words": TAP_WORDS[state]}
         return RedirectResponse(safe_back(back), status_code=303)
 
+    @app.post("/library/photo/{pid}/shot")
+    def photo_shot(pid: int, request: Request, user: str = Depends(require_user), conn=Depends(conn_dep),
+                   shot_type: str = Form(...), back: str = Form(default="/library")):
+        """Chris, 2026-11-02: "I also want to be able to change the type of shot that is miss labeled. Most backstage
+        images are called candid". His word on every copy, everywhere it is read, kept over any later look by a model
+        (classify.set_shot_type); a waiting draft holding the photo is drafted again with the right words."""
+        from ..library import classify
+        if shot_type not in classify.SHOT_TYPES:
+            raise HTTPException(400)
+        copies = eligibility.copies_of(conn, pid)
+        for cid in copies:
+            classify.set_shot_type(conn, cid, shot_type)
+        redrafted = 0
+        for q in db.rows(conn, "SELECT * FROM content_queue WHERE status='draft'"):
+            if set(copies).intersection(int(x) for x in json.loads(q["photo_ids"] or "[]")):
+                redraft_for_shot(conn, q, pid, shot_type)
+                redrafted += 1
+        if redrafted:
+            start_agent("content")
+        words = f"Kind of shot: {dict(SHOT_CHOICES)[shot_type]}." + (" The draft with it is being made again." if redrafted else "")
+        if "application/json" in request.headers.get("accept", ""):
+            return {"id": pid, "shot": shot_type, "kind": shot_type.replace("_", " "), "words": words}
+        return back_with(back, words)
+
     @app.post("/library/photos/clearance")
     async def photos_clearance(request: Request, user: str = Depends(require_user), conn=Depends(conn_dep)):
         """Use selected / Never use selected: the ticked photos, one tap (2026-10-13)."""
@@ -1440,7 +1473,8 @@ def create_app() -> FastAPI:
         other = next(s for s, _ in SUBJECT_WORDS if s != subject)
         return render(request, "swipe.html", subject=subject, subject_word=dict(SUBJECT_WORDS)[subject], msg=msg,
                       other=other, other_word=dict(SUBJECT_WORDS)[other], other_left=count_photos(conn, "review", other),
-                      deck={**state, "subject": subject, "word": dict(SUBJECT_WORDS)[subject], "keys": SWIPE_KEYS})
+                      deck={**state, "subject": subject, "word": dict(SUBJECT_WORDS)[subject], "keys": SWIPE_KEYS,
+                            "shots": SUBJECT_SHOTS[subject]})
 
     @app.post("/library/swipe/undo")
     def swipe_undo(request: Request, user: str = Depends(require_user), conn=Depends(conn_dep), subject: str = Form("event")):

@@ -187,13 +187,22 @@ FINAL_SCHEMA = {
 
 
 def set_shot_type(conn: sqlite3.Connection, photo_id: int, shot_type: str) -> bool:
-    """One word for what the photo shows, everywhere it is read: the sorting row (the Photos tab,
-    the candidates, the design labels) and the final check. False for a word that is not a shot type."""
+    """Chris's word for what the photo shows, everywhere it is read: the sorting row (the Photos tab, the candidates,
+    the design labels) and the final check, the room printed on a post with it. It is his (shot_by 'chris'), so a later
+    look by a model keeps it (2026-11-02: "Most backstage images are called candid"). False for a word that is not a
+    shot type."""
     if shot_type not in SHOT_TYPES:
         return False
-    conn.execute("UPDATE classifications SET shot_type=? WHERE photo_id=?", (shot_type, photo_id))
-    conn.execute("UPDATE final_checks SET shot_type=? WHERE photo_id=?", (shot_type, photo_id))
+    conn.execute("UPDATE classifications SET shot_type=?, shot_by='chris' WHERE photo_id=?", (shot_type, photo_id))
+    conn.execute("UPDATE final_checks SET shot_type=?, room=? WHERE photo_id=?",
+                 (shot_type, shot_type if shot_type in ROOMS else None, photo_id))
     return True
+
+
+def his_shot_type(conn: sqlite3.Connection, photo_id: int) -> Optional[str]:
+    """The kind of shot Chris set on this photo, if he set one."""
+    row = db.one(conn, "SELECT shot_type FROM classifications WHERE photo_id=? AND shot_by='chris'", (photo_id,))
+    return row["shot_type"] if row else None
 
 
 @dataclass
@@ -417,7 +426,8 @@ def save_sort(conn: sqlite3.Connection, photo: sqlite3.Row, data: dict, method: 
     conn.execute(
         "UPDATE classifications SET method=?, is_convention=?, subject=?, view=?, "
         "convention_name=COALESCE(?, convention_name), "
-        "event_kind=CASE WHEN ?='unknown' THEN event_kind ELSE ? END, shot_type=?, costume=?, rejudge=0, quality=?, people_count=?, personal_details=?, "
+        "event_kind=CASE WHEN ?='unknown' THEN event_kind ELSE ? END, shot_type=CASE WHEN shot_by='chris' THEN shot_type ELSE ? END, "
+        "costume=?, rejudge=0, quality=?, people_count=?, personal_details=?, "
         "space=?, residential=?, empty_room=?, sharp=?, light=?, moment=?, "
         "summary=?, model=?, classified_at=? WHERE photo_id=?",
         (method, int(subject == "event" and data.get("event_kind") not in NOT_OFFERED_KINDS), subject, view,
@@ -529,6 +539,9 @@ def final_check(conn: sqlite3.Connection, photo_id: int, image: bytes, *, client
     shot = data.get("shot_type") if data.get("shot_type") in SHOT_TYPES else None
     kind = data.get("event_kind") if data.get("event_kind") in KINDS else "unknown"
     room = data.get("room") if data.get("room") in ROOMS else None        # "none", missing or unknown: no room is printed
+    his = his_shot_type(conn, photo_id)
+    if his:                                    # Chris set the kind of shot: his word stands, and is the room printed
+        shot, room = his, (his if his in ROOMS else None)
     # possible_minor is a NOT NULL column from before 2026-10-15; no model is asked and nothing reads it (no age gate)
     conn.execute("INSERT INTO final_checks (photo_id, possible_minor, personal_details, summary, model, checked_at, shot_type, event_kind, room) "
                  "VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT(photo_id) DO UPDATE SET possible_minor=excluded.possible_minor, "
@@ -538,7 +551,8 @@ def final_check(conn: sqlite3.Connection, photo_id: int, image: bytes, *, client
                   (data.get("summary") or "")[:300], answered, db.utcnow(), shot, kind, room))
     if shot:
         # Claude's word beats the local sorter's guess (2026-10-11: a stage shot called a portrait)
-        conn.execute("UPDATE classifications SET shot_type=? WHERE photo_id=? AND COALESCE(shot_type, '') != ?", (shot, photo_id, shot))
+        conn.execute("UPDATE classifications SET shot_type=? WHERE photo_id=? AND COALESCE(shot_type, '') != ? "
+                     "AND COALESCE(shot_by, '') != 'chris'", (shot, photo_id, shot))
     if kind != "unknown":
         # and what kind of occasion it is (2026-10-11: a wedding on the website as the hero)
         conn.execute("UPDATE classifications SET event_kind=?, is_convention=? WHERE photo_id=?",

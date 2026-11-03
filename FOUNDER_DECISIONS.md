@@ -2636,3 +2636,17 @@ and the post uses the largest file. Copies are matched by same file name, same c
   sorter called a private occasion while it called the other copy an event: CK1_5184, CK1_4797 and CK1_5107 in
   "headshots", CK1_0673), and from 15 building pictures to 14 (Claude judged the large file of Baldwin_Apartments-21
   somebody's home).
+
+## 2026-11-02: he sets the kind of shot, and his word stays
+
+Chris: "I also want to be able to change the type of shot that is miss labeled. Most backstage images are called candid".
+
+- **Where.** Under the swipe card, "Kind of shot" with the kinds of the photo's subject (main stage, stage panel,
+  breakout, portrait, backstage, candid, reception; a building's exterior or interior), outside the card so a tap on it
+  never starts a swipe; on To review and Approved, the same picker on every photo. A pick is saved at once.
+- **What it does.** His word is written on every copy of the picture, everywhere the kind is read (the photo lists,
+  the candidates, the captions and alt text, the final check) and as the room printed on a post with it. It is his
+  (`classifications.shot_by`, migration 0097): the sorter's second look and the final check before a post keep it. A
+  waiting draft holding the photo is set aside and drafted again with the right words, as the draft page's "Wrong? Fix
+  and draft again" does; an approved post is not changed behind his back.
+

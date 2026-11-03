@@ -100,7 +100,9 @@ class Draft(IsolatedCase):
         conn.close()
 
 
-class Correction(IsolatedCase):
+class CorrectionCase(IsolatedCase):
+    """A signed-in dashboard and the stage photo the sorter called a portrait, with its final check."""
+
     def setUp(self):
         super().setUp()
         os.environ["DASHBOARD_PASSWORD_HASH"] = auth.hash_password("correct horse")
@@ -116,6 +118,8 @@ class Correction(IsolatedCase):
     def shot(self, table):
         return db.one(self.conn, f"SELECT shot_type FROM {table} WHERE photo_id=?", (self.pid,))["shot_type"]
 
+
+class Correction(CorrectionCase):
     def test_chris_fixes_the_word_and_a_new_draft_is_made(self):
         qid = add_post(self.conn, [self.pid], status="draft")
         page = self.client.get(f"/queue/{qid}").text
@@ -144,6 +148,68 @@ class Correction(IsolatedCase):
         self.assertEqual(self.shot("classifications"), "candid")
         self.assertEqual(db.one(self.conn, "SELECT status FROM content_queue WHERE id=?", (approved,))["status"], "approved")
         self.assertEqual(start.call_count, 0, "an approved post is not redrafted behind Chris's back")
+
+
+class HisWord(CorrectionCase):
+    """Chris, 2026-11-02: "I also want to be able to change the type of shot that is miss labeled. Most backstage images
+    are called candid". He sets the kind on the photo list or under the swipe card; it is his word on every copy of the
+    picture, the room printed on a post with it, and no later look by a model replaces it."""
+
+    def test_his_word_outlasts_every_later_look(self):
+        self.assertTrue(classify.set_shot_type(self.conn, self.pid, "backstage"))
+        row = db.one(self.conn, "SELECT shot_type, shot_by FROM classifications WHERE photo_id=?", (self.pid,))
+        self.assertEqual((row["shot_type"], row["shot_by"]), ("backstage", "chris"))
+        self.assertEqual(db.one(self.conn, "SELECT room FROM final_checks WHERE photo_id=?", (self.pid,))["room"], "backstage")
+        # the sorter's second look keeps it
+        photo = db.one(self.conn, "SELECT * FROM photos WHERE id=?", (self.pid,))
+        classify.save_sort(self.conn, photo, {"subject": "event", "event_kind": "business", "shot_type": "candid", "quality": 4},
+                           "vision", "m")
+        self.assertEqual(self.shot("classifications"), "backstage")
+        # and so does the final check before a post: his word, and the room printed with it
+        os.environ["AI_MONTHLY_CAP_USD"] = "5"
+        config.reset()
+        classify.final_check(self.conn, self.pid, jpeg_bytes(), client=FinalClient("candid"))
+        fc = db.one(self.conn, "SELECT shot_type, room FROM final_checks WHERE photo_id=?", (self.pid,))
+        self.assertEqual((self.shot("classifications"), fc["shot_type"], fc["room"]), ("backstage", "backstage", "backstage"))
+
+    def test_the_photo_list_sets_it_on_every_copy_and_a_waiting_draft_is_made_again(self):
+        now = db.utcnow()
+        self.conn.execute("UPDATE photos SET md5='same' WHERE id=?", (self.pid,))
+        twin = db.insert(self.conn, "photos", drive_id="e2", name="e2.jpg", folder_id="fe", width=3000, height=2000, md5="same",
+                         taken_at=camera_time(), first_seen_at=now, last_seen_at=now)
+        db.insert(self.conn, "classifications", photo_id=twin, method="ollama", subject="event", is_convention=1, quality=5,
+                  possible_minor=0, personal_details="[]", shot_type="candid", classified_at=now)
+        page = self.client.get("/library?view=approved").text
+        self.assertIn(f'action="/library/photo/{self.pid}/shot"', page)
+        self.assertIn('<option value="portrait" selected>Portrait</option>', page)
+        self.assertIn('<option value="backstage">Backstage</option>', page)
+        draft = add_post(self.conn, [self.pid], status="draft")
+        approved = add_post(self.conn, [self.pid], status="approved")
+        with mock.patch.object(dash, "start_agent") as start:
+            self.assertEqual(self.client.post(f"/library/photo/{self.pid}/shot", data={"shot_type": "selfie"}).status_code, 400)
+            r = self.client.post(f"/library/photo/{self.pid}/shot", data={"shot_type": "backstage"},
+                                 headers={"Accept": "application/json"})
+        self.assertEqual(r.json(), {"id": self.pid, "shot": "backstage", "kind": "backstage",
+                                    "words": "Kind of shot: Backstage. The draft with it is being made again."})
+        for pid in (self.pid, twin):
+            row = db.one(self.conn, "SELECT shot_type, shot_by FROM classifications WHERE photo_id=?", (pid,))
+            self.assertEqual((row["shot_type"], row["shot_by"]), ("backstage", "chris"), pid)
+        row = db.one(self.conn, "SELECT status, last_error FROM content_queue WHERE id=?", (draft,))
+        self.assertEqual((row["status"], row["last_error"]),
+                         ("rejected", f"Set aside: photo {self.pid} shows Backstage, not what the caption said. Drafted again."))
+        self.assertEqual(db.one(self.conn, "SELECT status FROM content_queue WHERE id=?", (approved,))["status"], "approved",
+                         "an approved post is not redrafted behind his back")
+        self.assertEqual(start.call_args_list, [mock.call("content")])
+
+    def test_the_swipe_card_shows_the_kind_of_the_photo_on_top(self):
+        self.conn.execute("UPDATE photos SET clearance='inherit', clearance_at=NULL WHERE id=?", (self.pid,))
+        self.conn.execute("UPDATE classifications SET method='vision' WHERE photo_id=?", (self.pid,))
+        page = self.client.get("/library/swipe").text
+        self.assertIn('<label for="kind">Kind of shot</label>', page)
+        self.assertIn('<option value="portrait" selected>Portrait</option>', page)
+        self.assertIn('<option value="backstage">Backstage</option>', page)
+        self.assertNotIn("Building exterior", page.split('id="kind"')[1].split("</select>")[0], "an event photo's kinds only")
+        self.assertIn('"shot": "portrait"', page)
 
 
 class Everywhere(IsolatedCase):

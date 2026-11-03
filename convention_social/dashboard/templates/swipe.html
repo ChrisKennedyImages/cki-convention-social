@@ -11,7 +11,7 @@ html,body{overflow-x:clip}
 .deck-top .left{color:var(--muted);font-size:14px}
 .deck-top form{margin-left:auto}
 .deck-top button[disabled],.undo-bar button[disabled]{opacity:.45}
-.stage{position:relative;height:min(520px,calc(100svh - 300px));min-height:300px}
+.stage{position:relative;height:min(520px,calc(100svh - 356px));min-height:300px}
 .swipe{position:absolute;inset:0;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:10px;display:flex;
        flex-direction:column;box-shadow:0 6px 18px rgba(0,0,0,.08);transform-origin:50% 120%;touch-action:pan-y;user-select:none;-webkit-user-select:none}
 .swipe.behind{transform:scale(.96) translateY(10px);box-shadow:none}
@@ -31,7 +31,10 @@ html,body{overflow-x:clip}
 .choices2 button{min-height:56px;font-size:17px;width:100%}
 .hint{text-align:center;color:var(--muted);font-size:13px;margin-top:8px}
 .undo-bar{margin-top:10px;background:var(--ink);color:#fff;border-radius:12px;padding:8px 8px 8px 14px;display:flex;align-items:center;gap:10px;font-size:15px}
-.undo-bar[hidden],.choices2[hidden],.hint[hidden]{display:none}
+.kindrow{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-top:12px;font-size:14px;color:var(--muted)}
+.kindrow select{flex:1;width:auto;min-height:44px}
+.kindrow .said{flex-basis:100%;margin-top:-4px}
+.undo-bar[hidden],.choices2[hidden],.hint[hidden],.kindrow[hidden]{display:none}
 .undo-bar form{margin-left:auto}
 .undo-bar button{background:#fff;color:var(--ink);min-height:44px}
 </style>
@@ -60,6 +63,16 @@ html,body{overflow-x:clip}
   </div>
   {% endif %}
 </div>
+{#- 2026-11-02: "I also want to be able to change the type of shot that is miss labeled": the kind of the photo on top,
+    his word once chosen, outside the card so a tap on it never starts a swipe -#}
+<div class="kindrow" id="kindrow"{{ ' hidden' if not deck.next else '' }}>
+  <label for="kind">Kind of shot</label>
+  <select id="kind">
+    <option value="" disabled{{ ' selected' if deck.next and not deck.next[0].shot else '' }}>not named</option>
+    {% for value, label in deck.shots %}<option value="{{ value }}"{{ ' selected' if deck.next and deck.next[0].shot == value else '' }}>{{ label }}</option>{% endfor %}
+  </select>
+  <span class="said" id="kind-said"></span>
+</div>
 <div class="choices2" id="choices"{{ ' hidden' if not deck.next else '' }}>
   {% for state, label, cls in [('blocked', '✕ Never use', 'danger'), ('cleared', '✓ Use', 'ok')] %}
   <form method="post" action="/library/swipe/{{ deck.next[0].id if deck.next else 0 }}" class="decide">
@@ -81,6 +94,7 @@ html,body{overflow-x:clip}
   var pending = 0, decided = {};
   var stage = document.getElementById('stage'), leftEl = document.getElementById('left'), choices = document.getElementById('choices');
   var hint = document.getElementById('hint'), bar = document.getElementById('undo-bar'), said = document.getElementById('said');
+  var kindRow = document.getElementById('kindrow'), kind = document.getElementById('kind'), kindSaid = document.getElementById('kind-said');
   var word = data.word, emptyHtml = document.getElementById('empty');
   emptyHtml = emptyHtml ? emptyHtml.outerHTML : null;
 
@@ -102,7 +116,10 @@ html,body{overflow-x:clip}
   function draw() {
     stage.querySelectorAll('.swipe:not(.gone), .empty, .waiting').forEach(function (n) { n.remove(); });
     leftEl.textContent = left.toLocaleString('en-US') + ' left · ' + word;
-    choices.hidden = !cards.length;
+    choices.hidden = !cards.length; kindRow.hidden = !cards.length;
+    if (cards.length && kind.dataset.id !== String(cards[0].id)) {
+      kind.dataset.id = cards[0].id; kind.value = cards[0].shot || ''; kindSaid.textContent = '';
+    }
     if (!cards.length) { hint.hidden = true; }
     if (!cards.length) {
       if (pending) { stage.append(el('div', 'card empty waiting', 'Saving…')); }
@@ -180,6 +197,20 @@ html,body{overflow-x:clip}
     card.addEventListener('pointerup', end);
     card.addEventListener('pointercancel', end);
   }
+  // the kind of the photo on top, saved the moment he picks it; the card's label follows the answer, a failure puts it back
+  kind.addEventListener('change', function () {
+    var c = cards[0], value = kind.value, body = new FormData();
+    if (!c || !value) { return; }
+    body.append('shot_type', value);
+    fetch('/library/photo/' + c.id + '/shot', {method: 'POST', body: body, headers: {'Accept': 'application/json'}})
+      .then(function (r) { if (!r.ok) { throw new Error(r.status); } return r.json(); })
+      .then(function (d) {
+        c.shot = d.shot; c.kind = d.kind; kindSaid.textContent = d.words;
+        var label = stage.querySelector('.swipe[data-id="' + c.id + '"] .about b');
+        if (label) { label.textContent = d.kind; }
+      })
+      .catch(function () { kind.value = c.shot || ''; kindSaid.textContent = 'Not saved: the dashboard did not answer.'; });
+  });
   document.querySelectorAll('form.decide').forEach(function (f) {
     f.addEventListener('submit', function (e) { e.preventDefault(); decide(f.querySelector('[name=state]').value); });
   });
