@@ -23,8 +23,9 @@ larger copy stands for the picture from the pass after it is sorted. A photo rem
 picture and takes no decision, but it keeps its picture, so a post of a file since removed still holds the copies that
 remain. A photo the pass has not seen yet (its picture is NULL) stands for itself: STANDS_FOR_ITS_PICTURE.
 
-link() runs after every inventory pass (agents/scanner) and gives every copy in Drive the picture's decision: Don't use on
-any copy wins over everything, then Use; a picture with neither is left as it is.
+link() runs after every inventory pass (agents/scanner) and gives every copy in Drive the picture's decision: his Use on
+any copy wins (2026-11-02: where he had tapped Use on one file and Never use on its duplicate, he chose "Approved": the
+second swipe was at the repeat, not the picture), then Never use; a picture with neither is left as it is.
 """
 from __future__ import annotations
 
@@ -156,7 +157,7 @@ def _link(conn: sqlite3.Connection) -> Linked:
         out.pictures += 1
         out.extra += len(live) - 1
         states = {r["clearance"] for r in live}
-        decision = "blocked" if "blocked" in states else "cleared" if "cleared" in states else None
+        decision = "cleared" if "cleared" in states else "blocked" if "blocked" in states else None
         if decision is None:
             continue
         at = max((r["clearance_at"] or "" for r in live if r["clearance"] == decision), default="") or None

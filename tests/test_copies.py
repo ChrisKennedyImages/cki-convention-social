@@ -120,7 +120,9 @@ class Matching(Library):
 
 
 class Decisions(Library):
-    def test_a_decision_on_one_copy_is_on_every_copy_and_dont_use_wins(self):
+    def test_a_decision_on_one_copy_is_on_every_copy_and_his_use_wins(self):
+        """Chris, 2026-11-02, on 15 pictures with Use on one file and Never use on its duplicate: "Approved" (the
+        second swipe was at the repeat). His Use on any copy wins; Never use spreads where no copy has a Use."""
         a = self.photo("CK5_2499.jpg", 7089, 4135, clearance="cleared")
         self.conn.execute("UPDATE photos SET clearance_at='2026-10-11T20:09:30+00:00' WHERE id=?", (a,))
         b = self.photo("CK5_2499.jpg", 7089, 4135)
@@ -134,8 +136,13 @@ class Decisions(Library):
         self.assertEqual({self.clearance(p) for p in undecided}, {("inherit", None)}, "no decision: nothing is made up")
         self.conn.execute("UPDATE photos SET clearance='blocked', clearance_at='2026-11-02T22:48:27+00:00' WHERE id=?", (c,))
         copies.link(self.conn)
-        self.assertEqual({self.clearance(p) for p in (a, b, c)}, {("blocked", "2026-11-02T22:48:27+00:00")},
-                         "Don't use on any copy wins over a Use on another")
+        self.assertEqual({self.clearance(p) for p in (a, b, c)}, {("cleared", "2026-10-11T20:09:30+00:00")},
+                         "his Use on one copy wins over a Never use on its duplicate")
+        self.conn.execute("UPDATE photos SET clearance='blocked', clearance_at='2026-11-02T23:01:00+00:00' WHERE id=?",
+                          (undecided[0],))
+        copies.link(self.conn)
+        self.assertEqual({self.clearance(p) for p in undecided}, {("blocked", "2026-11-02T23:01:00+00:00")},
+                         "a Never use with no Use on any copy is on every copy")
 
 
 class TheCard(Library):

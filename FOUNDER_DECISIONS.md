@@ -2620,7 +2620,9 @@ and the post uses the largest file. Copies are matched by same file name, same c
   sorted. The scanner links new photos to their copies after every inventory pass.
 - **A decision on the card is on every copy**: Use, Don't use, the swipe and its Undo, as since 10-26; and a photo on the
   do-not-use list (Never use) keeps every copy of its picture out, at the publisher's door too. The pass gives the copies
-  their picture's decision, Don't use on any copy winning over a Use on another (fail closed).
+  their picture's decision. Where copies disagreed (15 pictures on 2 November: Use on one file, Never use on its
+  duplicate), asked which should stand, he chose "Approved (Recommended)": his Use on any copy wins; a Never use spreads
+  to every copy where no copy has a Use.
 - **A post takes the card's file**: the daily draft and the designed drafts are offered only the photo that stands for
   each picture, and so are a reel's wall, the design samples and the website. A picture that went out went out, whichever
   of its files was on the post (the repeat window and the rotation).
