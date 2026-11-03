@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 from convention_social.core import auth, config, db, settings
 from convention_social.dashboard import app as dash
 from convention_social.dashboard.app import COOKIE, create_app, make_token
+from convention_social.library import copies
 from tests._base import IsolatedCase
 from tests._fakes import add_post
 
@@ -57,6 +58,7 @@ class Keepers(IsolatedCase):
             self.photo(pid, quality=5)
         self.photo(6, quality=1, md5="same")
         self.photo(7, quality=1, md5="same")              # one picture twice: one tile, both copies decided
+        copies.link(self.conn)                            # the scanner's pass makes them one picture
         waiting = add_post(self.conn, [3], status="draft")
         self.client.post("/library/photo/5/clearance", data={"state": "cleared"})     # decided elsewhere meanwhile
         r = self.client.post("/library/keepers", data={"subject": "event", "shown": ["1", "2", "3", "5", "6"], "keep": ["2"]},
