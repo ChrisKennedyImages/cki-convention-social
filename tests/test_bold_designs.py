@@ -62,7 +62,7 @@ class Drafting(IsolatedCase):
         self.addCleanup(self.conn.close)
         now = db.utcnow()
         for fid, name in (("fe", "Con"), ("fa", "Hotel exteriors")):
-            db.insert(self.conn, "drive_folders", drive_id=fid, name=name, clearance="cleared", first_seen_at=now, last_seen_at=now)
+            db.insert(self.conn, "drive_folders", drive_id=fid, name=name, first_seen_at=now, last_seen_at=now)
         self.ids, self.fetched = {}, []
         for did, folder, subject, q in (("e1", "fe", "event", 5), ("e2", "fe", "event", 4), ("e3", "fe", "event", 3),
                                         ("a1", "fa", "architecture", 5)):
@@ -71,7 +71,8 @@ class Drafting(IsolatedCase):
     def add(self, did, folder="fe", subject="event", q=3):
         now = db.utcnow()
         pid = db.insert(self.conn, "photos", drive_id=did, name=f"{did}.jpg", folder_id=folder, width=3000, height=2000,
-                        taken_at=camera_time(), first_seen_at=now, last_seen_at=now)
+                        taken_at=camera_time(), clearance="cleared", clearance_at=now,      # his Use: a folder never approves
+                        first_seen_at=now, last_seen_at=now)
         db.insert(self.conn, "classifications", photo_id=pid, method="ollama", subject=subject, convention_name=None,
                   is_convention=int(subject == "event"), quality=q, possible_minor=0, personal_details="[]", space="exterior",
                   residential=0, empty_room=0, sharp=1, light=4, moment=4, shot_type="portrait" if subject == "event" else "building_exterior",

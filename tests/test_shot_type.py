@@ -39,9 +39,10 @@ class FinalClient:
 
 def stage_photo_called_a_portrait(conn) -> int:
     now = db.utcnow()
-    db.insert(conn, "drive_folders", drive_id="fe", name="Conference", clearance="cleared", first_seen_at=now, last_seen_at=now)
+    db.insert(conn, "drive_folders", drive_id="fe", name="Conference", first_seen_at=now, last_seen_at=now)
     pid = db.insert(conn, "photos", drive_id="e1", name="e1.jpg", folder_id="fe", width=3000, height=2000,
-                    taken_at=camera_time(), first_seen_at=now, last_seen_at=now)
+                    taken_at=camera_time(), clearance="cleared", clearance_at=now,     # his Use: a folder never approves
+                    first_seen_at=now, last_seen_at=now)
     db.insert(conn, "classifications", photo_id=pid, method="ollama", subject="event", convention_name="Liberty Summit",
               event_kind="business", is_convention=1, quality=5, possible_minor=0, personal_details="[]", space="exterior",
               residential=0, empty_room=0, sharp=1, light=4, moment=4, shot_type="portrait", classified_at=now)

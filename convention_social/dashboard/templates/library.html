@@ -171,7 +171,7 @@ document.querySelectorAll('form.pick').forEach(function (form) {
 {% for f in folders %}
 <div class="card" id="f-{{ f.drive_id }}">
   <div class="row"><a href="/library/folder/{{ f.drive_id }}"><strong>{{ f.name }}</strong></a>
-    <span class="badge {{ f.clearance }}">{{ f.clearance.replace('_',' ') }}</span></div>
+    {% if f.clearance == 'excluded' %}<span class="badge excluded">excluded</span>{% endif %}</div>
   <div class="muted">{{ f.path or '' }}</div>
   {% if f.shared_by %}<div class="muted">shared by {{ f.shared_by }}</div>{% endif %}
   <div class="muted">{{ f.conv or 0 }} look like event photos, {{ f.image_count }} photos in all</div>

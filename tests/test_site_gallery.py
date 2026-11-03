@@ -70,7 +70,8 @@ class TheControl(IsolatedCase):
         blocked = event_photo(self.conn, "g2", kind="business", final="business")
         self.conn.execute("UPDATE photos SET clearance='blocked' WHERE id=?", (blocked,))
         undecided = event_photo(self.conn, "g3", kind="business", final="business", folder="raw")
-        self.conn.execute("UPDATE drive_folders SET clearance='not_cleared' WHERE drive_id='raw'")
+        self.conn.execute("UPDATE photos SET clearance='inherit', clearance_at=NULL WHERE id=?", (undecided,))
+        self.conn.execute("UPDATE drive_folders SET clearance='cleared' WHERE drive_id='raw'")     # a folder never approves (2026-11-02)
         for pid in (blocked, undecided):
             r = self.client.post(f"/library/photo/{pid}/gallery", data={}, headers={"Accept": "application/json"})
             self.assertEqual(r.status_code, 409)
@@ -139,7 +140,7 @@ class TheGallery(IsolatedCase):
         self.assertEqual(self.shades(photos), [80], "the pick still usable leads; the two others are not shown")
         self.assertEqual(photos.grid_note,
                          f"your Site gallery picks lead the gallery, in your order: photos {kept}; "
-                         f"your Site gallery pick (photo {blocked}) could not be used: Chris blocked this photo; "
+                         f"your Site gallery pick (photo {blocked}) could not be used: Chris marked it Never use; "
                          f"your Site gallery pick (photo {gone}) could not be used: photo is no longer in Drive")
 
     def test_the_hero_is_never_in_the_gallery_as_well(self):

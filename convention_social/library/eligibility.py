@@ -217,7 +217,7 @@ def is_candidate(conn: sqlite3.Connection, photo_id: int) -> tuple[bool, str]:
         return False, "photo is no longer in Drive"
     decision = clearance_of(conn, photo)
     if decision != "cleared":
-        return False, {"blocked": "Chris blocked this photo", "excluded": "its folder is excluded",
+        return False, {"blocked": "Chris marked it Never use", "excluded": "its folder is excluded",
                        "not_cleared": "not cleared yet"}[decision]
     why = blocked_by_list(conn, photo)
     if why:

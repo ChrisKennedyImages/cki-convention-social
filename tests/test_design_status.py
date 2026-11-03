@@ -27,15 +27,16 @@ class Case(IsolatedCase):
         self.conn = db.connect()
         self.addCleanup(self.conn.close)
         now = db.utcnow()
-        for fid, clearance in (("fa", "cleared"), ("fb", "not_cleared")):
-            db.insert(self.conn, "drive_folders", drive_id=fid, name=fid, clearance=clearance, first_seen_at=now, last_seen_at=now)
+        for fid in ("fa", "fb"):
+            db.insert(self.conn, "drive_folders", drive_id=fid, name=fid, first_seen_at=now, last_seen_at=now)
         self.n = 0
 
-    def photo(self, folder="fa", sorted_=True, clearance="inherit", shot=None):
+    def photo(self, folder="fa", sorted_=True, clearance="cleared", shot=None):
+        """A photo, by default with his Use on it (a folder never approves, 2026-11-02)."""
         self.n += 1
         now = db.utcnow()
         pid = db.insert(self.conn, "photos", drive_id=f"d{self.n}", name=f"{self.n}.jpg", folder_id=folder, clearance=clearance,
-                        thumbnail_link="https://lh3.example/t", width=3000, height=2000, first_seen_at=now, last_seen_at=now)
+                        clearance_at=now if clearance != "inherit" else None, thumbnail_link="https://lh3.example/t", width=3000, height=2000, first_seen_at=now, last_seen_at=now)
         db.insert(self.conn, "classifications", photo_id=pid, method="ollama" if sorted_ else "folder", subject="event",
                   is_convention=1, event_kind="business", quality=4, possible_minor=0 if sorted_ else None, personal_details="[]",
                   sharp=1, light=4, moment=4, shot_type=shot or ROOMS[self.n % len(ROOMS)], classified_at=now)
@@ -44,11 +45,14 @@ class Case(IsolatedCase):
 
 class Auto(Case):
     def test_too_few_says_how_many_are_ready_and_how_many_wait_for_the_sorter(self):
+        """2026-11-02: only his Use counts; a folder row left 'cleared' approves nothing, sorted or waiting."""
+        self.conn.execute("UPDATE drive_folders SET clearance='cleared' WHERE drive_id='fb'")
         self.photo()
         self.photo(sorted_=False)
-        self.photo(folder="fb", sorted_=False, clearance="cleared")      # approved one by one
-        self.photo(folder="fb", sorted_=False)                           # not approved: not counted
-        self.photo(sorted_=False, clearance="blocked")                   # Don't use: not counted
+        self.photo(folder="fb", sorted_=False)                           # approved one by one
+        self.photo(folder="fb", sorted_=False, clearance="inherit")      # not approved, whatever its folder says: not counted
+        self.photo(folder="fb", clearance="inherit")                     # sorted, not approved: not ready
+        self.photo(sorted_=False, clearance="blocked")                   # Never use: not counted
         self.assertEqual(design_samples.readiness(self.conn), {"ready": 1, "waiting": 2})
         with mock.patch.object(design_samples, "start_in_background") as start:
             line = design_samples.auto(self.conn)

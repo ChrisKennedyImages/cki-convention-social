@@ -40,12 +40,12 @@ class FinalClient:
 def event_photo(conn, drive_id, *, kind="unknown", quality=5, sharp=1, light=4, moment=4, width=3000, height=2000, folder="fe",
                 final=None):
     """A cleared, sorted event photo; `final` is the kind an existing final check carries (None for none, "" for an
-    old check from before the question)."""
+    old check from before the question). Cleared by his own Use on it: a folder never approves (2026-11-02)."""
     now = db.utcnow()
     if db.one(conn, "SELECT 1 FROM drive_folders WHERE drive_id=?", (folder,)) is None:
-        db.insert(conn, "drive_folders", drive_id=folder, name="Con", clearance="cleared", first_seen_at=now, last_seen_at=now)
+        db.insert(conn, "drive_folders", drive_id=folder, name="Con", first_seen_at=now, last_seen_at=now)
     pid = db.insert(conn, "photos", drive_id=drive_id, name=f"{drive_id}.jpg", folder_id=folder, width=width, height=height,
-                    taken_at=camera_time(), first_seen_at=now, last_seen_at=now)
+                    taken_at=camera_time(), clearance="cleared", clearance_at=now, first_seen_at=now, last_seen_at=now)
     db.insert(conn, "classifications", photo_id=pid, method="ollama", subject="event", convention_name="Liberty Summit",
               event_kind=kind, is_convention=0 if kind in classify.NOT_OFFERED_KINDS else 1, quality=quality, possible_minor=0,
               personal_details="[]", space="exterior", residential=0, empty_room=0, sharp=sharp, light=light, moment=moment,
@@ -105,12 +105,13 @@ class TheWord(IsolatedCase):
         cls = db.one(self.conn, "SELECT event_kind, is_convention, subject FROM classifications WHERE photo_id=?", (pid,))
         self.assertEqual((cls["event_kind"], cls["is_convention"], cls["subject"]), ("wedding", 0, "event"))
         self.assertEqual(eligibility.is_candidate(self.conn, pid), (False, eligibility.NOT_OFFERED_KIND_WHY))
-        # and the Photos tab never offers it for review
+        # and the Photos tab never offers it for review (undecided, as To review lists them: a folder never approves)
         dash.prepare_photo_views(self.conn, eligibility.folder_decisions(self.conn))
-        self.conn.execute("UPDATE drive_folders SET clearance='not_cleared'")
+        self.conn.execute("UPDATE photos SET clearance='inherit', clearance_at=NULL")
         dash.prepare_photo_views(self.conn, eligibility.folder_decisions(self.conn))
         self.assertEqual(dash.count_photos(self.conn, "review"), 0)
-        event_photo(self.conn, "ok1", kind="business")
+        ok = event_photo(self.conn, "ok1", kind="business")
+        self.conn.execute("UPDATE photos SET clearance='inherit', clearance_at=NULL WHERE id=?", (ok,))
         dash.prepare_photo_views(self.conn, eligibility.folder_decisions(self.conn))
         self.assertEqual(dash.count_photos(self.conn, "review"), 1)
 

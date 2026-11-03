@@ -30,10 +30,11 @@ class Case(DraftCase):
     def photo(self, folder: str, taken: str, *, quality: int = 5, event: str = "Katsucon") -> int:
         now = db.utcnow()
         if db.one(self.conn, "SELECT 1 FROM drive_folders WHERE drive_id=?", (folder,)) is None:
-            db.insert(self.conn, "drive_folders", drive_id=folder, name=folder, clearance="cleared", first_seen_at=now, last_seen_at=now)
+            db.insert(self.conn, "drive_folders", drive_id=folder, name=folder, first_seen_at=now, last_seen_at=now)
         n = db.one(self.conn, "SELECT COUNT(*) AS n FROM photos")["n"] + 1
         pid = db.insert(self.conn, "photos", drive_id=f"d{n}", name=f"d{n}.jpg", folder_id=folder, width=3000, height=2000,
-                        taken_at=taken, first_seen_at=now, last_seen_at=now)
+                        taken_at=taken, clearance="cleared", clearance_at=now,      # his Use: a folder never approves
+                        first_seen_at=now, last_seen_at=now)
         db.insert(self.conn, "classifications", photo_id=pid, method="ollama", subject="event", convention_name=event, is_convention=1,
                   quality=quality, possible_minor=0, personal_details="[]", space="exterior", residential=0, empty_room=0, sharp=1,
                   light=4, moment=4, classified_at=now)

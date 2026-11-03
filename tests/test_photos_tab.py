@@ -91,10 +91,13 @@ class Fast(IsolatedCase):
         now = db.utcnow()
         n = 60000
         conn.execute("BEGIN")
-        conn.executemany("INSERT INTO drive_folders (drive_id, name, image_count, clearance, first_seen_at, last_seen_at) VALUES (?,?,?,?,?,?)",
-                         [(f"f{i}", f"F{i}", 400, "cleared" if i % 10 == 0 else "not_cleared", now, now) for i in range(150)])
-        conn.executemany("INSERT INTO photos (id, drive_id, name, folder_id, first_seen_at, last_seen_at) VALUES (?,?,?,?,?,?)",
-                         [(i, f"d{i}", f"{i}.jpg", f"f{i % 150}", now, now) for i in range(1, n + 1)])
+        conn.executemany("INSERT INTO drive_folders (drive_id, name, image_count, first_seen_at, last_seen_at) VALUES (?,?,?,?,?)",
+                         [(f"f{i}", f"F{i}", 400, now, now) for i in range(150)])
+        # every photo of one folder in ten has his Use (a folder never approves, 2026-11-02): about 6,000 approved
+        conn.executemany("INSERT INTO photos (id, drive_id, name, folder_id, clearance, clearance_at, first_seen_at, last_seen_at) "
+                         "VALUES (?,?,?,?,?,?,?,?)",
+                         [(i, f"d{i}", f"{i}.jpg", f"f{i % 150}", *(("cleared", now) if i % 150 % 10 == 0 else ("inherit", None)), now, now)
+                          for i in range(1, n + 1)])
         conn.executemany("INSERT INTO classifications (photo_id, method, quality, light, moment, sharp, possible_minor, personal_details, classified_at) "
                          "VALUES (?,?,?,?,?,?,?,?,?)", [(i, "ollama", i % 5 + 1, i % 4 + 1, i % 3 + 1, 1, 0, "[]", now) for i in range(1, n + 1)])
         conn.execute("COMMIT")

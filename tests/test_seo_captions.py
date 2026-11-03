@@ -105,8 +105,9 @@ class DailyDraft(IsolatedCase):
         self.conn = db.connect()
         self.addCleanup(self.conn.close)
         now = db.utcnow()
-        db.insert(self.conn, "drive_folders", drive_id="fe", name="F", clearance="cleared", first_seen_at=now, last_seen_at=now)
+        db.insert(self.conn, "drive_folders", drive_id="fe", name="F", first_seen_at=now, last_seen_at=now)
         pid = db.insert(self.conn, "photos", drive_id="e1", name="e1.jpg", folder_id="fe", width=3000, height=2000,
+                        clearance="cleared", clearance_at=now,          # his Use: a folder never approves (2026-11-02)
                         first_seen_at=now, last_seen_at=now)
         db.insert(self.conn, "classifications", photo_id=pid, method="ollama", subject="event", event_kind="business",
                   convention_name="CPAC 2025", is_convention=1, quality=5, possible_minor=0, personal_details="[]",
@@ -292,14 +293,15 @@ class NoCosplay(IsolatedCase):
     def test_a_costume_photo_is_never_used(self):
         conn = db.connect()
         now = db.utcnow()
-        db.insert(conn, "drive_folders", drive_id="f", name="F", clearance="cleared", first_seen_at=now, last_seen_at=now)
-        pid = db.insert(conn, "photos", drive_id="c1", name="c1.jpg", folder_id="f", first_seen_at=now, last_seen_at=now)
+        db.insert(conn, "drive_folders", drive_id="f", name="F", first_seen_at=now, last_seen_at=now)
+        pid = db.insert(conn, "photos", drive_id="c1", name="c1.jpg", folder_id="f", clearance="cleared", clearance_at=now,
+                        first_seen_at=now, last_seen_at=now)
         db.insert(conn, "classifications", photo_id=pid, method="ollama", subject="event", possible_minor=0, personal_details="[]",
                   shot_type="candid", costume=1, classified_at=now)
         self.assertEqual(eligibility.is_candidate(conn, pid), (False, "a costume photo: Event Caliber does no cosplay"))
         from convention_social.dashboard import app as dash
         self.conn = conn
-        conn.execute("UPDATE drive_folders SET clearance='not_cleared'")
+        conn.execute("UPDATE photos SET clearance='inherit', clearance_at=NULL")      # undecided, as To review lists them
         dash.prepare_photo_views(conn, eligibility.folder_decisions(conn))
         self.assertEqual(dash.count_photos(conn, "review"), 0, "never even offered for review")
         conn.close()

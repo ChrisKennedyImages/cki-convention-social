@@ -3,7 +3,9 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import types
+from pathlib import Path
 from unittest import mock
 
 from convention_social.core import config, db, runner, settings
@@ -77,11 +79,12 @@ class Scan(IsolatedCase):
         self.assertEqual(trashed, {"p1", "p3"})
 
     def test_rescan_keeps_clearance(self):
+        """2026-11-02: a folder's own decision is Exclude or none (a folder never approves); the scan keeps it."""
         scan.full_inventory(self.conn, self.reader)
-        self.conn.execute("UPDATE drive_folders SET clearance='cleared' WHERE drive_id='fcon'")
+        self.conn.execute("UPDATE drive_folders SET clearance='excluded' WHERE drive_id='fcon'")
         self.conn.execute("UPDATE photos SET clearance='blocked' WHERE drive_id='p2'")
         scan.full_inventory(self.conn, self.reader)
-        self.assertEqual(db.one(self.conn, "SELECT clearance FROM drive_folders WHERE drive_id='fcon'")["clearance"], "cleared")
+        self.assertEqual(db.one(self.conn, "SELECT clearance FROM drive_folders WHERE drive_id='fcon'")["clearance"], "excluded")
         self.assertEqual(db.one(self.conn, "SELECT clearance FROM photos WHERE drive_id='p2'")["clearance"], "blocked")
 
     def test_only_gets_were_made(self):
@@ -132,6 +135,11 @@ class Eligibility(IsolatedCase):
         c = classify.VisionClassifier(self.conn, client=FakeClaude(answer))
         return classify.vision_pass(self.conn, self.reader.thumbnail_for, classifier=c)
 
+    def use(self, *drive_ids):
+        """His own Use on each photo: the only thing that approves one (2026-11-02, a folder never does)."""
+        for d in drive_ids:
+            self.conn.execute("UPDATE photos SET clearance='cleared', clearance_at=? WHERE drive_id=?", (db.utcnow(), d))
+
     def final(self, drive_id, minor=0, details="[]"):
         db.insert(self.conn, "final_checks", photo_id=self.pid(drive_id), possible_minor=minor, personal_details=details,
                   model="claude-opus-5", checked_at=db.utcnow())
@@ -143,11 +151,20 @@ class Eligibility(IsolatedCase):
         self.assertEqual(eligibility.eligible_photo_ids(self.conn, ids), [])
         self.assertEqual(eligibility.is_eligible(self.conn, self.pid("p1")), (False, "not cleared yet"))
 
-    def test_cleared_parent_folder_sorting_and_final_check(self):
+    def test_only_his_use_approves_then_sorting_and_final_check(self):
         """Deliberate change, Chris's ruling of 2026-10-15 (no age gate): the first door was "checked for minors"; it
-        is now "a model sorted it" (the free folder row is still a no)."""
+        is now "a model sorted it" (the free folder row is still a no).
+        Deliberate change, Chris's ruling of 2026-11-02 (it was test_cleared_parent_folder_sorting_and_final_check):
+        "MANY of the approved photos, I never approved and say ready to use". A folder never approves its photos: a
+        folder row left 'cleared' in the database approves nothing, sorted and checked or not; his own Use does."""
         self.conn.execute("UPDATE drive_folders SET clearance='cleared' WHERE drive_id='fcon'")
-        # cleared, but only the free folder row so far: still no
+        photo = db.one(self.conn, "SELECT * FROM photos WHERE drive_id='p1'")
+        self.assertEqual(eligibility.clearance_of(self.conn, photo), "not_cleared")
+        self.assertEqual(set(eligibility.folder_decisions(self.conn).values()), {"not_cleared"})
+        self.assertEqual(eligibility.decision_of(photo, eligibility.folder_decisions(self.conn)), "not_cleared")
+        self.assertEqual(eligibility.is_candidate(self.conn, self.pid("p1")), (False, "not cleared yet"))
+        # his Use, but only the free folder row so far: still no
+        self.use("p1")
         self.assertEqual(eligibility.is_candidate(self.conn, self.pid("p1")), (False, "not sorted yet"))
         self.vision()
         self.assertEqual(eligibility.is_candidate(self.conn, self.pid("p1")), (True, "ok"))
@@ -155,16 +172,20 @@ class Eligibility(IsolatedCase):
         self.assertEqual(eligibility.is_eligible(self.conn, self.pid("p1")), (False, "not given the final check yet"))
         self.final("p1")
         self.assertEqual(eligibility.is_eligible(self.conn, self.pid("p1")), (True, "ok"))
-        # a nearer excluded folder wins over a cleared parent
+        # p2 sits under the same 'cleared' folder, sorted and checked, and is still not approved: the Use was p1's
+        self.final("p2")
+        self.assertEqual(eligibility.is_eligible(self.conn, self.pid("p2")), (False, "not cleared yet"))
+        # an excluded folder above wins over his Use
         self.conn.execute("UPDATE drive_folders SET clearance='excluded' WHERE drive_id='fcos'")
-        self.assertEqual(eligibility.is_eligible(self.conn, self.pid("p1"))[0], False)
+        self.assertEqual(eligibility.is_eligible(self.conn, self.pid("p1")), (False, "its folder is excluded"))
 
     def test_an_excluded_folder_keeps_out_even_a_photo_he_tapped_use_on(self):
         """5.2 (2026-10-13): the folder page promised "even photos you tapped Use on"; the code let the tap win.
-        Fail closed: an excluded folder anywhere above the photo wins, in the walker and in the one-pass map."""
+        Fail closed: an excluded folder anywhere above the photo wins, in the walker and in the one-pass map.
+        2026-11-02: a folder never approves; a 'cleared' row left on a folder changes nothing here."""
         self.vision()
         self.final("p1")
-        self.conn.execute("UPDATE photos SET clearance='cleared' WHERE drive_id='p1'")
+        self.use("p1")
         self.assertEqual(eligibility.is_eligible(self.conn, self.pid("p1")), (True, "ok"))
         for folder in ("fcos", "fcon"):                    # the photo's own folder, then the one above it
             self.conn.execute("UPDATE drive_folders SET clearance='excluded' WHERE drive_id=?", (folder,))
@@ -173,7 +194,8 @@ class Eligibility(IsolatedCase):
             self.assertEqual(eligibility.decision_of(photo, eligibility.folder_decisions(self.conn)), "excluded", folder)
             self.conn.execute("UPDATE drive_folders SET clearance='not_cleared' WHERE drive_id=?", (folder,))
         self.assertEqual(eligibility.is_eligible(self.conn, self.pid("p1")), (True, "ok"), "back to the tap once the folder is undecided")
-        # the photo's own folder cleared, the one above it excluded: the exclusion still wins (the old map let the nearer decision win)
+        # the photo's own folder row says cleared, the one above it excluded: the exclusion still wins (the old map let the
+        # nearer decision win; since 2026-11-02 a cleared folder row approves nothing at all)
         self.conn.execute("UPDATE drive_folders SET clearance='cleared' WHERE drive_id='fcos'")
         self.conn.execute("UPDATE drive_folders SET clearance='excluded' WHERE drive_id='fcon'")
         self.assertEqual(eligibility.is_candidate(self.conn, self.pid("p1")), (False, "its folder is excluded"))
@@ -182,12 +204,12 @@ class Eligibility(IsolatedCase):
         self.conn.execute("UPDATE drive_folders SET clearance='not_cleared' WHERE drive_id IN ('fcos', 'fcon')")
         self.conn.execute("UPDATE photos SET clearance='blocked' WHERE drive_id='p1'")
         self.conn.execute("UPDATE drive_folders SET clearance='cleared' WHERE drive_id='fcon'")
-        self.assertEqual(eligibility.is_candidate(self.conn, self.pid("p1")), (False, "Chris blocked this photo"), "Don't use still wins over a cleared folder")
+        self.assertEqual(eligibility.is_candidate(self.conn, self.pid("p1")), (False, "Chris marked it Never use"), "Never use wins over everything")
 
     def test_final_check_details_block_and_an_age_flag_does_not(self):
         """Deliberate change, Chris's ruling of 2026-10-15: "Get rid of the gate all together! If I approve something,
         it means I checked it." An old final check that flagged someone as maybe under 18 no longer blocks."""
-        self.conn.execute("UPDATE drive_folders SET clearance='cleared' WHERE drive_id='fcon'")
+        self.use("p1", "p2")
         self.vision()
         self.final("p1", minor=1)
         self.assertEqual(eligibility.is_eligible(self.conn, self.pid("p1")), (True, "ok"))
@@ -197,7 +219,7 @@ class Eligibility(IsolatedCase):
     def test_an_old_age_flag_from_the_sorter_never_blocks(self):
         """Deliberate change, Chris's ruling of 2026-10-15 (it was test_possible_minor_never_eligible): a sort row that
         says possible_minor=1, from before the ruling, is a candidate and, with the final check, eligible."""
-        self.conn.execute("UPDATE drive_folders SET clearance='cleared' WHERE drive_id='fcon'")
+        self.use("p1", "p2")
         self.vision()
         self.conn.execute("UPDATE classifications SET possible_minor=1")
         self.assertEqual(eligibility.is_candidate(self.conn, self.pid("p1")), (True, "ok"))
@@ -206,7 +228,7 @@ class Eligibility(IsolatedCase):
 
     def test_personal_details_block_but_never_a_name(self):
         # Chris, 2026-10-12: "If they're wearing a name badge or there's a name in the photo it's fine to use"
-        self.conn.execute("UPDATE drive_folders SET clearance='cleared' WHERE drive_id='fcon'")
+        self.use("p1", "p2")
         self.vision({**ADULTS, "personal_details": ["badge_name", "document", "screen"]})
         why = eligibility.is_candidate(self.conn, self.pid("p1"))[1]
         self.assertNotIn("personal details", why, why)
@@ -217,7 +239,7 @@ class Eligibility(IsolatedCase):
         self.assertEqual(eligibility.blocking_details(["badge_name", "house_number", "street_sign"], "architecture"), [])
 
     def test_do_not_use_list_and_consent(self):
-        self.conn.execute("UPDATE drive_folders SET clearance='cleared' WHERE drive_id='fcon'")
+        self.use("p1", "p2")
         self.vision()
         pid = self.pid("p1")
         self.final("p1")
@@ -233,7 +255,7 @@ class Eligibility(IsolatedCase):
                          (False, "a person in it (@ann_cos) is on the do-not-use list"))
 
     def test_consent_no_blocks(self):
-        self.conn.execute("UPDATE drive_folders SET clearance='cleared' WHERE drive_id='fcon'")
+        self.use("p1", "p2")
         self.vision()
         credits.sync(self.conn, "Folder,Consent\nfcos,no\n")
         self.assertEqual(eligibility.is_eligible(self.conn, self.pid("p1")), (False, "the credits sheet says no consent"))
@@ -241,6 +263,51 @@ class Eligibility(IsolatedCase):
     def test_trashed_photo_not_eligible(self):
         self.conn.execute("UPDATE photos SET clearance='cleared', trashed=1 WHERE drive_id='p1'")
         self.assertEqual(eligibility.is_eligible(self.conn, self.pid("p1")), (False, "photo is no longer in Drive"))
+
+
+class UseOrNeverUseMigration(IsolatedCase):
+    """Migration 0095, Chris, 2026-11-02: "MANY of the approved photos, I never approved and say ready to use". Every
+    folder approval is taken back (an excluded folder stays excluded), and "never use and don't use need to just be
+    never use": a photo on the do-not-use list (a photo row, from the old Never use button) is Never use on the photo
+    itself, on every live identical copy. Nothing else changes."""
+
+    OLD = "2026-10-11T10:00:00+00:00"
+
+    def test_folder_approvals_are_taken_back_and_listed_photos_become_never_use(self):
+        conn = db.connect()
+        self.addCleanup(conn.close)
+        self.assertIn("0095_use_or_never_use", db.applied_versions(conn), "db.connect applies it")
+        for fid, state in (("fy", "cleared"), ("fx", "excluded"), ("fn", "not_cleared")):
+            db.insert(conn, "drive_folders", drive_id=fid, name=fid, clearance=state, clearance_at=self.OLD,
+                      first_seen_at=self.OLD, last_seen_at=self.OLD)
+        for did, md5, clearance, trashed in (("listed", "m1", "cleared", 0),     # on the list, and once tapped Use
+                                             ("copy", "m1", "inherit", 0),       # the same picture elsewhere in Drive
+                                             ("gone", "m1", "inherit", 1),       # a copy no longer in Drive
+                                             ("used", "m2", "cleared", 0),       # his Use, nothing listed
+                                             ("plain", None, "inherit", 0),
+                                             ("out", "m3", "blocked", 0)):       # already Never use: left as decided
+            db.insert(conn, "photos", drive_id=did, name=f"{did}.jpg", folder_id="fy", md5=md5, clearance=clearance,
+                      clearance_at=None if clearance == "inherit" else self.OLD, trashed=trashed,
+                      first_seen_at=self.OLD, last_seen_at=self.OLD)
+        for kind, value in (("photo", "listed"), ("handle", "used"), ("folder", "fn")):    # only a photo row is a photo's Never use
+            db.insert(conn, "do_not_use", kind=kind, value=value, added_at=self.OLD)
+        conn.executescript(Path(db.MIGRATIONS_DIR, "0095_use_or_never_use.sql").read_text())
+        stamp = re.compile(r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\+00:00$")
+        folders = {r["drive_id"]: (r["clearance"], r["clearance_at"]) for r in db.rows(conn, "SELECT * FROM drive_folders")}
+        self.assertEqual(folders["fy"][0], "not_cleared", "the folder approval is taken back")
+        self.assertRegex(folders["fy"][1], stamp)
+        self.assertNotEqual(folders["fy"][1], self.OLD, "stamped when it was taken back")
+        self.assertEqual((folders["fx"], folders["fn"]), (("excluded", self.OLD), ("not_cleared", self.OLD)), "untouched")
+        photos = {r["drive_id"]: (r["clearance"], r["clearance_at"]) for r in db.rows(conn, "SELECT * FROM photos")}
+        for did in ("listed", "copy"):
+            self.assertEqual(photos[did][0], "blocked", did)
+            self.assertRegex(photos[did][1], stamp)
+            self.assertNotEqual(photos[did][1], self.OLD, did)
+        self.assertEqual({did: photos[did] for did in ("gone", "used", "plain", "out")},
+                         {"gone": ("inherit", None), "used": ("cleared", self.OLD), "plain": ("inherit", None), "out": ("blocked", self.OLD)})
+        listed = db.one(conn, "SELECT * FROM photos WHERE drive_id='listed'")
+        self.assertEqual(eligibility.clearance_of(conn, listed), "blocked")
+        self.assertEqual(eligibility.is_candidate(conn, listed["id"]), (False, "Chris marked it Never use"))
 
 
 class Classification(IsolatedCase):

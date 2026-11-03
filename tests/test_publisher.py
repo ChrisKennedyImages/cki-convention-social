@@ -361,6 +361,7 @@ class RealEligibility(AgentCase):
                   model="claude-opus-5", checked_at=now)
 
     def test_not_cleared_goes_back_and_cleared_goes_through(self):
+        """2026-11-02: cleared is his own Use on the photo; a folder row saying 'cleared' still turns the post back."""
         held = add_post(self.conn, [self.pid], ("facebook",))
         stats = publisher.publish_ready(make_ctx(self.conn), now=FRIDAY_8AM)
         self.assertEqual(stats["turned_back"], 1)
@@ -369,6 +370,12 @@ class RealEligibility(AgentCase):
         self.assertTrue(row["last_error"])
         self.assertIn("not cleared yet", row["last_error"])
         self.conn.execute("UPDATE drive_folders SET clearance='cleared' WHERE drive_id='f-1'")
+        again = add_post(self.conn, [self.pid], ("facebook",))
+        self.assertEqual(publisher.publish_ready(make_ctx(self.conn), now=FRIDAY_8AM)["turned_back"], 1, "a folder never approves")
+        row = db.one(self.conn, "SELECT status, last_error FROM content_queue WHERE id=?", (again,))
+        self.assertEqual(row["status"], "draft")
+        self.assertIn("not cleared yet", row["last_error"])
+        self.conn.execute("UPDATE photos SET clearance='cleared', clearance_at=? WHERE id=?", (db.utcnow(), self.pid))
         ok = add_post(self.conn, [self.pid], ("facebook",))
         self.assertEqual(publisher.publish_ready(make_ctx(self.conn), now=FRIDAY_8AM)["would_publish"], 1)
         self.assertEqual(db.one(self.conn, "SELECT status FROM content_queue WHERE id=?", (ok,))["status"], "would_publish")

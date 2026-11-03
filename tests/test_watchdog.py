@@ -322,8 +322,9 @@ class TheDraftWindow(WatchCase):
         start.assert_not_called()
         self.assertTrue(any("nothing has changed" in n for n in json.loads(settings.get(self.conn, "watchdog.notes"))))
         now = db.utcnow()
-        db.insert(self.conn, "drive_folders", drive_id="f1", name="Con", clearance="cleared", clearance_at=now,
-                  first_seen_at=now, last_seen_at=now)                     # he approved a folder: worth another try
+        db.insert(self.conn, "photos", drive_id="p1", name="p1.jpg", clearance="cleared", clearance_at=now,
+                  first_seen_at=now, last_seen_at=now)                     # he tapped Use on a photo: worth another try
+        # (2026-11-02: it was "he approved a folder"; a folder never approves any more)
         self.run_at(NINE_NY + timedelta(hours=1), start=start)
         start.assert_called_once_with("content")
 
