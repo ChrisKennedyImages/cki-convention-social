@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 from PIL import Image
 
 from convention_social.core import auth, config, db, settings
+from convention_social.library import copies
 from convention_social.dashboard.app import COOKIE, create_app, make_token
 from convention_social.site import build, deploy
 from convention_social.site import hero as hero_upload
@@ -59,6 +60,7 @@ class TheControl(IsolatedCase):
     def test_every_copy_of_the_picture_takes_the_pick(self):
         twin = event_photo(self.conn, "g1-copy", kind="business", final="business")
         self.conn.execute("UPDATE photos SET md5='same' WHERE id IN (?, ?)", (self.pid, twin))
+        copies.link(self.conn)                          # the scanner's pass after the inventory
         self.client.post(f"/library/photo/{self.pid}/gallery", data={}, headers={"Accept": "application/json"})
         self.assertTrue(self.stamp(twin))
         self.assertEqual(self.stamp(self.pid), self.stamp(twin))
@@ -168,6 +170,7 @@ class TheGallery(IsolatedCase):
         a = self.add("a", 100, quality=4, light=4, moment=4)
         b = self.add("a-copy", 100, quality=4, light=4, moment=4)
         self.conn.execute("UPDATE photos SET md5='same', site_pick_at='2026-10-29T10:00:00+00:00' WHERE id IN (?, ?)", (a, b))
+        copies.link(self.conn)
         photos = build.pick_photos(self.conn, self.fetch)
         self.assertEqual(self.hero_shade(photos), 70)
         self.assertEqual(self.shades(photos), [100], "once")

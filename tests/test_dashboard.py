@@ -953,6 +953,8 @@ class Dashboard(IsolatedCase):
         self.conn.execute("INSERT INTO classifications (photo_id, method, subject, possible_minor, personal_details, classified_at) "
                           "VALUES (?, 'ollama', 'event', 0, '[]', ?)", (twin, now))
         self.conn.execute("UPDATE photos SET md5='samebytes'")
+        from convention_social.library import copies
+        copies.link(self.conn)                          # the scanner's pass after the inventory
         c = self.signed_in()
         review = c.get("/library").text
         self.assertIn(f'id="p{pid}"', review)

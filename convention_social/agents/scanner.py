@@ -1,7 +1,8 @@
 """Scanner agent: keep the library inventory current, sort new photos, sync credits.
 
 Each run (hourly): sign in (read only), then the full inventory the first
-time and once a week, the Changes API otherwise; the free folder pass on any
+time and once a week, the Changes API otherwise; every photo linked to its
+copies (library/copies.link: one card per picture); the free folder pass on any
 new photo; the sort pass (Ollama on the Mini, free, else Claude under the
 spend cap) on up to CLASSIFY_PER_RUN photos; the credits sheet when CREDITS_SHEET_ID is set. A dead sign-in is
 recorded for the watchdog and ends the run cleanly.
@@ -16,7 +17,7 @@ from datetime import datetime, timedelta, timezone
 from ..core import config, runner, settings
 from ..drive import oauth, scan
 from ..drive.api import DriveReader
-from ..library import classify, credits, report
+from ..library import classify, copies, credits, report
 
 FULL_EVERY = timedelta(days=7)
 
@@ -55,6 +56,7 @@ def run(ctx: runner.Context, reader: DriveReader | None = None) -> str:
         reader = DriveReader(lambda: oauth.access_token(ctx.conn), conn=ctx.conn, agent=ctx.agent)
     full = needs_full(ctx.conn)
     stats = scan.full_inventory(ctx.conn, reader) if full else scan.incremental(ctx.conn, reader)
+    linked = copies.link(ctx.conn)                 # new photos join their copies before anything is sorted or shown
     sorted_free = classify.folder_pass(ctx.conn)
     vision = classify.PassStats(stopped="dry run")
     sorter = classify.pick_sorter(ctx.conn, agent=ctx.agent)
@@ -70,7 +72,7 @@ def run(ctx: runner.Context, reader: DriveReader | None = None) -> str:
         credit_note = f"credits: {res.matched}/{res.rows} matched"
         if res.unmatched:
             settings.set(ctx.conn, "credits.unmatched", "; ".join(res.unmatched)[:2000])
-    return (f"{'full' if full else 'changes'}: {stats.line()}; folder-sorted {sorted_free}; "
+    return (f"{'full' if full else 'changes'}: {stats.line()}; {linked.line()}; folder-sorted {sorted_free}; "
             f"vision {vision.done} done {vision.failed} failed{(' (' + vision.stopped + ')') if vision.stopped else ''}; "
             f"{report_note}; {credit_note}; designed drafts: {design_note or 'none due'}")
 

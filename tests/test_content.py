@@ -170,6 +170,8 @@ class Content(IsolatedCase):
         """2026-10-26: the same file sits in Drive twice; a post of one copy must keep the other out of the repeat window
         and off the front of the rotation."""
         self.conn.execute("UPDATE photos SET md5='samebytes' WHERE id IN (?, ?)", (self.ids["e1"], self.ids["e2"]))
+        from convention_social.library import copies
+        copies.link(self.conn)                          # the scanner's pass after the inventory
         when = (datetime.now(timezone.utc) - timedelta(days=3)).replace(microsecond=0).isoformat()
         db.insert(self.conn, "content_queue", kind="photo", photo_ids=json.dumps([self.ids["e1"]]), caption="{}",
                   targets=json.dumps(list(payloads.posting_networks())),     # every network that is on (per network, 2026-11-02)

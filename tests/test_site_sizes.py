@@ -24,6 +24,7 @@ from PIL import Image
 
 from convention_social import offer
 from convention_social.core import auth, config, db, settings
+from convention_social.library import copies
 from convention_social.dashboard.app import COOKIE, create_app, make_token
 from convention_social.seo import site_check
 from convention_social.site import build, deploy, theme
@@ -279,6 +280,7 @@ class Gallery(SizesCase):
         for a, b in twins.items():
             conn.execute("UPDATE photos SET md5=(SELECT md5 FROM photos WHERE id=?) WHERE id=?", (a, b))
         conn.execute("UPDATE photos SET md5=NULL WHERE id IN (?, ?)", (ids[28], ids[29]))   # two phone photos, no md5: their own
+        copies.link(conn)                                                               # the scanner's pass after the inventory
         fetch = lambda r: Image.new("RGB", (int(r["width"]), int(r["height"])), (80, 60, 120))
         got = build.pick_photos(conn, fetch)
         md5s = {r["id"]: r["md5"] for r in db.rows(conn, "SELECT id, md5 FROM photos")}
@@ -295,11 +297,14 @@ class Gallery(SizesCase):
         self.assertEqual(set(second.grid_ids) & set(got.grid_ids), set(), "the next build shows other pictures")
         self.assertEqual([i for i in second.grid_ids if i in twins.values()], [], "and not a shown picture under its other id")
         # the rotation counts a use under any id of the group
-        kept, shared = build.one_per_picture([{"id": 1, "md5": "x"}, {"id": 2, "md5": "x"}, {"id": 3, "md5": None}], {2: "2026-10-10T00:00:00"})
+        kept, shared = build.one_per_picture([{"id": 1, "picture": 1}, {"id": 2, "picture": 1}, {"id": 3, "picture": None}],
+                                             {2: "2026-10-10T00:00:00"})
         self.assertEqual([r["id"] for r in kept], [1, 3])
         self.assertEqual(shared, {1: "2026-10-10T00:00:00", 2: "2026-10-10T00:00:00"})
-        kept, _ = build.one_per_picture([{"id": 1, "md5": "x"}, {"id": 2, "md5": "x"}], {}, keep={2})
+        kept, _ = build.one_per_picture([{"id": 1, "picture": 1}, {"id": 2, "picture": 1}], {}, keep={2})
         self.assertEqual([r["id"] for r in kept], [2], "Chris's hero pick on a twin stands for the group")
+        kept, _ = build.one_per_picture([{"id": 1, "picture": 2}, {"id": 2, "picture": 2}], {})
+        self.assertEqual([r["id"] for r in kept], [2], "else the file that stands for the picture, the largest, wherever it sorts")
         settings.set(conn, build.HERO_KEY, str(ids[9]))                                   # his pick is the twin of ids[2]
         third = build.pick_photos(conn, fetch)
         self.assertEqual(third.grid_ids[0], ids[9], "his pick is the hero")
