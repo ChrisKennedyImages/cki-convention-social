@@ -284,7 +284,7 @@ def write_report(conn: sqlite3.Connection, *, out: Optional[Path] = None, sheet:
     body = "".join(f"<tr><td>{e(ev)}</td>" + "".join(f"<td>{v.get(y, '')}</td>" for y in years) +
                    f"<td><b>{sum(v.values())}</b></td></tr>" for ev, v in s["by_event"].items())
     frows = "".join(f"<tr><td>{e(f['path'] or f['name'])}</td><td>{f['conv']}</td><td>{f['image_count']}</td>"
-                    f"<td>{e(f['clearance'].replace('_', ' '))}</td></tr>" for f in folders)
+                    f"<td>{'excluded' if f['clearance'] == 'excluded' else ''}</td></tr>" for f in folders)
     sheet_html = f'<p><img src="{e(sheet.name)}" style="max-width:100%"></p>' if sheet else ""
     doc = f"""<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Library report</title>
@@ -300,8 +300,8 @@ th{{background:#f4f4f5}}.big{{font-size:28px;font-weight:700}}</style>
 <p class="big">{s['building_photos']} building photos found</p>
 <p>{s['building_exteriors']} exteriors. By year: {e(', '.join(f'{y}: {n}' for y, n in s['buildings_by_year'].items()) or 'none yet')}</p>
 <h2>Event photos by event and year</h2><table><tr><th>Event</th>{head}<th>Total</th></tr>{body}</table>
-<h2>Folders with convention work</h2><p>Nothing is used until you clear a folder on the dashboard.</p>
-<table><tr><th>Folder</th><th>Convention photos</th><th>All photos</th><th>Cleared?</th></tr>{frows}</table>
+<h2>Folders with convention work</h2><p>Nothing is used until you tap Use on it on the dashboard; a folder can only keep its photos out.</p>
+<table><tr><th>Folder</th><th>Convention photos</th><th>All photos</th><th>Kept out?</th></tr>{frows}</table>
 {sheet_html}"""
     out = out or config.get_config().data_root / "renders" / f"library-report-{datetime.now():%Y%m%d}.html"
     out.parent.mkdir(parents=True, exist_ok=True)

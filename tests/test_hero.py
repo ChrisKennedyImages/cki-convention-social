@@ -79,7 +79,7 @@ class Hero(IsolatedCase):
         self.fetched.clear()
         photos = build.pick_photos(self.conn, self.fetch)
         self.assertEqual(photos.hero[0][0].size, (3000, 2000), "a pick he since blocked is not used")
-        self.assertIn(f"your Site hero pick (photo {pick}) could not be used: Chris blocked this photo; the build chose instead; "
+        self.assertIn(f"your Site hero pick (photo {pick}) could not be used: Chris marked it Never use; the build chose instead; "
                       "the build's choice: photo", photos.hero_note)
         settings.set(self.conn, build.HERO_KEY, "999")
         photos = build.pick_photos(self.conn, self.fetch)

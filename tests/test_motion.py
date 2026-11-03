@@ -314,19 +314,22 @@ class LibraryPage(IsolatedCase):
 
 class ApprovedOnly(IsolatedCase):
     """Chris, 2026-10-11: "I only want to choose what I approve and if it's not approved then don't use it
-    yet or at all". The samples take a photo cleared by itself or by its folder, and nothing else."""
+    yet or at all". The samples take a photo cleared by itself or by its folder, and nothing else.
+    2026-11-02, Chris: "MANY of the approved photos, I never approved". A folder never approves: the samples take
+    only a photo he tapped Use on."""
 
-    def test_a_folder_clear_counts_and_an_undecided_photo_never_does(self):
+    def test_only_his_use_counts_and_a_folder_clear_never_does(self):
         conn = db.connect()
         now = db.utcnow()
         for fid, name, state in (("fy", "Cleared shoot", "cleared"), ("fn", "Not yet", "not_cleared")):
             conn.execute("INSERT INTO drive_folders (drive_id, name, clearance, first_seen_at, last_seen_at) VALUES (?,?,?,?,?)",
                          (fid, name, state, now, now))
-        for n, folder in enumerate(("fy", "fy", "fn", "fn")):
+        for n, (folder, clearance) in enumerate((("fy", "inherit"), ("fy", "cleared"), ("fn", "cleared"), ("fn", "inherit"))):
             conn.execute("INSERT INTO photos (drive_id, name, width, height, clearance, folder_id, thumbnail_link, first_seen_at, last_seen_at) "
-                         "VALUES (?,?,?,?, 'inherit', ?, 'https://x/t=s220', ?, ?)", (f"a{n}", f"{n}.jpg", 3000, 2000, folder, now, now))
+                         "VALUES (?,?,?,?,?,?, 'https://x/t=s220', ?, ?)", (f"a{n}", f"{n}.jpg", 3000, 2000, clearance, folder, now, now))
             pid = db.one(conn, "SELECT id FROM photos WHERE drive_id=?", (f"a{n}",))["id"]
             db.insert(conn, "classifications", photo_id=pid, method="ollama", subject="event", is_convention=1, possible_minor=0,
                       personal_details="[]", quality=5, sharp=1, light=4, moment=4, shot_type="portrait", classified_at=now)
-        self.assertEqual(sorted(r["drive_id"] for r in design_samples.pick(conn, 6)), ["a0", "a1"])
+        self.assertEqual(sorted(r["drive_id"] for r in design_samples.pick(conn, 6)), ["a1", "a2"],
+                         "his Use on each, in either folder; a0 under a folder row saying cleared is not approved")
         conn.close()

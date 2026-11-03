@@ -14,7 +14,7 @@
 .go{display:flex;flex-direction:column;gap:2px;margin:0 0 12px;padding:12px 16px;border-radius:12px;background:var(--accent);color:#fff;text-decoration:none}
 .go strong{font-size:18px}.go span{font-size:14px;opacity:.92}
 </style>
-<h1>{{ {'review': 'To review', 'approved': 'Approved', 'blocked': 'Blocked'}[view] }} <span class="muted">{{ total }}</span></h1>
+<h1>{{ {'review': 'To review', 'approved': 'Approved', 'blocked': 'Never use'}[view] }} <span class="muted">{{ total }}</span></h1>
 <div class="row" style="margin-bottom:12px">
   {% for key, label in subject_words %}<a class="btn{{ ' primary' if subject == key else '' }}" href="/library?view={{ view }}&subject={{ key }}">{{ label }} ({{ subject_counts[key] }})</a>{% endfor %}
 </div>
@@ -22,9 +22,9 @@
 <a class="go" href="/library/swipe?subject={{ subject }}"><strong>Swipe through them</strong><span>One photo at a time, the strongest first. {{ "{:,}".format(total) }} to go.</span></a>
 {% endif %}
 <div class="card muted">
-  {% if view == 'review' %}Only what you approve is ever used. These are the sorted photos you have not decided on yet, strongest first: Claude's scores lead, and a photo only the old sorter scored comes after them until Claude sorts it again. Use approves one; Don't use keeps it out for good. Photos with a readable plate, house number or street sign never show here and are never used. A name badge or a name in the photo is fine.
-  {% elif view == 'approved' %}Everything you approved, one photo at a time or by its folder. Only these are ever used: in posts, the designed drafts and on the website, and every one of them gets its turn, the least recently used first. Undo puts a photo back to review; Don't use keeps it out for good. Site hero makes a photo the website's main photo; Site gallery puts it at the front of the website's gallery, in the order you tap them, and a second tap takes it off.
-  {% else %}Photos you marked Don't use. Unblock puts one back where it was (to review, or approved by its folder). Never use adds it to the do-not-use list for good.{% endif %}
+  {% if view == 'review' %}Only what you approve is ever used. These are the sorted photos you have not decided on yet, strongest first: Claude's scores lead, and a photo only the old sorter scored comes after them until Claude sorts it again. Use approves one; Never use keeps it out for good, every copy of it. Photos with a readable plate, house number or street sign never show here and are never used. A name badge or a name in the photo is fine.
+  {% elif view == 'approved' %}Every photo you tapped Use on; a folder never approves its photos. Only these are ever used: in posts, the designed drafts and on the website, and every one of them gets its turn, the least recently used first. Undo puts a photo back to review; Never use keeps it out for good. Site hero makes a photo the website's main photo; Site gallery puts it at the front of the website's gallery, in the order you tap them, and a second tap takes it off.
+  {% else %}Photos you marked Never use, newest first. They are never used anywhere: no post, no designed draft, not the website. Put back is for a mistake: it returns the photo to To review.{% endif %}
 </div>
 {% if view == 'approved' and subject == 'event' %}
 <div class="card">
@@ -34,7 +34,7 @@
   {% elif st.state == 'done' %}<div class="msg">Live: {{ st.message }} ({{ st.at[:10] }} {{ st.at[11:16] }}).</div>
   {% elif st.state == 'failed' %}<div class="msg bad">Not published: {{ st.message }} ({{ st.at[:10] }} {{ st.at[11:16] }}).{% if st.detail %}<pre style="white-space:pre-wrap;margin:6px 0 0">{{ st.detail }}</pre>{% endif %}</div>
   {% endif %}
-  <div class="muted">eventcaliber.com is published by itself after a code change that touches it, and by itself in a few minutes with your photo changes (Use, Don't use, a folder, the hero, a Site gallery pick). Publish starts it now instead of waiting; it builds the pages, sends them to Cloudflare and checks every page from outside.{% if site.deployed %} The site is on code {{ site.deployed }}.{% endif %}</div>
+  <div class="muted">eventcaliber.com is published by itself after a code change that touches it, and by itself in a few minutes with your photo changes (Use, Never use, an excluded folder, the hero, a Site gallery pick). Publish starts it now instead of waiting; it builds the pages, sends them to Cloudflare and checks every page from outside.{% if site.deployed %} The site is on code {{ site.deployed }}.{% endif %}</div>
   {% if site.photos_pending[1] %}<div class="msg">Changes waiting: {{ site.photos_pending[1] }}.</div>{% endif %}
   <div class="muted" style="margin-top:6px">Search engines: {% if site.google_problem %}<span class="badge blocked">Google Search Console value unusable</span> the value on the <a href="/keys">Keys page</a> is {{ site.google_problem }}.{% elif site.google %}Google Search Console tag on every page.{% elif site.google_file %}Google Search Console file {{ site.google_file }} on the site.{% else %}No Google Search Console tag on the <a href="/keys">Keys page</a>: nothing to do when the property was verified another way (through Cloudflare's DNS); paste the tag only if Search Console asks for one.{% endif %}
     {% if st.engines %}Last publish: {{ st.engines }}.{% elif site.indexnow %}Bing and the other IndexNow engines are told after every publish.{% else %}The IndexNow key is made on the first publish.{% endif %}</div>
@@ -75,13 +75,13 @@
 </form>
 {% endmacro %}
 {% if pages > 1 %}{{ pager('top') }}{% endif %}
-{% if not items %}<div class="card muted">{{ ('No event photos to review right now.' if subject == 'event' else 'No building photos to review right now.') if view == 'review' else (('No event photos approved yet. Tap Use on a photo in To review, or Clear a whole folder in Folders.' if subject == 'event' else 'No building photos approved yet.') if view == 'approved' else 'Nothing blocked.') }}</div>{% endif %}
+{% if not items %}<div class="card muted">{{ ('No event photos to review right now.' if subject == 'event' else 'No building photos to review right now.') if view == 'review' else (('No event photos approved yet. Tap Use on a photo in To review.' if subject == 'event' else 'No building photos approved yet.') if view == 'approved' else 'Nothing marked Never use.') }}</div>{% endif %}
 {% if items and view != 'blocked' %}
 <form id="bulk" method="post" action="/library/photos/clearance" class="row" style="margin-bottom:10px">
   <input type="hidden" name="back" value="/library?view={{ view }}&subject={{ subject }}&page={{ page }}">
   <span class="muted">Ticked photos:</span>
   {% if view == 'review' %}<button class="small ok" type="submit" name="state" value="cleared">Use selected</button>{% endif %}
-  <button class="small danger" type="submit" name="state" value="blocked" onsubmit="return true">Don't use selected</button>
+  <button class="small danger" type="submit" name="state" value="blocked">Never use selected</button>
 </form>
 {% endif %}
 <div class="grid">
@@ -94,20 +94,15 @@
     <div class="muted use-line">{{ p.use_line }}</div>{% endif %}
     <div class="row" style="margin-top:6px">
     {% if view != 'blocked' %}<label class="inline" style="margin:0"><input type="checkbox" form="bulk" name="ids" value="{{ p.id }}" style="width:auto;transform:scale(1.4)"></label>{% endif %}
-    {% for state, label, cls in ([('cleared', 'Use', 'ok'), ('blocked', "Don't use", 'danger')] if view == 'review'
-                                 else [('inherit', 'Unblock', '')] if view == 'blocked'
-                                 else ([('inherit', 'Undo', '')] if p.clearance == 'cleared' else []) + [('blocked', "Don't use", 'danger')]) %}
+    {% for state, label, cls in ([('cleared', 'Use', 'ok'), ('blocked', 'Never use', 'danger')] if view == 'review'
+                                 else [('inherit', 'Put back', '')] if view == 'blocked'
+                                 else [('inherit', 'Undo', ''), ('blocked', 'Never use', 'danger')]) %}
       <form method="post" action="/library/photo/{{ p.id }}/clearance" class="inline tap">
         <input type="hidden" name="back" value="{{ p.back }}">
         <input type="hidden" name="state" value="{{ state }}"><button class="small {{ cls }}" type="submit">{{ label }}</button>
       </form>
     {% endfor %}
     <span class="tapped muted"></span>
-    <form method="post" action="/donotuse/add" class="inline" onsubmit="return confirm('Never use this photo? It goes on the do-not-use list; any draft with it is set aside.')">
-      <input type="hidden" name="kind" value="photo"><input type="hidden" name="value" value="{{ p.drive_id }}"><input type="hidden" name="back" value="{{ p.back }}">
-      <button class="small" type="submit">Never use</button>
-    </form>
-    {% if view == 'approved' and p.clearance != 'cleared' %}<span class="muted">approved by its folder: <a href="/library/folder/{{ p.folder_id }}">open the folder to change that</a></span>{% endif %}
     {% if view == 'approved' %}
       <form method="post" action="/library/photo/{{ p.id }}/hero" class="inline">
         <input type="hidden" name="back" value="{{ p.back }}"><button class="small {{ 'ok' if hero_id == p.id else '' }}" type="submit">{{ 'Site hero: chosen' if hero_id == p.id else 'Site hero' }}</button>
@@ -167,21 +162,21 @@ document.querySelectorAll('form.pick').forEach(function (form) {
 
 {% elif view == 'folders' %}
 <h1>Folders</h1>
-<div class="card muted">Approve all approves every photo in a folder (and the folders inside it), not only ones you picked; photos you marked Don't use stay out. To approve only some, open the folder and tap Use on each. Exclude keeps a whole folder out.</div>
+<div class="card muted">A folder never approves its photos: each is approved by your own Use on it, in To review or in the folder. Exclude keeps a whole folder out, even photos you tapped Use on.</div>
 <div class="row" style="margin-bottom:12px">
-  {% for key, label in [('events', 'Event folders'), ('cleared', 'Cleared'), ('all', 'All folders')] %}<a class="btn{{ ' primary' if show == key else '' }}" href="/library?view=folders&show={{ key }}">{{ label }}</a>{% endfor %}
+  {% for key, label in [('events', 'Event folders'), ('excluded', 'Excluded'), ('all', 'All folders')] %}<a class="btn{{ ' primary' if show == key else '' }}" href="/library?view=folders&show={{ key }}">{{ label }}</a>{% endfor %}
 </div>
 {% if note %}<div class="card muted">{{ note }}</div>{% endif %}
 {% if not folders %}<div class="card muted">No folders yet. The scanner fills this in once Google Drive is signed in.</div>{% endif %}
 {% for f in folders %}
 <div class="card" id="f-{{ f.drive_id }}">
   <div class="row"><a href="/library/folder/{{ f.drive_id }}"><strong>{{ f.name }}</strong></a>
-    <span class="badge {{ f.clearance }}">{{ f.clearance.replace('_',' ') }}</span></div>
+    {% if f.clearance == 'excluded' %}<span class="badge excluded">excluded</span>{% endif %}</div>
   <div class="muted">{{ f.path or '' }}</div>
   {% if f.shared_by %}<div class="muted">shared by {{ f.shared_by }}</div>{% endif %}
   <div class="muted">{{ f.conv or 0 }} look like event photos, {{ f.image_count }} photos in all</div>
   <div class="row" style="margin-top:8px">
-    {% for state, label, cls in [('cleared', 'Approve all', 'ok'), ('excluded', 'Exclude', 'danger'), ('not_cleared', 'Undecided', '')] if state != f.clearance %}
+    {% for state, label, cls in [('excluded', 'Exclude', 'danger'), ('not_cleared', 'Undecided', '')] if state != f.clearance %}
     <form method="post" action="/library/folder/{{ f.drive_id }}/clearance" class="inline"><input type="hidden" name="state" value="{{ state }}"><input type="hidden" name="back" value="/library?view=folders&show={{ show }}#f-{{ f.drive_id }}"><button class="small {{ cls }}" type="submit">{{ label }}</button></form>
     {% endfor %}
     <a class="btn small" style="padding:6px 10px;min-height:0;font-size:14px" href="/library/folder/{{ f.drive_id }}">Open</a>

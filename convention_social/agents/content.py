@@ -844,7 +844,7 @@ def draft_one(ctx: runner.Context, fetch: Callable[[dict], bytes], *, now: Optio
         kind_used = "event" if want == "architecture" else "architecture"
         pool = candidates(ctx.conn, kind_used)
     if not pool:
-        return f"no photo ready for {day}: clear folders on the Library page (nothing drafted)"
+        return f"no photo ready for {day}: tap Use on photos in Photos, To review (nothing drafted)"
     pool, _ = free_on_first(pool, payloads.posting_networks())   # never held off Instagram while a photo free there is left (2026-11-02)
     track = music.current(ctx.conn)
     design = design_for(day, kind_used, track is not None)

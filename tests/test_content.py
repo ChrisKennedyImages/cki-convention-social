@@ -48,13 +48,14 @@ class Content(IsolatedCase):
         super().setUp()
         self.conn = db.connect()
         now = db.utcnow()
-        db.insert(self.conn, "drive_folders", drive_id="fe", name="Con", clearance="cleared", first_seen_at=now, last_seen_at=now)
-        db.insert(self.conn, "drive_folders", drive_id="fa", name="Hotel exteriors", clearance="cleared", first_seen_at=now, last_seen_at=now)
+        db.insert(self.conn, "drive_folders", drive_id="fe", name="Con", first_seen_at=now, last_seen_at=now)
+        db.insert(self.conn, "drive_folders", drive_id="fa", name="Hotel exteriors", first_seen_at=now, last_seen_at=now)
         self.ids = {}
         for n, (did, folder, subject, event, q) in enumerate((("e1", "fe", "event", "Katsucon", 5), ("e2", "fe", "event", "Katsucon", 4),
                                                               ("e3", "fe", "event", "Otakon", 3), ("a1", "fa", "architecture", None, 5))):
             pid = db.insert(self.conn, "photos", drive_id=did, name=f"{did}.jpg", folder_id=folder, width=3000, height=2000,
-                            taken_at=camera_time(), first_seen_at=now, last_seen_at=now)
+                            taken_at=camera_time(), clearance="cleared", clearance_at=now,      # his Use: a folder never approves
+                            first_seen_at=now, last_seen_at=now)
             db.insert(self.conn, "classifications", photo_id=pid, method="ollama", subject=subject, convention_name=event,
                       is_convention=int(subject == "event"), quality=q, possible_minor=0, personal_details="[]",
                       space="exterior", residential=0, empty_room=0, sharp=1, light=4, moment=4, classified_at=now)
@@ -141,7 +142,7 @@ class Content(IsolatedCase):
         # a building day with no building left falls back to event work (a new event; the Katsucon photo still sits out)
         now = db.utcnow()
         pid = db.insert(self.conn, "photos", drive_id="e4", name="e4.jpg", folder_id="fe", width=3000, height=2000,
-                        first_seen_at=now, last_seen_at=now)
+                        clearance="cleared", clearance_at=now, first_seen_at=now, last_seen_at=now)
         db.insert(self.conn, "classifications", photo_id=pid, method="ollama", subject="event", convention_name="Awesome Con",
                   quality=2, possible_minor=0, personal_details="[]", space="exterior", residential=0, empty_room=0, sharp=1, light=4, moment=4, classified_at=now)
         content.draft_one(self.ctx(), self.fetch, now=datetime(2026, 10, 20, 10, 0, tzinfo=timezone.utc))
@@ -218,7 +219,9 @@ class Content(IsolatedCase):
         self.assertEqual(client.calls, 1)
 
     def test_nothing_cleared_nothing_drafted(self):
-        self.conn.execute("UPDATE drive_folders SET clearance='not_cleared'")
+        """2026-11-02: only his Use on a photo approves it; with no Use, folder rows marked 'cleared' draft nothing."""
+        self.conn.execute("UPDATE photos SET clearance='inherit', clearance_at=NULL")
+        self.conn.execute("UPDATE drive_folders SET clearance='cleared'")
         self.assertIn("nothing drafted", content.draft_one(self.ctx(), self.fetch, now=MONDAY_6AM))
         self.assertEqual(self.queue(), [])
         self.assertEqual(self.fetched, [])
@@ -497,7 +500,7 @@ class NewDesigns(Content):
     def add_event_photo(self, did, event, q=3):
         now = db.utcnow()
         pid = db.insert(self.conn, "photos", drive_id=did, name=f"{did}.jpg", folder_id="fe", width=3000, height=2000,
-                        first_seen_at=now, last_seen_at=now)
+                        clearance="cleared", clearance_at=now, first_seen_at=now, last_seen_at=now)
         db.insert(self.conn, "classifications", photo_id=pid, method="ollama", subject="event", convention_name=event, is_convention=1,
                   quality=q, possible_minor=0, personal_details="[]", space="exterior", residential=0, empty_room=0, sharp=1,
                   light=4, moment=4, shot_type="portrait", classified_at=now)

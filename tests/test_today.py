@@ -65,9 +65,10 @@ class Case(IsolatedCase):
     def photo(self, n: int, room: str = "stage_panel", event: str = "Event A", quality: int = 5) -> int:
         now = db.utcnow()
         if db.one(self.conn, "SELECT 1 FROM drive_folders WHERE drive_id='fe'") is None:
-            db.insert(self.conn, "drive_folders", drive_id="fe", name="Con", clearance="cleared", first_seen_at=now, last_seen_at=now)
+            db.insert(self.conn, "drive_folders", drive_id="fe", name="Con", first_seen_at=now, last_seen_at=now)
         pid = db.insert(self.conn, "photos", drive_id=f"d{n}", name=f"d{n}.jpg", folder_id="fe", width=3000, height=2000,
-                        thumbnail_link="t", taken_at=camera_time(), first_seen_at=now, last_seen_at=now)
+                        thumbnail_link="t", taken_at=camera_time(), clearance="cleared", clearance_at=now,     # his Use
+                        first_seen_at=now, last_seen_at=now)
         db.insert(self.conn, "classifications", photo_id=pid, method="ollama", subject="event", convention_name=event, event_kind="business",
                   is_convention=1, quality=quality, possible_minor=0, personal_details="[]", space="interior", residential=0,
                   empty_room=0, sharp=1, light=4, moment=4, shot_type=room, classified_at=now)
@@ -351,8 +352,9 @@ class Choices(Case):
             self.assertEqual(self.meta(qid)["rejected_by"], content.SKIPPED)
         used, _, _ = content.recent_use(self.conn, 400)
         self.assertFalse(used & set(ids), "back in the rotation: no photo of a skipped post sits out")
-        self.assertIsNone(db.one(self.conn, "SELECT 1 FROM do_not_use"), "never Don't use")
-        self.assertEqual(db.one(self.conn, "SELECT clearance FROM photos WHERE id=?", (ids[0],))["clearance"], "inherit")
+        self.assertIsNone(db.one(self.conn, "SELECT 1 FROM do_not_use"), "a Skip is never Never use")
+        self.assertEqual([db.one(self.conn, "SELECT clearance FROM photos WHERE id=?", (pid,))["clearance"] for pid in ids],
+                         ["cleared"] * 3, "his Use stands: a Skip is never Never use (2026-11-02)")
         self.assertTrue(report.use_of(self.conn, ids), "their use stays on record: they come round after the others")
 
     def test_the_choices_from_the_ping_are_single_use(self):

@@ -1,7 +1,9 @@
 """Chris, 2026-10-14: "Can you pick up shared galleries too on drive? Several have me and my brothers images."
 The galleries his brother shares with him are scanned like his own and cleared like his own: nothing in them is
 used until he clears a folder or a photo. The fake Drive answers like the real one: a flat listing holds what is
-his and what was shared with him directly; what sits inside a shared folder is reached only by asking for it."""
+his and what was shared with him directly; what sits inside a shared folder is reached only by asking for it.
+2026-11-02, Chris: "MANY of the approved photos, I never approved". A folder never approves: a photo in a shared
+gallery is used only after his own Use on it, like his own; an excluded gallery still keeps its photos out."""
 from __future__ import annotations
 
 import os
@@ -64,6 +66,9 @@ class Shared(IsolatedCase):
         self.assertEqual(st.images, 4 + 3)
 
     def test_shared_photos_are_not_cleared_by_default_and_follow_the_folder_chain(self):
+        """2026-11-02: it was "clearing the gallery reaches the photos inside its subfolders". A folder never approves
+        now: a gallery row saying 'cleared' approves nothing; his Use on the photo does; the exclusion still follows
+        the chain down to the photos inside its subfolders, Use or not."""
         scan.full_inventory(self.conn, self.reader)
         rows = self.folders()
         self.assertEqual((rows["gbro"]["clearance"], rows["gport"]["clearance"]), ("not_cleared", "not_cleared"))
@@ -71,10 +76,13 @@ class Shared(IsolatedCase):
         self.assertEqual(eligibility.clearance_of(self.conn, s2), "not_cleared")
         self.assertEqual(eligibility.folder_decisions(self.conn)["gport"], "not_cleared")
         self.conn.execute("UPDATE drive_folders SET clearance='cleared' WHERE drive_id='gbro'")
-        self.assertEqual(eligibility.clearance_of(self.conn, s2), "cleared", "clearing the gallery reaches the photos inside its subfolders")
-        self.assertEqual(eligibility.folder_decisions(self.conn)["gport"], "cleared")
-        self.conn.execute("UPDATE drive_folders SET clearance='excluded' WHERE drive_id='gbro'")
+        self.assertEqual(eligibility.clearance_of(self.conn, s2), "not_cleared", "a cleared gallery row approves nothing")
+        self.assertEqual(eligibility.folder_decisions(self.conn), {fid: "not_cleared" for fid in self.folders()})
         self.conn.execute("UPDATE photos SET clearance='cleared' WHERE drive_id='s2'")
+        self.assertEqual(eligibility.clearance_of(self.conn, self.photos()["s2"]), "cleared", "his own Use")
+        self.assertEqual(eligibility.clearance_of(self.conn, self.photos()["s1"]), "not_cleared", "the Use was for s2 only")
+        self.conn.execute("UPDATE drive_folders SET clearance='excluded' WHERE drive_id='gbro'")
+        self.assertEqual(eligibility.folder_decisions(self.conn)["gport"], "excluded")
         self.assertEqual(eligibility.clearance_of(self.conn, self.photos()["s2"]), "excluded", "an excluded gallery keeps its photos out, Use or not")
 
     def test_a_newly_shared_gallery_lands_on_a_changes_run_and_is_walked_once(self):
@@ -121,8 +129,13 @@ class Shared(IsolatedCase):
         self.assertEqual((rows["gsub"]["path"], rows["gsub"]["parent_id"]), ("Shared with me/Otakon 2024 by Mike/Selects", "gbro"))
         self.assertEqual((rows["gnop"]["path"], rows["gnop"]["parent_id"]), ("Shared with me/No parent at all", None))
         self.assertEqual((self.photos()["s4"]["folder_id"], self.photos()["s5"]["folder_id"]), ("gsub", "gnop"))
+        # 2026-11-02: a folder never approves (it was "clearing the gallery reaches the folder shared on its own inside
+        # it"); the chain is still what an exclusion follows
         self.conn.execute("UPDATE drive_folders SET clearance='cleared' WHERE drive_id='gbro'")
-        self.assertEqual(eligibility.clearance_of(self.conn, self.photos()["s4"]), "cleared", "clearing the gallery reaches the folder shared on its own inside it")
+        self.conn.execute("UPDATE photos SET clearance='cleared' WHERE drive_id='s4'")
+        self.assertEqual(eligibility.clearance_of(self.conn, self.photos()["s4"]), "cleared", "his own Use")
+        self.conn.execute("UPDATE drive_folders SET clearance='excluded' WHERE drive_id='gbro'")
+        self.assertEqual(eligibility.clearance_of(self.conn, self.photos()["s4"]), "excluded", "excluding the gallery reaches the folder shared on its own inside it")
 
     def test_a_loose_photo_at_the_top_of_my_drive_gets_no_stub_on_a_changes_run(self):
         scan.full_inventory(self.conn, self.reader)

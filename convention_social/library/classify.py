@@ -227,7 +227,7 @@ def folder_pass(conn: sqlite3.Connection) -> int:
 
 
 def queue(conn: sqlite3.Connection, limit: int) -> list[sqlite3.Row]:
-    """Photos waiting for the sort pass: cleared folders first, then a round robin across
+    """Photos waiting for the sort pass: the ones Chris approved first, then a round robin across
     events, newest first inside each.
 
     Strict newest-first ordering meant a bounded pass only ever saw the newest folders. On
@@ -245,13 +245,12 @@ def queue(conn: sqlite3.Connection, limit: int) -> list[sqlite3.Row]:
     return db.rows(conn, """
         SELECT * FROM (
             SELECT p.*, c.convention_name AS folder_event, c.event_kind AS folder_kind, c.subject AS folder_subject,
-                   (p.clearance = 'cleared' OR EXISTS (SELECT 1 FROM drive_folders f WHERE f.drive_id = p.folder_id AND f.clearance='cleared')) AS cleared_hint,
+                   (p.clearance = 'cleared') AS cleared_hint,
                    ROW_NUMBER() OVER (PARTITION BY COALESCE(NULLIF(c.convention_name, ''), p.folder_id)
                                       ORDER BY COALESCE(p.taken_at, p.modified_time) DESC) AS rank_in_event
             FROM photos p JOIN classifications c ON c.photo_id = p.id
             WHERE p.trashed = 0 AND (c.method = 'folder' OR c.rejudge = 1) AND p.thumbnail_link IS NOT NULL
-              AND (c.subject IN ('event', 'architecture') OR c.rejudge = 1 OR p.clearance = 'cleared'
-                   OR EXISTS (SELECT 1 FROM drive_folders f WHERE f.drive_id = p.folder_id AND f.clearance = 'cleared'))
+              AND (c.subject IN ('event', 'architecture') OR c.rejudge = 1 OR p.clearance = 'cleared')
         )
         ORDER BY cleared_hint DESC, rank_in_event ASC, COALESCE(taken_at, modified_time) DESC
         LIMIT ?""", (limit,))

@@ -23,11 +23,13 @@ from tests._fakes import AgentCase, add_channels, add_photo, add_post, all_eligi
 
 
 def photo(conn, n, *, minor, folder="f-1", clearance="cleared", details="[]", kind="business", final=True):
+    """A sorted photo; `clearance` is the photo's own decision, his Use by default (a folder never approves, 2026-11-02)."""
     now = db.utcnow()
     if not db.one(conn, "SELECT 1 FROM drive_folders WHERE drive_id=?", (folder,)):
-        db.insert(conn, "drive_folders", drive_id=folder, name="Con 2026", clearance=clearance, first_seen_at=now, last_seen_at=now)
+        db.insert(conn, "drive_folders", drive_id=folder, name="Con 2026", first_seen_at=now, last_seen_at=now)
     pid = db.insert(conn, "photos", drive_id=f"d{n}", name=f"{n}.jpg", mime_type="image/jpeg", folder_id=folder,
-                    width=3000, height=2000, first_seen_at=now, last_seen_at=now)
+                    width=3000, height=2000, clearance=clearance, clearance_at=None if clearance == "inherit" else now,
+                    first_seen_at=now, last_seen_at=now)
     db.insert(conn, "classifications", photo_id=pid, method="ollama", subject="event", is_convention=1, possible_minor=minor,
               personal_details=details, event_kind=kind, shot_type="candid", quality=5, light=4, moment=4, sharp=1, classified_at=now)
     if final:
@@ -51,12 +53,13 @@ class NoAgeGate(IsolatedCase):
     def test_everything_else_still_stops_a_photo(self):
         self.assertIn("vehicle_plate", eligibility.is_eligible(self.conn, photo(self.conn, 2, minor=0, details='["vehicle_plate"]'))[1])
         self.assertFalse(eligibility.is_eligible(self.conn, photo(self.conn, 3, minor=0, kind="wedding"))[0])
-        self.assertEqual(eligibility.is_eligible(self.conn, photo(self.conn, 4, minor=0, folder="f-2", clearance="not_cleared")),
-                         (False, "not cleared yet"))
+        undecided = photo(self.conn, 4, minor=0, folder="f-2", clearance="inherit")
+        self.conn.execute("UPDATE drive_folders SET clearance='cleared' WHERE drive_id='f-2'")      # a folder never approves
+        self.assertEqual(eligibility.is_eligible(self.conn, undecided), (False, "not cleared yet"))
         self.assertEqual(eligibility.is_eligible(self.conn, photo(self.conn, 5, minor=0, final=False)), (False, "not given the final check yet"))
         blocked = photo(self.conn, 6, minor=0)
         self.conn.execute("UPDATE photos SET clearance='blocked' WHERE id=?", (blocked,))
-        self.assertEqual(eligibility.is_eligible(self.conn, blocked), (False, "Chris blocked this photo"))
+        self.assertEqual(eligibility.is_eligible(self.conn, blocked), (False, "Chris marked it Never use"))
         unsorted = photo(self.conn, 7, minor=None, final=False)
         self.conn.execute("UPDATE classifications SET method='folder' WHERE photo_id=?", (unsorted,))
         self.assertEqual(eligibility.is_candidate(self.conn, unsorted), (False, "not sorted yet"), "a model must still have looked")

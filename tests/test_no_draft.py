@@ -48,14 +48,14 @@ class NoDraft(IsolatedCase):
         self.assertIn("no photo passed the final check", body)
         self.assertFalse(push.call_args.kwargs["dry_run"])
         self.assertTrue(push.call_args.kwargs["click"].endswith("/agents"))
-        self.go("no photo ready for 2026-10-13: clear folders on the Library page (nothing drafted)")
+        self.go("no photo ready for 2026-10-13: tap Use on photos in Photos, To review (nothing drafted)")
         self.assertEqual(len(self.errors()), 2, "a different reason is its own line")
-        self.go("no photo ready for 2026-10-13: clear folders on the Library page (nothing drafted)")
+        self.go("no photo ready for 2026-10-13: tap Use on photos in Photos, To review (nothing drafted)")
         self.assertEqual(len(self.errors()), 2, "the same open reason is one line, not one per run")
 
     def test_the_same_reason_pings_once_a_day_and_the_attempt_is_recorded_for_the_watchdog(self):
         from convention_social.core import settings
-        summary = "no photo ready for 2026-10-13: clear folders on the Library page (nothing drafted)"
+        summary = "no photo ready for 2026-10-13: tap Use on photos in Photos, To review (nothing drafted)"
         _, push = self.go(summary)
         self.assertEqual(push.call_count, 1)
         _, push = self.go(summary)
@@ -92,7 +92,7 @@ class NoDraft(IsolatedCase):
         self.assertIn("monthly AI cap", push.call_args.args[1])
 
     def test_a_dry_run_says_it_but_sends_nothing(self):
-        line, push = self.go("no photo ready for 2026-10-13: clear folders on the Library page (nothing drafted)", dry=True)
+        line, push = self.go("no photo ready for 2026-10-13: tap Use on photos in Photos, To review (nothing drafted)", dry=True)
         self.assertEqual(push.call_count, 1)
         self.assertTrue(push.call_args.kwargs["dry_run"])
 

@@ -281,11 +281,12 @@ class Saturday(IsolatedCase):
         self.conn = db.connect()
         self.addCleanup(self.conn.close)
         now = db.utcnow()
-        db.insert(self.conn, "drive_folders", drive_id="fe", name="Con", clearance="cleared", first_seen_at=now, last_seen_at=now)
+        db.insert(self.conn, "drive_folders", drive_id="fe", name="Con", first_seen_at=now, last_seen_at=now)
         self.ids, self.fetched = {}, []
         for did, room, q in (("e1", None, 5), ("e2", None, 4), ("e3", None, 3), ("s1", "stage_panel", 5),
                              ("s2", "stage_panel", 5), ("s3", "backstage", 4), ("s4", "portrait", 3)):
             pid = db.insert(self.conn, "photos", drive_id=did, name=f"{did}.jpg", folder_id="fe", width=3000, height=2000,
+                            clearance="cleared", clearance_at=now,      # his Use: a folder never approves (2026-11-02)
                             first_seen_at=now, last_seen_at=now)
             db.insert(self.conn, "classifications", photo_id=pid, method="ollama", subject="event", convention_name="Awesome Con",
                       is_convention=1, quality=q, possible_minor=0, personal_details="[]", space="exterior", residential=0,

@@ -315,15 +315,16 @@ class TheDraftWindow(WatchCase):
     def test_the_same_inputs_after_a_try_that_found_nothing_wait_until_something_changes(self):
         from convention_social.agents import content
         settings.set(self.conn, content.LAST_ATTEMPT_KEY, json.dumps({
-            "day": self.tomorrow().isoformat(), "summary": "no photo ready for tomorrow: clear folders on the Library page",
+            "day": self.tomorrow().isoformat(), "summary": "no photo ready for tomorrow: tap Use on photos in Photos, To review",
             "fingerprint": content.inputs_fingerprint(self.conn), "transient": False}))
         start = mock.Mock()
         self.run_at(NINE_NY, start=start)
         start.assert_not_called()
         self.assertTrue(any("nothing has changed" in n for n in json.loads(settings.get(self.conn, "watchdog.notes"))))
         now = db.utcnow()
-        db.insert(self.conn, "drive_folders", drive_id="f1", name="Con", clearance="cleared", clearance_at=now,
-                  first_seen_at=now, last_seen_at=now)                     # he approved a folder: worth another try
+        db.insert(self.conn, "photos", drive_id="p1", name="p1.jpg", clearance="cleared", clearance_at=now,
+                  first_seen_at=now, last_seen_at=now)                     # he tapped Use on a photo: worth another try
+        # (2026-11-02: it was "he approved a folder"; a folder never approves any more)
         self.run_at(NINE_NY + timedelta(hours=1), start=start)
         start.assert_called_once_with("content")
 

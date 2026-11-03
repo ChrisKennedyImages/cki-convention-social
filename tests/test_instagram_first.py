@@ -27,7 +27,8 @@ class Case(DraftCase):
         now = db.utcnow()
         n = db.one(self.conn, "SELECT COUNT(*) AS n FROM photos")["n"] + 1
         pid = db.insert(self.conn, "photos", drive_id=f"d{n}", name=f"d{n}.jpg", folder_id="fe", width=3000, height=2000,
-                        taken_at=f"2025:02:14 1{n}:00:00", first_seen_at=now, last_seen_at=now)
+                        taken_at=f"2025:02:14 1{n}:00:00", clearance="cleared", clearance_at=now,     # his Use (2026-11-02)
+                        first_seen_at=now, last_seen_at=now)
         db.insert(self.conn, "classifications", photo_id=pid, method="ollama", subject="event", convention_name="Katsucon", is_convention=1,
                   quality=quality, possible_minor=0, personal_details="[]", space="exterior", residential=0, empty_room=0, sharp=1,
                   light=4, moment=4, classified_at=now)

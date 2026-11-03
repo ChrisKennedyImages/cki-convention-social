@@ -25,6 +25,7 @@ from convention_social.dashboard import app as dash
 from convention_social.dashboard.app import COOKIE, create_app, make_token
 from convention_social.drive import scan
 from convention_social.drive.api import DriveReader
+from convention_social.library import eligibility
 from convention_social.render import meta
 from tests._base import IsolatedCase
 from tests._photos import jpeg_bytes
@@ -81,7 +82,9 @@ class Keep(IsolatedCase):
         self.assertEqual(p["taken_at"], "2026:09:20 14:31:00", "when the phone took it")
         self.assertTrue((config.get_config().data_root / "thumbs" / f"{p['drive_id']}.jpg").is_file())
         f = db.one(self.conn, "SELECT * FROM drive_folders WHERE drive_id='phone'")
-        self.assertEqual((f["name"], f["clearance"], f["image_count"]), ("From the phone", "cleared", 1))
+        # 2026-11-02: the phone's own folder is no longer made approved (a folder never approves); each photo sent is his Use
+        self.assertEqual((f["name"], f["clearance"], f["image_count"]), ("From the phone", "not_cleared", 1))
+        self.assertEqual(eligibility.clearance_of(self.conn, p), "cleared", "approved by itself, not by its folder")
         c = db.one(self.conn, "SELECT * FROM classifications WHERE photo_id=?", (p["id"],))
         self.assertEqual((c["method"], c["subject"], c["orientation"]), ("folder", "event", "landscape"))
         s = db.one(self.conn, "SELECT * FROM phone_sends WHERE id=?", (sid,))

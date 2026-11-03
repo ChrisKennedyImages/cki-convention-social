@@ -2,7 +2,7 @@
 {% block title %}Swipe · {{ subject_word }}{% endblock %}
 {% block body %}
 {#- Chris, 2026-11-02: "Maybe a swipe left or right to keep or discard of?" To review, one photo at a time, Claude's
-    strongest first. Right is Use; left is Don't use for good. Each swipe is saved at once; Undo takes back the last
+    strongest first. Right is Use; left is Never use. Each swipe is saved at once; Undo takes back the last
     one only. Without the script, the two buttons and Undo are plain forms and the page comes back. -#}
 <style>
 html,body{overflow-x:clip}
@@ -46,7 +46,7 @@ html,body{overflow-x:clip}
   {% if deck.next %}
   {% for c in deck.next[:2]|reverse %}
   <div class="swipe{{ ' behind' if not loop.last else '' }}" data-id="{{ c.id }}">
-    <span class="verdict use">Use</span><span class="verdict out">Don't use</span>
+    <span class="verdict use">Use</span><span class="verdict out">Never use</span>
     <div class="pic"><img src="{{ c.big }}" alt="" onerror="this.onerror=null;this.src='{{ c.small }}'"></div>
     <div class="about"><span>{% if c.kind %}<b>{{ c.kind }}</b>{% endif %}{% if c.folder %} · {{ c.folder }}{% endif %}</span></div>
   </div>
@@ -54,21 +54,21 @@ html,body{overflow-x:clip}
   {% else %}
   <div class="card empty" id="empty">
     <strong>Nothing left to review in {{ subject_word }}.</strong>
-    <span class="muted">Every photo here has your Use or Don't use. New photos from Drive show up here once they are sorted.</span>
+    <span class="muted">Every photo here has your Use or Never use. New photos from Drive show up here once they are sorted.</span>
     <a class="btn" href="/library/swipe?subject={{ other }}">{{ other_word }} ({{ "{:,}".format(other_left) }} left)</a>
     <a class="btn" href="/library?view=review&subject={{ subject }}">Back to To review</a>
   </div>
   {% endif %}
 </div>
 <div class="choices2" id="choices"{{ ' hidden' if not deck.next else '' }}>
-  {% for state, label, cls in [('blocked', "✕ Don't use", 'danger'), ('cleared', '✓ Use', 'ok')] %}
+  {% for state, label, cls in [('blocked', '✕ Never use', 'danger'), ('cleared', '✓ Use', 'ok')] %}
   <form method="post" action="/library/swipe/{{ deck.next[0].id if deck.next else 0 }}" class="decide">
     <input type="hidden" name="subject" value="{{ subject }}"><input type="hidden" name="state" value="{{ state }}">
     <button class="{{ cls }}" type="submit">{{ label }}</button>
   </form>
   {% endfor %}
 </div>
-<div class="hint" id="hint"{{ ' hidden' if not deck.next else '' }}>Swipe right to use it, left to keep it out for good. On a computer: → and ←, U to undo.</div>
+<div class="hint" id="hint"{{ ' hidden' if not deck.next else '' }}>Swipe right for Use, left for Never use. On a computer: → and ←, U to undo.</div>
 <div class="undo-bar" id="undo-bar" hidden><span id="said"></span>
   <form method="post" action="/library/swipe/undo" class="undo"><input type="hidden" name="subject" value="{{ subject }}"><button type="submit">Undo</button></form>
 </div>
@@ -76,7 +76,7 @@ html,body{overflow-x:clip}
 <script>
 (function () {
   var data = JSON.parse(document.getElementById('deck-data').textContent);
-  var KEYS = data.keys;                         // the keyboard: ArrowRight is Use, ArrowLeft is Don't use, U is Undo
+  var KEYS = data.keys;                         // the keyboard: ArrowRight is Use, ArrowLeft is Never use, U is Undo
   var subject = data.subject, cards = data.next.slice(), left = data.left, canUndo = data.undo;
   var pending = 0, decided = {};
   var stage = document.getElementById('stage'), leftEl = document.getElementById('left'), choices = document.getElementById('choices');
@@ -88,7 +88,7 @@ html,body{overflow-x:clip}
   function cardEl(c, behind) {
     var d = el('div', 'swipe' + (behind ? ' behind' : '')), pic = el('div', 'pic'), img = new Image(), about = el('div', 'about'), s = el('span');
     d.dataset.id = c.id;
-    d.append(el('span', 'verdict use', 'Use'), el('span', 'verdict out', "Don't use"));
+    d.append(el('span', 'verdict use', 'Use'), el('span', 'verdict out', 'Never use'));
     img.alt = ''; img.draggable = false; img.src = c.big;
     img.onerror = function () { img.onerror = null; img.src = c.small; };
     pic.append(img);

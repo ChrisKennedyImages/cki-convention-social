@@ -132,13 +132,25 @@ class Dashboard(IsolatedCase):
             self.assertRegex(r.text, r'<main( class="wide")?>', path)          # Today is the wide one (2026-10-15)
 
     def test_folder_clearance_and_photo_block(self):
+        """2026-11-02, Chris: "MANY of the approved photos, I never approved and say ready to use". A folder never
+        approves: the folder route refuses 'cleared' and changes nothing; his Use on the photo approves it; Exclude
+        and Undecided are the folder's only decisions; Never use on the photo keeps it out."""
         c = self.signed_in()
         pid = self.seed_library()
-        c.post("/library/folder/fcon/clearance", data={"state": "cleared"})
-        self.assertEqual(db.one(self.conn, "SELECT clearance FROM drive_folders WHERE drive_id='fcon'")["clearance"], "cleared")
+        r = c.post("/library/folder/fcon/clearance", data={"state": "cleared"}, follow_redirects=False)
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(db.one(self.conn, "SELECT clearance FROM drive_folders WHERE drive_id='fcon'")["clearance"], "not_cleared")
+        self.assertIsNone(settings_get(self.conn, "site.photos_changed_at"), "a refused folder decision is no photo change")
+        self.assertIn("not cleared yet", c.get("/library/folder/fcon").text)
+        c.post(f"/library/photo/{pid}/clearance", data={"state": "cleared"})
         self.assertIn("ready to pick", c.get("/library/folder/fcon").text)
+        c.post("/library/folder/fcon/clearance", data={"state": "excluded"})
+        self.assertEqual(db.one(self.conn, "SELECT clearance FROM drive_folders WHERE drive_id='fcon'")["clearance"], "excluded")
+        self.assertIn("its folder is excluded", c.get("/library/folder/fcon").text)
+        c.post("/library/folder/fcon/clearance", data={"state": "not_cleared"})
+        self.assertIn("ready to pick", c.get("/library/folder/fcon").text, "Undecided leaves his Use standing")
         c.post(f"/library/photo/{pid}/clearance", data={"state": "blocked"})
-        self.assertIn("Chris blocked this photo", c.get("/library/folder/fcon").text)
+        self.assertIn("Chris marked it Never use", c.get("/library/folder/fcon").text)
         self.assertEqual(c.post("/library/folder/fcon/clearance", data={"state": "weird"}).status_code, 400)
 
     def test_approve_refuses_rule_break_and_ineligible_photo(self):
@@ -153,7 +165,7 @@ class Dashboard(IsolatedCase):
         self.assertTrue(copy_rules.check(caption, social=True).ok, caption)
         q2 = self.draft(photo_ids=[pid])
         self.assertIn("msg=ineligible", c.post(f"/queue/{q2}/approve", follow_redirects=False).headers["location"])
-        c.post("/library/folder/fcon/clearance", data={"state": "cleared"})
+        c.post(f"/library/photo/{pid}/clearance", data={"state": "cleared"})        # his Use (a folder never approves, 2026-11-02)
         # cleared and sorted, but Claude has not given it the final check: still refused
         self.assertIn("msg=ineligible", c.post(f"/queue/{q2}/approve", follow_redirects=False).headers["location"])
         self.final_check(pid)
@@ -185,17 +197,18 @@ class Dashboard(IsolatedCase):
 
     def test_do_not_use_sets_the_post_aside_and_drafts_again(self):
         """2026-10-13: a do-not-use entry used to send the post back to drafts and leave it there; now the
-        post is set aside with the reason and the day is drafted again at once."""
+        post is set aside with the reason and the day is drafted again at once. 2026-11-02: the list is Takedowns and
+        takes a folder, a person or a handle (a single photo is Never use on the photo); here the photo's folder."""
         c = self.signed_in()
         popen = self.popen()
         pid = self.seed_library()
-        c.post("/library/folder/fcon/clearance", data={"state": "cleared"})
+        c.post(f"/library/photo/{pid}/clearance", data={"state": "cleared"})
         self.final_check(pid)
         q = self.draft(photo_ids=[pid])
         c.post(f"/queue/{q}/approve")
         self.assertEqual(db.one(self.conn, "SELECT status FROM content_queue WHERE id=?", (q,))["status"], "approved")
-        c.post("/donotuse/add", data={"kind": "photo", "value": "https://drive.google.com/file/d/p1/view"})
-        self.assertEqual(db.one(self.conn, "SELECT value FROM do_not_use")["value"], "p1")
+        c.post("/donotuse/add", data={"kind": "folder", "value": "https://drive.google.com/drive/folders/fcon"})
+        self.assertEqual(tuple(db.one(self.conn, "SELECT kind, value FROM do_not_use")), ("folder", "fcon"))
         row = db.one(self.conn, "SELECT status, last_error, rule_report FROM content_queue WHERE id=?", (q,))
         self.assertEqual(row["status"], "rejected")
         self.assertIn("do-not-use", row["last_error"])
@@ -205,6 +218,72 @@ class Dashboard(IsolatedCase):
         # an entry that touches nothing waiting starts nothing
         c.post("/donotuse/add", data={"kind": "handle", "value": "@nobody"})
         self.assertEqual(popen.call_count, 1)
+
+    def test_never_use_sets_aside_every_waiting_post_holding_the_photo(self):
+        """Chris, 2026-11-02: "The 'don't use' photos I click should be never use ... moving forward it's just use and
+        never use." Never use is the photo's own decision, and like the do-not-use list it takes the photo out of
+        anything waiting at once: a draft and an approved post holding it are set aside (rejected_by neveruse) and the
+        day is drafted again, by the tap and by Never use selected. A post without the photo stays; Put back and Use
+        set nothing aside."""
+        c = self.signed_in()
+        popen = self.popen()
+        pid = self.seed_library()
+        c.post(f"/library/photo/{pid}/clearance", data={"state": "cleared"})
+        self.final_check(pid)
+        waiting = self.draft(photo_ids=[pid])
+        approved = self.draft(photo_ids=[pid])
+        c.post(f"/queue/{approved}/approve")
+        other = self.draft()
+        unrelated = self.draft(photo_ids=[999999])        # its photo is not eligible for a reason of its own
+        status = lambda q: db.one(self.conn, "SELECT status FROM content_queue WHERE id=?", (q,))["status"]
+        self.assertEqual((status(waiting), status(approved), status(other)), ("draft", "approved", "draft"))
+        self.assertEqual(popen.call_count, 0)
+        r = c.post(f"/library/photo/{pid}/clearance", data={"state": "blocked", "back": "/library"}, headers={"Accept": "application/json"})
+        self.assertEqual(r.json(), {"id": pid, "state": "blocked", "words": "Never use."})
+        for q in (waiting, approved):
+            row = db.one(self.conn, "SELECT status, last_error, rule_report FROM content_queue WHERE id=?", (q,))
+            self.assertEqual(row["status"], "rejected", q)
+            self.assertEqual(row["last_error"], "A photo in this post is now Never use. Set aside; a new one is being drafted.")
+            self.assertEqual(json.loads(row["rule_report"])["rejected_by"], "neveruse")
+        self.assertEqual(status(other), "draft", "a post without the photo is left alone")
+        self.assertEqual(status(unrelated), "draft", "a Never use sets aside only the posts holding that photo, never "
+                         "another post for a reason of its own under its name")
+        self.assertEqual(popen.call_args[0][0][-2:], ["run", "content"])
+        self.assertEqual(popen.call_count, 1, "one new draft run for every post set aside")
+        # Put back and Use set nothing aside
+        c.post(f"/library/photo/{pid}/clearance", data={"state": "inherit"})
+        c.post(f"/library/photo/{pid}/clearance", data={"state": "cleared"})
+        again = self.draft(photo_ids=[pid])
+        self.assertEqual((status(again), popen.call_count), ("draft", 1))
+        # Never use selected does the same as the tap
+        c.post("/library/photos/clearance", data={"ids": [str(pid)], "state": "blocked"})
+        row = db.one(self.conn, "SELECT status, rule_report FROM content_queue WHERE id=?", (again,))
+        self.assertEqual((row["status"], json.loads(row["rule_report"])["rejected_by"]), ("rejected", "neveruse"))
+        self.assertEqual((status(other), popen.call_count), ("draft", 2))
+
+    def test_takedowns_take_a_folder_a_person_or_a_handle_never_a_single_photo(self):
+        """Chris, 2026-11-02: "Rename to Takedowns". The do-not-use page is Takedowns, under Photos; a single photo is
+        Never use on the photo itself, so the form offers no photo and the route refuses one (nothing is added). A
+        photo row already on the list from before still keeps that photo out."""
+        c = self.signed_in()
+        pid = self.seed_library()
+        page = c.get("/donotuse").text
+        self.assertIn("<h1>Takedowns</h1>", page)
+        self.assertIn('<a href="/donotuse" class="on">Takedowns</a>', page)
+        self.assertNotIn(">Do not use<", page)
+        self.assertNotIn('<option value="photo">', page)
+        for kind in ("folder", "person", "handle"):
+            self.assertIn(f'<option value="{kind}">', page)
+        r = c.post("/donotuse/add", data={"kind": "photo", "value": "https://drive.google.com/file/d/p1/view"}, follow_redirects=False)
+        self.assertEqual(r.status_code, 400)
+        self.assertIsNone(db.one(self.conn, "SELECT 1 FROM do_not_use"), "nothing added")
+        self.assertIsNone(settings_get(self.conn, "site.photos_changed_at"))
+        from convention_social.library import eligibility
+        c.post(f"/library/photo/{pid}/clearance", data={"state": "cleared"})
+        self.assertEqual(eligibility.is_candidate(self.conn, pid), (True, "ok"))
+        db.insert(self.conn, "do_not_use", kind="photo", value="p1", reason="takedown", added_at=db.utcnow())
+        self.assertEqual(eligibility.is_candidate(self.conn, pid), (False, "this photo is on the do-not-use list"))
+        self.assertIn('<span class="badge">photo</span><strong>p1</strong>', c.get("/donotuse").text, "listed, with its Remove")
 
     def test_reject_sets_the_post_aside_and_drafts_again(self):
         """Chris's reject used to leave the day without a post until 08:00 (2026-10-13): the post is set aside with him
@@ -394,20 +473,24 @@ class Dashboard(IsolatedCase):
         self.assertIn("button.small,.btn.small{min-height:44px", c.get("/").text, "every tap target 44px or more (2026-10-15)")
 
     def test_words_match_the_law(self):
-        """4.4: the draft page never tells him to fix a caption; a folder-approved photo says so instead of a no-op Undo."""
+        """4.4: the draft page never tells him to fix a caption; a folder-approved photo says so instead of a no-op Undo.
+        2026-11-02: a folder never approves, so the Approved page holds only photos he tapped Use on, each with an Undo
+        that works; a folder row left 'cleared' puts nothing there, and the page says a folder never approves."""
         c = self.signed_in()
         page = c.get(f"/queue/{self.draft()}?msg=blocked").text
         self.assertIn("Nothing for you to do", page)
         self.assertNotIn("Fix it and save first", page)
         pid = self.seed_library()
-        c.post("/library/folder/fcon/clearance", data={"state": "cleared"})
+        self.conn.execute("UPDATE drive_folders SET clearance='cleared' WHERE drive_id='fcon'")
         approved = c.get("/library?view=approved").text
-        self.assertIn("approved by its folder", approved)
+        self.assertNotIn(f'id="p{pid}"', approved)
         self.assertNotIn(">Undo<", approved)
         c.post(f"/library/photo/{pid}/clearance", data={"state": "cleared"})
         approved = c.get("/library?view=approved").text
+        self.assertIn(f'id="p{pid}"', approved)
         self.assertIn(">Undo<", approved)
         self.assertNotIn("approved by its folder", approved)
+        self.assertIn("Every photo you tapped Use on; a folder never approves its photos.", approved)
 
     def test_keys_page_has_every_setting_and_can_clear_one(self):
         """4.5: every setting the code reads is on the page (the Scout page pointed at a field that was not there),
@@ -449,7 +532,9 @@ class Dashboard(IsolatedCase):
         self.assertEqual(r.json(), {"id": pid, "state": "cleared", "words": "Approved."})
         self.assertEqual(db.one(self.conn, "SELECT clearance FROM photos WHERE id=?", (pid,))["clearance"], "cleared")
         r = c.post(f"/library/photo/{pid}/clearance", data={"state": "blocked", "back": "/library"}, headers={"Accept": "application/json"})
-        self.assertEqual(r.json()["words"], "Kept out.")
+        self.assertEqual(r.json()["words"], "Never use.")                     # Don't use became Never use (2026-11-02)
+        r = c.post(f"/library/photo/{pid}/clearance", data={"state": "inherit", "back": "/library"}, headers={"Accept": "application/json"})
+        self.assertEqual(r.json()["words"], "Back to review.")                # a folder never approves: back is To review
         r = c.post(f"/library/photo/{pid}/clearance", data={"state": "inherit", "back": "/library?view=approved"}, follow_redirects=False)
         self.assertEqual((r.status_code, r.headers["location"]), (303, "/library?view=approved"))
 
@@ -494,33 +579,42 @@ class Dashboard(IsolatedCase):
 
     def test_blocked_photos_are_visible_and_never_use_is_one_tap_from_the_card(self):
         """5.3: a Don't use was invisible afterwards; now a Blocked chip lists them with Unblock, and every card
-        has Never use (the do-not-use list) that comes back to the same page."""
+        has Never use (the do-not-use list) that comes back to the same page.
+        2026-11-02, Chris: "never use and don't use need to just be never use". The chip is Never use and its button
+        Put back; the card's one Never use is the photo's own decision (state blocked), and the second button that put
+        the photo on the do-not-use list is gone. The Takedowns page's own form still comes back where it was sent."""
         c = self.signed_in()
         pid = self.seed_library()
-        self.assertIn('href="/library?view=blocked"', c.get("/library").text)
+        review = c.get("/library").text
+        self.assertIn('<a href="/library?view=blocked" class="">Never use</a>', review)
+        self.assertNotIn(">Blocked<", review)
+        self.assertNotIn('action="/donotuse/add"', review, "one Never use on the card: the photo's own decision")
+        card = re.search(rf'<div class="card" id="p{pid}".*?<span class="tapped', review, flags=re.S).group(0)
+        self.assertEqual(re.findall(r'name="state" value="(\w+)"><button class="small \w*" type="submit">([^<]+)</button>', card),
+                         [("cleared", "Use"), ("blocked", "Never use")])
+        self.assertIn(">Never use selected<", review)
         self.assertNotIn(f'id="p{pid}"', c.get("/library?view=blocked").text)
         c.post(f"/library/photo/{pid}/clearance", data={"state": "blocked"})
         blocked = c.get("/library?view=blocked").text
         self.assertIn(f'id="p{pid}"', blocked)
-        self.assertIn(">Unblock<", blocked)
+        self.assertIn('<h1>Never use <span class="muted">1</span></h1>', blocked)
+        self.assertIn('<a href="/library?view=blocked" class="on">Never use</a>', blocked)
+        self.assertIn(">Put back<", blocked)
+        self.assertNotIn(">Unblock<", blocked)
         self.assertIn('name="state" value="inherit"', blocked)
         self.assertNotIn(f'id="p{pid}"', c.get("/library").text)
         c.post(f"/library/photo/{pid}/clearance", data={"state": "inherit"})
-        review = c.get("/library").text
-        self.assertIn(f'id="p{pid}"', review)
-        form = re.search(r'<form[^>]*action="/donotuse/add"[^>]*>.*?</form>', review, flags=re.S).group(0)
-        self.assertIn("confirm(", form)
-        self.assertIn('name="kind" value="photo"', form)
-        self.assertIn('name="value" value="p1"', form)
-        r = c.post("/donotuse/add", data={"kind": "photo", "value": "p1", "back": "/library?view=review&page=1"}, follow_redirects=False)
+        self.assertIn(f'id="p{pid}"', c.get("/library").text, "Put back returns it to To review")
+        r = c.post("/donotuse/add", data={"kind": "folder", "value": "fcon", "back": "/library?view=review&page=1"}, follow_redirects=False)
         self.assertEqual(r.headers["location"], "/library?view=review&page=1")
-        self.assertEqual(db.one(self.conn, "SELECT kind, value FROM do_not_use")["value"], "p1")
+        self.assertEqual(tuple(db.one(self.conn, "SELECT kind, value FROM do_not_use")), ("folder", "fcon"))
         r = c.post("/donotuse/add", data={"kind": "handle", "value": "@x", "back": "//evil.example/x"}, follow_redirects=False)
         self.assertEqual(r.headers["location"], "/donotuse")
 
     def test_the_site_follows_the_photos(self):
         """5.4: Use, Don't use, a folder decision and the hero pick stamp the change; the Website card says the
-        site publishes by itself; Publish stays for the impatient."""
+        site publishes by itself; Publish stays for the impatient. 2026-11-02: Don't use is Never use, and a folder's
+        decision is Exclude or Undecided (it never approves)."""
         from convention_social.site import deploy
         c = self.signed_in()
         pid = self.seed_library()
@@ -529,7 +623,8 @@ class Dashboard(IsolatedCase):
         first = settings_get(self.conn, deploy.PHOTOS_CHANGED_KEY)
         self.assertTrue(first)
         from convention_social.core import settings as settings_mod
-        for path, data in (("/library/folder/fcon/clearance", {"state": "cleared"}), (f"/library/photo/{pid}/hero", {}),
+        for path, data in ((f"/library/photo/{pid}/clearance", {"state": "blocked"}), ("/library/folder/fcon/clearance", {"state": "excluded"}),
+                           ("/library/folder/fcon/clearance", {"state": "not_cleared"}), (f"/library/photo/{pid}/hero", {}),
                            ("/donotuse/add", {"kind": "handle", "value": "@x"})):
             settings_mod.set(self.conn, deploy.PHOTOS_CHANGED_KEY, "")
             c.post(path, data=data)
@@ -786,22 +881,25 @@ class Dashboard(IsolatedCase):
 
     def test_each_photo_has_use_and_dont_use_and_comes_back_to_itself(self):
         """Chris, 2026-10-11: "It dosent let me deny any images". Block worked, but every tap reloaded
-        the folder at the top, so in a folder of hundreds the change was out of sight."""
+        the folder at the top, so in a folder of hundreds the change was out of sight.
+        2026-11-02: Don't use is Never use, and Unblock is Put back."""
         pid = self.seed_library()
         fid = db.one(self.conn, "SELECT folder_id FROM photos WHERE id=?", (pid,))["folder_id"]
         c = self.signed_in()
         page = c.get(f"/library/folder/{fid}").text
         self.assertIn(f'id="p{pid}"', page)
         self.assertIn(">Use<", page)
-        self.assertIn("Don&#39;t use", page)
+        self.assertIn(">Never use<", page)
+        self.assertNotIn("Don&#39;t use", page)
         r = c.post(f"/library/photo/{pid}/clearance", data={"state": "blocked", "back": f"/library/folder/{fid}#p{pid}"},
                    follow_redirects=False)
         self.assertEqual(r.headers["location"], f"/library/folder/{fid}#p{pid}")
         self.assertEqual(db.one(self.conn, "SELECT clearance FROM photos WHERE id=?", (pid,))["clearance"], "blocked")
         page = c.get(f"/library/folder/{fid}").text
         self.assertIn('class="card off"', page)
-        self.assertIn("Chris blocked this photo", page)
-        self.assertIn(">Unblock<", page)
+        self.assertIn("Chris marked it Never use", page)
+        self.assertIn(">Put back<", page)
+        self.assertNotIn(">Unblock<", page)
         c.post(f"/library/photo/{pid}/clearance", data={"state": "cleared", "back": f"/library/folder/{fid}#p{pid}"})
         self.assertEqual(db.one(self.conn, "SELECT clearance FROM photos WHERE id=?", (pid,))["clearance"], "cleared")
         page = c.get(f"/library/folder/{fid}").text
@@ -866,7 +964,7 @@ class Dashboard(IsolatedCase):
         self.assertIn(f'id="p{pid}"', approved)
         self.assertNotIn(f'id="p{twin}"', approved)
         c.post("/library/photos/clearance", data={"ids": [str(twin)], "state": "blocked"})
-        self.assertEqual({r["clearance"] for r in core_db.rows(self.conn, "SELECT clearance FROM photos")}, {"blocked"}, "Don't use on a copy blocks the picture")
+        self.assertEqual({r["clearance"] for r in core_db.rows(self.conn, "SELECT clearance FROM photos")}, {"blocked"}, "Never use on a copy blocks the picture")
         # the half-decided groups on the Mini: one copy cleared by hand, the other never touched
         self.conn.execute("UPDATE photos SET clearance='cleared', clearance_at='2026-10-23T10:00:00+00:00' WHERE id=?", (pid,))
         self.conn.execute("UPDATE photos SET clearance='inherit', clearance_at=NULL WHERE id=?", (twin,))
@@ -877,7 +975,9 @@ class Dashboard(IsolatedCase):
     def test_photos_review_then_approved_and_only_approved_counts(self):
         """Chris, 2026-10-11: "I only want to choose what I approve" and "I am unable to go back to the main
         library page where I can hit clear". To review lists the undecided photos with Use; Approved lists
-        what he chose; a folder page links back and clears the whole folder in place."""
+        what he chose; a folder page links back and clears the whole folder in place.
+        2026-11-02: "MANY of the approved photos, I never approved". A folder never approves: the folder page offers
+        no Approve all, says so, and the folder route refuses 'cleared'."""
         pid = self.seed_library()
         fid = db.one(self.conn, "SELECT folder_id FROM photos WHERE id=?", (pid,))["folder_id"]
         c = self.signed_in()
@@ -895,10 +995,13 @@ class Dashboard(IsolatedCase):
         self.assertIn(">Undo<", approved)
         folder = c.get(f"/library/folder/{fid}").text
         self.assertIn(f'href="/library?view=folders#f-{fid}"', folder)
-        self.assertIn("Approve all 1 photos", folder)
-        self.assertIn("not only the ones you picked", folder)
-        c.post(f"/library/folder/{fid}/clearance", data={"state": "cleared", "back": f"/library/folder/{fid}"})
-        self.assertEqual(db.one(self.conn, "SELECT clearance FROM drive_folders WHERE drive_id=?", (fid,))["clearance"], "cleared")
+        self.assertIn("You approved 1 photo here one by one.", folder)
+        self.assertNotIn("Approve all", folder)
+        self.assertNotIn('name="state" value="cleared"', folder.split('<div class="grid">')[0], "no folder-wide approve")
+        self.assertIn("A folder never approves its photos.", folder)
+        r = c.post(f"/library/folder/{fid}/clearance", data={"state": "cleared", "back": f"/library/folder/{fid}"}, follow_redirects=False)
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(db.one(self.conn, "SELECT clearance FROM drive_folders WHERE drive_id=?", (fid,))["clearance"], "not_cleared")
         r = c.post(f"/library/photo/{pid}/clearance", data={"state": "inherit", "back": "//elsewhere.example/x"}, follow_redirects=False)
         self.assertEqual(r.headers["location"], "/library")
 

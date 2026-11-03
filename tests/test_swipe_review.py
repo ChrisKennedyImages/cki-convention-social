@@ -1,13 +1,17 @@
 """The swipe review (Chris, 2026-11-02: "Maybe a swipe left or right to keep or discard of?", then "One photo per card").
 
 Right is his Use; left is Don't use for good ("out of the pool forevwr"); Undo takes back the last swipe only. Nothing is
-cleared but by a right swipe. To review leaves out what the do-not-use list covers, and Claude's scores lead it."""
+cleared but by a right swipe. To review leaves out what the do-not-use list covers, and Claude's scores lead it.
+Later the same day ("never use and don't use need to just be never use"): left is Never use, and like every Never use
+it sets aside a waiting post that holds the photo."""
 from __future__ import annotations
 
 import json
 import os
 import random
 import re
+
+from unittest import mock
 
 from fastapi.testclient import TestClient
 
@@ -16,6 +20,7 @@ from convention_social.dashboard import app as dash
 from convention_social.dashboard.app import COOKIE, create_app, make_token
 from convention_social.library import eligibility
 from tests._base import IsolatedCase
+from tests._fakes import add_post
 from tests.test_photos_tab import build_library
 
 JSON = {"Accept": "application/json"}
@@ -70,15 +75,26 @@ class Deck(IsolatedCase):
         self.assertEqual((self.clearance(3), self.clearance(4)), ("cleared", "cleared"), "every copy")
         self.assertEqual(self.clearance(2), "inherit", "nothing else is touched")
 
-    def test_left_is_dont_use_for_good(self):
+    def test_left_is_never_use(self):
+        """It was test_left_is_dont_use_for_good. 2026-11-02: Don't use is Never use; the photo is on the Never use list
+        (his way back is Put back there), and a waiting draft that holds it is set aside at once."""
         self.photo(1, quality=5)
         self.photo(2, quality=4)
-        d = self.swipe(1, "blocked").json()
+        waiting = add_post(self.conn, [1], ("instagram",), status="draft")
+        other = add_post(self.conn, [], ("instagram",), status="draft")
+        with mock.patch("convention_social.dashboard.app.start_agent") as start:
+            d = self.swipe(1, "blocked").json()
         self.assertEqual(self.clearance(1), "blocked")
-        self.assertEqual((d["words"], d["left"], [c["id"] for c in d["next"]]), ("Kept out for good.", 1, [2]))
+        self.assertEqual((d["words"], d["left"], [c["id"] for c in d["next"]]), ("Never use.", 1, [2]))
         dash.prepare_photo_views(self.conn, eligibility.folder_decisions(self.conn))
-        self.assertEqual(dash.count_photos(self.conn, "blocked"), 1, "it is on the Blocked list, his way back")
-        self.assertIn("/media/thumb/1", self.client.get("/library?view=blocked").text)
+        self.assertEqual(dash.count_photos(self.conn, "blocked"), 1, "it is on the Never use list, his way back")
+        listed = self.client.get("/library?view=blocked").text
+        self.assertIn("/media/thumb/1", listed)
+        self.assertIn(">Put back<", listed)
+        row = db.one(self.conn, "SELECT status, rule_report FROM content_queue WHERE id=?", (waiting,))
+        self.assertEqual((row["status"], json.loads(row["rule_report"])["rejected_by"]), ("rejected", "neveruse"))
+        self.assertEqual(db.one(self.conn, "SELECT status FROM content_queue WHERE id=?", (other,))["status"], "draft")
+        self.assertEqual(start.call_args[0], ("content",), "the day is drafted again")
 
     def test_undo_takes_back_the_last_swipe_only(self):
         for pid, q in ((1, 5), (2, 4), (3, 3)):
@@ -97,7 +113,7 @@ class Deck(IsolatedCase):
     def test_undo_leaves_a_photo_changed_since(self):
         self.photo(1)
         self.swipe(1, "blocked")
-        self.client.post("/library/photo/1/clearance", data={"state": "inherit"})        # Unblock on the Blocked list
+        self.client.post("/library/photo/1/clearance", data={"state": "inherit"})        # Put back on the Never use list
         self.client.post("/library/photo/1/clearance", data={"state": "cleared"})        # then Use on To review
         d = self.client.post("/library/swipe/undo", data={"subject": "event"}, headers=JSON).json()
         self.assertEqual(d["words"], "That photo was changed since; nothing undone.")
@@ -130,9 +146,14 @@ class Deck(IsolatedCase):
         self.photo(2)
         deck, page = self.deck()
         self.assertIn('action="/library/swipe/1" class="decide"', page)
+        self.assertIn('<button class="danger" type="submit">✕ Never use</button>', page)      # it was Don't use (2026-11-02)
+        self.assertIn('<span class="verdict out">Never use</span>', page)
+        self.assertIn("Swipe right for Use, left for Never use.", page)
+        self.assertNotIn("Don&#39;t use", page)
+        self.assertNotIn("Don't use", page)
         r = self.client.post("/library/swipe/1", data={"state": "blocked", "subject": "event"}, follow_redirects=False)
         self.assertEqual(r.status_code, 303)
-        self.assertEqual(r.headers["location"], "/library/swipe?subject=event&msg=Kept+out+for+good.")
+        self.assertEqual(r.headers["location"], "/library/swipe?subject=event&msg=Never+use.")
         self.assertIn('action="/library/swipe/2" class="decide"', self.client.get(r.headers["location"]).text)
 
     # ------------------------------------------------------------------ what the deck shows
@@ -158,7 +179,7 @@ class Deck(IsolatedCase):
         _, page = self.deck()
         self.assertIn("Nothing left to review in Events.", page)
         self.assertIn('href="/library/swipe?subject=architecture">Buildings (1 left)</a>', page)
-        self.assertIn('<div class="choices2" id="choices" hidden>', page, "no Use or Don't use with nothing to decide")
+        self.assertIn('<div class="choices2" id="choices" hidden>', page, "no Use or Never use with nothing to decide")
         self.assertIn('<div class="hint" id="hint" hidden>', page)
         self.assertIn(".choices2[hidden],.hint[hidden]{display:none}", page, "hidden stays hidden under the page's own display")
 
@@ -173,8 +194,8 @@ class Deck(IsolatedCase):
         self.assertNotIn("Swipe through them", self.client.get("/library?view=review&subject=event").text)
 
     def test_the_keys(self):
-        """ArrowRight is Use, ArrowLeft is Don't use, U is Undo: the page's key handler reads this table, and every
-        state in it is one the swipe accepts."""
+        """ArrowRight is Use, ArrowLeft is Never use (it was Don't use until 2026-11-02), U is Undo: the page's key
+        handler reads this table, and every state in it is one the swipe accepts."""
         self.photo(1)
         deck, page = self.deck()
         self.assertEqual(deck["keys"], {"ArrowRight": "cleared", "ArrowLeft": "blocked", "u": "undo", "U": "undo"})
@@ -216,7 +237,7 @@ class ToReviewList(IsolatedCase):
         for pid, folder in ((1, "f"), (2, "f"), (3, "g"), (4, "g"), (5, "g")):
             self.photo(pid, folder=folder)
         self.assertEqual(sorted(self.review()), [1, 2, 3, 4, 5])
-        db.insert(self.conn, "do_not_use", kind="photo", value="d1", added_at=self.now)          # Never use on a card
+        db.insert(self.conn, "do_not_use", kind="photo", value="d1", added_at=self.now)          # a row from the old Never use button
         db.insert(self.conn, "do_not_use", kind="folder", value="top", added_at=self.now)        # the folder above f
         db.insert(self.conn, "credits", scope="photo", drive_id="d4", person_name="Jane Roe", synced_at=self.now)
         db.insert(self.conn, "do_not_use", kind="person", value="jane roe", added_at=self.now)

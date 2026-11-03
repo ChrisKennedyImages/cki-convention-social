@@ -69,8 +69,9 @@ class SeoCase(AgentCase):
         self.n += 1
         now = db.utcnow()
         if not db.one(self.conn, "SELECT 1 FROM drive_folders WHERE drive_id=?", (folder,)):
-            db.insert(self.conn, "drive_folders", drive_id=folder, name=folder, clearance="cleared", first_seen_at=now, last_seen_at=now)
+            db.insert(self.conn, "drive_folders", drive_id=folder, name=folder, first_seen_at=now, last_seen_at=now)
         pid = db.insert(self.conn, "photos", drive_id=f"drive-{self.n}", name=f"p{self.n}.jpg", folder_id=folder, taken_at=taken,
+                        clearance="cleared", clearance_at=now,          # his Use: a folder never approves (2026-11-02)
                         first_seen_at=now, last_seen_at=now)
         db.insert(self.conn, "classifications", photo_id=pid, method="vision", subject=subject, shot_type=shot, convention_name=event,
                   event_kind=kind, view=view, possible_minor=0, personal_details="[]", summary=summary,

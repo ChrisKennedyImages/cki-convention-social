@@ -6,8 +6,8 @@ answers 503 to everything (fail closed).
 
 Four tabs (2026-10-15): Today (every draft waiting on Chris, each with Post now,
 Follow the pace and Skip, refused while a caption breaks a rule or a photo is no
-longer eligible; what is scheduled this week; what went out), Photos (clear or
-exclude folders, block single photos, music for reels, Do not use, Drive),
+longer eligible; what is scheduled this week; what went out), Photos (Use or
+Never use on each photo, exclude folders, music for reels, Takedowns, Drive),
 Bookings (requests, bookings, the calendar), Settings (Agents, Errors, Keys,
 Buffer; Outreach, Scout, Search, Learner).
 """
@@ -145,8 +145,8 @@ def cross_site(headers) -> str:
 SECTIONS = (
     ("Today", "/", ("/queue", "/posts", "/send", "/history"), (("Today", "/"), ("Send a photo", "/send"), ("All posts", "/history"))),
     ("Photos", "/library", ("/library", "/donotuse", "/drive", "/music"),
-     (("To review", "/library"), ("Approved", "/library?view=approved"), ("Blocked", "/library?view=blocked"),
-      ("Folders", "/library?view=folders"), ("Music", "/music"), ("Do not use", "/donotuse"), ("Drive", "/drive"))),
+     (("To review", "/library"), ("Approved", "/library?view=approved"), ("Never use", "/library?view=blocked"),
+      ("Folders", "/library?view=folders"), ("Music", "/music"), ("Takedowns", "/donotuse"), ("Drive", "/drive"))),
     ("Bookings", "/inquiries", ("/inquiries", "/bookings", "/calendar"),
      (("Requests", "/inquiries"), ("Bookings", "/bookings"), ("Calendar", "/calendar"))),
     # 2026-11-01, Chris: "Can we put the outreach on the top navigation for easier access": a tab of its own, with the
@@ -406,10 +406,10 @@ VIEWS = {
                "AND p.id NOT IN (SELECT id FROM temp.hidden_photo) "
                "AND p.id NOT IN (SELECT id FROM temp.listed_photo)",
                f"{CLAUDE_FIRST}, ({STRENGTH}) DESC, p.id"),
-    # Everything Chris cleared, by the photo itself or by its folder. Sorted ones first, strongest first.
+    # Every photo Chris tapped Use on (a folder never approves, 2026-11-02). Sorted ones first, strongest first.
     "approved": (f"p.trashed = 0 AND {ONE_COPY} AND {DECISION} = 'cleared'",
                  f"CASE WHEN {SORTED} THEN 0 ELSE 1 END, CASE WHEN {SORTED} THEN ({STRENGTH}) ELSE 0 END DESC, p.id"),
-    # Every photo Chris marked Don't use, newest decision first (2026-10-13: a Don't use was invisible afterwards).
+    # Every photo Chris marked Never use, newest decision first (2026-10-13: a Don't use was invisible afterwards).
     "blocked": (f"p.trashed = 0 AND {ONE_COPY} AND {DECISION} = 'blocked'", "COALESCE(p.clearance_at, '') DESC, p.id DESC"),
 }
 
@@ -477,13 +477,14 @@ def kind_words(photo: dict) -> str:
 
 
 # Chris, 2026-11-02: "Maybe a swipe left or right to keep or discard of?" To review one photo at a time, from the top of
-# the list. Right is his Use; left is Don't use for good ("If I swipe to not use it, it's out of the pool forevwr").
-# Nothing is cleared but by a right swipe. Undo takes back the last swipe only; Blocked and its Unblock stay the way back.
+# the list. Right is his Use; left is Never use ("If I swipe to not use it, it's out of the pool forevwr").
+# Nothing is cleared but by a right swipe. Undo takes back the last swipe only; the Never use list and its Put back stay
+# the way back for a mistake (2026-11-02).
 SWIPE_AHEAD = 4                          # cards the page holds: the one on screen and three behind it, pictures loaded ahead
 SWIPE_STATES = ("cleared", "blocked")
 SWIPE_KEYS = {"ArrowRight": "cleared", "ArrowLeft": "blocked", "u": "undo", "U": "undo"}
 SWIPE_LAST = "library.swipe_last"        # the last swipe, the only one Undo takes back
-SWIPE_WORDS = {"cleared": "Approved.", "blocked": "Kept out for good."}
+SWIPE_WORDS = {"cleared": "Approved.", "blocked": "Never use."}
 PREVIEW_EDGE = 1200                      # the card's picture, long side in pixels: a phone screen at 3x is about 1180 wide
 
 
@@ -937,7 +938,7 @@ def create_app() -> FastAPI:
         return "approved"
 
     def skip_post(conn, row) -> str:
-        """Skip (Chris, 2026-10-15): the draft is set aside and its photos go back into the rotation, never Don't use
+        """Skip (Chris, 2026-10-15): the draft is set aside and its photos go back into the rotation; a Skip is never Never use
         (agents/content.recent_use leaves a skipped post out; its use stays on the rotation's record, so the photos
         come round again after the others). A skipped daily post is drafted again at once. What happened, in words."""
         from ..agents import content
@@ -1176,15 +1177,15 @@ def create_app() -> FastAPI:
                 show: str = "events", page: int = 1, subject: str = "event"):
         """Photos. Chris, 2026-10-11: "I only want to choose what I approve and if it's not approved then
         don't use it yet or at all". To review: the sorted photos he has not decided on, best first,
-        each with Use and Don't use. Approved: everything cleared, by the photo or its folder.
-        Folders: clear a whole shoot at once. Design and music: samples on approved photos only."""
+        each with Use and Never use. Approved: every photo he tapped Use on (a folder never approves, 2026-11-02).
+        Folders: keep a whole shoot out. Design and music: samples on approved photos only."""
         msg = request.query_params.get("msg", "")
         if view == "design":
             return RedirectResponse("/", status_code=303)       # 2026-10-15: the samples became designed drafts on Today
         prepare_photo_views(conn, eligibility.folder_decisions(conn))
         common = dict(view=view, msg=msg, drive_state=settings.get(conn, "drive.auth_state") or "missing")
         if view == "folders":
-            where = "conv > 0" if show == "events" else ("f.clearance='cleared'" if show == "cleared" else "1=1")
+            where = "conv > 0" if show == "events" else ("f.clearance='excluded'" if show == "excluded" else "1=1")
             rows = db.rows(conn, f"""
                 SELECT * FROM (
                   SELECT f.drive_id, f.name, f.path, f.clearance, f.image_count, f.shared_by,
@@ -1330,8 +1331,8 @@ def create_app() -> FastAPI:
     @app.post("/library/folder/{fid}/clearance")
     def folder_clearance(fid: str, user: str = Depends(require_user), conn=Depends(conn_dep), state: str = Form(...),
                          back: str = Form(default="/library")):
-        if state not in ("cleared", "excluded", "not_cleared"):
-            raise HTTPException(400)
+        if state not in ("excluded", "not_cleared"):        # a folder keeps its photos out or leaves them be; it never
+            raise HTTPException(400)                         # approves them (2026-11-02: only his Use on a photo does)
         conn.execute("UPDATE drive_folders SET clearance=?, clearance_at=? WHERE drive_id=?", (state, db.utcnow(), fid))
         photos_changed(conn)
         return RedirectResponse(safe_back(back), status_code=303)
@@ -1348,7 +1349,7 @@ def create_app() -> FastAPI:
         picked = sum(1 for p in photos if p["clearance"] == "cleared")
         return render(request, "folder.html", folder=f, items=items, picked=picked)
 
-    TAP_WORDS = {"cleared": "Approved.", "blocked": "Kept out.", "inherit": "Back where it was."}
+    TAP_WORDS = {"cleared": "Approved.", "blocked": "Never use.", "inherit": "Back to review."}
 
     def photos_changed(conn) -> None:
         """Chris, 2026-10-13: the site follows the photos by itself (site/deploy.photos_pending reads this)."""
@@ -1359,6 +1360,27 @@ def create_app() -> FastAPI:
         """Chris's decision on a picture, written to every copy of it (eligibility.copies_of)."""
         for cid in eligibility.copies_of(conn, pid):
             conn.execute("UPDATE photos SET clearance=?, clearance_at=? WHERE id=?", (state, now, cid))
+
+    def decided(conn, state: str, photo_ids) -> None:
+        """After his decisions: the site follows, and a Never use takes those photos (every copy) out of anything waiting."""
+        photos_changed(conn)
+        if state == "blocked":
+            set_aside_waiting(conn, by="neveruse", why="A photo in this post is now Never use. Set aside; a new one is being drafted.",
+                              photos={c for pid in photo_ids for c in eligibility.copies_of(conn, pid)})
+
+    def set_aside_waiting(conn, *, by: str, why: str, photos: Optional[set] = None) -> None:
+        """Drafts and approved posts that may no longer go out are set aside with `why`, and the day is drafted again: the
+        ones holding one of `photos` (a Never use), or, without `photos`, any holding a photo no longer eligible (a
+        takedown, which can cover photos it does not name)."""
+        hit = False
+        for q in db.rows(conn, "SELECT * FROM content_queue WHERE status IN ('draft','approved')"):
+            ids = [int(p) for p in json.loads(q["photo_ids"] or "[]")]
+            out = photos.intersection(ids) if photos is not None else any(not eligibility.is_eligible(conn, p)[0] for p in ids)
+            if out:
+                set_aside(conn, q, by=by, why=why)
+                hit = True
+        if hit:
+            start_agent("content")
 
     def safe_back(back: str, default: str = "/library") -> str:
         return back if back.startswith("/") and not back.startswith("//") else default
@@ -1377,14 +1399,14 @@ def create_app() -> FastAPI:
         if state not in TAP_WORDS:
             raise HTTPException(400)
         decide(conn, pid, state, db.utcnow())
-        photos_changed(conn)
+        decided(conn, state, [pid])
         if "application/json" in request.headers.get("accept", ""):
             return {"id": pid, "state": state, "words": TAP_WORDS[state]}
         return RedirectResponse(safe_back(back), status_code=303)
 
     @app.post("/library/photos/clearance")
     async def photos_clearance(request: Request, user: str = Depends(require_user), conn=Depends(conn_dep)):
-        """Use selected / Don't use selected: the ticked photos, one tap (2026-10-13)."""
+        """Use selected / Never use selected: the ticked photos, one tap (2026-10-13)."""
         form = await request.form()
         state = form.get("state") or ""
         if state not in ("cleared", "blocked"):
@@ -1394,7 +1416,7 @@ def create_app() -> FastAPI:
         for pid in ids:
             decide(conn, pid, state, now)
         if ids:
-            photos_changed(conn)
+            decided(conn, state, ids)
         return RedirectResponse(safe_back(form.get("back") or "/library"), status_code=303)
 
     # ------------------------------------------------------------------ swipe review
@@ -1441,7 +1463,7 @@ def create_app() -> FastAPI:
     @app.post("/library/swipe/{pid}")
     def swipe(pid: int, request: Request, user: str = Depends(require_user), conn=Depends(conn_dep), state: str = Form(...),
               subject: str = Form("event")):
-        """One swipe, saved at once: right (cleared) is his Use, left (blocked) is Don't use for good. Only a photo that
+        """One swipe, saved at once: right (cleared) is his Use, left (blocked) is Never use. Only a photo that
         is on To review now can be swiped; anything else is refused and nothing changes (fail closed)."""
         if state not in SWIPE_STATES:
             raise HTTPException(400)
@@ -1452,7 +1474,7 @@ def create_app() -> FastAPI:
                                 status_code=409)
         decide(conn, pid, state, db.utcnow())
         settings.set(conn, SWIPE_LAST, json.dumps({"id": pid, "state": state}))
-        photos_changed(conn)
+        decided(conn, state, [pid])
         row = db.one(conn, "SELECT drive_id FROM photos WHERE id=?", (pid,))
         thumb_file(row["drive_id"], PREVIEW_EDGE).unlink(missing_ok=True)     # the big picture was for this card only
         return swipe_answer(request, conn, subject, SWIPE_WORDS[state], id=pid, state=state)
@@ -1556,21 +1578,14 @@ def create_app() -> FastAPI:
     @app.post("/donotuse/add")
     def donotuse_add(user: str = Depends(require_user), conn=Depends(conn_dep), kind: str = Form(...), value: str = Form(...),
                      reason: str = Form(default=""), back: str = Form(default="")):
-        if kind not in ("photo", "folder", "person", "handle"):
+        if kind not in ("folder", "person", "handle"):       # a single photo is Never use, on the photo (2026-11-02)
             raise HTTPException(400)
-        value = drive_id_from(value) if kind in ("photo", "folder") else value.strip().lower()
+        value = drive_id_from(value) if kind == "folder" else value.strip().lower()
         if value:
             conn.execute("INSERT OR IGNORE INTO do_not_use (kind, value, reason, added_at) VALUES (?,?,?,?)",
                          (kind, value, reason.strip() or None, db.utcnow()))
-            # anything waiting that this now covers is set aside with the reason, and the day is drafted again
-            hit = False
-            for q in db.rows(conn, "SELECT * FROM content_queue WHERE status IN ('draft','approved')"):
-                bad = [p for p in json.loads(q["photo_ids"] or "[]") if not eligibility.is_eligible(conn, int(p))[0]]
-                if bad:
-                    set_aside(conn, q, by="donotuse", why="A photo in this post is now on the do-not-use list. Set aside; a new one is being drafted.")
-                    hit = True
-            if hit:
-                start_agent("content")
+            set_aside_waiting(conn, by="donotuse",
+                              why="A photo in this post is now on the do-not-use list. Set aside; a new one is being drafted.")
             photos_changed(conn)
         return RedirectResponse(safe_back(back, "/donotuse") if back else "/donotuse", status_code=303)
 
