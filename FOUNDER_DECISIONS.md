@@ -2664,3 +2664,13 @@ about 1,500 approved (posts used 130 photos in two weeks), about 1,300 taps from
   post holding a Never use photo is set aside, as everywhere), and the next 12 come. Only photos still waiting on To
   review are decided. Undo page takes the whole last page back, unless a photo was changed since. The swipe stays.
 
+## 2026-11-04: a LinkedIn post approved late still goes out that day
+
+Chris, on Tuesday 3 November going without a LinkedIn post: "So why did you skip Tuesday". Both of Tuesday's drafts (#64,
+#65) waited for his approval until 23:39 that night; with LinkedIn's one 09:00 slot a weekday, the publisher put them on
+Wednesday and Thursday. Asked how to stop a missed weekday, he chose "Post later the same day".
+
+- **LinkedIn only** (`agents/pacing.SAME_DAY_LATE`): on a weekday whose 09:00 has passed with nothing out or queued on
+  LinkedIn, a post approved later that day goes out that day, 30 minutes after it is approved (LEAD), not the next
+  weekday. Still one a day, never past midnight, never at weekends. Instagram, Facebook and Pinterest keep their times.
+

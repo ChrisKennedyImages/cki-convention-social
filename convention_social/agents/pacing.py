@@ -20,6 +20,10 @@ A post with no time chosen takes, for each network it targets, the first open
 slot from today on: a day with fewer posts out or queued on that network than
 it has times, at a slot of that day no post is within MIN_GAP of, at least LEAD
 from now. A time Chris sets on the draft always wins, for every network on it.
+
+LinkedIn approved late (2026-11-04, Chris: "Post later the same day"): a weekday whose 09:00 has passed with nothing
+out or queued on LinkedIn still takes the post that day, LEAD from now, instead of waiting for the next weekday
+(Tuesday 2026-11-03 went without one: both drafts were approved at 23:39 and took Wednesday and Thursday).
 """
 from __future__ import annotations
 
@@ -46,6 +50,7 @@ SECOND_TIMES: dict[str, tuple[time, time]] = {
     "pinterest": (time(14, 30), time(14, 30)),
 }
 MIN_GAP = timedelta(hours=3)          # two posts on one network are never closer than this
+SAME_DAY_LATE = frozenset({"linkedin"})   # its day's post goes out later that day when approved after its time
 FALLBACK_TIME = time(12, 0)
 LEAD = timedelta(minutes=30)
 HORIZON_DAYS = 90
@@ -216,6 +221,10 @@ def next_slot(conn, network: str, now: Optional[datetime] = None, cfg: Optional[
         for slot in slots:
             if slot > local_now + LEAD and not any(abs(slot - u) < MIN_GAP for u in used):
                 return slot
+        late = (local_now + LEAD).replace(second=0, microsecond=0)
+        if (network in SAME_DAY_LATE and day == local_now.date() and late.date() == day and slots and not used
+                and all(slot <= late for slot in slots)):
+            return late
     return None
 
 
