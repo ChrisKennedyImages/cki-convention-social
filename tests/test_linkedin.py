@@ -125,6 +125,9 @@ class Pacing(AgentCase):
         conn = self.connect()
         self.assertEqual(pacing.slot_value(pacing.next_slot(conn, "linkedin", FRIDAY_8AM)), "2026-10-09T09:00")
         friday_noon = datetime(2026, 10, 9, 16, 0, tzinfo=timezone.utc)
+        # 2026-11-04, Chris: "Post later the same day": approved after 09:00 with nothing on LinkedIn that day
+        self.assertEqual(pacing.slot_value(pacing.next_slot(conn, "linkedin", friday_noon)), "2026-10-09T12:30")
+        add_post(conn, [1], ("linkedin",), status="scheduled", scheduled_for="2026-10-09T09:00")
         self.assertEqual(pacing.slot_value(pacing.next_slot(conn, "linkedin", friday_noon)), "2026-10-12T09:00", "the weekend is skipped")
         planned = pacing.plan(conn, ["instagram", "linkedin"], None, friday_noon)
         self.assertEqual(planned["linkedin"], "2026-10-12T09:00")

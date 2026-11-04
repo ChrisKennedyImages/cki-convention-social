@@ -117,3 +117,30 @@ class Slots(AgentCase):
         self.assertEqual(chosen, {"instagram": "2026-10-12T14:00", "pinterest": "2026-10-12T14:00"})
         free = pacing.plan(conn, ["instagram", "pinterest"], None, FRIDAY_8AM)
         self.assertEqual(free, {"instagram": "2026-10-09T12:00", "pinterest": "2026-10-09T14:30"})
+
+
+class LinkedInLate(AgentCase):
+    """Chris, 2026-11-04: "Post later the same day". A LinkedIn post approved after 09:00 on a weekday with nothing out
+    or queued on LinkedIn that day goes out that day, LEAD from now; the other networks keep their times."""
+
+    TUESDAY_2PM = datetime(2026, 11, 3, 19, 0, tzinfo=timezone.utc)      # 14:00 New York, Tuesday
+
+    def test_approved_after_nine_goes_out_the_same_day(self):
+        conn = db.connect()
+        self.assertEqual(pacing.slot_value(pacing.next_slot(conn, "linkedin", self.TUESDAY_2PM)), "2026-11-03T14:30")
+
+    def test_one_a_day_still(self):
+        conn = db.connect()
+        add_post(conn, [1], ("linkedin",), status="scheduled", scheduled_for="2026-11-03T09:00")
+        self.assertEqual(pacing.slot_value(pacing.next_slot(conn, "linkedin", self.TUESDAY_2PM)), "2026-11-04T09:00",
+                         "a day that already has its LinkedIn post waits for the next weekday")
+
+    def test_not_past_midnight_nor_at_weekends_nor_other_networks(self):
+        conn = db.connect()
+        late = datetime(2026, 11, 4, 4, 39, tzinfo=timezone.utc)            # 23:39 New York, Tuesday
+        self.assertEqual(pacing.slot_value(pacing.next_slot(conn, "linkedin", late)), "2026-11-04T09:00")
+        saturday = datetime(2026, 11, 7, 19, 0, tzinfo=timezone.utc)
+        self.assertEqual(pacing.slot_value(pacing.next_slot(conn, "linkedin", saturday)), "2026-11-09T09:00")
+        friday_9pm = datetime(2026, 10, 10, 1, 0, tzinfo=timezone.utc)      # 21:00 New York, Friday
+        self.assertEqual(pacing.slot_value(pacing.next_slot(conn, "facebook", friday_9pm)), "2026-10-10T09:30")
+
