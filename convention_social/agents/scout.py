@@ -1,9 +1,11 @@
-"""Scout agent (weekly, Sunday 07:00): upcoming conventions and conferences, each one a note to its organizer.
+"""Scout agent (Sunday and Wednesday 07:00; Chris, 2026-11-05: "we could search 2x a week"): upcoming conventions and conferences, each one a note to its organizer.
 
 1. Reads the region from SCOUT_REGION (free text, set on the Keys page) and
    the horizon from SCOUT_MONTHS (default 9). Blank means the default region.
-2. Live only: one Claude research call with web search (outreach/research.py),
-   under the monthly AI cap. Research has no outward effect but it costs
+2. Live only: one Claude research call with web search (outreach/research.py)
+   for each place the region names, under the monthly AI cap (Chris,
+   2026-11-05: "we're not just in dc"; one call for all three spent its
+   searches on DC). Research has no outward effect but it costs
    money, so a dry run makes no call and only says what it would search.
 3. Searches only events that start three calendar months or more from today
    (earliest_start; Chris, 2026-11-01: "the events need to be at least 3
@@ -23,6 +25,7 @@ with attending and official unticked.
 from __future__ import annotations
 
 import json
+import re
 from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
@@ -41,6 +44,13 @@ DEFAULT_REGION = "Washington DC, Maryland and Virginia"      # Chris, 2026-10-13
 def region() -> str:
     """SCOUT_REGION from the Keys page; blank means the default around Washington DC, not nothing."""
     return (config.getenv("SCOUT_REGION") or "").strip() or DEFAULT_REGION
+
+
+def areas(where: str) -> list[str]:
+    """Each place the region names, searched on its own with its own searches: "Washington DC, Maryland and Virginia"
+    is three. Chris, 2026-11-05: "We should start searching for events in maryland and Virginia too because we're not
+    just in dc"; a single search for all three found 12 events in DC, 2 in Maryland and none in Virginia."""
+    return [part.strip() for part in re.split(r",|\band\b", where) if part.strip()]
 
 
 def months() -> int:
@@ -137,12 +147,25 @@ def run(ctx: runner.Context, client=None) -> str:
     if client is None:
         import anthropic
         client = anthropic.Anthropic(api_key=secrets.get_secret("ANTHROPIC_API_KEY"))
-    res = research.research(ctx.conn, client, region=where, today=today, earliest=earliest, horizon=until,
+    lines = []
+    for area in areas(where):
+        if spend.cap_reached(ctx.conn):
+            lines.append(f"{area}: monthly AI cap reached, not searched")
+            continue
+        lines.append(f"{area}: " + search_area(ctx, client, area, today, earliest, until))
+    return f"searched {plan}. " + ". ".join(lines)
+
+
+def search_area(ctx: runner.Context, client, area: str, today: date, earliest: date, until: date) -> str:
+    """One research call for one place; what it found is stored before the next place is searched, so the next one
+    skips it."""
+    res = research.research(ctx.conn, client, region=area, today=today, earliest=earliest, horizon=until,
                             known=known_names(ctx.conn), agent=ctx.agent)
     if res.search_errors:
-        runner.record_error(ctx.conn, ctx.agent, "web_search", "web search returned errors: " + ", ".join(res.search_errors[:5]))
+        runner.record_error(ctx.conn, ctx.agent, "web_search",
+                            f"web search for {area} returned errors: " + ", ".join(res.search_errors[:5]))
     if res.refused:
-        return f"the model declined the research for {plan}; nothing stored ({res.calls} call(s), {res.searches} search(es))."
+        return f"the model declined the research; nothing stored ({res.calls} call(s), {res.searches} search(es))"
     kept, dropped = research.vet(res, today=today, earliest=earliest, horizon=until)
     calendar = on_calendar(ctx.conn)
     new = sum(1 for ev in kept if store(ctx.conn, ev, res.model, calendar))
@@ -150,11 +173,10 @@ def run(ctx: runner.Context, client=None) -> str:
     gone = ", ".join(f"{k.replace('_', ' ')} {v}" for k, v in dropped.items() if v) or "none"
     notes = [n for n in (res.stopped, "structured by a second call" if res.structured else "",
                          "no source URLs came back from the searches" if not res.seen else "") if n]
-    ctx.log.info("scout: %d candidates, %d kept, %d new, seen %d urls", len(res.candidates), len(kept), new, len(res.seen))
-    return (f"searched {plan}: {res.searches} search(es) in {res.calls} call(s); {len(res.candidates)} found, "
+    ctx.log.info("scout %s: %d candidates, %d kept, %d new, seen %d urls", area, len(res.candidates), len(kept), new, len(res.seen))
+    return (f"{res.searches} search(es) in {res.calls} call(s); {len(res.candidates)} found, "
             f"{len(kept)} backed by a source ({with_email} with an organizer email), {new} new; dropped: {gone}"
             + (f"; {'; '.join(notes)}" if notes else ""))
-
 
 if __name__ == "__main__":
     runner.main_for("scout", run)
