@@ -2674,3 +2674,16 @@ Wednesday and Thursday. Asked how to stop a missed weekday, he chose "Post later
   LinkedIn, a post approved later that day goes out that day, 30 minutes after it is approved (LEAD), not the next
   weekday. Still one a day, never past midnight, never at weekends. Instagram, Facebook and Pinterest keep their times.
 
+
+## 2026-11-05: the scout searches DC, Maryland and Virginia each on its own
+
+Chris: "We should start searching for events in maryland and Virginia too because we're not just in dc", then "None in
+Baltimore either". The region already named all three, but one research call with eight searches spent them on DC
+(15 events found since 10-18: 12 in DC, 2 at National Harbor, none in Virginia or Baltimore). He chose three searches
+a week, about $0.45 a week (roughly $2 a month) instead of $0.15.
+
+- **Each place its own call** (`agents/scout.areas`, `search_area`): SCOUT_REGION is split on commas and "and"; each
+  place gets its own research call with its own eight searches, and what one finds the next skips. The monthly AI cap
+  stops the places left.
+- **The whole place** (`outreach/research.SYSTEM` rule 1): search every city and county in it, not only its
+  best-known city.

@@ -73,7 +73,7 @@ class ScoutCase(IsolatedCase):
         super().setUp()
         for key in ("SCOUT_REGION", "SCOUT_MONTHS", "SCOUT_MODEL", "SCOUT_EFFORT", "AI_MONTHLY_CAP_USD"):
             os.environ.pop(key, None)
-        os.environ["SCOUT_REGION"] = "Washington DC, Maryland, Virginia"
+        os.environ["SCOUT_REGION"] = "Washington DC"            # one place, one research call; EachPlace covers several
         config.reset()
         self.conn = db.connect()
         self.today = scout.local_today(config.get_config())
@@ -190,7 +190,7 @@ class Research(ScoutCase):
         self.assertEqual(kw["thinking"], {"type": "adaptive"})
         self.assertEqual(kw["output_config"], {"effort": "medium"})
         self.assertEqual(kw["tools"], [{"type": "web_search_20260209", "name": "web_search", "max_uses": 8}])
-        self.assertIn("Washington DC, Maryland, Virginia", kw["messages"][0]["content"])
+        self.assertIn("Region: Washington DC\n", kw["messages"][0]["content"])
         # 2026-11-01: the search starts three calendar months out and ends at the horizon
         earliest, until = scout.earliest_start(self.today), scout.horizon(self.today, scout.months())
         self.assertIn(f"Find events starting between {earliest.isoformat()} and {until.isoformat()}.", kw["messages"][0]["content"])
@@ -347,6 +347,47 @@ class Research(ScoutCase):
         self.assertIn("the monthly AI cap would be passed by another research call", line)
         self.assertEqual(fake.calls, [])
         self.assertEqual(db.one(self.conn, "SELECT COUNT(*) n FROM api_usage")["n"], 1, "nothing reserved, nothing recorded")
+
+
+class EachPlace(ScoutCase):
+    """Chris, 2026-11-05: "We should start searching for events in maryland and Virginia too because we're not just in
+    dc" ("None in Baltimore either"). One call for all three spent its eight searches on DC; each place now gets its own."""
+    SITE = "https://www.harborsummit.example/"
+
+    def test_the_default_region_is_three_places(self):
+        self.assertEqual(scout.areas(scout.DEFAULT_REGION), ["Washington DC", "Maryland", "Virginia"])
+        self.assertEqual(scout.areas("Washington DC, Maryland, Virginia"), ["Washington DC", "Maryland", "Virginia"])
+        self.assertEqual(scout.areas("Rhode Island"), ["Rhode Island"])
+
+    def test_each_place_gets_its_own_call_and_searches(self):
+        os.environ["SCOUT_REGION"] = scout.DEFAULT_REGION
+        config.reset()
+        found = resp([search_block(self.SITE), text(answer([ev("Harbor Summit", self.day(130), kind="business",
+                                                                sources=[self.SITE])]))], searches=8)
+        fake = FakeClaude(resp([text(answer([]))], searches=8), found, resp([text(answer([]))], searches=8))
+        line = scout.run(self.ctx(), client=fake)
+        self.assertEqual(len(fake.calls), 3)
+        asked = [kw["messages"][0]["content"].splitlines()[0] for kw in fake.calls]
+        self.assertEqual(asked, ["Region: Washington DC", "Region: Maryland", "Region: Virginia"])
+        for kw in fake.calls:
+            self.assertEqual(kw["tools"][0]["max_uses"], 8)
+        self.assertIn("Maryland: 8 search(es) in 1 call(s); 1 found", line)
+        self.assertIn("Virginia: 8 search(es)", line)
+        self.assertIn("Harbor Summit", fake.calls[2]["messages"][0]["content"], "what one place found, the next skips")
+        self.assertEqual(db.one(self.conn, "SELECT COUNT(*) n FROM scout_events")["n"], 1)
+
+    def test_the_search_covers_every_city_not_one(self):
+        self.assertIn("every city and county in it, not only its best-known city", research.SYSTEM)
+
+    def test_the_cap_stops_the_places_left(self):
+        os.environ["SCOUT_REGION"] = scout.DEFAULT_REGION
+        config.reset()
+        fake = FakeClaude(resp([text(answer([]))]))
+        with mock.patch.object(scout.spend, "cap_reached", side_effect=lambda conn, **kw: bool(fake.calls)):   # reached after DC
+            line = scout.run(self.ctx(), client=fake)
+        self.assertEqual(len(fake.calls), 1)
+        self.assertIn("Maryland: monthly AI cap reached, not searched", line)
+        self.assertIn("Virginia: monthly AI cap reached, not searched", line)
 
 
 class ScoutPages(ScoutCase):
