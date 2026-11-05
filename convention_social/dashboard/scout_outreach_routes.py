@@ -56,7 +56,7 @@ def register(app, require_user, conn_dep, render) -> None:
 
     @app.post("/scout/run")
     def scout_run_now(user: str = Depends(require_user)):
-        """Search now (2026-10-13): one scout run, as its Sunday schedule would start it, with its own switch and cap."""
+        """Search now (2026-10-13): one scout run, as its Sunday and Wednesday schedule would start it, with its own switch and cap."""
         runner.start_agent("scout")
         return _see("/scout?msg=started")
 

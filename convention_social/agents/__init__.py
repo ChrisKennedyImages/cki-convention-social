@@ -23,7 +23,7 @@ AGENTS: dict[str, dict] = {
                   "job": "read post numbers; suggest posting times and photo weights inside the founder's rules"},
     "seo":       {"schedule": "weekly Monday 05:00",   "module": "convention_social.agents.seo",
                   "job": "search text for postable photos; read-only check of eventcaliber.com pages"},
-    "scout":     {"schedule": "weekly, Sunday 07:00",  "module": "convention_social.agents.scout",
+    "scout":     {"schedule": "Sunday and Wednesday 07:00", "module": "convention_social.agents.scout",
                   "job": "search SCOUT_REGION for conventions and conferences starting three months to SCOUT_MONTHS months out (live only, under the AI cap); keep only sourced events, each one becomes an organizer draft"},
     "outreach":  {"schedule": "daily 09:00",           "module": "convention_social.agents.outreach",
                   "job": "pull opt-outs; read a person's address and the dates off each scouted event's site; draft a note for every event three months or more out; send only the ones Chris approved"},

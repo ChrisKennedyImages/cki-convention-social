@@ -376,6 +376,14 @@ class EachPlace(ScoutCase):
         self.assertIn("Harbor Summit", fake.calls[2]["messages"][0]["content"], "what one place found, the next skips")
         self.assertEqual(db.one(self.conn, "SELECT COUNT(*) n FROM scout_events")["n"], 1)
 
+    def test_it_searches_sunday_and_wednesday_mornings(self):
+        """Chris, 2026-11-05: "we could search 2x a week"."""
+        import plistlib
+        from pathlib import Path
+        plist = Path(__file__).resolve().parents[1] / "launchd" / "com.chriskennedyimages.conventionsocial.scout.plist.template"
+        times = plistlib.loads(plist.read_bytes())["StartCalendarInterval"]
+        self.assertEqual(times, [{"Weekday": 0, "Hour": 7, "Minute": 0}, {"Weekday": 3, "Hour": 7, "Minute": 0}])
+
     def test_the_search_covers_every_city_not_one(self):
         self.assertIn("every city and county in it, not only its best-known city", research.SYSTEM)
 

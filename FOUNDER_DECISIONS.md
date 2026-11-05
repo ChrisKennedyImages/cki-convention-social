@@ -2687,3 +2687,6 @@ a week, about $0.45 a week (roughly $2 a month) instead of $0.15.
   stops the places left.
 - **The whole place** (`outreach/research.SYSTEM` rule 1): search every city and county in it, not only its
   best-known city.
+- **Twice a week** (Chris: "And we could search 2x a week to"): Sunday and Wednesday 07:00 (the scout's launchd
+  plist; the watchdog calls it missed after 5 days). Six research calls a week, about $0.90 (roughly $4 a month).
+  The new schedule needs one `scripts/go-live.sh` on the Mini (his Mac password); until then it stays Sundays.

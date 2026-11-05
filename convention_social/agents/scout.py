@@ -1,4 +1,4 @@
-"""Scout agent (weekly, Sunday 07:00): upcoming conventions and conferences, each one a note to its organizer.
+"""Scout agent (Sunday and Wednesday 07:00; Chris, 2026-11-05: "we could search 2x a week"): upcoming conventions and conferences, each one a note to its organizer.
 
 1. Reads the region from SCOUT_REGION (free text, set on the Keys page) and
    the horizon from SCOUT_MONTHS (default 9). Blank means the default region.
