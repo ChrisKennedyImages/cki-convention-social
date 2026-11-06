@@ -331,14 +331,16 @@ class Classification(IsolatedCase):
         self.assertIsNone(rows["p1"]["possible_minor"])
         self.assertEqual(rows["p2"]["orientation"], "portrait")
 
-    def test_vision_pass_respects_cap_and_skips_non_events(self):
+    def test_vision_pass_respects_cap_and_sorts_every_folder(self):
+        """2026-11-06: "Every folder should have been sorted as discussed (not phone folders)": the wedding folder is
+        sorted too; what the sorter sees decides whether it is offered."""
         classify.folder_pass(self.conn)
         os.environ["AI_MONTHLY_CAP_USD"] = "5"
         config.reset()
         fake = FakeClaude(ADULTS)
         st = classify.vision_pass(self.conn, self.reader.thumbnail_for, classifier=classify.VisionClassifier(self.conn, client=fake))
-        self.assertEqual(st.done, 3)       # the wedding folder is never sent
-        self.assertEqual(fake.calls, 3)
+        self.assertEqual(st.done, 4)
+        self.assertEqual(fake.calls, 4)
         self.assertGreater(db.one(self.conn, "SELECT SUM(cost_usd) c FROM api_usage WHERE provider='anthropic'")["c"], 0)
         os.environ["AI_MONTHLY_CAP_USD"] = "0"
         config.reset()
@@ -352,7 +354,7 @@ class Classification(IsolatedCase):
         config.reset()
         st = classify.vision_pass(self.conn, self.reader.thumbnail_for,
                                   classifier=classify.VisionClassifier(self.conn, client=FakeClaude(ADULTS, stop="refusal")))
-        self.assertEqual((st.done, st.failed), (0, 3))
+        self.assertEqual((st.done, st.failed), (0, 4))
         self.assertEqual(db.one(self.conn, "SELECT COUNT(*) n FROM classifications WHERE possible_minor IS NOT NULL")["n"], 0)
 
     def test_no_ollama_and_no_key_means_no_sort(self):
@@ -655,16 +657,24 @@ class SortQueue(IsolatedCase):
 
     def test_a_photo_marked_for_a_second_look_gets_it_whatever_the_first_look_called_it(self):
         """2026-11-02: 344 photos the old sorter called "other" were marked for a second look and never taken (Chris:
-        "All 358, ~$1.75"). The folder pass's own "other" stays out: those are not paid for."""
+        "All 358, ~$1.75")."""
         conn = self._library()
-        marked, folder_word = [r["photo_id"] for r in conn.execute("SELECT photo_id FROM classifications ORDER BY photo_id LIMIT 2")]
+        marked = conn.execute("SELECT photo_id FROM classifications ORDER BY photo_id LIMIT 1").fetchone()[0]
         conn.execute("UPDATE classifications SET method='ollama', subject='other', rejudge=0 WHERE photo_id=?", (marked,))
-        conn.execute("UPDATE classifications SET subject='other' WHERE photo_id=?", (folder_word,))
         taken = lambda: {r["id"] for r in classify.queue(conn, 100)}
-        self.assertFalse({marked, folder_word} & taken())
+        self.assertNotIn(marked, taken())
         conn.execute("UPDATE classifications SET rejudge=1 WHERE photo_id=?", (marked,))
         self.assertIn(marked, taken())
-        self.assertNotIn(folder_word, taken())
+
+    def test_every_folder_is_sorted_whatever_its_name_says(self):
+        """2026-11-06: "Every folder should have been sorted as discussed (not phone folders)". The queue took only
+        photos whose folder name read as event or building work: 18,374 pictures, every one of Nic's galleries among
+        them ("Event photography/Speakers" names no conference), were never sorted and never reached To review."""
+        conn = self._library()
+        nameless, private = [r["photo_id"] for r in conn.execute("SELECT photo_id FROM classifications ORDER BY photo_id LIMIT 2")]
+        conn.execute("UPDATE classifications SET subject=NULL, convention_name=NULL WHERE photo_id=?", (nameless,))
+        conn.execute("UPDATE classifications SET subject='other' WHERE photo_id=?", (private,))
+        self.assertLessEqual({nameless, private}, {r["id"] for r in classify.queue(conn, 100)})
 
 
 def _ollama_ok(url, json=None, **kw):
@@ -770,15 +780,15 @@ class Report(IsolatedCase):
         config.reset()
         classify.vision_pass(conn, reader.thumbnail_for, classifier=classify.VisionClassifier(conn, client=FakeClaude(ADULTS)))
         s = report.summary(conn)
-        self.assertEqual(s["convention_photos"], 3)
-        self.assertEqual(s["by_event"]["Katsucon"], {"2024": 3})
+        self.assertEqual(s["convention_photos"], 4, "every folder is sorted (2026-11-06); the fake calls each one an event")
+        self.assertEqual(s["by_event"]["Katsucon"], {"2024": 4})
         picks = report.best(conn, 30)
-        self.assertEqual(len(picks), 3)
+        self.assertEqual(len(picks), 4)
         sheet = report.write_contact_sheet(conn, reader.thumbnail_for, n=30)
         out = report.write_report(conn, sheet=sheet)
         self.assertTrue(sheet.exists() and sheet.stat().st_size > 1000)
         text = out.read_text()
-        self.assertIn("3 convention photos found", text)
+        self.assertIn("4 convention photos found", text)
         self.assertIn(sheet.name, text)
 
 
@@ -946,7 +956,7 @@ class Ollama(IsolatedCase):
                 answer.update(subject="architecture", shot_type="building_interior", people_count=0, view="interior")
             return types.SimpleNamespace(status_code=200, json=lambda: {"message": {"content": __import__("json").dumps(answer)}})
         st = classify.sort_pass(self.conn, self.reader.thumbnail_for, sorter=classify.OllamaSorter("qwen2.5vl:7b", post=post))
-        self.assertEqual(st.done, 4)                  # three event photos and the lobby; the wedding is never sent
+        self.assertEqual(st.done, 5)                  # three event photos, the lobby and the wedding: every folder (2026-11-06)
         self.assertTrue(seen[0][0].endswith("/api/chat"))
         self.assertEqual(db.one(self.conn, "SELECT COUNT(*) n FROM api_usage WHERE provider='anthropic'")["n"], 0)
         row = db.one(self.conn, "SELECT c.* FROM classifications c JOIN photos p ON p.id=c.photo_id WHERE p.drive_id='a1'")

@@ -17,6 +17,10 @@ incremental():     read the changes since the stored token and apply them:
                    shares are listed again and any gallery not yet known is
                    walked, so a new share lands within the hour.
 
+The phone backup is never read (Chris, 2026-11-06: "Never go to my phone photos backup"): Drive's
+"Google Photos" folder at the top of My Drive and everything inside it. Its folders and photos are left out
+of the inventory and its id is kept (NEVER_READ_KEY), so a change inside it is passed over too.
+
 RAW camera files are skipped: they cannot be posted as they are, and Drive
 does not render most of them. They are counted so the report can say so.
 Nothing here writes to Drive; the reader can only GET.
@@ -34,6 +38,8 @@ from .api import FOLDER_MIME, DriveReader
 CHANGES_TOKEN_KEY = "drive.changes_token"
 INVENTORY_AT_KEY = "drive.inventory_at"
 ROOT_IDS_KEY = "drive.root_ids"              # My Drive's and the shared drives' ids, so a changes run knows a loose photo
+NEVER_READ_KEY = "drive.never_read_ids"       # the phone backup's folders: nothing in them is inventoried
+PHONE_BACKUP = "My Drive/Google Photos"      # Drive's Google Photos folder: his phone's backup, never his work
 SHARED_ROOT = "Shared with me"               # the path root of a gallery shared with this account (library/heuristics strips it too)
 MAX_WALK_DEPTH = 64
 RAW_EXTENSIONS = {".cr2", ".cr3", ".crw", ".nef", ".nrw", ".arw", ".srf", ".sr2", ".dng", ".raf", ".orf",
@@ -50,12 +56,13 @@ class ScanStats:
     trashed: int = 0
     changes: int = 0
     shared_galleries: int = 0                # shared top folders walked in this pass
+    phone_backup: int = 0                    # photos in the phone backup, passed over
     notes: list[str] = field(default_factory=list)
 
     def line(self) -> str:
         return (f"folders={self.folders} images={self.images} skipped_raw={self.skipped_raw} "
                 f"skipped_unrenderable={self.skipped_unrenderable} trashed={self.trashed} changes={self.changes} "
-                f"shared_galleries={self.shared_galleries}")
+                f"shared_galleries={self.shared_galleries} phone_backup_passed_over={self.phone_backup}")
 
 
 def skip_reason(f: dict) -> str | None:
@@ -138,6 +145,15 @@ def resolve_paths(folders: dict[str, dict], roots: dict[str, str], shared_tops: 
         return cache[fid]
 
     return {fid: path_of(fid) for fid in folders}
+
+
+def is_phone_backup(path: str | None) -> bool:
+    """The folder is the phone backup or inside it."""
+    return bool(path) and (path == PHONE_BACKUP or path.startswith(PHONE_BACKUP + "/"))
+
+
+def never_read(conn: sqlite3.Connection) -> set[str]:
+    return set(json.loads(settings.get(conn, NEVER_READ_KEY) or "[]"))
 
 
 def _meta(f: dict) -> dict:
@@ -228,13 +244,19 @@ def full_inventory(conn: sqlite3.Connection, reader: DriveReader) -> ScanStats:
     images = list(by_id.values())
     stats.shared_galleries = len(tops)
     paths = resolve_paths(folders, roots, shared_tops)
+    backup = {fid for fid, path in paths.items() if is_phone_backup(path)}
     now = db.utcnow()
     conn.execute("BEGIN")
     try:
         for fid, f in folders.items():
+            if fid in backup:
+                continue
             upsert_folder(conn, f, paths.get(fid), now)
             stats.folders += 1
         for f in images:
+            if (f.get("parents") or [None])[0] in backup:
+                stats.phone_backup += 1
+                continue
             reason = skip_reason(f)
             if reason == "raw":
                 stats.skipped_raw += 1
@@ -256,6 +278,7 @@ def full_inventory(conn: sqlite3.Connection, reader: DriveReader) -> ScanStats:
         refresh_counts(conn)
         settings.set(conn, CHANGES_TOKEN_KEY, token)
         settings.set(conn, ROOT_IDS_KEY, json.dumps(sorted(roots)))
+        settings.set(conn, NEVER_READ_KEY, json.dumps(sorted(backup)))
         settings.set(conn, INVENTORY_AT_KEY, now)
         settings.set(conn, "drive.inventory_stats", json.dumps(stats.__dict__))
         conn.execute("COMMIT")
@@ -282,6 +305,7 @@ def incremental(conn: sqlite3.Connection, reader: DriveReader) -> ScanStats:
         top = sh["id"] in {t["id"] for t in tops}
         new_folders[sh["id"]] = {**sh, "shared_by": shared_by_of(sh), **({"parents": []} if top else {})}
     paths = resolve_paths(new_folders, {k: v for k, v in known.items() if v}, frozenset(t["id"] for t in tops))
+    backup = never_read(conn)
     now = db.utcnow()
     conn.execute("BEGIN")
     try:
@@ -294,6 +318,12 @@ def incremental(conn: sqlite3.Connection, reader: DriveReader) -> ScanStats:
                 stats.trashed += cur.rowcount
                 continue
             mime = str(f.get("mimeType") or "")
+            if (f.get("parents") or [None])[0] in backup:
+                if mime == FOLDER_MIME:
+                    backup.add(fid)          # a new folder inside the backup: passed over, and everything in it
+                else:
+                    stats.phone_backup += mime.startswith("image/")
+                continue
             if mime == FOLDER_MIME:
                 upsert_folder(conn, f, None, now)
                 stats.folders += 1
@@ -324,6 +354,7 @@ def incremental(conn: sqlite3.Connection, reader: DriveReader) -> ScanStats:
             stats.images += 1
         stats.shared_galleries = len(tops)
         refresh_counts(conn)
+        settings.set(conn, NEVER_READ_KEY, json.dumps(sorted(backup)))
         settings.set(conn, CHANGES_TOKEN_KEY, new_token)
         conn.execute("COMMIT")
     except Exception:

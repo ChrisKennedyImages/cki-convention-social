@@ -2,7 +2,7 @@
 
 Each run (hourly): sign in (read only), then the full inventory the first
 time and once a week, the Changes API otherwise; every photo linked to its
-copies (library/copies.link: one card per picture); the free folder pass on any
+copies (library/copies.link: one card per picture; frames saved under other names compared by their previews first); the free folder pass on any
 new photo; the sort pass (Ollama on the Mini, free, else Claude under the
 spend cap) on up to CLASSIFY_PER_RUN photos; the credits sheet when CREDITS_SHEET_ID is set. A dead sign-in is
 recorded for the watchdog and ends the run cleanly.
@@ -56,6 +56,7 @@ def run(ctx: runner.Context, reader: DriveReader | None = None) -> str:
         reader = DriveReader(lambda: oauth.access_token(ctx.conn), conn=ctx.conn, agent=ctx.agent)
     full = needs_full(ctx.conn)
     stats = scan.full_inventory(ctx.conn, reader) if full else scan.incremental(ctx.conn, reader)
+    hashed = copies.hash_pictures(ctx.conn, reader.thumbnail_for, budget_seconds=10 * 60)   # frames saved under other names
     linked = copies.link(ctx.conn)                 # new photos join their copies before anything is sorted or shown
     sorted_free = classify.folder_pass(ctx.conn)
     vision = classify.PassStats(stopped="dry run")
@@ -72,7 +73,7 @@ def run(ctx: runner.Context, reader: DriveReader | None = None) -> str:
         credit_note = f"credits: {res.matched}/{res.rows} matched"
         if res.unmatched:
             settings.set(ctx.conn, "credits.unmatched", "; ".join(res.unmatched)[:2000])
-    return (f"{'full' if full else 'changes'}: {stats.line()}; {linked.line()}; folder-sorted {sorted_free}; "
+    return (f"{'full' if full else 'changes'}: {stats.line()}; {linked.line()} ({hashed} pictures compared); folder-sorted {sorted_free}; "
             f"vision {vision.done} done {vision.failed} failed{(' (' + vision.stopped + ')') if vision.stopped else ''}; "
             f"{report_note}; {credit_note}; designed drafts: {design_note or 'none due'}")
 

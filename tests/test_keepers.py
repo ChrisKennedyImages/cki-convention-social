@@ -1,5 +1,5 @@
 """Pick the keepers (Chris, 2026-11-03: "this is the most time consuming shitty way of doing things"; he keeps about 1 photo
-in 7). To review a page of 12 at a time, the strongest first: the ticked photos are his Use, the rest of the page Never use,
+in 7). To review a page at a time (KEEPERS_PAGE, 50 since 2026-11-06), the strongest first: the ticked photos are his Use, the rest of the page Never use,
 in one tap; Undo takes the whole last page back."""
 from __future__ import annotations
 
@@ -41,17 +41,19 @@ class Keepers(IsolatedCase):
     def shown(self, page):
         return [int(x) for x in re.findall(r'<input type="hidden" name="shown" value="(\d+)">', page)]
 
-    def test_a_page_of_twelve_the_strongest_first_and_to_review_leads_to_it(self):
-        for pid in range(1, 16):
+    def test_a_page_of_fifty_the_strongest_first_and_to_review_leads_to_it(self):
+        """2026-11-06: "Let's do 50 a page"."""
+        for pid in range(1, 56):
             self.photo(pid, quality=1 + pid % 5)
         page = self.client.get("/library/keepers").text
         self.assertEqual(len(self.shown(page)), dash.KEEPERS_PAGE)
+        self.assertEqual(dash.KEEPERS_PAGE, 50)
         self.assertEqual(self.shown(page)[:3], [4, 9, 14], "the strongest first, as To review")
-        self.assertIn("15 left · Events", page)
+        self.assertIn("55 left · Events", page)
         self.assertIn('<button class="small" type="submit" disabled>Undo page</button>', page, "nothing to undo yet")
         self.assertIn('href="/library/keepers?subject=event"><strong>Pick the keepers</strong>',
                       self.client.get("/library?view=review").text)
-        self.assertEqual({self.clearance(p) for p in range(1, 16)}, {"inherit"}, "opening the page decides nothing")
+        self.assertEqual({self.clearance(p) for p in range(1, 56)}, {"inherit"}, "opening the page decides nothing")
 
     def test_the_ticked_are_use_the_rest_never_use_on_every_copy(self):
         for pid in range(1, 6):
