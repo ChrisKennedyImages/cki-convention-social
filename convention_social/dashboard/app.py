@@ -492,7 +492,7 @@ SWIPE_WORDS = {"cleared": "Approved.", "blocked": "Never use."}
 PREVIEW_EDGE = 1200                      # the card's picture, long side in pixels: a phone screen at 3x is about 1180 wide
 # Chris, 2026-11-03: "this is the most time consuming shitty way of doing things". He keeps about 1 photo in 7, so To review
 # also comes a page at a time: he taps the keepers, and one button makes them Use and the rest of the page Never use.
-KEEPERS_PAGE = 12
+KEEPERS_PAGE = 50                         # Chris, 2026-11-06: "Let's do 50 a page" (12 at first)
 KEEPERS_LAST = "library.keepers_last"   # the last page decided, the only one its Undo takes back
 
 

@@ -2690,3 +2690,25 @@ a week, about $0.45 a week (roughly $2 a month) instead of $0.15.
 - **Twice a week** (Chris: "And we could search 2x a week to"): Sunday and Wednesday 07:00 (the scout's launchd
   plist; the watchdog calls it missed after 5 days). Six research calls a week, about $0.90 (roughly $4 a month).
   The new schedule needs one `scripts/go-live.sh` on the Mini (his Mac password); until then it stays Sundays.
+
+## 2026-11-06: every folder sorted, never the phone backup, copies under other names stacked, 50 keepers a page
+
+Chris: "I want to know all the folders names you have sorted from? There are photos that have 5-10 identicals and the
+shared folders from my brother never are in the sorting and why 12 a page? Let's do 50 a page"; "Never go to my phone
+photos backup"; "Every folder should have been sorted as discussed (not phone folders). And duplicates stacked as one";
+"flatten the duplicates that are already approved to one photo"; on the money ($36.64 of the cap left until the 17th):
+"1 & 2 and then until the 19th" (the shared galleries first, then up to $20, the rest from the 19th).
+
+- **Never the phone backup** (`drive/scan.py`, PHONE_BACKUP, NEVER_READ_KEY; migration 0098): Drive's "Google Photos"
+  folder at the top of My Drive (16,205 photos in 95 folders) is never inventoried, in a full or a changes pass. No
+  photo in it had been sorted, shown, copied off Drive or posted; its rows are removed (Drive is not touched).
+- **Every folder sorted** (`library/classify.queue`): the queue took only photos whose folder name read as event or
+  building work, so 18,374 pictures (every one of Nic's galleries among them) were never sorted. Now every photo is
+  queued; the shared galleries come first after his approved photos. The paid sorter always stops with a tenth of the
+  cap left (SORT_RESERVE_SHARE) and obeys CLASSIFY_BUDGET ("20 from 2026-11-06 until 2026-11-19" on the Mini).
+- **Copies under other names** (`library/copies.py`, frame_numbers, picture_hash; migration 0099): the same camera frame
+  number in both names, the same shape, and matching pictures (a 64-bit difference hash of the Drive preview, within 10
+  bits) make one picture, so LOR_1573.jpg, LOR_1573-edit.jpg and 1-Texas_2022LOR_1573-TEXAS2022.jpg are one card, on
+  To review and on Approved. A year is not a frame number. Burst frames and award-line frames carry their own numbers and
+  stay their own cards (his 2026-11-03 "Those are fine"). A file renamed with no frame number left is not caught.
+- **Pick the keepers: 50 a page** (KEEPERS_PAGE).

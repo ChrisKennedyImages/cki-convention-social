@@ -23,9 +23,11 @@ from __future__ import annotations
 import base64
 import io
 import json
+import re
 import sqlite3
 import time
 from dataclasses import dataclass
+from datetime import date, datetime, timezone
 from typing import Callable, Optional
 
 from PIL import Image, ImageOps
@@ -205,6 +207,39 @@ def his_shot_type(conn: sqlite3.Connection, photo_id: int) -> Optional[str]:
     return row["shot_type"] if row else None
 
 
+# 2026-11-06: sorting every folder is about $88, more than was left of the month's cap. The paid sorter always stops with a
+# tenth of the cap left ($15 of $150), so the daily drafts, captions and the scout keep running.
+SORT_RESERVE_SHARE = 0.10
+# CLASSIFY_BUDGET: what the paid sorter may spend in a stretch of days, as "20 from 2026-11-06 until 2026-11-19" (Chris,
+# 2026-11-06: Nic's and the shared galleries first, then up to $20, "and then until the 19th"). Blank: no such limit.
+BUDGET = re.compile(r"^\s*\$?(\d+(?:\.\d+)?)\s+from\s+(\d{4}-\d{2}-\d{2})\s+until\s+(\d{4}-\d{2}-\d{2})\s*$", re.I)
+
+
+def sort_reserve() -> float:
+    return max(0.0, config.get_config().ai_monthly_cap_usd) * SORT_RESERVE_SHARE
+
+
+def budget_stop(conn: sqlite3.Connection, today: Optional[date] = None) -> Optional[str]:
+    """Why the paid sorter stops for CLASSIFY_BUDGET now, or None. Inside its days it spends at most the amount, counted
+    from the sorter's own rows in the till; after them the limit is gone. A value it cannot read stops the sorting (fail
+    closed) and says so."""
+    raw = (config.getenv("CLASSIFY_BUDGET") or "").strip()
+    if not raw:
+        return None
+    m = BUDGET.match(raw)
+    if not m:
+        return f'CLASSIFY_BUDGET is not readable ("{raw}"); write it as "20 from 2026-11-06 until 2026-11-19". Nothing sorted.'
+    usd, since, until = float(m.group(1)), date.fromisoformat(m.group(2)), date.fromisoformat(m.group(3))
+    today = today or datetime.now(timezone.utc).date()
+    if not since <= today < until:
+        return None
+    spent = db.one(conn, "SELECT COALESCE(SUM(cost_usd), 0) AS c FROM api_usage WHERE provider = 'anthropic' "
+                         "AND agent = 'scanner' AND ts >= ?", (since.isoformat(),))["c"]
+    if spent >= usd:
+        return f"the ${usd:.0f} for sorting from {since.isoformat()} is spent (${spent:.2f}); sorting goes on {until.isoformat()}"
+    return None
+
+
 @dataclass
 class PassStats:
     done: int = 0
@@ -247,21 +282,23 @@ def queue(conn: sqlite3.Connection, limit: int) -> list[sqlite3.Row]:
     second newest from every event, reaches the same photos in the end and gives a
     representative sample at any cut-off.
 
-    A photo marked for a second look (rejudge) gets it whatever the first look called it; only the folder pass's
-    "other" stays out, unsorted. On 2026-11-02, 344 photos the old sorter had called "other" were marked and never
-    taken, so they sat at the back of To review (Chris: "All 358, ~$1.75").
+    Every folder is sorted (Chris, 2026-11-06: "Every folder should have been sorted as discussed (not phone
+    folders)"). The queue used to take only photos whose folder name the folder pass read as event or building work,
+    so 18,374 pictures sat unsorted and never reached To review, among them every one of Nic's shared galleries
+    ("Event photography/Speakers" names no conference). The phone backup is not in the inventory at all (drive/scan).
+    The galleries shared with the account come first after his approved photos (2026-11-06: "the shared folders from my
+    brother never are in the sorting").
     """
     return db.rows(conn, """
         SELECT * FROM (
             SELECT p.*, c.convention_name AS folder_event, c.event_kind AS folder_kind, c.subject AS folder_subject,
-                   (p.clearance = 'cleared') AS cleared_hint,
+                   (p.clearance = 'cleared') AS cleared_hint, (f.shared_by IS NOT NULL) AS shared_hint,
                    ROW_NUMBER() OVER (PARTITION BY COALESCE(NULLIF(c.convention_name, ''), p.folder_id)
                                       ORDER BY COALESCE(p.taken_at, p.modified_time) DESC) AS rank_in_event
-            FROM photos p JOIN classifications c ON c.photo_id = p.id
+            FROM photos p JOIN classifications c ON c.photo_id = p.id LEFT JOIN drive_folders f ON f.drive_id = p.folder_id
             WHERE p.trashed = 0 AND (c.method = 'folder' OR c.rejudge = 1) AND p.thumbnail_link IS NOT NULL
-              AND (c.subject IN ('event', 'architecture') OR c.rejudge = 1 OR p.clearance = 'cleared')
         )
-        ORDER BY cleared_hint DESC, rank_in_event ASC, COALESCE(taken_at, modified_time) DESC
+        ORDER BY cleared_hint DESC, shared_hint DESC, rank_in_event ASC, COALESCE(taken_at, modified_time) DESC
         LIMIT ?""", (limit,))
 
 
@@ -461,6 +498,13 @@ def sort_pass(conn: sqlite3.Connection, fetch_thumb: Callable[[str], bytes], *, 
     for photo in queue(conn, limit):
         if sorter.paid() and spend.cap_reached(conn):
             stats.stopped = "monthly AI spend cap reached"
+            break
+        if sorter.paid() and spend.cap_reached(conn, about_to_spend=sort_reserve()):
+            stats.stopped = (f"stopped with ${sort_reserve():.2f} of the monthly AI cap left for drafts and captions; "
+                             "the rest is sorted when the cap resets")
+            break
+        if sorter.paid() and (why := budget_stop(conn)):
+            stats.stopped = why
             break
         if budget_seconds is not None and clock() - started >= budget_seconds:
             stats.stopped = f"the {int(budget_seconds // 60)} minute budget for this run; the rest next hour"
