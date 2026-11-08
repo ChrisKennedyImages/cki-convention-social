@@ -8,7 +8,7 @@ import os
 import random
 import re
 import subprocess
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest import mock
 
@@ -248,6 +248,47 @@ class Publish(PublisherCase):
         row = self.row(qid)
         self.assertEqual((row["status"], fake.created), ("failed", []))
         self.assertIn("video is missing", row["last_error"])
+
+    def schema_reads(self, fake):
+        return [v["name"] for op, v in fake.calls if "InputType" in op]
+
+    def test_the_schema_is_read_once_a_day_not_every_run(self):
+        """Chris, 2026-11-08: "the buffer hit the 200/250 again". Every run read the video and image fields again (two
+        requests) before posting; at the 24-hour ceiling that alone kept the window full and the approved posts waiting."""
+        _, first = self.reel_post()
+        fake = FakeBuffer()
+        self.publish(make_ctx(self.conn, dry_run=False), client=BufferClient("test-key", conn=self.conn, transport=fake),
+                     uploader=self.uploader())
+        self.assertEqual(self.row(first)["status"], "scheduled")
+        self.assertIn("VideoAssetInput", self.schema_reads(fake), "the first post reads the live schema")
+        _, second = self.reel_post()
+        fake2 = FakeBuffer()
+        self.publish(make_ctx(self.conn, dry_run=False), client=BufferClient("test-key", conn=self.conn, transport=fake2),
+                     uploader=self.uploader())
+        self.assertEqual(self.row(second)["status"], "scheduled")
+        self.assertEqual(self.schema_reads(fake2), [], "read within the day: the kept reading is used")
+        kept = json.loads(settings.get(self.conn, publisher.VIDEO_FIELDS_KEY))
+        kept["checked_at"] = "2026-01-01T00:00:00+00:00"
+        settings.set(self.conn, publisher.VIDEO_FIELDS_KEY, json.dumps(kept))
+        _, third = self.reel_post()
+        fake3 = FakeBuffer()
+        self.publish(make_ctx(self.conn, dry_run=False), client=BufferClient("test-key", conn=self.conn, transport=fake3),
+                     uploader=self.uploader())
+        self.assertIn("VideoAssetInput", self.schema_reads(fake3), "a day old: read live again")
+
+    def test_a_post_waits_without_spending_when_the_window_has_no_room_for_it(self):
+        _, qid = self.reel_post()
+        fake = FakeBuffer()
+        from convention_social.buffer import budget
+        ceiling = budget.snapshot(self.conn)[1]["ceiling"]
+        an_hour_ago = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()   # inside the day, outside the 15 minutes
+        for _ in range(ceiling - 2):                       # room for two requests; the reel needs more (3 networks + schema)
+            db.insert(self.conn, "api_usage", ts=an_hour_ago, provider="buffer", agent="watchdog", units=1, unit_kind="request",
+                      cost_usd=0.0, detail="Channels")
+        self.publish(make_ctx(self.conn, dry_run=False), client=BufferClient("test-key", conn=self.conn, transport=fake),
+                     uploader=self.uploader())
+        self.assertEqual((fake.calls, self.row(qid)["status"]), ([], "approved"), "nothing spent, the post keeps its Approve")
+        self.assertEqual(budget.room(self.conn), 2)
 
     def test_a_reel_only_to_pinterest_never_asks_for_the_video_fields(self):
         _, qid = self.reel_post()

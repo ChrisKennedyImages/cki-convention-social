@@ -45,6 +45,11 @@ def allow(conn: sqlite3.Connection, plan: str | None = None, now: datetime | Non
     return True, ""
 
 
+def room(conn: sqlite3.Connection, plan: str | None = None, now: datetime | None = None) -> int:
+    """How many requests may still be made before a window reaches its ceiling (the tightest window decides)."""
+    return min(row["ceiling"] - row["used"] for row in snapshot(conn, plan, now))
+
+
 def record(conn: sqlite3.Connection, agent: str, detail: str) -> None:
     db.insert(conn, "api_usage", ts=db.utcnow(), provider="buffer", agent=agent, units=1, unit_kind="request",
               cost_usd=0.0, detail=detail[:200])

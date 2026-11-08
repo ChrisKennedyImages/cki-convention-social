@@ -2726,3 +2726,16 @@ Chris: "Buffer 24hr api was just reached and it's 9am."; on the fix: "Fix it".
   every ten minutes. The publisher spent 110 to 170 Buffer requests a day from Nov 4, and on the 8th the suite's own
   24-hour ceiling (200 of 250) stopped it from 08:06 to about 09:01. One stuck post now costs 8 requests a day where it
   cost 288.
+
+## 2026-11-08 (afternoon): Buffer's schema read once a day; a post starts only with room for all of it
+
+Chris: "the buffer hit the 200/250 again, sigh"; "You can merge when needed."
+
+- **Once a day** (`agents/publisher.SCHEMA_FRESH`, `fresh_reading`): the video and image fields are read from Buffer's
+  live schema at most once in 24 hours; the reading is kept (as before, for the Buffer page) and used until then.
+- **Room first** (`budget.room`, `publisher.room_needed`): a post is started only when the tightest Buffer window has
+  room for every request it will make (a createPost per network, plus the schema reads that are due). Otherwise the
+  run stops without spending and the post keeps his Approve.
+- Why: every run re-read the schema (two requests) before posting. At the 24-hour ceiling each run spent the two
+  requests that had just aged out and was then refused the post itself, so the window stayed at 200 and the posts he
+  approved that morning (76, 77, 78) waited all day.
