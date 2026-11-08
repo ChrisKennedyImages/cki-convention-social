@@ -9,7 +9,11 @@ the newest snapshot of each post, folded by buffer.metrics.normalise):
     event_kind, from our own posts only (post_history.queue_id ->
     content_queue.photo_ids -> classifications). Engagement is compared
     inside each network first, so a big Instagram number never outweighs a
-    small Pinterest one.
+    small Pinterest one;
+  * which reels do best: the reel's look (one of the five 3D styles or the
+    ten looks of 2026-11-08) and its music track, from the draft's
+    rule_report (reel, music), by the same method. Chris, 2026-11-08, of
+    new Pixabay music: "Something the learner should be taught".
 
 Noise is never acted on. A network needs MIN_POSTS_FOR_TIME posts with
 numbers before its time moves; an hour or a kind of photo needs MIN_BUCKET
@@ -25,10 +29,14 @@ What it may change, only through settings keys it owns:
                       stays between 07:00 and 22:00. It starts from pacing's
                       times (POST_TIMES included); when Chris changes those,
                       his new time wins and learning starts again from it.
-  learner.weights     {"shot_type": {...}, "event_kind": {...}}, each 0.5 to 1.5.
+  learner.weights     {"shot_type": {...}, "event_kind": {...}, "reel_look": {...},
+                      "music_track": {...}}, each 0.5 to 1.5.
 Pacing and the content picker read them through post_time_for() and
-weight_for(), and only when they exist. With nothing applied, or anything
-unreadable, both hand back the caller's default.
+weight_for(); the reel rotation through look_weight() and the music for a
+look through track_weight(); and only when they exist. With nothing
+applied, or anything unreadable, each hands back the caller's default (a
+weight of 1.0). A weight only ever leans the choice: no look or track is
+ever left out by one.
 
 What it never changes: one post a day, the building day once a week,
 approvals, clearance, the do-not-use list, any money cap, any dry-run
@@ -73,7 +81,9 @@ WEIGHTS_KEY = "learner.weights"
 SUGGESTION_KEY = "learner.suggestion"
 NOTE_KEY = "learner.note"
 OWNED_KEYS = (TIMES_KEY, WEIGHTS_KEY, SUGGESTION_KEY, NOTE_KEY)
-WEIGHT_FIELDS = ("shot_type", "event_kind")
+WEIGHT_FIELDS = ("shot_type", "event_kind", "reel_look", "music_track")
+PHOTO_FIELDS = ("subject", "shot_type", "event_kind")       # read from each photo on a post
+REEL_FIELDS = {"reel_look": "reel", "music_track": "music"}  # read from the post's rule_report, once a post
 
 
 # ------------------------------------------------------------------ small helpers
@@ -269,6 +279,23 @@ def weight_for(conn: sqlite3.Connection, shot_type: Optional[str], event_kind: O
         return 1.0
 
 
+def look_weight(conn: sqlite3.Connection, look: Optional[str]) -> float:
+    """How much to favour a reel look (a 3D style or one of the ten looks): 1.0 when nothing is learned, always between
+    0.5 and 1.5. Never raises."""
+    try:
+        return _weight(applied_weights(conn).get("reel_look"), look)
+    except Exception:  # noqa: BLE001
+        return 1.0
+
+
+def track_weight(conn: sqlite3.Connection, file: Optional[str]) -> float:
+    """How much to favour a music track (its file): 1.0 when nothing is learned, always between 0.5 and 1.5. Never raises."""
+    try:
+        return _weight(applied_weights(conn).get("music_track"), file)
+    except Exception:  # noqa: BLE001
+        return 1.0
+
+
 # ------------------------------------------------------------------ the numbers
 
 @dataclass
@@ -316,6 +343,18 @@ def photo_attrs(conn: sqlite3.Connection, queue_ids) -> dict[int, list[dict]]:
             if c:
                 attrs.append({"subject": c["subject"], "shot_type": c["shot_type"], "event_kind": c["event_kind"]})
         out[qid] = attrs
+    return out
+
+
+def reel_attrs(conn: sqlite3.Connection, queue_ids) -> dict[int, dict]:
+    """{queue id: {reel_look, music_track}} for the posts that went out as a reel (rule_report.reel and .music)."""
+    out: dict[int, dict] = {}
+    for qid in set(queue_ids):
+        row = db.one(conn, "SELECT rule_report FROM content_queue WHERE id=?", (qid,))
+        meta = _json(row["rule_report"], {}) if row else {}
+        if meta.get("design") != "reel":
+            continue
+        out[qid] = {field: str(meta[key]) for field, key in REEL_FIELDS.items() if isinstance(meta.get(key), str) and meta[key]}
     return out
 
 
@@ -426,6 +465,10 @@ def decide_time(network: str, obs: list[Obs], base: tuple[time, time], entry: Op
 # ------------------------------------------------------------------ weights
 
 def kind_words(fieldname: str, value: str) -> str:
+    if fieldname == "reel_look":
+        return f"reels in the {value} look"
+    if fieldname == "music_track":
+        return f"reels with the track {value}"
     if fieldname == "event_kind":
         return {"fan": "convention photos", "business": "business event photos"}.get(value, f"{value} event photos")
     return value.replace("_", " ") + " photos"
@@ -439,18 +482,21 @@ def decide_weights(conn: sqlite3.Connection, obs: list[Obs], before: dict) -> tu
         by_net.setdefault(o.network, []).append(o.engagement)
     mean = {net: sum(v) / len(v) for net, v in by_net.items() if v}
     attrs = photo_attrs(conn, [o.queue_id for o in ours])
-    buckets: dict[str, dict[str, list[float]]] = {"subject": {}, "shot_type": {}, "event_kind": {}}
+    reels = reel_attrs(conn, [o.queue_id for o in ours])
+    buckets: dict[str, dict[str, list[float]]] = {f: {} for f in (*PHOTO_FIELDS, *REEL_FIELDS)}
     per_network: dict[str, dict[str, dict[str, list[float]]]] = {}
     for o in ours:
         if mean.get(o.network, 0) <= 0:
             continue
         lift = o.engagement / mean[o.network]
-        for a in attrs.get(o.queue_id, []):
-            for fieldname in buckets:
-                value = a.get(fieldname)
-                if value:
-                    buckets[fieldname].setdefault(value, []).append(lift)
-                    per_network.setdefault(o.network, {}).setdefault(fieldname, {}).setdefault(value, []).append(lift)
+        # each photo of a post for what the photos show; the post itself, once, for its reel's look and track
+        for fields, sources in ((PHOTO_FIELDS, attrs.get(o.queue_id, [])), (tuple(REEL_FIELDS), [reels.get(o.queue_id) or {}])):
+            for a in sources:
+                for fieldname in fields:
+                    value = a.get(fieldname)
+                    if value:
+                        buckets[fieldname].setdefault(value, []).append(lift)
+                        per_network.setdefault(o.network, {}).setdefault(fieldname, {}).setdefault(value, []).append(lift)
 
     def table(b: dict[str, list[float]]) -> dict:
         return {v: {"posts": len(l), "lift": round(bayes(sum(l), len(l), 1.0), 3)} for v, l in sorted(b.items())}
@@ -516,7 +562,7 @@ def learn(conn: sqlite3.Connection, cfg: config.Config, now: datetime) -> Sugges
         moves += int(moved)
     weights, wdetail, wsentences = decide_weights(conn, obs, applied_weights(conn))
     detail["photos"] = wdetail
-    sentences += wsentences or ["Photo weights are unchanged."]
+    sentences += wsentences or ["Photo and reel weights are unchanged."]
     head = f"Numbers from {len(obs)} posts in the last {LOOKBACK_DAYS} days."
     return Suggestion(times=times, weights=weights, note=" ".join([head] + sentences), posts=len(obs), moves=moves, detail=detail)
 
@@ -555,7 +601,7 @@ def run(ctx: runner.Context, *, client: Optional[BufferClient] = None, now: Opti
     s = learn(ctx.conn, ctx.cfg, now)
     save(ctx.conn, s, applied=not ctx.dry_run, run_id=ctx.run_id, now=now)
     nweights = sum(len(v) for v in s.weights.values())
-    return (f"{'DRY RUN suggested' if ctx.dry_run else 'applied'}: {s.moves} time move(s), {nweights} photo weight(s) "
+    return (f"{'DRY RUN suggested' if ctx.dry_run else 'applied'}: {s.moves} time move(s), {nweights} photo and reel weight(s) "
             f"from {s.posts} posts; {pulled}")
 
 

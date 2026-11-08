@@ -24,6 +24,9 @@
   ccs tunnel check [--quiet]  every piece, other cloudflared services on the Mini, Access from outside
   ccs tunnel run              the launchd service: cloudflared, only behind Access, only to this dashboard
   ccs tunnel status [--wait S] [--use]   is it running; --use points the links (pings, Approve) at it
+  ccs queue-reel MP4 LOOK --photos ID,ID,... --day YYYY-MM-DD --track FILE [--quiet]
+                              queue a reel rendered before in one of the ten looks as the post for a day, on the daily
+                              draft's road (photos checked, art director, repeat window); --quiet sends no ping
 """
 from __future__ import annotations
 
@@ -435,6 +438,43 @@ def check_anthropic_key(key: str) -> str:
     return "Anthropic accepted it"
 
 
+def cmd_queue_reel(args) -> int:
+    """Chris, 2026-11-08, of the ten finished preview reels: "You can use those as posts. The images were fine". One
+    of them queued as the post for a day (content.queue_reel), under the content lane's lock and its dry-run switch."""
+    from datetime import date
+    from pathlib import Path
+    from .agents import content
+    from .core import runner
+    try:
+        day = date.fromisoformat(args.day)
+        photo_ids = [int(x) for x in args.photos.split(",") if x.strip()]
+    except ValueError as e:
+        print(f"not queued: {e}")
+        return 2
+    said: list[str] = []
+    queued: list[int] = []
+
+    def queue(ctx) -> str:
+        qid, line = content.queue_reel(ctx, drive_fetch(ctx), video=Path(args.video).expanduser(), look=args.look, photo_ids=photo_ids,
+                                       day=day, track_file=args.track, quiet=args.quiet)
+        said.append(line)
+        queued.extend([qid] if qid else [])
+        return line
+    code = runner.run("content", queue)
+    print(said[0] if said else ("not queued: the content agent is running now; try again when it is done"
+                                if code == runner.EXIT_LOCKED else "not queued: it failed (the Agents page has the error)"))
+    return 0 if queued else 1
+
+
+def drive_fetch(ctx):
+    """`fetch(row) -> bytes` for a photo the drafts read: the copy on this machine, else Drive (read only)."""
+    from .agents import content
+    from .drive import oauth
+    from .drive.api import DriveReader
+    reader = DriveReader(lambda: oauth.access_token(ctx.conn), conn=ctx.conn, agent=ctx.agent)
+    return lambda row: content.read_photo(ctx.cfg, row, reader.download)
+
+
 def cmd_copy_key(args) -> int:
     """Chris, 2026-10-11: "Use my Anthropic key from [my other suite's] .env (DO NOT TOUCH ANYTHING IN
     THAT ENV)". The source file is opened for reading only and checked unchanged afterwards; the value
@@ -513,6 +553,15 @@ def build_parser() -> argparse.ArgumentParser:
     ck.add_argument("--as", dest="as_name", default="", help="the key's name in that file, if it differs")
     ck.add_argument("--no-check", action="store_true", help="skip the free check that Anthropic accepts the key")
     ck.set_defaults(fn=cmd_copy_key)
+    qr = sub.add_parser("queue-reel", help="queue a reel rendered before, in one of the ten looks, as the post for a day")
+    qr.add_argument("video", help="the reel's mp4")
+    qr.add_argument("look", help="the look it was made in: powersoften, manifesto, darkroom, titles, section, splitscreen, "
+                                 "weather, stillness, chiaroscuro or axis")
+    qr.add_argument("--photos", required=True, help="the reel's photo ids, in order, the hero first, comma separated")
+    qr.add_argument("--day", required=True, help="the day it is the post for, YYYY-MM-DD")
+    qr.add_argument("--track", required=True, help="its music: a file name from the Music page (music_tracks.file)")
+    qr.add_argument("--quiet", action="store_true", help="no ping")
+    qr.set_defaults(fn=cmd_queue_reel)
     return p
 
 

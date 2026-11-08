@@ -17,7 +17,6 @@ from __future__ import annotations
 import io
 import json
 import os
-import random
 import shutil
 import signal
 import sqlite3
@@ -78,12 +77,6 @@ def node_tool(name: str) -> str:
     return found
 
 
-def next_style(last: Optional[str], rng: Optional[random.Random] = None) -> str:
-    """A style at random, never the one the last reel had."""
-    choices = [s for s in STYLES if s != last]
-    return (rng or random.Random()).choice(choices)
-
-
 def brief(style: str) -> str:
     """What the art director is told before it looks at a reel: what it sees, the style, and what the style puts on
     the frame on purpose (ON_PURPOSE), so it judges the photos themselves."""
@@ -101,7 +94,8 @@ def cuts_for(n: int) -> list[int]:
     return [8 + round(k * (TOTAL - END - 60) / (n - 1)) for k in range(n)]
 
 
-def _copy_photo(img: Image.Image, to: Path) -> tuple[int, int]:
+def copy_photo(img: Image.Image, to: Path) -> tuple[int, int]:
+    """The photo as a JPEG for a render, its long edge TEXTURE_PX; (width, height) as written."""
     im = img.convert("RGB")
     im.thumbnail((TEXTURE_PX, TEXTURE_PX))
     im.save(to, quality=90)
@@ -114,12 +108,12 @@ def props(shots: Sequence[Shot], *, music: Path, grid: Sequence[Path], public: P
     (public / "fonts").symlink_to(REELS3D / "public" / "fonts")
     photos = []
     for k, sh in enumerate(shots):
-        w, h = _copy_photo(sh.photo, public / "photos" / f"p{k}.jpg")
+        w, h = copy_photo(sh.photo, public / "photos" / f"p{k}.jpg")
         photos.append({"src": f"photos/p{k}.jpg", "room": sh.room, "line": sh.line, "w": w, "h": h})
     tiles = []
     for k, path in enumerate(grid):
         with Image.open(path) as im:
-            w, h = _copy_photo(im, public / "photos" / f"g{k}.jpg")
+            w, h = copy_photo(im, public / "photos" / f"g{k}.jpg")
         tiles.append({"src": f"photos/g{k}.jpg", "w": w, "h": h})
     track = public / f"music{Path(music).suffix.lower()}"
     shutil.copyfile(music, track)
@@ -188,12 +182,14 @@ def stills(style: str, video: Path, *, out_dir: Path, meta: Optional[ImageMeta] 
     return saved
 
 
-def fillers(conn: sqlite3.Connection, *, exclude: Sequence[int] = (), n: int = GRID_PHOTOS, rng=None) -> list[Path]:
+def fillers(conn: sqlite3.Connection, *, exclude: Sequence[int] = (), n: int = GRID_PHOTOS, rng=None,
+            most_portraits: Optional[int] = None) -> list[Path]:
     """Approved photos with a copy on this machine to fill a wall or a grid: in rotation (the least recently shown
     on any surface first, equals in strength by chance), one per room per shoot (Drive folder), the shoots
     interleaved so no two neighbours come from one, never the post's own. The pick is recorded as a use on the
     "grid" surface, so the next reel's wall reaches for other photos: Chris, 2026-10-26, "it keeps posting the same
-    photos again" — the strongest 28 had stood on every reel's wall."""
+    photos again" — the strongest 28 had stood on every reel's wall. `most_portraits`: at most that many portraits
+    (Powers of Ten's mosaic is mostly not portraits, 2026-11-08)."""
     from ..core import config
     from ..library import eligibility, moments, report
     from . import design_samples
@@ -219,6 +215,9 @@ def fillers(conn: sqlite3.Connection, *, exclude: Sequence[int] = (), n: int = G
             if queue and len(picked) < n:
                 r = queue.pop(0)
                 if any(moments.same_moment(r, p) for p in picked):       # one frame of a moment on the wall (2026-11-02)
+                    continue
+                if most_portraits is not None and r["shot_type"] == "portrait" and \
+                        sum(1 for p in picked if p["shot_type"] == "portrait") >= most_portraits:
                     continue
                 picked.append(r)
     if picked:
