@@ -428,7 +428,10 @@ class Saturday(IsolatedCase):
         """Chris, 2026-10-23: five very different styles, used randomly; the rooms reel and the face match reel (retired
         2026-10-11) are out of the rotation."""
         self.assertEqual(reels3d.STYLES, ("wall", "loop", "ring", "gallery", "orbit"))
-        first = {reels3d.next_style(None, random.Random(seed)) for seed in range(40)}
+        first = set()
+        for seed in range(40):
+            self.conn.execute("DELETE FROM settings WHERE key=?", (content.REEL_STYLE_KEY,))
+            first.add(content.reel_style(self.conn, random.Random(seed)))
         self.assertEqual(first, set(reels3d.STYLES), "with no reel yet, any style")
         self.assertEqual(self.styles_after("wall"), set(reels3d.STYLES) - {"wall"}, "never the last reel's style")
         self.assertFalse(hasattr(content, "reel_kind") or hasattr(motion, "facematch_reel"))
@@ -489,7 +492,7 @@ class Saturday(IsolatedCase):
         retries a day. The director is told the style and what it puts on the frame on purpose, with the frames."""
         self.with_music()
         eye = Eye([say("pass", notes="Sharp and well lit; the glass is the design.")])
-        with mock.patch.object(content, "reel_style", lambda conn, rng=None: "loop"):
+        with mock.patch.object(content, "reel_style", lambda conn, rng=None, **kw: "loop"):
             content.draft_one(self.live(), self.fetch, now=FRIDAY, check_client=FinalClient({}), art_client=eye)
         row, meta_, _, _ = self.last()
         self.assertEqual((row["status"], meta_["design"], meta_["reel"], meta_["art"]["verdict"]), ("draft", "reel", "loop", "pass"))
@@ -502,7 +505,7 @@ class Saturday(IsolatedCase):
     def test_told_what_the_glass_is_the_art_director_still_turns_back_a_bad_photo(self):
         self.with_music()
         eye = Eye([say("reject", notes="The second still is soft on the faces and underexposed."), say("pass")])
-        with mock.patch.object(content, "reel_style", lambda conn, rng=None: "loop"):
+        with mock.patch.object(content, "reel_style", lambda conn, rng=None, **kw: "loop"):
             line = content.draft_one(self.live(), self.fetch, now=FRIDAY, check_client=FinalClient({}), art_client=eye)
         self.assertIn("turned back photo", line)
         rows = self.queue()

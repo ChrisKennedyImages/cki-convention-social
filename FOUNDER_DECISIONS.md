@@ -2739,3 +2739,47 @@ Chris: "the buffer hit the 200/250 again, sigh"; "You can merge when needed."
 - Why: every run re-read the schema (two requests) before posting. At the 24-hour ceiling each run spent the two
   requests that had just aged out and was then refused the post itself, so the window stayed at 200 and the posts he
   approved that morning (76, 77, 78) waited all day.
+
+## 2026-11-08: ten reel looks, made by the suite
+
+Chris approved ten reel looks as preview reels and said "Yes, build it." On the photos: "it's event photography mainly -
+the gallery in the last one should remain all portraits"; "It's also fine to have one or two portrait other ones"; on a
+preview whose words did not fit its pictures: "The screen shot says each award and they are portraits"; on colour:
+"Keep the photos from any color changes except for only the last two I mentioned"; "Never overlay the entire photo but
+things can streak or light up or wherever as it's crossing through"; on music: "We will always just grab new music with
+its docs from pixabay moving forward. Something the learner should be taught"; and of the ten finished previews: "You
+can use those as posts. The images were fine".
+
+- **The looks** (`reel-looks/`, Remotion 4.0.538; `render/reel_looks.py`): Powers of Ten, Manifesto, Darkroom, Titles,
+  Section, Split Screen, Weather, Stillness, Chiaroscuro and Axis, each a composition of its own, 1080 x 1920 at 30 fps,
+  16 s (Chiaroscuro and Axis 25 s). A reel is rendered on the Mini in a public dir of its own (the photos, the track,
+  the fonts with their OFL texts, the textures); the mp4 is the product. A reel that cannot be made leaves a carousel
+  of the same photos, as a 3D reel does. The updater installs `reel-looks/node_modules` like `reels3d/`'s.
+- **Off until he switches them on**: `REEL_LOOKS=on` in `.env` adds them to the reel rotation beside the five 3D styles
+  (`content.reel_style`); blank, they stay out. Never the same look or style twice in a row; a look joins only with a
+  track that suits it.
+- **Photos** (the content agent's picker, pool, moments, shoot cap and Instagram first): at most two portraits in any
+  look but Axis; Axis portraits only, its last two the closing burst (the second to last a beat, the last held).
+  Powers of Ten's mosaic takes about 40 more approved photos by the 3D wall's rule, at most 8 of them portraits. Photos
+  render exactly as shot in eight looks; only Chiaroscuro and Axis grade and light them. A face is never cut by a crop:
+  the hero keeps the art director's focus point.
+- **Words** (`reel_lines.py`): his ten approved sets (the hook, two lines, the marquee), any set with any look, the set
+  the reels used least lately first. The three beat words are the rooms the final check confirmed their own photos
+  show (Stage, Panel, Session, Portrait, Backstage, Candid, Reception); a photo with no confirmed room carries no word;
+  the stack label lists those rooms; the counter says nothing a photo could contradict. The art director is told each
+  look and that each beat word must name what its own photo plainly shows, and sees the frames where the words are on.
+- **Axis's words are his** (Chris, 2026-11-08: "Poise. Light. Presence."): the same three on every Axis reel, since it is
+  all portraits and the room words would all be "Portrait."; its stack label stays the rooms ("Portraits · headshots"
+  when all three are portraits).
+- **No word left off**: in Powers of Ten each of the three words is on screen at least 1.5 s beside its own photo,
+  whatever the photos' shapes (the word photos sit where the move keeps them readable; a reel that could not hold one
+  is not made).
+- **Music** (`music.py`, migration 0101): a track is added only with its pixabay.com page as its source, its terms still
+  recorded. A look takes an active track that suits it, the one the reels used least lately first, from its own start
+  second, a track locked to the looks' beat played at grid/bpm. The Pixabay tracks of 2026-11-08 carry their looks,
+  start and tempo from the ledger they came with.
+- **The learner** learns a weight for each reel look and each track, by its own method and bounds (0.5 to 1.5, five
+  posts before a weight counts); the rotation leans on them and never leaves a look out.
+- **His finished previews as posts**: `bin/ccs queue-reel MP4 LOOK --photos ... --day ... --track ...` queues a reel
+  rendered before as the post for a day on the daily draft's road (the photos checked, the art director, the repeat
+  window), refusing a day that already has its post.

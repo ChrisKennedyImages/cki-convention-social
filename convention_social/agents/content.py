@@ -366,11 +366,15 @@ class Picker:
     """The photos a post takes, in the pool's order, under the rules of 2026-11-02: never two frames of one moment, and
     at most moments.cap_for(need, shoots) photos from one shoot (FOLDER_CAP while enough shoots are free; more, spread
     evenly, when fewer shoots are free than the post needs, and `words()` says so for the run line). `candidates()`
-    yields the rows worth trying next, against what `take()` has kept so far."""
+    yields the rows worth trying next, against what `take()` has kept so far. A reel in one of the ten looks (`style`)
+    takes the look's own count under the look's rule of portraits (render/reel_looks.photo_rule, 2026-11-08)."""
 
-    def __init__(self, pool: list[dict], design: str):
+    def __init__(self, pool: list[dict], design: str, *, style: Optional[str] = None):
         from . import designed
-        self.pool, self.need, self.taken = list(pool), TAKES[design], []
+        from ..render import reel_looks
+        look = style if design == "reel" and style in reel_looks.LOOKS else None
+        self.pool, self.need, self.taken = list(pool), reel_looks.TAKES[look] if look else TAKES[design], []
+        self.rule = reel_looks.photo_rule(look) if look else None
         self.shoot = designed.shoot_of
         sizes: dict[str, int] = {}
         for r in self.pool:
@@ -380,6 +384,8 @@ class Picker:
 
     def fits(self, row: dict) -> bool:
         if any(r["id"] == row["id"] for r in self.taken) or any(moments.same_moment(row, r) for r in self.taken):
+            return False
+        if self.rule is not None and not self.rule(row, self.taken):
             return False
         return sum(1 for r in self.taken if self.shoot(r) == self.shoot(row)) < self.cap
 
@@ -584,22 +590,38 @@ def design_for(day: date, subject: str, has_music: bool = False) -> str:
     return design
 
 
-def reel_style(conn: sqlite3.Connection, rng=None) -> str:
+def reel_style(conn: sqlite3.Connection, rng=None, *, fits: Optional[Callable[[str], bool]] = None) -> str:
     """One of the five 3D styles at random, never the one the last reel had (Chris, 2026-10-23: "there should be 5
     different style reels (all very different)", used randomly). The rooms reel of before is out of the rotation.
+    With REEL_LOOKS on (render/reel_looks.enabled; off by default) the ten looks Chris approved on 2026-11-08 join
+    them: each look a track suits (music.for_look) and, when the caller says what its photos allow (`fits(look)`), one
+    they allow. The chance of each is its learned weight (learner.look_weight, 0.5 to 1.5; 1.0 until learned), so a
+    weight leans the rotation and never leaves a style out.
     Chosen and recorded in one write under the database's write lock: the daily and the designed lane run under
     different locks and a render takes minutes, so two reels that each read "the last reel's row" and wrote their own
     after the render could come out the same (2026-10-24 audit). A reel the art director turns back was the last too."""
-    from ..render import reels3d
+    import random
+    from ..render import reel_looks, reels3d
+    looks = [look for look in reel_looks.LOOKS if music.for_look(conn, look) is not None and (fits is None or fits(look))] \
+        if reel_looks.enabled() else []
     conn.execute("BEGIN IMMEDIATE")
     try:
-        style = reels3d.next_style(settings.get(conn, REEL_STYLE_KEY), rng)
+        last = settings.get(conn, REEL_STYLE_KEY)
+        choices = [s for s in (*reels3d.STYLES, *looks) if s != last]
+        style = (rng or random.Random()).choices(choices, weights=[learner.look_weight(conn, s) for s in choices])[0]
         settings.set(conn, REEL_STYLE_KEY, style)
         conn.execute("COMMIT")
     except BaseException:
         conn.execute("ROLLBACK")
         raise
     return style
+
+
+def give_back_style(conn: sqlite3.Connection, style: Optional[str], before: Optional[str]) -> None:
+    """A reel style chosen before its photos (reel_style) for a draft that then made no reel, too few photos having
+    passed: the memory goes back to the style the last reel was given, so "the last reel" stays a reel that was made."""
+    if style and settings.get(conn, REEL_STYLE_KEY) == style:
+        settings.set(conn, REEL_STYLE_KEY, before or "")
 
 
 def linkedin_style(conn: sqlite3.Connection) -> str:
@@ -625,17 +647,24 @@ def order_pool(pool: list, design: str) -> list:
     return designed.spread(pool, len(pool))
 
 
-def confirmed_rooms(conn: sqlite3.Connection, photo_ids: list) -> dict:
-    """{photo id: (room, line)}: the room Claude's final check of the full photo says it plainly shows, else
-    EVENT PHOTOGRAPHY (2026-10-15: the sorter's shot type had put "After Dark" on a sunny garden). A photo with no
-    final check (a dry run) or one checked before the question was asked names no room."""
+def checked_rooms(conn: sqlite3.Connection, photo_ids: list) -> dict[int, Optional[str]]:
+    """{photo id: the room Claude's final check of the full photo says it plainly shows (a key of
+    design_samples.ROOM_WORDS), else None}. A photo with no final check (a dry run), one checked before the question was
+    asked, or one whose room was "none" has none."""
     from ..render import design_samples
     got = {}
     ids = [int(i) for i in photo_ids]
     if ids:
         marks = ",".join("?" * len(ids))
         got = {r["photo_id"]: r["room"] for r in db.rows(conn, f"SELECT photo_id, room FROM final_checks WHERE photo_id IN ({marks})", ids)}
-    return {i: design_samples.ROOM_WORDS.get(got.get(i) or "", design_samples.UNCONFIRMED) for i in ids}
+    return {i: got.get(i) if got.get(i) in design_samples.ROOM_WORDS else None for i in ids}
+
+
+def confirmed_rooms(conn: sqlite3.Connection, photo_ids: list) -> dict:
+    """{photo id: (room, line)}: the room Claude's final check of the full photo says it plainly shows, else
+    EVENT PHOTOGRAPHY (2026-10-15: the sorter's shot type had put "After Dark" on a sunny garden)."""
+    from ..render import design_samples
+    return {i: design_samples.ROOM_WORDS.get(room or "", design_samples.UNCONFIRMED) for i, room in checked_rooms(conn, photo_ids).items()}
 
 
 def shot_for(row: dict, image: Image.Image, focus=(0.5, 0.45), words: Optional[tuple] = None):
@@ -663,14 +692,18 @@ def aspects_for(targets, skipped=()) -> set[str]:
 
 
 def make_renderer(conn: sqlite3.Connection, agent: str, *, design: str, rows: list, hero: dict, images: dict, day: date,
-                  track, out_dir: Path, seo, reel_style: Optional[str] = None, aspects: Optional[set] = None) -> tuple[Callable[[tuple], dict], list]:
+                  track, out_dir: Path, seo, reel_style: Optional[str] = None, aspects: Optional[set] = None,
+                  look_plan=None, reel_video: Optional[Path] = None) -> tuple[Callable[[tuple], dict], list]:
     """The day's design on its photos, as `render(focus) -> {aspect: [paths]}` for the art director, and the
     list a failed reel is written to (the same photos then go out as a carousel). Shared by the fresh draft
     and the mend, so a redrawn card is the same card the day would have made. `aspects`: the render keys wanted
     (aspects_for), the design at 4:5 for Instagram and Facebook (a reel there when the design is one), the 2:3 card
-    for Pinterest, the photo as shot for LinkedIn; None draws everything."""
-    from ..render import bold, design_samples, motion, photo, reels3d
+    for Pinterest, the photo as shot for LinkedIn; None draws everything. A reel in one of the ten looks is rendered
+    with `look_plan` (render/reel_looks.Plan: its lines and its track); `reel_video`, a reel in a look rendered before
+    (`ccs queue-reel`), is taken as it is, its cover and stills cut from it."""
+    from ..render import bold, design_samples, motion, photo, reel_looks, reels3d
     words = confirmed_rooms(conn, [r["id"] for r in rows])
+    rooms = checked_rooms(conn, [r["id"] for r in rows])
     kicker = kicker_for(hero).upper()
     if kicker == words[hero["id"]][0] or words[hero["id"]] == design_samples.UNCONFIRMED:
         # the small line never repeats the title under it: no room confirmed, the title is EVENT PHOTOGRAPHY and the small
@@ -707,9 +740,22 @@ def make_renderer(conn: sqlite3.Connection, agent: str, *, design: str, rows: li
             # Instagram and Facebook get the reel (render_paths "9:16"), with its cover; Pinterest the
             # hero as a 2:3 card and LinkedIn the hero as shot; the art director looks at the cover and the stills, never the mp4
             try:
-                grid = reels3d.fillers(conn, exclude=[r["id"] for r in rows])
-                video = reels3d.render(reel_style, shots, out=out_dir / f"{tag}-{reel_style}.mp4", audio=track, grid=grid)
-                stills = reels3d.stills(reel_style, video, out_dir=out_dir / f"{tag}-stills", meta=seo)
+                video_at = out_dir / f"{tag}-{reel_style}.mp4"
+                if reel_style in reel_looks.LOOKS:
+                    if reel_video is not None:
+                        video, word_frames = reel_looks.take_video(reel_video, video_at), None
+                    else:
+                        ids = [r["id"] for r in rows]
+                        photos = [reel_looks.LookPhoto(images[r["id"]], rooms[r["id"]],
+                                                       tuple(focus) if r["id"] == hero["id"] else reel_looks.DEFAULT_FOCUS) for r in rows]
+                        tiles = reel_looks.tiles(conn, exclude=ids) if reel_style == "powersoften" else []
+                        made = reel_looks.render(reel_style, photos, plan=look_plan, out=video_at, tiles=tiles)
+                        video, word_frames = made.video, made.word_frames
+                    stills = reel_looks.stills(reel_style, video, out_dir=out_dir / f"{tag}-stills", meta=seo, frames=word_frames)
+                else:
+                    grid = reels3d.fillers(conn, exclude=[r["id"] for r in rows])
+                    video = reels3d.render(reel_style, shots, out=video_at, audio=track, grid=grid)
+                    stills = reels3d.stills(reel_style, video, out_dir=out_dir / f"{tag}-stills", meta=seo)
             except Exception as e:  # noqa: BLE001  a reel that cannot be made leaves a carousel of the same photos, said why
                 reel_failed.append(f"{type(e).__name__}: {e}")
                 runner.record_error(conn, agent, "reel", f"the {reel_style} reel for {day} was not made: {e}")
@@ -745,10 +791,13 @@ BRIEFS = {
 
 def brief_for(design: str, style: Optional[str], paths: dict) -> str:
     """What the art director is told it is looking at, from what `render` made. A reel says its style and what the
-    style puts on the frame on purpose (reels3d.brief); a reel that could not be made is the carousel it fell back to."""
-    from ..render import bold, reels3d
+    style puts on the frame on purpose (reels3d.brief; a look's own, and the rule of its words: reel_looks.brief); a
+    reel that could not be made is the carousel it fell back to."""
+    from ..render import bold, reel_looks, reels3d
     if design == "reel":
         if "9:16" in paths:
+            if style in reel_looks.LOOKS:
+                return reel_looks.brief(style, card="2:3" in paths, stills=len(paths.get("stills") or []))
             return reels3d.brief(style)
         design = "carousel"
     if design in bold.DESIGNS:
@@ -781,25 +830,49 @@ def redraw(conn: sqlite3.Connection, row, meta: dict, *, agent: str = "content",
     design = meta.get("design") or "single"
     hero = rows[0]
     track = music.current(conn) if design == "reel" else None
-    from ..render import reels3d
-    style = meta["reel"] if meta.get("reel") in reels3d.STYLES else (reel_style(conn) if design == "reel" else None)
+    from ..render import reel_looks, reels3d
+    # a reel keeps its style or look; one with none known (made before either) gets the next its photos allow
+    known = meta.get("reel") in (*reels3d.STYLES, *reel_looks.LOOKS)
+    style = meta["reel"] if known else (reel_style(conn, fits=lambda look: reel_looks.fits(look, rows)) if design == "reel" else None)
+    look_plan, reel_video = None, None
+    if design == "reel" and style in reel_looks.LOOKS:
+        look_plan, reel_video, track = look_parts(conn, row, meta, style)
     out_dir = cfg.data_root / "renders" / "posts" / day.isoformat()
     out_dir.mkdir(parents=True, exist_ok=True)
     targets = [n for n in json.loads(row["targets"] or "[]") if not (n == "linkedin" and hero.get("prominent_logo"))]
     render, reel_failed = make_renderer(conn, agent, design=design, rows=rows, hero=hero, images=images, day=day, track=track,
                                         out_dir=out_dir, seo=image_meta.for_photo(conn, hero), reel_style=style,
-                                        aspects=only if only is not None else aspects_for(targets, meta.get("skipped") or {}))
+                                        aspects=only if only is not None else aspects_for(targets, meta.get("skipped") or {}),
+                                        look_plan=look_plan, reel_video=reel_video)
     art = meta.get("art") or {}
     focus = tuple(art["focus"]) if isinstance(art.get("focus"), list) and len(art["focus"]) == 2 else (0.5, 0.42)
     paths = render(focus)
     if design == "reel":
         meta["music"] = track.name if track else None       # the track this reel carries, named under its player
         meta["reel"] = style
+        if look_plan is not None:
+            meta["lines"] = look_plan.lines
     if reel_failed:
         meta["design"], meta["reel_failed"] = "carousel", reel_failed[0]
     if only is not None:
         return {**json.loads(row["render_paths"] or "{}"), **paths}, "drawn for the networks ticked now"
     return paths, "card drawn again with today's words"
+
+
+def look_parts(conn: sqlite3.Connection, row, meta: dict, look: str) -> tuple:
+    """(plan, reel_video, track) a reel in one of the ten looks is drawn again with. A reel queued ready-made
+    (`reel_given`, ccs queue-reel) is taken again as it is: its copy beside the post, else the file it was queued from.
+    Any other is rendered again with its own lines and track (the track it was made with while that is here, else the
+    look's next one)."""
+    from .. import reel_lines
+    from ..render import reel_looks
+    if meta.get("reel_given"):
+        made = [Path(p) for p in json.loads(row["render_paths"] or "{}").get("9:16") or [] if Path(p).is_file()]
+        given = made[0] if made else Path(meta["reel_given"])
+        return None, given, (music.folder() / meta["music"]) if meta.get("music") else None
+    played = music.played_as(conn, meta.get("music")) or music.for_look(conn, look, lambda f: learner.track_weight(conn, f))
+    lines = meta["lines"] if meta.get("lines") in reel_lines.SETS else reel_lines.choose(conn)
+    return (reel_looks.Plan(lines, played) if played else None), None, (played.path if played else None)
 
 
 def draw_missing(conn: sqlite3.Connection, row, *, agent: str = "content") -> str:
@@ -825,7 +898,7 @@ def draft_one(ctx: runner.Context, fetch: Callable[[dict], bytes], *, now: Optio
               check_client=None, drafter=None, art_client=None, judge_client=None, extra: bool = False, _depth: int = 0) -> str:
     """`extra`: one more post for the day, asked for with Draft now (2026-10-31); it skips the one-a-day gate and is
     marked so it never counts as the day's post."""
-    from ..render import motion
+    from ..render import reel_looks
     day = target_day(ctx.cfg, now)
     if not extra and already_drafted(ctx.conn, day):
         today = day - timedelta(days=1)
@@ -844,11 +917,14 @@ def draft_one(ctx: runner.Context, fetch: Callable[[dict], bytes], *, now: Optio
     track = music.current(ctx.conn)
     design = design_for(day, kind_used, track is not None)
     pool = order_pool(pool, design)
+    # a reel's style is chosen before its photos: a look takes its photos under its own rule of portraits (2026-11-08)
+    last_style = settings.get(ctx.conn, REEL_STYLE_KEY)
+    style = reel_style(ctx.conn, fits=lambda look: reel_looks.can_fill(look, pool)) if design == "reel" else None
     chosen: list[tuple[dict, bytes]] = []
     check_errors: list[str] = []
-    picker, tries = Picker(pool, design), 0            # one frame per moment, at most the cap per shoot (2026-11-02)
+    picker, tries = Picker(pool, design, style=style), 0   # one frame per moment, at most the cap per shoot (2026-11-02)
     for row in picker.candidates():
-        if tries >= TAKES[design] + MAX_TRIES - 1:
+        if tries >= picker.need + MAX_TRIES - 1:
             break
         tries += 1
         data = fetch(row)
@@ -866,8 +942,12 @@ def draft_one(ctx: runner.Context, fetch: Callable[[dict], bytes], *, now: Optio
                 row["shot_type"] = verdict["shot_type"]       # what the photo shows, by the model that looked at it in full
             if verdict.get("event_kind") in classify.KINDS and verdict["event_kind"] != "unknown":
                 row["event_kind"] = verdict["event_kind"]     # and what kind of occasion, likewise
+            if not picker.fits(row):
+                continue                                      # the full look made it a portrait the look has no room for
         picker.take(row)
         chosen.append((row, data))
+    if len(chosen) < NEEDS[design]:
+        give_back_style(ctx.conn, style, last_style)      # no reel is made of these photos
     if not chosen:
         if check_errors:
             return f"the final check could not run for {day} ({check_errors[-1]})"
@@ -876,7 +956,7 @@ def draft_one(ctx: runner.Context, fetch: Callable[[dict], bytes], *, now: Optio
     if len(chosen) < NEEDS[design]:
         design, chosen = fallback_for(day), chosen[:1]
     try:
-        qid, art, line = make_draft(ctx, day, chosen, design, want=want, kind_used=kind_used, asked=asked, track=track,
+        qid, art, line = make_draft(ctx, day, chosen, design, want=want, kind_used=kind_used, asked=asked, track=track, style=style,
                                     drafter=drafter, art_client=art_client, judge_client=judge_client, why=use_why(chosen[0][0], len(pool)),
                                     extra_meta={"source": "draft_now"} if extra else None,
                                     ping=(f"{ctx.cfg.brand_name}: the post you asked for, to approve",
@@ -904,11 +984,14 @@ def photo_file(cfg, row) -> Path:
 
 def make_draft(ctx: runner.Context, day: date, chosen: list[tuple[dict, bytes]], design: str, *, want: str, kind_used: str,
                asked: str, track, drafter=None, art_client=None, judge_client=None, why: str = "", note: str = "",
-               extra_meta: Optional[dict] = None, ping: Optional[tuple[str, str]] = None, quiet: bool = False) -> tuple[int, dict, str]:
+               extra_meta: Optional[dict] = None, ping: Optional[tuple[str, str]] = None, quiet: bool = False,
+               style: Optional[str] = None, reel_video: Optional[Path] = None) -> tuple[int, dict, str]:
     """One draft from photos already chosen and checked: the captions, the design, the art director, the queue row and
     the ping. (queue id, the art director's verdict, the run line). The daily draft (draft_one) and a photo sent from
     the phone (agents/phone.py) both end here. A turned-back draft is kept as a rejected row and said in the line.
-    `quiet`: no ping here; the caller pings (a photo from the share sheet is approved by his send, 2026-10-15)."""
+    `quiet`: no ping here; the caller pings (a photo from the share sheet is approved by his send, 2026-10-15).
+    `style`: a reel's style or look, when the caller chose it before the photos (a look's photos follow its rule); else
+    it is chosen here among those the photos allow. `reel_video`: a reel in a look rendered before (ccs queue-reel)."""
     for row, data in chosen:
         if (row.get("source") or "drive") != "drive":
             continue                        # a phone photo's own file is its copy for good; never the cache that is swept
@@ -948,7 +1031,19 @@ def make_draft(ctx: runner.Context, day: date, chosen: list[tuple[dict, bytes]],
     images = {r["id"]: Image.open(io.BytesIO(d)) for r, d in chosen}
     out_dir = ctx.cfg.data_root / "renders" / "posts" / day.isoformat()
     seo = image_meta.for_photo(ctx.conn, hero)
-    style = reel_style(ctx.conn) if design == "reel" else None
+    from .. import reel_lines
+    from ..render import reel_looks
+    look_plan = None
+    if design == "reel":
+        taken = [r for r, _ in chosen]
+        style = style or reel_style(ctx.conn, fits=lambda look: reel_looks.fits(look, taken))
+        if style in reel_looks.LOOKS and reel_video is None:
+            # a look takes a track that suits it and a set of lines, each the one the reels used least lately
+            played = music.for_look(ctx.conn, style, lambda f: learner.track_weight(ctx.conn, f))
+            if played is not None:
+                look_plan, track = reel_looks.Plan(reel_lines.choose(ctx.conn), played), played.path
+    else:
+        style = None
     photo_ids = [r["id"] for r, _ in chosen]
     people = [c for r, _ in chosen for c in (r["credit"] or "").split()]
     # the networks the window holds are known before anything is drawn, so no card exists for a network the draft is not
@@ -956,13 +1051,18 @@ def make_draft(ctx: runner.Context, day: date, chosen: list[tuple[dict, bytes]],
     held = held_on(ctx.conn, photo_ids, config.repeat_window(ctx.cfg), people, ctx.cfg.variety_days)
     render, reel_failed = make_renderer(ctx.conn, ctx.agent, design=design, rows=[r for r, _ in chosen], hero=hero, images=images,
                                         day=day, track=track, out_dir=out_dir, seo=seo, reel_style=style,
-                                        aspects=aspects_for([n for n in targets if n not in held]))
+                                        aspects=aspects_for([n for n in targets if n not in held]), look_plan=look_plan,
+                                        reel_video=reel_video)
+    # a look's cover, its card and each frame its beat words are on (up to three); a 3D reel's cover, card and two stills
+    pictures = 5 if style in reel_looks.LOOKS else 4
     render_paths, art = art_director.direct(ctx.conn, render, brief=lambda paths: brief_for(design, style, paths),
                                             dry_run=ctx.dry_run, client=art_client, agent=ctx.agent,
-                                            allow_redo=design == "single", max_files=4)
+                                            allow_redo=design == "single", max_files=pictures)
     if reel_failed:
         design = "carousel"
-    reel_meta = {"reel": style, "music": track.name} if design == "reel" else {}
+    # the look and the track ride on the draft for the learner and the rotations (lines: the set of words it carried)
+    reel_meta = ({"reel": style, "music": track.name, **({"lines": look_plan.lines} if look_plan else {}),
+                  **({"reel_given": str(reel_video)} if reel_video else {})} if design == "reel" else {})
     if art.get("verdict") == "reject":
         # the photos do not hold up: they sit out like used ones
         now_r = db.utcnow()
@@ -1027,6 +1127,71 @@ def make_draft(ctx: runner.Context, day: date, chosen: list[tuple[dict, bytes]],
             f"photo {hero['id']} first{' (' + why + ')' if why else ''}, captions by {writer} for \"{plan.primary}\", "
             f"art director: {art.get('verdict')}")
     return qid, art, line
+
+
+def queue_reel(ctx: runner.Context, fetch: Callable[[dict], bytes], *, video: Path, look: str, photo_ids: list[int], day: date,
+               track_file: str, quiet: bool = False, check_client=None, drafter=None, art_client=None,
+               judge_client=None) -> tuple[Optional[int], str]:
+    """A reel in one of the ten looks, rendered before, queued as the post for `day` on the daily draft's road (`ccs
+    queue-reel`). Chris, 2026-11-08, of the ten finished preview reels: "You can use those as posts. The images were
+    fine". Its photos (in order, the hero first) are read and checked as the daily draft checks the photos it picks (a
+    candidate; live, Claude's final check and the eligibility after it): a photo that fails stops it, said why, and
+    nothing is queued. Then make_draft with the reel as given: its cover and the stills cut from the look's own frames,
+    the 2:3 card and the LinkedIn photo as every reel has them, the art director told the look, the repeat window and
+    the rotation's record as for any post. (queue id or None, the line.)"""
+    from ..render import reel_looks
+    from .sample import PHOTO_SQL
+    if look not in reel_looks.LOOKS:
+        return None, f"not queued: no reel look {look!r} (one of {', '.join(reel_looks.LOOKS)})"
+    if not Path(video).is_file() or Path(video).stat().st_size == 0:
+        return None, f"not queued: no reel at {video}"
+    if already_drafted(ctx.conn, day):
+        return None, f"not queued: a post for {day} is already drafted"
+    t = db.one(ctx.conn, "SELECT * FROM music_tracks WHERE file=?", (track_file,))
+    if t is None or not music.usable(t):
+        return None, f"not queued: no music track {track_file!r} with its record and its file here (the Music page)"
+    if not photo_ids:
+        return None, "not queued: name the reel's photos, the hero first"
+    lock = drafting_lock(DRAFTING_WAIT)
+    if lock is None:
+        return None, "not queued: another draft was being made for 15 minutes; try again"
+    try:
+        chosen: list[tuple[dict, bytes]] = []
+        for pid in photo_ids:
+            row = db.one(ctx.conn, PHOTO_SQL, (pid,))
+            if row is None:
+                return None, f"not queued: photo {pid} is not in the library"
+            ok, why = eligibility.is_candidate(ctx.conn, pid)
+            if not ok:
+                return None, f"not queued: photo {pid} is {why}"
+            row = {**dict(row), "credit": eligibility.credit_line(ctx.conn, pid), "last_use": None}
+            try:
+                data = fetch(row)
+                verdict = None if ctx.dry_run else classify.final_check(ctx.conn, pid, data, client=check_client, agent=ctx.agent)
+            except Exception as e:  # noqa: BLE001  Drive, the disk or the API, not the photo: said, nothing queued
+                return None, f"not queued: photo {pid} could not be read or checked ({type(e).__name__}: {e})"
+            if not ctx.dry_run:
+                if verdict is None:
+                    return None, f"not queued: Claude could not look at photo {pid} (no key, the monthly cap, or a refusal)"
+                ok, why = eligibility.is_eligible(ctx.conn, pid)
+                if not ok:
+                    return None, f"not queued: photo {pid} did not pass the final check: {why}"
+                if verdict.get("shot_type") in classify.SHOT_TYPES:
+                    row["shot_type"] = verdict["shot_type"]
+                if verdict.get("event_kind") in classify.KINDS and verdict["event_kind"] != "unknown":
+                    row["event_kind"] = verdict["event_kind"]
+            chosen.append((row, data))
+        qid, art, line = make_draft(ctx, day, chosen, "reel", want=subject_for(day), kind_used="event", asked="reel",
+                                    track=music.folder() / track_file, drafter=drafter, art_client=art_client,
+                                    judge_client=judge_client, why=f"queued from {Path(video).name}", style=look,
+                                    reel_video=Path(video), quiet=quiet)
+        if art.get("verdict") == "reject":
+            return None, f"not queued: {line}"
+    except PhotosTaken as e:
+        return None, f"not queued: {e}"
+    finally:
+        lock.release()
+    return qid, line
 
 
 def ping_words(brand: str, design: str, n: int, when: str, *, designed: bool) -> tuple[str, str]:

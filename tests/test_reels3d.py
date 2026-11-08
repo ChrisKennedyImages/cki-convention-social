@@ -5,7 +5,6 @@ from __future__ import annotations
 import inspect
 import json
 import os
-import random
 import signal
 import subprocess
 import time
@@ -33,11 +32,6 @@ class Styles(IsolatedCase):
         src = (reels3d.REELS3D / "src" / "Root.tsx").read_text()
         for style in reels3d.STYLES:
             self.assertIn(f'<Composition id="{reels3d.COMPOSITION[style]}"', src, f"{style} is registered")
-
-    def test_the_next_style_is_random_and_never_the_last(self):
-        seen = {reels3d.next_style("loop", random.Random(seed)) for seed in range(40)}
-        self.assertEqual(seen, set(reels3d.STYLES) - {"loop"})
-        self.assertEqual({reels3d.next_style(None, random.Random(seed)) for seed in range(40)}, set(reels3d.STYLES))
 
     def test_the_cuts_land_on_the_samples_first_and_last_beats_evenly_between(self):
         self.assertEqual(reels3d.cuts_for(6), [8, 72, 135, 199, 262, 326])

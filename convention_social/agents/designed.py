@@ -296,9 +296,13 @@ def _draft(ctx: runner.Context, fetch: Callable[[dict], bytes], *, now: Optional
     lately = recent_events(conn, ctx.cfg.variety_days)
     order = spread(rows_, len(rows_), fresh_events=lambda e: e not in lately, taken_rooms=todays_hero_rooms(conn, day))
     chosen: list[tuple[dict, bytes]] = []
-    picker, tries = content.Picker(order, design), 0       # one frame per moment, at most the cap per shoot (2026-11-02)
+    # a reel's style is chosen before its photos: a look takes its photos under its own rule of portraits (2026-11-08)
+    from ..render import reel_looks
+    last_style = settings.get(conn, content.REEL_STYLE_KEY)
+    style = content.reel_style(conn, fits=lambda look: reel_looks.can_fill(look, order)) if design == "reel" else None
+    picker, tries = content.Picker(order, design, style=style), 0   # one frame per moment, at most the cap per shoot (2026-11-02)
     for row in picker.candidates():
-        if tries >= content.TAKES[design] + MAX_TRIES:
+        if tries >= picker.need + MAX_TRIES:
             break
         tries += 1
         try:
@@ -306,12 +310,14 @@ def _draft(ctx: runner.Context, fetch: Callable[[dict], bytes], *, now: Optional
         except Exception as e:  # noqa: BLE001  Drive or the disk, not the photo: said once; the next hourly run tries again
             runner.record_error_once(conn, ctx.agent, "designed", f"A designed draft could not read photo {row['id']} "
                                                                   f"({type(e).__name__}: {e}); it tries again within the hour.")
+            content.give_back_style(conn, style, last_style)
             return f"no designed draft: photo {row['id']} could not be read ({type(e).__name__}: {e})"
         try:
             verdict = classify.final_check(conn, row["id"], data, client=check_client, agent=ctx.agent)
         except Exception as e:  # noqa: BLE001  the API or the network, not the photo
             runner.record_error_once(conn, ctx.agent, "final_check",
                                      f"The final check could not run ({type(e).__name__}: {e}); no designed draft until it can.")
+            content.give_back_style(conn, style, last_style)
             return f"no designed draft: the final check could not run ({type(e).__name__}: {e})"
         if not (verdict and eligibility.is_eligible(conn, row["id"])[0]):
             continue
@@ -319,8 +325,12 @@ def _draft(ctx: runner.Context, fetch: Callable[[dict], bytes], *, now: Optional
             row["shot_type"] = verdict["shot_type"]          # what the photo shows, by the model that looked at it in full
         if verdict.get("event_kind") in classify.KINDS and verdict["event_kind"] != "unknown":
             row["event_kind"] = verdict["event_kind"]
+        if not picker.fits(row):
+            continue                                         # the full look made it a portrait the look has no room for
         picker.take(row)
         chosen.append((row, data))
+    if len(chosen) < content.NEEDS[design]:
+        content.give_back_style(conn, style, last_style)    # no reel is made of these photos
     if not chosen:
         return f"no designed draft: no photo passed the final check (tried {tries})"
     asked = design
@@ -329,7 +339,7 @@ def _draft(ctx: runner.Context, fetch: Callable[[dict], bytes], *, now: Optional
     hero = chosen[0][0]
     try:
         qid, art, line = content.make_draft(
-            ctx, day, chosen, design, want="event", kind_used="event", asked=asked, track=track, drafter=drafter,
+            ctx, day, chosen, design, want="event", kind_used="event", asked=asked, track=track, style=style, drafter=drafter,
             art_client=art_client, why=f"designed draft; {content.use_why(hero, len(rows_))}",
             extra_meta={"source": SOURCE, "designed_day": day.isoformat(), "event": "", "designed_event": event_of(hero)},
             ping=content.ping_words(ctx.cfg.brand_name, design, len(chosen), "today", designed=True))

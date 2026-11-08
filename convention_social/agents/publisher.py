@@ -522,9 +522,12 @@ def reel_files(row) -> Optional[tuple[Path, Optional[Path]]]:
 
 def reel_cover_ms(row) -> int:
     """Where in the reel its cover frame is, in ms: Instagram shows that frame. The row's 3D style has its own
-    (render.reels3d.COVER_MS, by `rule_report.reel`); a rooms reel from before has render.motion.COVER_MS."""
-    from ..render import motion, reels3d
+    (render.reels3d.COVER_MS, by `rule_report.reel`), and so does each of the ten looks (render.reel_looks.COVER_MS,
+    its first frame, 2026-11-08); a rooms reel from before has render.motion.COVER_MS."""
+    from ..render import motion, reel_looks, reels3d
     style = (_json(row["rule_report"], {}) or {}).get("reel")
+    if style in reel_looks.LOOKS:
+        return reel_looks.COVER_MS[style]
     return reels3d.COVER_MS[style] if style in reels3d.STYLES else motion.COVER_MS
 
 

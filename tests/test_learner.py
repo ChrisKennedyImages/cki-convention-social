@@ -259,9 +259,57 @@ class Weights(LearnerCase):
         learner.run(self.ctx(), now=NOW)
         w = json.loads(settings.get(self.conn, learner.WEIGHTS_KEY))
         self.assertTrue(w)
-        self.assertEqual(sorted(w), ["event_kind", "shot_type"])
+        self.assertEqual(sorted(w), ["event_kind", "music_track", "reel_look", "shot_type"])
+        self.assertEqual((w["reel_look"], w["music_track"]), ({}, {}), "no reel went out: nothing learned about reels")
         self.assertIn("Building posts did", settings.get(self.conn, learner.NOTE_KEY))
         self.assertIn("The building day stays once a week.", settings.get(self.conn, learner.NOTE_KEY))
+
+
+class ReelWeights(LearnerCase):
+    """Each reel look and each track gets a weight by the same method and bounds (Chris, 2026-11-08, of new Pixabay
+    music: "Something the learner should be taught"); the rotation and the music read them."""
+    def reel(self, network, engagement, look, track, count=1):
+        for _ in range(count):
+            self.post(network, 11, 30, engagement, ours=True, shot="candid", kind="business")
+            qid = db.one(self.conn, "SELECT MAX(id) AS id FROM content_queue")["id"]
+            self.conn.execute("UPDATE content_queue SET rule_report=? WHERE id=?",
+                              (json.dumps({"design": "reel", "reel": look, "music": track}), qid))
+
+    def test_looks_and_tracks_that_do_better_weigh_more_inside_the_bounds(self):
+        self.reel("instagram", 30, "darkroom", "piano.mp3", 5)
+        self.reel("instagram", 10, "axis", "tension.mp3", 5)
+        self.reel("instagram", 20, "loop", "piano.mp3", 2)
+        learner.run(self.ctx(), now=NOW)
+        w = json.loads(settings.get(self.conn, learner.WEIGHTS_KEY))
+        self.assertEqual(sorted(w["reel_look"]), ["axis", "darkroom"], "two reels in the loop style are not enough to weigh")
+        self.assertGreater(w["reel_look"]["darkroom"], 1.0)
+        self.assertLess(w["reel_look"]["axis"], 1.0)
+        self.assertEqual(sorted(w["music_track"]), ["piano.mp3", "tension.mp3"])
+        self.assertGreater(w["music_track"]["piano.mp3"], w["music_track"]["tension.mp3"])
+        self.assertTrue(all(0.5 <= v <= 1.5 for t in w.values() for v in t.values()))
+        self.assertEqual(learner.look_weight(self.conn, "darkroom"), w["reel_look"]["darkroom"])
+        self.assertEqual(learner.look_weight(self.conn, "loop"), 1.0, "nothing learned: 1.0")
+        self.assertEqual(learner.track_weight(self.conn, "tension.mp3"), w["music_track"]["tension.mp3"])
+        self.assertEqual(learner.track_weight(self.conn, None), 1.0)
+        self.assertIn("Reels in the darkroom look now weigh", settings.get(self.conn, learner.NOTE_KEY))
+
+    def test_a_post_counts_once_for_its_reel_whatever_its_photos_and_a_still_post_never(self):
+        self.reel("instagram", 100, "titles", "a.mp3", 5)
+        self.posts("instagram", 11, 30, 5, 0, ours=True, shot="candid", kind="business")    # still posts, no reel
+        learner.run(self.ctx(), now=NOW)
+        detail = json.loads(db.one(self.conn, "SELECT detail FROM learner_history ORDER BY id DESC")["detail"])
+        self.assertEqual(detail["photos"]["reel_look"]["titles"]["posts"], 5)
+        self.assertEqual(set(detail["photos"]["reel_look"]), {"titles"})
+
+    def test_noise_is_never_acted_on_and_a_bad_number_is_held_to_the_bounds(self):
+        self.reel("instagram", 100, "weather", "w.mp3", 4)
+        learner.run(self.ctx(), now=NOW)
+        self.assertEqual(json.loads(settings.get(self.conn, learner.WEIGHTS_KEY))["reel_look"], {}, "four reels: noise")
+        settings.set(self.conn, learner.WEIGHTS_KEY, json.dumps({"reel_look": {"weather": 40}, "music_track": {"w.mp3": "x"}}))
+        self.assertEqual(learner.look_weight(self.conn, "weather"), 1.5)
+        self.assertEqual(learner.track_weight(self.conn, "w.mp3"), 1.0)
+        settings.set(self.conn, learner.WEIGHTS_KEY, "not json")
+        self.assertEqual(learner.look_weight(self.conn, "weather"), 1.0)
 
 
 class Safety(LearnerCase):

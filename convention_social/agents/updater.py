@@ -126,30 +126,36 @@ def restore_requirements(repo: Path, before: str, *, run: Callable = subprocess.
         _pip(repo, "install", "-q", "--no-deps", *changed, run=run)
 
 
-def reels(repo: Path) -> None:
-    """The 3D reels' Node packages and Remotion's browser (reels3d/), so a reel can be rendered on this machine."""
+# The Remotion projects reels are rendered from, each with Node packages of its own: the five 3D styles (2026-10-23) and
+# the ten looks (2026-11-08).
+NODE_PROJECTS = ("reels3d", "reel-looks")
+
+
+def reels(repo: Path, folder: str) -> None:
+    """A reel project's Node packages and Remotion's browser (reels3d/ or reel-looks/), so its reels can be rendered on
+    this machine."""
     from ..render import reels3d
-    subprocess.run([reels3d.node_tool("npm"), "ci", "--no-audit", "--no-fund"], cwd=str(repo / "reels3d"),
+    subprocess.run([reels3d.node_tool("npm"), "ci", "--no-audit", "--no-fund"], cwd=str(repo / folder),
                    capture_output=True, text=True, timeout=15 * 60, check=True)
-    subprocess.run([reels3d.node_tool("npx"), "remotion", "browser", "ensure"], cwd=str(repo / "reels3d"),
+    subprocess.run([reels3d.node_tool("npx"), "remotion", "browser", "ensure"], cwd=str(repo / folder),
                    capture_output=True, text=True, timeout=15 * 60, check=True)
 
 
-def reels_missing(repo: Path) -> bool:
-    """reels3d/ is in the checkout but its Node packages are not: a fresh Mini, or a checkout updated by a run from
+def reels_missing(repo: Path) -> list[str]:
+    """The reel projects in the checkout whose Node packages are not: a fresh Mini, or a checkout updated by a run from
     before the installer existed (2026-10-24: the run that brought reels3d/ was still the old updater)."""
-    return (repo / "reels3d" / "package.json").is_file() and not (repo / "reels3d" / "node_modules").is_dir()
+    return [f for f in NODE_PROJECTS if (repo / f / "package.json").is_file() and not (repo / f / "node_modules").is_dir()]
 
 
-def ensure_reels(ctx: runner.Context, repo: Path, reels: Callable[[Path], None], *, why: str) -> str:
-    """The 3D reels' Node packages installed, and the line says so; a failure is recorded, since a reel then falls
+def ensure_reels(ctx: runner.Context, repo: Path, reels: Callable[[Path, str], None], *, folder: str, why: str) -> str:
+    """A reel project's Node packages installed, and the line says so; a failure is recorded, since a reel then falls
     back to a carousel (content.make_renderer)."""
     try:
-        reels(repo)
+        reels(repo, folder)
     except Exception as e:  # noqa: BLE001
-        runner.record_error(ctx.conn, ctx.agent, "update_reels", f"The 3D reels' Node packages could not be installed ({why}): {e}")
-        return f"reels3d packages NOT installed: {e}"
-    return f"reels3d packages installed ({why})"
+        runner.record_error(ctx.conn, ctx.agent, "update_reels", f"The {folder} Node packages could not be installed ({why}): {e}")
+        return f"{folder} packages NOT installed: {e}"
+    return f"{folder} packages installed ({why})"
 
 
 def migrate(repo: Path) -> None:
@@ -328,7 +334,7 @@ def run(ctx: runner.Context, *, repo: Optional[Path] = None,
         suite: Callable[[Path], tuple[bool, str]] = run_suite,
         requirements: Callable[[Path, Path], None] = install_requirements,
         freeze: Callable[[Path], str] = frozen, restore: Callable[[Path, str], None] = restore_requirements,
-        migrations: Callable[[Path], None] = migrate, reels: Callable[[Path], None] = reels,
+        migrations: Callable[[Path], None] = migrate, reels: Callable[[Path, str], None] = reels,
         restart: Callable[[], str] = restart_dashboard,
         probe: Callable[[], Optional[str]] = dashboard_commit,
         deploy: Callable[[Path], tuple[bool, str]] = deploy_site, site: bool = True, retest: bool = False) -> str:
@@ -344,8 +350,8 @@ def run(ctx: runner.Context, *, repo: Optional[Path] = None,
                                  f"restarted and the site is not deployed until the checkout is back on the commit the Mini's "
                                  f"tests passed. A Claude session must never work in {repo}; it uses a worktree.")
         return f"{summary}; dashboard and site left alone: {why}"
-    if reels_missing(repo):              # every run, not only after a merge: the packages are part of a servable checkout
-        summary = f"{summary}; {ensure_reels(ctx, repo, reels, why='they were missing')}"
+    for folder in reels_missing(repo):   # every run, not only after a merge: the packages are part of a servable checkout
+        summary = f"{summary}; {ensure_reels(ctx, repo, reels, folder=folder, why='they were missing')}"
     summary = f"{summary}; {ensure_dashboard(ctx, why, probe=probe, restart=restart)}"
     if site:                 # go-live's sync step leaves the site to go-live's own deploy step
         summary = f"{summary}; {ensure_site(ctx, repo, deploy=deploy)}"
@@ -354,7 +360,7 @@ def run(ctx: runner.Context, *, repo: Optional[Path] = None,
 
 def update(ctx: runner.Context, repo: Path, *, suite: Callable[[Path], tuple[bool, str]],
            requirements: Callable[[Path, Path], None], migrations: Callable[[Path], None],
-           reels: Callable[[Path], None] = reels, retest: bool = False, freeze: Callable[[Path], str] = frozen,
+           reels: Callable[[Path, str], None] = reels, retest: bool = False, freeze: Callable[[Path], str] = frozen,
            restore: Callable[[Path, str], None] = restore_requirements) -> str:
     """`retest`: test the commit the suite refused once more (`ccs sync`, typed by Chris); the ten-minute run never does."""
     fetch = _git(repo, "fetch", "--quiet", "origin", "main", timeout=FETCH_TIMEOUT)
@@ -418,8 +424,9 @@ def update(ctx: runner.Context, repo: Path, *, suite: Callable[[Path], tuple[boo
     settings.set(ctx.conn, REFUSED_KEY, "")
     migrations(repo)
     reels_note = ""
-    if any(p.startswith("reels3d/") for p in changed) and (repo / "reels3d" / "package.json").is_file():
-        reels_note = "; " + ensure_reels(ctx, repo, reels, why=f"reels3d changed in {target[:7]}")
+    for folder in NODE_PROJECTS:
+        if any(p.startswith(f"{folder}/") for p in changed) and (repo / folder / "package.json").is_file():
+            reels_note += "; " + ensure_reels(ctx, repo, reels, folder=folder, why=f"{folder} changed in {target[:7]}")
     if install:
         settings.set(ctx.conn, NEEDS_INSTALL_KEY, target)
         runner.record_error_once(ctx.conn, ctx.agent, "needs_install",

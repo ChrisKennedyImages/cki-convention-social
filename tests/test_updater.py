@@ -87,11 +87,12 @@ class Repos(IsolatedCase):
         def migrations(repo):
             self.calls["migrate"] += 1
 
-        def reels(repo):
+        def reels(repo, folder):
             self.calls["reels"] += 1
+            self.calls.setdefault("folders", []).append(folder)
             if self.reels_fail:
                 raise OSError("npm: no network")
-            (repo / "reels3d" / "node_modules").mkdir(parents=True, exist_ok=True)
+            (repo / folder / "node_modules").mkdir(parents=True, exist_ok=True)
 
         def restart():
             self.calls["restart"] += 1
@@ -149,6 +150,40 @@ class ReelsPackages(Repos):
         line = self.run_updater()
         self.assertIn("tests passed; reels3d packages installed (reels3d changed in", line)
         self.assertEqual(self.calls["reels"], 1)
+
+
+class ReelLooksPackages(Repos):
+    """reel-looks/ (the ten looks, 2026-11-08) has Node packages of its own, installed like reels3d's: when missing on
+    any run, and again after a merge that changed anything under it."""
+    def test_missing_packages_are_installed_once_for_each_project(self):
+        for folder in ("reels3d", "reel-looks"):
+            (self.repo / folder).mkdir()
+            (self.repo / folder / "package.json").write_text("{}")
+        line = self.run_updater()
+        self.assertIn("reels3d packages installed (they were missing)", line)
+        self.assertIn("reel-looks packages installed (they were missing)", line)
+        self.assertEqual(self.calls["folders"], ["reels3d", "reel-looks"])
+        line = self.run_updater()
+        self.assertEqual(self.calls["reels"], 2, "present now: not installed again")
+        self.assertNotIn("packages installed", line)
+
+    def test_a_change_under_reel_looks_installs_its_packages_again_and_only_its(self):
+        for folder in ("reels3d", "reel-looks"):
+            (self.repo / folder / "node_modules").mkdir(parents=True)
+        self.commit("reel-looks/package.json", '{"name": "cki-reel-looks"}')
+        line = self.run_updater()
+        self.assertIn("tests passed; reel-looks packages installed (reel-looks changed in", line)
+        self.assertEqual(self.calls["folders"], ["reel-looks"])
+
+    def test_a_failed_install_is_recorded_with_the_project_it_was_for(self):
+        (self.repo / "reel-looks").mkdir()
+        (self.repo / "reel-looks" / "package.json").write_text("{}")
+        self.reels_fail = True
+        line = self.run_updater()
+        self.assertIn("reel-looks packages NOT installed: npm: no network", line)
+        err = db.one(self.conn, "SELECT kind, message FROM errors ORDER BY id DESC LIMIT 1")
+        self.assertEqual(err["kind"], "update_reels")
+        self.assertIn("The reel-looks Node packages could not be installed", err["message"])
 
 
 class Updater(Repos):

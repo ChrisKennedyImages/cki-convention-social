@@ -10,6 +10,12 @@ One allowance (Chris, 2026-10-31, asked twice and told nothing outside this
 repo is touched): the two schema.org field names Google's image metadata
 asks for, "license" and "acquireLicensePage", pass as whole words. Every
 other form of that word, and every other word on the list, still trips.
+
+And the OFL texts the reel looks ship beside their fonts
+(reel-looks/public/fonts/*-OFL.txt, 2026-11-08): the SIL Open Font terms must
+travel with the fonts word for word, so in those files, and only those, that
+one word passes in every form. Every other word on the list still trips there
+too.
 """
 from __future__ import annotations
 
@@ -44,11 +50,13 @@ def repo_files():
 
 
 ALLOWED = re.compile(r"\b(license|acquirelicensepage)\b")     # the two schema.org names, whole words only
+OFL_TEXTS = re.compile(r"(^|/)reel-looks/public/fonts/[A-Za-z]+-OFL\.txt$")
+OFL_WORD = BANNED[3]                                           # the one word the fonts' OFL texts must carry
 
 
-def hits_in(text: str) -> list[str]:
+def hits_in(text: str, *, ofl_text: bool = False) -> list[str]:
     low = ALLOWED.sub("", text.lower())
-    return [w for w in BANNED if w in low]
+    return [w for w in BANNED if w in low and not (ofl_text and w == OFL_WORD)]
 
 
 class BannedWords(unittest.TestCase):
@@ -71,6 +79,17 @@ class BannedWords(unittest.TestCase):
             word = base64.b64decode(near).decode()
             self.assertTrue(hits_in(word), word)
 
+    def test_an_ofl_text_passes_its_one_word_and_nothing_else(self):
+        """reel-looks/public/fonts/*-OFL.txt carry the SIL Open Font terms word for word; any other banned word still trips
+        there, and that word still trips in every other file."""
+        word = base64.b64decode("bGljZW5zZWQ=").decode()
+        self.assertEqual(hits_in(f"This Font Software is {word} under the SIL Open Font License", ofl_text=True), [])
+        self.assertTrue(hits_in(word))
+        self.assertTrue(hits_in(BANNED[0], ofl_text=True))
+        self.assertTrue(OFL_TEXTS.search("reel-looks/public/fonts/Anton-OFL.txt"))
+        for elsewhere in ("reel-looks/src/fonts.ts", "reel-looks/public/fonts/notes.txt", "docs/Anton-OFL.txt"):
+            self.assertFalse(OFL_TEXTS.search(elsewhere), elsewhere)
+
     def test_no_banned_word_anywhere(self):
         found = []
         for path in repo_files():
@@ -84,7 +103,7 @@ class BannedWords(unittest.TestCase):
                     data = path.read_text(encoding="utf-8")
                 except UnicodeDecodeError:
                     data = path.read_bytes().decode("latin-1")
-            for w in hits_in(data):
+            for w in hits_in(data, ofl_text=bool(OFL_TEXTS.search(rel.as_posix()))):
                 found.append(f"{rel}: {w}")
         self.assertEqual(found, [], "words from another suite found:\n" + "\n".join(found))
 

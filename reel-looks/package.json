@@ -1,0 +1,22 @@
+{
+  "name": "cki-reel-looks",
+  "private": true,
+  "description": "Event Caliber's ten reel looks (2026-11-08): Remotion compositions the suite renders on the Mini from Chris's approved photos.",
+  "scripts": {
+    "still": "remotion still",
+    "render": "remotion render",
+    "check": "tsc -p ."
+  },
+  "dependencies": {
+    "@remotion/cli": "4.0.538",
+    "@remotion/media-utils": "4.0.538",
+    "@remotion/noise": "4.0.538",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "remotion": "4.0.538"
+  },
+  "devDependencies": {
+    "@types/react": "18.3.12",
+    "typescript": "5.6.3"
+  }
+}

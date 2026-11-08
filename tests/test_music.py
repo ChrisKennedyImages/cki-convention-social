@@ -3,6 +3,7 @@ the newest switched-on track rides the reel with fades, and with none the reel i
 from __future__ import annotations
 
 import io
+import json
 import math
 import os
 import re
@@ -21,7 +22,7 @@ from convention_social.dashboard.app import COOKIE, create_app, make_token
 from convention_social.render import design_samples, motion, reel
 from tests._base import IsolatedCase
 
-RECORD = dict(title="Night Shift", artist="Sample Artist", source="https://example.com/track/123",
+RECORD = dict(title="Night Shift", artist="Sample Artist", source="https://pixabay.com/music/beats-night-shift-123/",
               terms="free for business posts on Instagram and Facebook")
 
 
@@ -78,7 +79,7 @@ class Tracks(IsolatedCase):
         self.assertEqual(music.credit(self.conn, file), "Night Shift, Sample Artist")
         for placeholder in ("-", "--", "?", " . ", "unknown", "Unknown", "NONE", "n/a", "NA"):
             self.conn.execute("UPDATE music_tracks SET artist=? WHERE file=?", (placeholder, file))
-            self.assertEqual(music.credit(self.conn, file), "Night Shift (https://example.com/track/123)", placeholder)
+            self.assertEqual(music.credit(self.conn, file), "Night Shift (https://pixabay.com/music/beats-night-shift-123/)", placeholder)
             self.assertFalse(music.artist_known(placeholder), placeholder)
         self.assertTrue(music.artist_known("DJ 7"))
         self.assertEqual(music.credit(self.conn, "gone-20261014.mp3"), "gone-20261014", "a record that is gone: the file's own name")
@@ -160,7 +161,9 @@ class SamplePage(IsolatedCase):
         self.assertLess(page.index("Tap a reel"), page.index("<video"))
         self.assertIn("Music: Night Shift, Sample Artist", page)
         self.assertNotIn("No music", page)
-        music.add(self.conn, "free.wav", tone(), **dict(RECORD, title="Free Track", artist="-", source="Meta Sound Collection"))
+        free = music.add(self.conn, "free.wav", tone(), **dict(RECORD, title="Free Track", artist="-"))
+        # a track from before the Pixabay rule (2026-11-08) keeps the source Chris typed then
+        self.conn.execute("UPDATE music_tracks SET source='Meta Sound Collection' WHERE id=?", (free,))
         _, page = self.make()
         self.assertIn("Music: Free Track (Meta Sound Collection)", page, "an artist Chris does not know: the source instead")
         self.assertNotIn("Free Track, -", page)
@@ -221,3 +224,88 @@ class Formats(IsolatedCase):
                 music.add(self.conn, name, data, **dict(RECORD, title=name))
         self.assertEqual([t["id"] for t in music.tracks(self.conn)], [tid])
         self.assertEqual(len(list(music.folder().iterdir())), 1, "a refused file is not kept")
+
+
+class FromPixabay(IsolatedCase):
+    """Chris, 2026-11-08: "We will always just grab new music with its docs from pixabay moving forward"."""
+    def setUp(self):
+        super().setUp()
+        self.conn = db.connect()
+        self.addCleanup(self.conn.close)
+
+    def test_a_track_from_anywhere_but_pixabay_is_refused_and_not_kept(self):
+        for source in ("https://example.com/track/123", "Meta Sound Collection", "https://pixabay.com.evil.example/x",
+                       "ftp://pixabay.com/music/x", "https://pixabay.com/", "pixabay.com/music/x"):
+            with self.assertRaises(music.Refused, msg=source):
+                music.add(self.conn, "a.wav", tone(), **dict(RECORD, source=source))
+        self.assertEqual(music.tracks(self.conn), [])
+        self.assertFalse(music.folder().exists() and any(music.folder().iterdir()), "a refused file is not kept")
+        for source in ("https://pixabay.com/music/beats-night-shift-123/", "https://www.pixabay.com/music/x-1/"):
+            self.assertTrue(music.from_pixabay(source), source)
+        with self.assertRaises(music.Refused, msg="its terms are still asked for"):
+            music.add(self.conn, "a.wav", tone(), **dict(RECORD, terms=" "))
+
+    def test_a_track_carries_the_looks_it_suits_and_an_unknown_look_is_refused(self):
+        tid = music.add(self.conn, "a.wav", tone(), **RECORD, looks=["axis"], start_s=17.5432, bpm=113.99, grid=120)
+        t = db.one(self.conn, "SELECT * FROM music_tracks WHERE id=?", (tid,))
+        self.assertEqual(json.loads(t["looks"]), ["axis"])
+        played = music.for_look(self.conn, "axis")
+        self.assertEqual((played.file, played.start), (t["file"], 17.5432))
+        self.assertAlmostEqual(played.rate, 120 / 113.99)
+        with self.assertRaises(music.Refused):
+            music.add(self.conn, "b.wav", tone(), **RECORD, looks=["loop"])
+
+    def test_a_look_takes_a_track_that_suits_it_the_least_lately_used_first(self):
+        ids = {name: music.add(self.conn, f"{name}.wav", tone(), **dict(RECORD, title=name), looks=looks, start_s=1.0)
+               for name, looks in (("one", ["darkroom"]), ("two", ["darkroom", "weather"]), ("three", ["weather"]))}
+        file = {name: db.one(self.conn, "SELECT file FROM music_tracks WHERE id=?", (tid,))["file"] for name, tid in ids.items()}
+        self.assertIsNone(music.for_look(self.conn, "axis"), "no track suits it: no reel in that look")
+        self.assertEqual(music.for_look(self.conn, "darkroom").file, file["two"], "never used: the newest first")
+        self.assertEqual(music.for_look(self.conn, "darkroom").rate, 1.0, "not locked to the beat: played as recorded")
+
+        def used(name, at):
+            db.insert(self.conn, "content_queue", kind="photo", photo_ids="[]", targets="[]", caption="{}", status="draft",
+                      rule_report=json.dumps({"design": "reel", "music": file[name]}), created_at=at, updated_at=at)
+        used("two", "2026-11-08T10:00:00+00:00")
+        self.assertEqual(music.for_look(self.conn, "darkroom").file, file["one"])
+        used("one", "2026-11-08T11:00:00+00:00")
+        self.assertEqual(music.for_look(self.conn, "darkroom").file, file["two"], "the one used longest ago")
+        self.assertEqual(music.for_look(self.conn, "darkroom", weight=lambda f: 1.5 if f == file["one"] else 1.0).file,
+                         file["two"], "a weight only breaks a tie, never the rotation")
+        self.assertEqual(music.for_look(self.conn, "weather", weight=lambda f: 1.5 if f == file["three"] else 1.0).file,
+                         file["three"], "between two never used, the one the learner weighs higher")
+        music.set_active(self.conn, ids["three"], False)
+        (music.folder() / file["two"]).unlink()
+        self.assertIsNone(music.for_look(self.conn, "weather"), "switched off, or its file gone: not taken")
+        self.assertIsNone(music.played_as(self.conn, file["two"]))
+        self.assertEqual(music.played_as(self.conn, file["one"]).file, file["one"])
+
+
+class LooksMigration(IsolatedCase):
+    """Migration 0101: the looks' columns, and the Pixabay tracks on the Mini given their looks, start and tempo by title
+    and artist from the ledger that came with them."""
+    def test_the_pixabay_tracks_get_their_looks_start_and_tempo(self):
+        conn = db.connect(apply_migrations=False)
+        self.addCleanup(conn.close)
+        conn.execute("CREATE TABLE IF NOT EXISTS schema_migrations (version TEXT PRIMARY KEY, applied_at TEXT NOT NULL)")
+        files = db.migration_files()
+        target = next(p for p in files if p.stem.startswith("0101_"))
+        for path in files[:files.index(target)]:
+            conn.executescript(path.read_text())
+        rows = [("Piano And Strings", "AtlasAudio"), ("Suspense Tension Trailer", "lNPLUSMUSIC"), ("Upbeat And Inspiring", "AtlasAudio"),
+                ("Suspense Tension", "Sub_Clair"), ("Legendary", "Meta")]
+        for k, (title, artist) in enumerate(rows):
+            conn.execute("INSERT INTO music_tracks (file, title, artist, source, terms, added_at) VALUES (?, ?, ?, ?, ?, ?)",
+                         (f"t{k}.mp3", title, artist, "https://pixabay.com/music/x/", "Pixabay Content License", "2026-11-08"))
+        conn.executescript(target.read_text())
+        got = {r["title"]: (json.loads(r["looks"]), r["start_s"], r["bpm"], r["grid"])
+               for r in conn.execute("SELECT * FROM music_tracks").fetchall()}
+        self.assertEqual(got["Piano And Strings"], (["chiaroscuro"], 17.986, 114.96, 120))
+        self.assertEqual(got["Suspense Tension Trailer"], (["axis"], 34.995, 120.03, 120), "the approved Axis reel's track")
+        self.assertEqual(got["Upbeat And Inspiring"], (["manifesto", "splitscreen"], 9.5, 0, 0))
+        self.assertEqual(got["Suspense Tension"], ([], 0, 0, 0), "not in the ledger: no look until its looks are set")
+        self.assertEqual(got["Legendary"], ([], 0, 0, 0))
+        from convention_social.render import reel_looks
+        sql = target.read_text()
+        suited = {look for looks in re.findall(r"looks = '(\[[^']*\])'", sql) for look in json.loads(looks)}
+        self.assertEqual(suited, set(reel_looks.LOOKS), "every look has a track it suits")
