@@ -45,6 +45,12 @@ VIDEO_ASPECT = "9:16"
 # so on the row. A live run reads the real fields from Buffer before anything is uploaded.
 VIDEO_FIELDS_KEY = "buffer.video_fields"
 IMAGE_ALT_KEY = "buffer.image_alt"
+# Chris, 2026-11-08 afternoon: "the buffer hit the 200/250 again". Every run read the video and image fields from
+# Buffer's live schema again (two requests) before posting, so at the 24-hour ceiling each run spent the two requests
+# that had just aged out and was then refused the post itself: the window stayed at 200 and three approved posts waited
+# all day. The schema is now read live at most once in SCHEMA_FRESH (the reading is kept, as before, for the Buffer
+# page), and a post is started only when the window has room for every request it needs (room_needed).
+SCHEMA_FRESH = timedelta(hours=24)
 ASSUMED_VIDEO_FIELDS = [{"name": "url", "type": "String", "required": True},
                         {"name": "metadata", "type": "VideoMetadataInput", "required": False,
                          "fields": [{"name": "thumbnailOffset", "type": "Int", "required": False}]}]
@@ -627,6 +633,33 @@ def build_all(ctx: runner.Context, row, channels: dict[str, dict], when: dict[st
     return {n: built[n] for n in channels}
 
 
+def fresh_reading(conn, key: str, field: str, now: Optional[datetime] = None, *, allow_none: bool = False):
+    """The kept reading of Buffer's schema under `key` when it was read within SCHEMA_FRESH, else None. A reading whose
+    value may itself be None (Buffer offers no alt text field) comes back wrapped as [value] when allow_none."""
+    try:
+        kept = json.loads(settings.get(conn, key) or "null") or {}
+        at = datetime.fromisoformat(kept.get("checked_at") or "")
+    except (ValueError, AttributeError, TypeError):
+        return None
+    at = at if at.tzinfo else at.replace(tzinfo=timezone.utc)
+    if (now or datetime.now(timezone.utc)) - at >= SCHEMA_FRESH or field not in kept:
+        return None
+    if allow_none:
+        return [kept[field]]
+    return kept[field] or None
+
+
+def room_needed(conn, row, channels: dict, now: Optional[datetime] = None) -> int:
+    """The Buffer requests a post will make: one createPost a network, plus the schema reads that are due (two for a
+    reel's video fields, one for an image's alt text field) when the kept reading is older than SCHEMA_FRESH."""
+    need = len(channels)
+    if reel_files(row) and any(n in payloads.REEL_NETWORKS for n in channels) and fresh_reading(conn, VIDEO_FIELDS_KEY, "fields", now) is None:
+        need += 2
+    if fresh_reading(conn, IMAGE_ALT_KEY, "path", now, allow_none=True) is None:
+        need += 1
+    return need
+
+
 def publish_ready(ctx: runner.Context, client: Optional[BufferClient] = None, uploader=None,
                   now: Optional[datetime] = None, judge_client=None) -> dict:
     live = not ctx.dry_run
@@ -646,10 +679,14 @@ def publish_ready(ctx: runner.Context, client: Optional[BufferClient] = None, up
     assumed: list = []
 
     def video_fields() -> list[dict]:
-        """Live: Buffer's video asset fields, read once per run (two schema requests) and kept for the
-        Buffer page and dry runs. Dry run: the fields last read, else the assumed two."""
+        """Live: Buffer's video asset fields, read from the live schema when the last reading is older than SCHEMA_FRESH
+        (two schema requests) and kept for the Buffer page and dry runs. Dry run: the fields last read, else the
+        assumed two."""
         if not fields_read:
-            if live:
+            fresh = fresh_reading(ctx.conn, VIDEO_FIELDS_KEY, "fields", now) if live else None
+            if live and fresh is not None:
+                fields_read.append(fresh)
+            elif live:
                 fields_read.append(client.video_asset_fields())
                 settings.set(ctx.conn, VIDEO_FIELDS_KEY, json.dumps({"fields": fields_read[0], "checked_at": db.utcnow()}))
             else:
@@ -668,7 +705,10 @@ def publish_ready(ctx: runner.Context, client: Optional[BufferClient] = None, up
         """Where Buffer takes an image's alt text: read live once a run (and kept for dry runs and the
         Buffer page), else the last reading. None: Buffer offers no field, so no alt text is sent."""
         if not alt_read:
-            if live:
+            fresh = fresh_reading(ctx.conn, IMAGE_ALT_KEY, "path", now, allow_none=True) if live else None
+            if live and fresh is not None:
+                alt_read.append(fresh[0])
+            elif live:
                 path = client.image_alt_path()
                 settings.set(ctx.conn, IMAGE_ALT_KEY, json.dumps({"path": path, "checked_at": db.utcnow()}))
                 alt_read.append(path)
@@ -755,6 +795,14 @@ def publish_ready(ctx: runner.Context, client: Optional[BufferClient] = None, up
             _set_last_error(ctx.conn, row, why)
             record_once(ctx.conn, ctx.agent, "no_day", f"post {row['id']}: {why}")
             continue
+        if live:
+            need = room_needed(ctx.conn, row, channels, now)
+            have = budget.room(ctx.conn)
+            if have < need:
+                why = f"Buffer has room for {max(0, have)} more request(s) in its window and post {row['id']} needs {need}"
+                record_once(ctx.conn, ctx.agent, "buffer_budget", why)
+                ctx.log.warning("stopping this run: %s", why)
+                break
         post_ids: dict[str, str] = {}
         built: dict[str, dict] = {}
         asked_since = _since(now)
