@@ -839,15 +839,25 @@ def publish_ready(ctx: runner.Context, client: Optional[BufferClient] = None, up
 # the post Buffer sent at 15:30 was never written down. A post is now asked about from just before its time, and once
 # an hour one request reads what Buffer says was sent and writes down whatever the ten-minute check missed.
 VERIFY_EARLY = timedelta(minutes=5)
+# Chris, 2026-11-08: "Buffer 24hr api was just reached". A post that went past its time without Buffer sending it or
+# saying why was still asked about on every run (post 70: its LinkedIn part, due 2026-11-06 14:00 UTC, never settled),
+# two requests every ten minutes; the publisher spent 110 to 170 requests a day from Nov 4, and on the 8th the 24-hour
+# ceiling stopped it from 08:06 until about 09:01. A post is now asked about on every run only from VERIFY_EARLY before its time to SETTLE after it, when it
+# should go out; then once every LATE_EVERY, and from STALE on once every STALE_EVERY, with one error for Chris saying
+# it is stuck. The hourly read of what Buffer sent (reconcile_sent) still writes down a late post the moment it goes.
+SETTLE = timedelta(minutes=30)
+LATE_EVERY = timedelta(hours=1)
+STALE = timedelta(days=1)
+STALE_EVERY = timedelta(hours=6)
 RECONCILE_EVERY = timedelta(hours=1)
 SENT_CHECKED_KEY = "buffer.sent_checked_at"
 SENT_CACHE_KEY = "buffer.sent"          # what Buffer last said was sent on this company's channels (the Today page reads it)
 SENT_KEEP = 20
 
 
-def due_at(row) -> Optional[datetime]:
-    """The earliest time Buffer holds one of this row's posts for (its payload's dueAt, on the networks Buffer has), or
-    None when no time can be read: then the row is asked about, never left unchecked."""
+def due_times(row) -> list[datetime]:
+    """The times Buffer holds this row's posts for (its payload's dueAt, on the networks Buffer has); empty when none
+    can be read."""
     payload = _json(row["payload"], {}) or {}
     ids = _json(row["buffer_post_ids"], {}) or {}
     times = []
@@ -857,6 +867,13 @@ def due_at(row) -> Optional[datetime]:
         except (ValueError, AttributeError):
             continue
         times.append(dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc))
+    return times
+
+
+def due_at(row) -> Optional[datetime]:
+    """The earliest time Buffer holds one of this row's posts for, or None when no time can be read: then the row is
+    asked about, never left unchecked."""
+    times = due_times(row)
     return min(times) if times else None
 
 
@@ -903,16 +920,44 @@ def posted(ctx: runner.Context, row, nets: list[str]) -> None:
                 dry_run=ctx.dry_run, priority="default", click=live or notify.link(f"/queue/{row['id']}"), conn=ctx.conn, agent=ctx.agent)
 
 
+def ask_now(row, now: datetime) -> bool:
+    """Whether a due row is asked about on this run: every run while one of its networks is between VERIFY_EARLY before
+    its time and SETTLE after it; otherwise once every LATE_EVERY after the latest time that has passed, and from STALE
+    on once every STALE_EVERY (by buffer_checked_at). A post sent to go out now has no time of its own: it counts from
+    when it was handed to Buffer (updated_at, stamped as the row became scheduled)."""
+    times = due_times(row)
+    if not times:
+        try:
+            handed = datetime.fromisoformat(row["updated_at"] or "")
+            times = [handed if handed.tzinfo else handed.replace(tzinfo=timezone.utc)]
+        except ValueError:
+            return True                           # no time at all: asked about, never left unchecked
+    if any(-VERIFY_EARLY <= now - t <= SETTLE for t in times):
+        return True
+    passed = [t for t in times if t <= now]
+    late = now - max(passed) if passed else timedelta(0)
+    try:
+        last = datetime.fromisoformat(row["buffer_checked_at"] or "")
+    except ValueError:
+        return True
+    last = last if last.tzinfo else last.replace(tzinfo=timezone.utc)
+    return now - last >= (STALE_EVERY if late >= STALE else LATE_EVERY)
+
+
 def verify_scheduled(ctx: runner.Context, client: Optional[BufferClient] = None, now: Optional[datetime] = None) -> dict:
-    """Ask Buffer about each scheduled row that is due (from VERIFY_EARLY before its time on). A network Buffer says went
-    out is written down at once; the row settles once every network is sent or errored."""
-    stats = {"published": 0, "failed": 0, "pending": 0, "not_due": 0}
+    """Ask Buffer about each scheduled row that is due (ask_now: from VERIFY_EARLY before its time, then less often once
+    it is late). A network Buffer says went out is written down at once; the row settles once every network is sent or
+    errored. A row still waiting STALE after its time is reported once."""
+    stats = {"published": 0, "failed": 0, "pending": 0, "not_due": 0, "later": 0}
     now_dt = now or datetime.now(timezone.utc)
     due_rows = []
     for row in db.rows(ctx.conn, "SELECT * FROM content_queue WHERE status='scheduled' AND buffer_post_ids IS NOT NULL ORDER BY id"):
         due = due_at(row)
         if due is not None and due > now_dt + VERIFY_EARLY:
             stats["not_due"] += 1                 # not its time yet: no request spent on it
+            continue
+        if not ask_now(row, now_dt):
+            stats["later"] += 1                   # late and asked about recently: no request spent on it this run
             continue
         due_rows.append(row)
     if not due_rows:
@@ -942,6 +987,7 @@ def verify_scheduled(ctx: runner.Context, client: Optional[BufferClient] = None,
             record_once(ctx.conn, ctx.agent, "buffer_budget", str(e))
             break
         stamp = db.utcnow()
+        ctx.conn.execute("UPDATE content_queue SET buffer_checked_at=? WHERE id=?", (now_dt.isoformat(timespec="seconds"), row["id"]))
         captions = captions_of(row) or {}
         for net, info in infos.items():
             if info["status"] in TERMINAL_OK:
@@ -954,6 +1000,12 @@ def verify_scheduled(ctx: runner.Context, client: Optional[BufferClient] = None,
                 ctx.conn.execute("UPDATE content_queue SET last_error=?, updated_at=? WHERE id=?", (why[:500], stamp, row["id"]))
         if len(infos) < len(ids) or not all(i["status"] in TERMINAL_OK | TERMINAL_BAD for i in infos.values()):
             stats["pending"] += 1
+            due = due_at(row)
+            if due is not None and now_dt - due >= STALE:
+                waiting = ", ".join(sorted(net for net in ids if infos.get(net, {}).get("status") not in TERMINAL_OK | TERMINAL_BAD))
+                runner.record_error_once(ctx.conn, ctx.agent, "post_stuck",
+                                         f"post {row['id']}: Buffer has neither sent it nor said why, more than a day after its time "
+                                         f"({waiting}); asked about every {int(STALE_EVERY.total_seconds() // 3600)} hours until it settles")
             continue
         if bad:
             ctx.conn.execute("UPDATE content_queue SET status='failed', updated_at=? WHERE id=?", (stamp, row["id"]))
@@ -1021,7 +1073,7 @@ def run(ctx: runner.Context) -> str:
     return (f"{'DRY RUN ' if ctx.dry_run else ''}would_publish={p['would_publish']} scheduled={p['scheduled']} failed={p['failed']} "
             f"turned_back={p['turned_back']} held={p['held']} skipped_networks={p['skipped_networks']}; "
             f"drafts waiting={t['waiting']} nudged={t['nudged']}; "
-            f"verified published={v['published']} failed={v['failed']} pending={v['pending']} not_due={v['not_due']}; "
+            f"verified published={v['published']} failed={v['failed']} pending={v['pending']} not_due={v['not_due']} later={v['later']}; "
             f"sent per Buffer seen={r['seen']} recorded={r['recorded']} published={r['published']}; "
             f"buffer requests 15m/24h/30d={used}")
 

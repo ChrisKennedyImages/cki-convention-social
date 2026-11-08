@@ -105,6 +105,70 @@ class TheMiss(Case):
         self.assertEqual(len(fake.asked("PostStatus")), 0, "asked every run until the budget ceiling stopped it")
 
 
+class LatePosts(Case):
+    """Chris, 2026-11-08: "Buffer 24hr api was just reached". Post 70's LinkedIn part was due 2026-11-06 and Buffer never
+    said sent or failed, so it was asked about on every ten-minute run, two requests a run, and the suite sat at its
+    24-hour ceiling until the publisher was stopped. A late post is now asked about hourly, a day-late one every six
+    hours (and Chris is told once); a post is asked about on every run only around its own time."""
+
+    def two_networks(self, ids: dict, due: dict) -> int:
+        now = db.utcnow()
+        return db.insert(self.conn, "content_queue", kind="photo", photo_ids="[1]", targets=json.dumps(list(ids)),
+                         caption=json.dumps({n: "Backstage." for n in ids}), status="scheduled",
+                         buffer_post_ids=json.dumps(ids),
+                         payload=json.dumps({n: {"dueAt": t.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")} for n, t in due.items()}),
+                         rule_report=json.dumps({"design": "single"}), created_at=now, updated_at=now)
+
+    def runs(self, fake, start: datetime, hours: float) -> int:
+        """Ten-minute publisher runs from `start`; how many PostStatus requests they made."""
+        before = len(fake.asked("PostStatus"))
+        for i in range(int(hours * 6)):
+            publisher.verify_scheduled(self.ctx, client=self.client(fake), now=start + timedelta(minutes=10 * i))
+        return len(fake.asked("PostStatus")) - before
+
+    def test_a_post_is_asked_about_every_run_around_its_time_then_hourly(self):
+        t0 = datetime(2026, 11, 8, 21, 0, tzinfo=timezone.utc)
+        self.scheduled("post-now", t0)
+        fake = SentBuffer(status_sequence=["scheduled"])
+        self.assertEqual(self.runs(fake, t0 - timedelta(minutes=5), 0.5 + 1 / 6), 4,
+                         "from five minutes before its time to thirty after: every run")
+        self.assertEqual(self.runs(fake, t0 + timedelta(minutes=55), 3), 3, "late: once an hour")
+
+    def test_a_day_late_post_is_asked_every_six_hours_and_chris_is_told_once(self):
+        t0 = datetime(2026, 11, 8, 13, 0, tzinfo=timezone.utc)
+        qid = self.scheduled("post-stuck", t0 - timedelta(days=2))
+        fake = SentBuffer(status_sequence=["scheduled"])
+        self.assertEqual(self.runs(fake, t0, 24), 4, "a day of ten-minute runs: four requests, not 144")
+        errors = db.rows(self.conn, "SELECT message FROM errors WHERE kind='post_stuck'")
+        self.assertEqual(len(errors), 1)
+        self.assertIn(f"post {qid}: Buffer has neither sent it nor said why", errors[0]["message"])
+
+    def test_a_network_due_now_is_asked_every_run_though_another_is_days_late(self):
+        """Post 70 itself: Instagram due at 21:00 on the 8th, its LinkedIn part due on the 6th."""
+        t0 = datetime(2026, 11, 8, 21, 0, tzinfo=timezone.utc)
+        self.two_networks({"instagram": "ig-70", "linkedin": "li-70"}, {"instagram": t0, "linkedin": t0 - timedelta(days=2)})
+        fake = SentBuffer(status_sequence=["scheduled"])
+        self.assertEqual(self.runs(fake, t0 - timedelta(minutes=5), 0.5 + 1 / 6), 8, "both networks, every run, around Instagram's time")
+        self.assertEqual(self.runs(fake, t0 + timedelta(minutes=55), 6), 12, "then both networks once an hour, not every run")
+
+    def test_one_stuck_post_keeps_a_day_far_inside_the_budget(self):
+        t0 = datetime(2026, 11, 8, 13, 0, tzinfo=timezone.utc)
+        self.two_networks({"instagram": "ig-stuck", "linkedin": "li-stuck"}, {"instagram": t0 - timedelta(days=2), "linkedin": t0 - timedelta(days=2)})
+        fake = SentBuffer(status_sequence=["scheduled"])
+        self.assertEqual(self.runs(fake, t0, 24), 8, "two networks every six hours: 8 a day, where it was 288")
+
+    def test_a_late_post_buffer_sends_is_still_written_down_by_the_hourly_read(self):
+        t0 = datetime(2026, 11, 8, 13, 0, tzinfo=timezone.utc)
+        qid = self.scheduled("6ad00a04117064a577d1469f", t0 - timedelta(days=2))
+        fake = SentBuffer(sent=[node("6ad00a04117064a577d1469f")], status_sequence=["scheduled"])
+        publisher.verify_scheduled(self.ctx, client=self.client(fake), now=t0)
+        publisher.verify_scheduled(self.ctx, client=self.client(fake), now=t0 + timedelta(minutes=10))
+        self.assertEqual(len(fake.asked("PostStatus")), 1, "asked once, then left for six hours")
+        with mock.patch.object(publisher.notify, "push"):
+            publisher.reconcile_sent(self.ctx, client=self.client(fake), now=t0 + timedelta(minutes=20))
+        self.assertEqual(db.one(self.conn, "SELECT status FROM content_queue WHERE id=?", (qid,))["status"], "published")
+
+
 class Reconcile(Case):
     def test_a_post_buffer_sent_is_written_down_even_when_the_check_never_ran(self):
         qid = self.scheduled("6ad00a04117064a577d1469f", datetime(2026, 10, 15, 15, 30, tzinfo=timezone.utc))

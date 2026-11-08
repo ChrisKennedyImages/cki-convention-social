@@ -2712,3 +2712,17 @@ photos backup"; "Every folder should have been sorted as discussed (not phone fo
   To review and on Approved. A year is not a frame number. Burst frames and award-line frames carry their own numbers and
   stay their own cards (his 2026-11-03 "Those are fine"). A file renamed with no frame number left is not caught.
 - **Pick the keepers: 50 a page** (KEEPERS_PAGE).
+
+## 2026-11-08: a late post is asked about hourly, a day-late one every six hours
+
+Chris: "Buffer 24hr api was just reached and it's 9am."; on the fix: "Fix it".
+
+- **Asked about around its own time** (`agents/publisher.ask_now`, SETTLE, LATE_EVERY, STALE, STALE_EVERY; migration
+  0100 `content_queue.buffer_checked_at`): a scheduled post is asked about on every ten-minute run from five minutes
+  before one of its networks' times to thirty minutes after; then once an hour; from a day late, once every six hours,
+  with one error on the dashboard saying Buffer has neither sent it nor said why. A post sent to go out now counts from
+  when it was handed to Buffer. The hourly read of what Buffer sent still writes down a late post as soon as it goes.
+- Why: post 70's LinkedIn part (due 2026-11-06 14:00 UTC) never settled in Buffer and was asked about with two requests
+  every ten minutes. The publisher spent 110 to 170 Buffer requests a day from Nov 4, and on the 8th the suite's own
+  24-hour ceiling (200 of 250) stopped it from 08:06 to about 09:01. One stuck post now costs 8 requests a day where it
+  cost 288.
