@@ -1,7 +1,8 @@
-import React, { useEffect, useState } from "react";
-import { AbsoluteFill, Easing, Img, continueRender, delayRender, random, spring, staticFile, useCurrentFrame } from "remotion";
+import React from "react";
+import { AbsoluteFill, Easing, Img, random, spring, staticFile, useCurrentFrame } from "remotion";
 import { noise2D } from "@remotion/noise";
 import { FPS, H, Photo, ReelProps, W, ramp } from "../look";
+import { Slots, checkSlots, everyPicture, fillerAt, photoAt, shapeOf } from "../slots";
 import { MONO, SANS } from "../fonts";
 import { Face, emWidth, fitSize, metrics, textWidth, useFontsReady } from "../measure";
 import { Music } from "../music";
@@ -53,27 +54,6 @@ const MONOF: Face = { family: MONO, weight: 500 };
 const smooth = (t: number) => { const x = Math.max(0, Math.min(1, t)); return x * x * (3 - 2 * x); };
 const expoOut = Easing.bezier(0.16, 1, 0.3, 1);
 
-
-// ------------------------------------------------------------------ the photos' true shapes
-
-const ASPECT = new Map<string, number>();
-/** Each reel photo's shape (width over height), read from the file before anything is drawn, so every picture is whole. */
-const useAspects = (photos: Photo[]) => {
-  const key = photos.map((p) => p.src).join("|");
-  const [, bump] = useState(0);
-  const [handle] = useState(() => (photos.every((p) => ASPECT.has(p.src)) ? null : delayRender("Reading the photos' shapes")));
-  useEffect(() => {
-    let live = true;
-    Promise.all(photos.map((p) => (ASPECT.has(p.src) ? Promise.resolve() : new Promise<void>((done) => {
-      const im = new Image();
-      im.onload = () => { ASPECT.set(p.src, im.naturalWidth / im.naturalHeight); done(); };
-      im.onerror = () => { ASPECT.set(p.src, 1.5); done(); };
-      im.src = staticFile(p.src);
-    })))).then(() => { if (live) bump((n) => n + 1); if (handle !== null) continueRender(handle); });
-    return () => { live = false; };
-  }, [key]);   // eslint-disable-line react-hooks/exhaustive-deps
-  return (pic: Photo) => ASPECT.get(pic.src) ?? 1.5;
-};
 
 // ------------------------------------------------------------------ the camera: one move (the mosaic and the move are
 // built in powersOfTenLayout.ts, where they can be checked without a browser)
@@ -309,7 +289,11 @@ const Night: React.FC<{ s: number; sEnd: number; mosaic: Mosaic }> = ({ s, sEnd,
 
 /** The plane of photos at scale s about the hero: a dark ground under it (its gaps and caption bands), and every photo
  *  whole and exactly as shot. Once it is no bigger than a few lights it becomes one. */
-const MosaicView: React.FC<{ mosaic: Mosaic; s: number }> = ({ mosaic, s }) => {
+const MosaicView: React.FC<{ mosaic: Mosaic; s: number; p: ReelProps }> = ({ mosaic, s, p }) => {
+  // each cell's picture through its slot (photoAt, fillerAt), so the card check sees where each one is drawn
+  const own = p.photos.length;
+  const slotOf = new Map<string, () => Photo>(everyPicture(p).map((x, n): [string, () => Photo] =>
+    [x.src, () => (n < own ? photoAt(p, n) : fillerAt(p, n - own))]));
   const bw = (mosaic.x1 - mosaic.x0) * s;
   const op = smooth((bw - 5) / 14);
   const light = smooth((26 - bw) / 16);
@@ -324,7 +308,7 @@ const MosaicView: React.FC<{ mosaic: Mosaic; s: number }> = ({ mosaic, s }) => {
             if (w < 1.5 || x > W || y > H || x + w < 0 || y + h < 0) return null;
             return (
               <div key={i} style={{ position: "absolute", left: x, top: y, width: w, height: h, overflow: "hidden" }}>
-                <Img src={staticFile(c.src)} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                <Img src={staticFile(slotOf.get(c.src)!().src)} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
               </div>
             );
           })}
@@ -510,16 +494,25 @@ const Defs: React.FC = () => (
   </svg>
 );
 
+// The post's six photos nearest the hero, and the mosaic's outer rings in up to forty fillers, more of his approved
+// photos: each picture once on the one plane (Chris, 2026-11-08, night: no picture twice in a reel). The suite gives the
+// mosaic only the fillers it places for these shapes (reel-looks/mosaic-fillers.mjs); one left off stops the render.
+export const SLOTS: Slots = { photos: 6, fillers: 40, fillersFrom: 8 };
+
 const WORLDS = new Map<string, ReturnType<typeof world>>();
 export const PowersOfTen: React.FC<ReelProps> = (p) => {
+  checkSlots(p, SLOTS, "PowersOfTen");
   const g = useCurrentFrame();
   useFontsReady();
-  const aspect = useAspects(p.photos);
-  const key = [...p.photos.map((x) => `${x.src}:${aspect(x).toFixed(4)}`), ...(p.tiles ?? []).map((t) => t.src), (p.wordPhotos ?? []).join(",")].join("|");
+  // every picture's shape from its props (shapeOf), so the first pass lays out the mosaic the suite counted its fillers on
+  const key = [...everyPicture(p).map((x) => `${x.src}:${shapeOf(x).toFixed(4)}`), p.wordPhotos.join(",")].join("|");
   // the mosaic and the one move over it (powersOfTenLayout.world): it ends as the bright town at the heart of the map
-  const built = WORLDS.get(key) ?? world(p, aspect);
+  const built = WORLDS.get(key) ?? world(p, shapeOf);
   WORLDS.set(key, built);
   const { mosaic, scaleAt, windows } = built;
+  const placed = new Set(mosaic.cells.map((c) => c.src));
+  const left = everyPicture(p).filter((pic) => !placed.has(pic.src)).map((pic) => pic.src);
+  if (left.length) throw new Error(`the mosaic leaves off ${left.join(", ")}: a photo taken and never shown`);
   const s = scaleAt(g), sEnd = scaleAt(END);
   const power = (FINAL_POWER * tau(g)) / TAU_END;
   // the night shows once the mosaic no longer covers the frame
@@ -533,7 +526,7 @@ export const PowersOfTen: React.FC<ReelProps> = (p) => {
         <div style={{ position: "absolute", left: CX + ((mosaic.x0 + mosaic.x1) / 2) * s - (mosaic.y1 - mosaic.y0) * s * 1.1, top: CY + ((mosaic.y0 + mosaic.y1) / 2) * s - (mosaic.y1 - mosaic.y0) * s * 1.1,
           width: (mosaic.y1 - mosaic.y0) * s * 2.2, height: (mosaic.y1 - mosaic.y0) * s * 2.2, borderRadius: "50%", background: "radial-gradient(circle, rgba(255,214,160,.32) 0%, rgba(255,200,140,.12) 38%, rgba(255,200,140,0) 70%)" }} />
       )}
-      <MosaicView mosaic={mosaic} s={s} />
+      <MosaicView mosaic={mosaic} s={s} p={p} />
       <WordBands g={g} p={p} mosaic={mosaic} scaleAt={scaleAt} windows={windows} />
       <TitleStrip g={g} p={p} />
       <Marquee g={g} p={p} topAt={(f) => CY + mosaic.y0 * scaleAt(f)} />

@@ -210,6 +210,26 @@ class Fillers(IsolatedCase):
         self.assertFalse(first & second, "the next wall shows the four the first did not")
         self.assertIn("reel wall", report.use_line(report.use_of(self.conn, ids[:1]).get(ids[0]) or report.use_of(self.conn, ids[1:2]).get(ids[1])))
 
+    def test_every_approved_photo_reaches_the_wall_not_only_the_strongest_600_frames_of_the_library(self):
+        """2026-11-09: the wall read the strongest 600 frames of the whole library and kept the approved among them, 42 of
+        his approved photos with a copy on the Mini, of 206; the rest of his approved work never reached a wall. His
+        rotation is every approved photo (2026-10-14), and a look's fillers are drawn the same way (2026-11-08, night)."""
+        from convention_social.core import config
+        cache = config.get_config().data_root / "photos"
+        cache.mkdir(parents=True, exist_ok=True)
+        weak = event_photo(self.conn, "weak", kind="business", final="business", quality=1, light=1, moment=1)
+        self.conn.execute("UPDATE photos SET thumbnail_link='t' WHERE id=?", (weak,))
+        Image.new("RGB", (30, 20), (9, 9, 9)).save(cache / "weak.img", "JPEG")
+        now = db.utcnow()
+        for k in range(601):                                 # stronger frames he has not decided on, in another shoot each
+            pid = db.insert(self.conn, "photos", drive_id=f"strong{k}", name=f"strong{k}.jpg", folder_id="fe", width=3000,
+                            height=2000, thumbnail_link="t", first_seen_at=now, last_seen_at=now)
+            db.insert(self.conn, "classifications", photo_id=pid, method="ollama", subject="event", convention_name=f"Event {k}",
+                      event_kind="business", is_convention=1, quality=5, possible_minor=0, personal_details="[]",
+                      space="exterior", residential=0, empty_room=0, sharp=1, light=5, moment=5, shot_type="crowd",
+                      classified_at=now)
+        self.assertEqual([p.name for p in reels3d.fillers(self.conn)], ["weak.img"])
+
     def test_fillers_are_approved_cached_photos_one_per_room_per_shoot_never_the_posts_own(self):
         from convention_social.core import config
         cache = config.get_config().data_root / "photos"

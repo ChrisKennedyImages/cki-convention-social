@@ -1,7 +1,7 @@
-import React, { useEffect, useState } from "react";
-import { AbsoluteFill, Easing, Img, cancelRender, continueRender, delayRender, staticFile, useCurrentFrame } from "remotion";
-import { getImageDimensions } from "@remotion/media-utils";
+import React from "react";
+import { AbsoluteFill, Easing, Img, staticFile, useCurrentFrame } from "remotion";
 import { H, Photo, ReelProps, W, ramp } from "../look";
+import { Slots, checkSlots, fillerAt, photoAt, shapeOf } from "../slots";
 import { ARCHIVO, SANS } from "../fonts";
 import { Face, fitSize, metrics, textWidth, useFontsReady } from "../measure";
 import { Music } from "../music";
@@ -30,7 +30,8 @@ import { Music } from "../music";
 //               bringing in a new photo (lands on beat 6)
 //   3-5.6 s     line 1 and line 2 on the two halves of the cyan field
 //   5.6-6.5 s   the strip advances to the contact sheet (lands on beat 13): six photos at once, the label above, the
-//               number below (Ferro)
+//               number below (Ferro); six fillers, more of his approved photos, so no picture is shown twice (Chris,
+//               2026-11-08, night)
 //   9-10 s      the strip advances to the triptych (beat 20): the centre's word first, the wings answering (Gance)
 //   12.7-13.5 s the strip advances to the resolve (beat 27): one picture, the marquee above it, the end card beneath
 //               (everything in by frame 433, then still)
@@ -41,7 +42,10 @@ import { Music } from "../music";
 const INK = "#0A0A0B";                         // the ground, and the gutters
 const G = 12;                                  // the gutter
 const IW = W - 2 * G;                          // the frame inside its outer gutter
-const ph = (p: ReelProps, i: number): Photo => p.photos[i % p.photos.length];
+// The post's eight photos, each seen once: the hero (slot 0), the resolve; the three the triptych's words go with; the
+// split's two at the cover and the two the counterpoint brings in. The contact sheet's six are fillers.
+export const SLOTS: Slots = { photos: 8, fillers: 6 };
+const HERO = 0, SPLIT_TOP = 4, SPLIT_LOW = 5, IN_TOP = 6, IN_LOW = 7;
 
 const HEAVY: Face = { family: ARCHIVO, weight: 800, stretch: "condensed" };
 const LIGHT: Face = { family: ARCHIVO, weight: 300, stretch: "condensed" };
@@ -73,25 +77,11 @@ const END = { marquee: 407, name: 410, kicker: 413, call: 416, site: 419, town: 
 
 // ------------------------------------------------------------------ the photos, whole
 
-const SHAPE = new Map<string, number>();        // width / height of each photo, read from its file
-/** Holds the frame until every photo's own shape is known, so each can be laid out whole. */
-const useShapes = (pics: Photo[]): boolean => {
-  const [ok, setOk] = useState(() => pics.every((q) => SHAPE.has(q.src)));
-  const [handle] = useState(() => (ok ? null : delayRender("Reading the photos' shapes")));
-  useEffect(() => {
-    if (handle === null) return;
-    const todo = pics.map((q) => q.src).filter((s) => !SHAPE.has(s));
-    Promise.all(todo.map((s) => getImageDimensions(staticFile(s)).then((d) => { SHAPE.set(s, d.width / d.height); })))
-      .then(() => { setOk(true); continueRender(handle); })
-      .catch((e) => cancelRender(e));                // a photo that will not load fails the render: never a blank panel
-  }, [handle, pics]);
-  return ok;
-};
 
 type Rect = { x: number; y: number; w: number; h: number };
 /** The photo's own rectangle, as large as fits in the box and centred in it. */
 const fitIn = (box: Rect, pic: Photo): Rect => {
-  const shape = SHAPE.get(pic.src) ?? 1.5;
+  const shape = shapeOf(pic);             // its shape from its props (slots.ts)
   const w = Math.min(box.w, box.h * shape), h = w / shape;
   return { x: box.x + (box.w - w) / 2, y: box.y + (box.h - h) / 2, w, h };
 };
@@ -182,10 +172,10 @@ const Opening: Layout = ({ g, p }) => {
   const lCap = capOf(HEAVY, lS), lTop = MID.h / 2 - (lS + lCap) / 2;
   return (
     <>
-      <Pic pic={ph(p, 0)} box={TOP} dx={-run} />
-      <Pic pic={ph(p, 2)} box={TOP} dx={IW + G - run} />
-      <Pic pic={ph(p, 1)} box={LOW} dx={run} />
-      <Pic pic={ph(p, 3)} box={LOW} dx={run - (IW + G)} />
+      <Pic pic={photoAt(p, SPLIT_TOP)} box={TOP} dx={-run} />
+      <Pic pic={photoAt(p, IN_TOP)} box={TOP} dx={IW + G - run} />
+      <Pic pic={photoAt(p, SPLIT_LOW)} box={LOW} dx={run} />
+      <Pic pic={photoAt(p, IN_LOW)} box={LOW} dx={run - (IW + G)} />
       <Field r={MID} bg={p.accent}>
         {hook.map((l, i) => <Line key={i} g={g} at={-30} out={HOOK_OUT} text={l} face={HEAVY} size={hS} x={MID.w / 2} inkTop={hTop + i * hLead} align="center" color={ink} track={-0.01} />)}
         {sub.lines.map((l, i) => <Line key={`s${i}`} g={g} at={-30} out={HOOK_OUT} text={l} face={STRONG} size={sub.size} x={MID.w / 2} inkTop={hTop + (hook.length - 1) * hLead + capH + gap + i * sLead} align="center" color={ink} track={-0.01} />)}
@@ -202,7 +192,7 @@ const Opening: Layout = ({ g, p }) => {
 // the number on paper below.
 const SHEET_TOP = 354, CELL_W = (IW - G) / 2, CELL_H = 348;
 const cellOf = (c: number, r: number): Rect => ({ x: G + c * (CELL_W + G), y: SHEET_TOP + r * (CELL_H + G), w: CELL_W, h: CELL_H });
-const SHEET = [{ c: 0, r: 0, pic: 0 }, { c: 1, r: 0, pic: 1 }, { c: 0, r: 1, pic: 2 }, { c: 1, r: 1, pic: 3 }, { c: 0, r: 2, pic: 4 }, { c: 1, r: 2, pic: 5 }];
+const SHEET = [{ c: 0, r: 0, filler: 0 }, { c: 1, r: 0, filler: 1 }, { c: 0, r: 1, filler: 2 }, { c: 1, r: 1, filler: 3 }, { c: 0, r: 2, filler: 4 }, { c: 1, r: 2, filler: 5 }];
 const LABEL_F: Rect = { x: G, y: G, w: IW, h: SHEET_TOP - 2 * G };
 const COUNT_F: Rect = { x: G, y: SHEET_TOP + 3 * CELL_H + 3 * G, w: IW, h: H - G - (SHEET_TOP + 3 * CELL_H + 3 * G) };
 const Sheet: Layout = ({ g, p }) => {
@@ -222,7 +212,7 @@ const Sheet: Layout = ({ g, p }) => {
   const [a, b] = SHEET_TEXT.at, out = SHEET_TEXT.out;
   return (
     <>
-      {SHEET.map((s) => <Pic key={`${s.c}${s.r}`} pic={ph(p, s.pic)} box={cellOf(s.c, s.r)} />)}
+      {SHEET.map((s) => <Pic key={`${s.c}${s.r}`} pic={fillerAt(p, s.filler)} box={cellOf(s.c, s.r)} />)}
       <Field r={LABEL_F} bg={p.accent}>
         {set.lines.map((l, i) => <Line key={i} g={g} at={a + i * 3} out={out} text={l} face={HEAVY} size={set.size} x={LABEL_F.w / 2} inkTop={labTop + i * leadL} align="center" color={ink} track={-0.01} />)}
       </Field>
@@ -239,7 +229,7 @@ const Sheet: Layout = ({ g, p }) => {
 // its photo. The centre's word arrives first and carries the line; the two wings answer it together.
 const ROW_H = 540, ROW_TOP = Math.round((H - 3 * ROW_H - 2 * G) / 2), PHOTO_W = 700;
 const Triptych: Layout = ({ g, p }) => {
-  const idx = p.wordPhotos ?? [0, 1, 2];
+  const idx = p.wordPhotos;
   const size = Math.min(...p.words.map((w) => fit(w, HEAVY, IW - PHOTO_W - G - 60, 150, -0.01)));
   const cap = capOf(HEAVY, size);
   return (
@@ -247,13 +237,13 @@ const Triptych: Layout = ({ g, p }) => {
       {[0, 1, 2].map((i) => {
         const photoLeft = i !== 1;
         const box: Rect = { x: photoLeft ? G : W - G - PHOTO_W, y: ROW_TOP + i * (ROW_H + G), w: PHOTO_W, h: ROW_H };
-        const shot = fitIn(box, ph(p, idx[i]));
+        const shot = fitIn(box, photoAt(p, idx[i]));
         // the word's field takes the photo's own height and runs from the photo's edge (one gutter away) to the frame's
         const fr: Rect = photoLeft ? { x: shot.x + shot.w + G, y: shot.y, w: W - G - (shot.x + shot.w + G), h: shot.h } : { x: G, y: shot.y, w: shot.x - 2 * G, h: shot.h };
         const bg = i === 1 ? p.accent2 : p.accent;
         return (
           <React.Fragment key={i}>
-            <Pic pic={ph(p, idx[i])} box={box} />
+            <Pic pic={photoAt(p, idx[i])} box={box} />
             <Field r={fr} bg={bg}>
               <Line g={g} at={i === 1 ? WORDS.at[0] : WORDS.at[1]} out={WORDS.out} text={p.words[i]} face={HEAVY} size={size} x={fr.w / 2} inkTop={fr.h / 2 - cap / 2} align="center" color={onColour(bg, p.accent2)} track={-0.01} />
             </Field>
@@ -267,7 +257,7 @@ const Triptych: Layout = ({ g, p }) => {
 // 4 · the resolve, and the end card. After all the panels, one picture: the hero, whole, with the marquee on the cyan
 // field above it and the end card on the fields beneath. Everything settles in turn and holds.
 const MARQ: Rect = { x: G, y: G, w: IW, h: 300 };
-const HERO: Rect = { x: G, y: 324, w: IW, h: 704 };
+const RESOLVE: Rect = { x: G, y: 324, w: IW, h: 704 };
 const NAME: Rect = { x: G, y: 1040, w: IW, h: 340 };
 const CALL: Rect = { x: G, y: 1392, w: IW, h: 200 };
 const SITE: Rect = { x: G, y: 1604, w: IW, h: H - G - 1604 };
@@ -284,7 +274,7 @@ const Resolve: Layout = ({ g, p }) => {
   const sTop = (SITE.h - (capS + 44 + capTn)) / 2;
   return (
     <>
-      <Pic pic={ph(p, 0)} box={HERO} />
+      <Pic pic={photoAt(p, HERO)} box={RESOLVE} />
       <Field r={MARQ} bg={p.accent}>
         <Line g={g} at={END.marquee} text={p.marquee} face={HEAVY} size={mS} x={MARQ.w / 2} inkTop={(MARQ.h - capM) / 2 + 10} align="center" color={ink} track={0.02} />
       </Field>
@@ -310,14 +300,14 @@ const STEP = H - G;
 const stripAt = (g: number) => ADVANCE.reduce((s, [a, b]) => s + ramp(g, a, b, glide), 0);
 
 export const SplitScreen: React.FC<ReelProps> = (p) => {
+  checkSlots(p, SLOTS, "SplitScreen");
   const g = useCurrentFrame();
   useFontsReady();
-  const ready = useShapes(p.photos);
   const s = stripAt(g);
   return (
     <AbsoluteFill style={{ background: INK, overflow: "hidden" }}>
       <Music track={p.music} />
-      {ready && STRIP.map((L, k) => (Math.abs(k - s) < 1 ? (
+      {STRIP.map((L, k) => (Math.abs(k - s) < 1 ? (
         <AbsoluteFill key={k} style={{ transform: `translateY(${((k - s) * STEP).toFixed(2)}px)` }}><L g={g} p={p} /></AbsoluteFill>
       ) : null))}
     </AbsoluteFill>

@@ -1,6 +1,7 @@
-import React, { useEffect, useState } from "react";
-import { AbsoluteFill, Easing, Img, continueRender, delayRender, spring, staticFile, useCurrentFrame } from "remotion";
-import { FPS, H, Photo, ReelProps, W, climaxIndex, ramp } from "../look";
+import React from "react";
+import { AbsoluteFill, Easing, Img, spring, staticFile, useCurrentFrame } from "remotion";
+import { FPS, H, Photo, ReelProps, W, ramp } from "../look";
+import { Slots, checkSlots, fillerAt, photoAt, shapeOf } from "../slots";
 import { MONO, SANS } from "../fonts";
 import { Face, emWidth, fitSize, metrics, textWidth, useFontsReady } from "../measure";
 import { Music } from "../music";
@@ -26,10 +27,13 @@ import { Music } from "../music";
 //    bar 0  the roof and the attic (its room up), the hook above the roof (the cover); the last lines draw; crane down
 //    bar 1  the first floor: its room comes up, callout 1 on the cut floor, its leader to a note: line 1
 //    bar 2  crane down and track along the ground floor to the hero's room: callout 2, line 2
-//    bar 3  pull back to the whole sheet: a dimension line draws itself across the roof, the stack label its figure
+//    bar 3  pull back to the whole sheet, its rooms drawn empty: a dimension line draws itself across the roof, the stack
+//           label its figure
 //    bar 4  the number, sectioned (outline and hatching) in a cartouche, label and unit
-//    bar 5  three rooms come up on the beats, numbered in the margins, the words as the legend; a whip along the table
-//    bar 6  the exploded view: the frames of the take apart on dashed assembly lines, callouts 1 to 4, then together on
+//    bar 5  the three word rooms come up on the beats (the hero's room first), numbered in the margins, the words as the
+//           legend; a whip along the table. The attic and the first floor's other room, seen on their stops, stay
+//           drawn empty: no picture is shown twice in a reel (Chris, 2026-11-08, night)
+//    bar 6  the exploded view: three frames (fillers) apart on dashed assembly lines, callouts 1 to 4, then together on
 //           the hit into the hero, straight on and whole; the marquee as the drawing's title
 //    bar 7  the title block grows from the sheet's corner to fill the card under the hero: name, kicker, the call, site,
 //           town, a scale bar (everything in by frame 440, then still)
@@ -38,7 +42,11 @@ import { Music } from "../music";
 
 const INK = "#16161A";
 const TABLE = "#0A0A0B";
-const ph = (p: ReelProps, i: number): Photo => p.photos[i % p.photos.length];
+// The post's five photos are the rooms: the hero's (slot 0, A on the ground floor, carrying the first word), the two
+// other word rooms (B beside it, C on the first floor), E (the attic, the cover) and D (the first floor's other room).
+// The exploded view's three lower plates are fillers, more of his approved photos; its top plate is the hero.
+export const SLOTS: Slots = { photos: 5, fillers: 3 };
+const HERO = 0, ATTIC = 3, FIRST_FLOOR_OTHER = 4;
 const lum = (hex: string) => { const n = parseInt(hex.replace("#", "").slice(0, 6), 16); return (0.2126 * ((n >> 16) & 255) + 0.7152 * ((n >> 8) & 255) + 0.0722 * (n & 255)) / 255; };
 /** The sheet's paper: Event Caliber's second colour when it is a paper colour; otherwise warm drafting paper. The cut line
  *  takes whichever of the two colours is not the paper. */
@@ -63,24 +71,7 @@ const SW = 2160, SH = 3840, X2 = SW + 240;
 
 // ------------------------------------------------------------------ the photos' true shapes
 
-const ASPECT = new Map<string, number>();
-/** Each photo's shape (width over height), read from the file before anything is drawn, so the rooms fit the pictures. */
-const useAspects = (photos: Photo[]) => {
-  const key = photos.map((p) => p.src).join("|");
-  const [, bump] = useState(0);
-  const [handle] = useState(() => (photos.every((p) => ASPECT.has(p.src)) ? null : delayRender("Reading the photos' shapes")));
-  useEffect(() => {
-    let live = true;
-    Promise.all(photos.map((p) => (ASPECT.has(p.src) ? Promise.resolve() : new Promise<void>((done) => {
-      const im = new Image();
-      im.onload = () => { ASPECT.set(p.src, im.naturalWidth / im.naturalHeight); done(); };
-      im.onerror = () => { ASPECT.set(p.src, 1.5); done(); };
-      im.src = staticFile(p.src);
-    })))).then(() => { if (live) bump((n) => n + 1); if (handle !== null) continueRender(handle); });
-    return () => { live = false; };
-  }, [key]);   // eslint-disable-line react-hooks/exhaustive-deps
-  return (pic: Photo) => ASPECT.get(pic.src) ?? 1.5;
-};
+// each picture's shape comes from its props (slots.ts shapeOf), so the rooms fit the pictures from the first frame
 
 // ------------------------------------------------------------------ the building, designed around the pictures
 
@@ -99,10 +90,10 @@ const F0_FLOOR = 3240, FOUND = 3500;
 /** Rooms the shape of their photos (a floor's height times the photo's aspect), two to a floor, a hall between them
  *  when the floor is wider than its rooms; an attic room under a gable pitched to clear it. */
 const buildGeo = (p: ReelProps, aspect: (pic: Photo) => number): Geo => {
-  const a = (i: number) => aspect(ph(p, i));
+  const a = (i: number) => aspect(photoAt(p, i));
   let FH = 560, AH = 480;
   const wOf = (i: number, h: number) => Math.min(1000, h * a(i));
-  const span = () => Math.max(wOf(0, FH) + wOf(1, FH) + IT, wOf(2, FH) + wOf(4, FH) + IT, wOf(5, AH) + 320, 1100);
+  const span = () => Math.max(wOf(0, FH) + wOf(1, FH) + IT, wOf(2, FH) + wOf(FIRST_FLOOR_OTHER, FH) + IT, wOf(ATTIC, AH) + 320, 1100);
   const k = Math.min(1, 1640 / span());
   FH *= k; AH *= k;
   const BI = span();
@@ -122,9 +113,9 @@ const buildGeo = (p: ReelProps, aspect: (pic: Photo) => number): Geo => {
     }
   };
   floor(0, 1, F0);
-  floor(2, 4, F1);
-  const wE = wOf(5, AH);
-  rooms.push({ photo: 5, col: "C", x0: SW / 2 - wE / 2, x1: SW / 2 + wE / 2, y0: AF - AH, y1: AF });
+  floor(2, FIRST_FLOOR_OTHER, F1);
+  const wE = wOf(ATTIC, AH);
+  rooms.push({ photo: ATTIC, col: "C", x0: SW / 2 - wE / 2, x1: SW / 2 + wE / 2, y0: AF - AH, y1: AF });
   // the gable: eaves past the walls; the ridge high enough that the roof's underside clears the attic room by 40
   const EAVE_L = XL - 110, EAVE_R = XR + 110, EY = AF - 12, run = SW / 2 - EAVE_L;
   const q = wE / 2 / run;
@@ -419,7 +410,7 @@ const WORD_AT = [285, 300, 315];          // the beats the three rooms come up o
  *  margin beside it, its leader stopping at the wall. */
 const Legend: React.FC<{ g: number; p: ReelProps; geo: Geo }> = ({ g, p, geo }) => {
   if (g < 283 || g > 356) return null;
-  const idx = p.wordPhotos ?? [0, 1, 2];
+  const idx = p.wordPhotos;
   const gone = ramp(g, 346, 353, Easing.linear);
   const r = 46, gap = 80;
   const size = Math.min(116, (1900 - 3 * (2 * r + 26) - 2 * gap) / p.words.reduce((s, w) => s + emWidth(w, HEAVY, -0.01), 0));
@@ -458,7 +449,7 @@ const Legend: React.FC<{ g: number; p: ReelProps; geo: Geo }> = ({ g, p, geo }) 
 
 const Sheet1: React.FC<{ g: number; p: ReelProps; geo: Geo; lit: (i: number) => boolean; paper: string; cut: string }> = ({ g, p, geo, lit, paper, cut }) => (
   <Paper x={0} paper={paper}>
-    {geo.rooms.map((room, i) => <RoomView key={i} room={room} pic={ph(p, room.photo)} lit={lit(i)} />)}
+    {geo.rooms.map((room, i) => <RoomView key={i} room={room} pic={photoAt(p, room.photo)} lit={lit(i)} />)}
     <Linework geo={geo} draw={ramp(g, 0, 40, Easing.linear)} cut={cut} paper={paper} />
     <ScaleBar x={130} y={3730} px={(geo.F0[1] - geo.F1[1]) / 3 * 0.5} size={30} paper={paper} />
     <Hook g={g} p={p} geo={geo} />
@@ -486,9 +477,8 @@ const HERO_Y = 520, HERO_W = 720, HERO_H = 580;   // where the hero's centre sit
 const Exploded: React.FC<{ g: number; p: ReelProps; aspect: (pic: Photo) => number; cut: string }> = ({ g, p, aspect, cut }) => {
   const t = g - 368;
   if (t < 0) return null;
-  const top = climaxIndex(p);                       // the top plate: the hero, or the photo props.climax names
-  const plates = [...[5, 4, 3, 0].filter((i) => i !== top).slice(0, 3), top];     // bottom to top; the hero last
-  const sizes = plates.map((i, n) => fitBox(aspect(ph(p, i)), n === 3 ? HERO_W : 420, n === 3 ? HERO_H : 300));
+  const plates = [fillerAt(p, 0), fillerAt(p, 1), fillerAt(p, 2), photoAt(p, HERO)];     // bottom to top; the hero last
+  const sizes = plates.map((pic, n) => fitBox(aspect(pic), n === 3 ? HERO_W : 420, n === 3 ? HERO_H : 300));
   const projH = ([w, h]: [number, number]) => Math.cos(ISO_PH) * (Math.abs(Math.sin(ISO_TH)) * w + Math.cos(ISO_TH) * h);
   // exploded, the plates hang below the hero on its axis, each clear of the next
   const drop: number[] = [0, 0, 0, 0];
@@ -519,9 +509,9 @@ const Exploded: React.FC<{ g: number; p: ReelProps; aspect: (pic: Photo) => numb
         </g>
       </svg>
       {/* the frames of the take, bottom to top, the hero last: each whole, exactly as shot */}
-      {plates.map((i, n) => {
+      {plates.map((pic, n) => {
         if (n < 3 && apart < 0.02) return null;
-        const pic = ph(p, i), [w, h] = sizes[n];
+        const [w, h] = sizes[n];
         return (
           <div key={n} style={{ position: "absolute", left: 0, top: 0, width: w, height: h, transformOrigin: "0 0", transform: css(n) }}>
             <Img src={staticFile(pic.src)} style={{ width: "100%", height: "100%", objectFit: "fill", display: "block" }} />
@@ -550,8 +540,7 @@ const Exploded: React.FC<{ g: number; p: ReelProps; aspect: (pic: Photo) => numb
 /** 6 · the marquee as the drawing's title, under the hero once it is together: detail number, word, rule, scale. */
 const DetailTitle: React.FC<{ g: number; p: ReelProps; aspect: (pic: Photo) => number }> = ({ g, p, aspect }) => {
   if (g < 403) return null;
-  const top = climaxIndex(p);
-  const [, hh] = fitBox(aspect(ph(p, top)), HERO_W, HERO_H);
+  const [, hh] = fitBox(aspect(photoAt(p, HERO)), HERO_W, HERO_H);
   const [x0] = toLocal(W / 2 - HERO_W / 2, 0);
   const y = toLocal(0, HERO_Y)[1] + hh / 2 + 150;
   const r = 66, width = HERO_W / S2;
@@ -684,20 +673,22 @@ const Defs: React.FC<{ blur: number }> = ({ blur }) => (
 );
 
 export const Section: React.FC<ReelProps> = (p) => {
+  checkSlots(p, SLOTS, "Section");
   const g = useCurrentFrame();
   useFontsReady();
-  const aspect = useAspects(p.photos);
+  const aspect = shapeOf;
   const geo = buildGeo(p, aspect);
   const keys = keysOf(geo);
   const cam = camAt(keys, g);
   const paper = paperOf(p), cut = cutOf(p);
-  // which rooms are up: each on its stop while the camera is still on it, then on the whole sheet the rooms that carry
-  // no word, and the word rooms on their beats; all down before the whip
-  const idx = p.wordPhotos ?? [0, 1, 2];
+  // which rooms are up: each on its stop while the camera is still on it, then on the whole sheet the word rooms on
+  // their beats; all down before the whip. The rooms seen on their stops that carry no word stay drawn empty on the
+  // whole sheet, so no picture comes back (the hero's room, seen on its stop, carries the first word with nothing between)
+  const idx = p.wordPhotos;
   const wordRoom = idx.map((i) => geo.rooms.indexOf(roomOfPhoto(geo, i)));
   const lit = (r: number) => {
     const n = wordRoom.indexOf(r);
-    if (g >= 222 && g < 346) return n < 0 || g >= WORD_AT[n];
+    if (g >= 222 && g < 346) return n >= 0 && g >= WORD_AT[n];
     if (r === 4) return g < 44;
     if (r === 3) return g >= 70 && g < 120;
     if (r === 0) return g >= 148 && g < 196;

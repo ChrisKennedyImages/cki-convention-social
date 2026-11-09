@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { AbsoluteFill, Easing, Img, cancelRender, continueRender, delayRender, staticFile, useCurrentFrame } from "remotion";
-import { H, Photo, ReelProps, W, climaxIndex, heldForClimax } from "../look";
+import { H, Photo, ReelProps, W } from "../look";
+import { Slots, checkSlots, everyPicture, photoAt } from "../slots";
 import { SANS, SERIF, SERIF_ROMAN } from "../fonts";
 import { Face, fitSize, metrics, textWidth, useFontsReady } from "../measure";
 import { Music } from "../music";
@@ -10,7 +11,8 @@ import { Music } from "../music";
 // which his own pictures are the heroes, clean, whole and in their true colours. So every photo stands on the paper at
 // its own shape (portraits, stages and groups: a crop never cuts a face), nothing is drawn around or over a photo, no
 // photo ever comes toward the viewer, and the one large movement in the film is his best picture, the hero, rising into
-// the frame (or the photo props.climax names, whole).
+// the frame. Each picture is seen once (Chris, 2026-11-08, night: no picture twice in a reel): the hero is seen in its
+// rise only; the words stand beside three other pictures.
 // Chris on the first cut (2026-11-08): the concept held, but hard cuts with nothing moving read as a choppy slideshow on
 // a phone. So it flows like cinema: slow dissolves between shots, every photo breathing, fewer and longer holds.
 // The craft of the masters, not their look:
@@ -26,8 +28,8 @@ import { Music } from "../music";
 //
 // 16 s (480 frames) on the 120 BPM grid; each dissolve starts on a beat:
 //     0-75   the intertitle, the cover: the hook on the paper
-//    60-150  the hero on the level line, drawing slowly back; line 1 beneath
-//   135-240  photos 4 and 5, one above the other, drifting slowly apart; line 2 beneath, the stack label under it
+//    60-150  the first picture on the level line, drawing slowly back; line 1 beneath
+//   135-240  two more, one above the other, drifting slowly apart; line 2 beneath, the stack label under it
 //   225-285  the number, plain on the paper
 //   270-360  the three words: three photos down the page, each drifting a little, each word beside its own photo
 //   345-445  silence, then the one movement: the hero rises over the level line and lands softly; the marquee beneath
@@ -72,9 +74,12 @@ const useAspects = (photos: Photo[]): number[] => {
 };
 /** The largest box of a photo's own shape inside (maxW, maxH). */
 const fitBox = (ar: number, maxW: number, maxH: number) => (maxW / maxH > ar ? { w: maxH * ar, h: maxH } : { w: maxW, h: maxW / ar });
-/** Photo i and its shape; the photo the climax keeps (props.climax) is never set small, so the hero takes its place
- *  outside the climax. */
-const pick = (p: ReelProps, ar: number[], i: number) => { const j = heldForClimax(p, i) ? 0 : i % p.photos.length; return { pic: p.photos[j], ar: ar[j] }; };
+// The post's seven photos: the hero (slot 0, the rise), the three the words stand beside, the first picture on the level
+// line and the pair.
+export const SLOTS: Slots = { photos: 7, fillers: 0 };
+const HERO = 0, FIRST = 4, PAIR = [5, 6];
+/** The post's photo in slot i and its shape. */
+const pick = (p: ReelProps, ar: number[], i: number) => ({ pic: photoAt(p, i), ar: ar[i] });
 
 /** A photo standing on the paper, whole and exactly as shot, its bottom centre at (cx, bottom). It breathes: s a scale
  *  that only ever falls toward 1 (drawing back, never coming closer), dx a slow sideways drift. */
@@ -140,9 +145,9 @@ const Intertitle: Shot = ({ p }) => {
   );
 };
 
-/** The hero on the level line, drawing slowly back all through the shot; line 1 beneath it. */
-const HeroLine: Shot = ({ f, n, p, ar }) => {
-  const h = pick(p, ar, 0);
+/** The first picture on the level line, drawing slowly back all through the shot; line 1 beneath it. */
+const FirstLine: Shot = ({ f, n, p, ar }) => {
+  const h = pick(p, ar, FIRST);
   const b = fitBox(h.ar, 900, LEVEL - 420);
   const runs = pair(p.line1[0], p.line1[1]);
   const s = Math.min(130, 860 / runsEm(runs));
@@ -154,10 +159,10 @@ const HeroLine: Shot = ({ f, n, p, ar }) => {
   );
 };
 
-/** Photos 4 and 5, one above the other, the lower on the level line, drifting slowly apart; line 2 beneath, and the
+/** Two pictures, one above the other, the lower on the level line, drifting slowly apart; line 2 beneath, and the
  *  stack label under it like a gallery's label. */
 const Pair: Shot = ({ f, n, p, ar }) => {
-  const a = pick(p, ar, 4), b = pick(p, ar, 5);
+  const [a, b] = PAIR.map((i) => pick(p, ar, i));
   const gap = 44, maxH = (LEVEL - 300 - gap) / 2;
   const ba = fitBox(a.ar, 820, maxH), bb = fitBox(b.ar, 820, maxH);
   const drift = 16 * (fade(f, 0, n) - 0.5);
@@ -195,7 +200,7 @@ const Count: Shot = ({ p }) => {
 /** The three words: three photos down the page, alternating sides, each drifting a little toward its word; each word
  *  beside its own photo, fading in one after another once the page has settled. */
 const Words: Shot = ({ f, n, p, ar }) => {
-  const idx = p.wordPhotos ?? [0, 1, 2];
+  const idx = p.wordPhotos;
   const PW = 560, PH = 340, gap = 64, top = (H - (3 * PH + 2 * gap)) / 2 - 40;
   const s = Math.min(...p.words.map((w) => fitSize(w, ITALIC, W - 2 * M + 40 - PW - 56, 110)));
   const drift = fade(f, 0, n);
@@ -220,10 +225,10 @@ const Words: Shot = ({ f, n, p, ar }) => {
   );
 };
 
-/** Silence, then the one movement: the hero (or the photo props.climax names) rises slowly over the level line, as
+/** Silence, then the one movement: the hero rises slowly over the level line, as
  *  the sun clears a horizon, lands softly and goes on drawing back a breath; the marquee fades in beneath. */
 const Rise: Shot = ({ f, n, p, ar }) => {
-  const piece = { pic: p.photos[climaxIndex(p)], ar: ar[climaxIndex(p)] };
+  const piece = pick(p, ar, HERO);
   const b = fitBox(piece.ar, 900, 800);
   const rest = LEVEL - 40;
   const k = Easing.bezier(0.33, 0, 0.12, 1)(clamp((f - 13) / 38, 0, 1));
@@ -270,7 +275,7 @@ const End: Shot = ({ p }) => {
  *  alone: a dissolve to or from one passes through bare paper, so type never lies over a fading picture. */
 const SHOTS: { at: number; end: number; S: Shot; card?: boolean }[] = [
   { at: 0, end: 75, S: Intertitle, card: true },
-  { at: 60, end: 150, S: HeroLine },
+  { at: 60, end: 150, S: FirstLine },
   { at: 135, end: 240, S: Pair },
   { at: 225, end: 285, S: Count, card: true },
   { at: 270, end: 360, S: Words },
@@ -295,9 +300,10 @@ const Paper: React.FC = () => (
 );
 
 export const Stillness: React.FC<ReelProps> = (p) => {
+  checkSlots(p, SLOTS, "Stillness");
   const g = useCurrentFrame();
   useFontsReady();
-  const ar = useAspects(p.photos);
+  const ar = useAspects(everyPicture(p));
   return (
     <AbsoluteFill style={{ background: PAPER, overflow: "hidden" }}>
       <Music track={p.music} />

@@ -1,8 +1,8 @@
-import React, { useEffect, useState } from "react";
-import { AbsoluteFill, Easing, Img, cancelRender, continueRender, delayRender, interpolate, random, spring, staticFile, useCurrentFrame } from "remotion";
+import React from "react";
+import { AbsoluteFill, Easing, Img, interpolate, random, spring, staticFile, useCurrentFrame } from "remotion";
 import { noise2D } from "@remotion/noise";
-import { getImageDimensions } from "@remotion/media-utils";
 import { FPS, H, Photo, ReelProps, W, clamp, ramp } from "../look";
+import { Slots, checkSlots, photoAt, shapeOf } from "../slots";
 import { ANTON, ARCHIVO, SANS } from "../fonts";
 import { Face, fitSize, metrics, textWidth, useFontsReady } from "../measure";
 import { Music } from "../music";
@@ -36,7 +36,8 @@ import { Music } from "../music";
 //   5.7-9.2 s   a hard vertical wipe into the gale: heavier rain; a cyan cloth cracking in the wind carries the label;
 //               the number stands on a band in the rain, the rain splashing off it; then the wind takes the cloth
 //   9.2-13.2 s  a wipe down; three pictures wiped in one by one from three directions, each word beside its picture
-//   13.2-16 s   the clearing: the weather front passes up the frame, the sky clears and warms around the hero; the
+//   13.2-16 s   the clearing: the weather front passes up the frame, the sky clears and warms around a picture of its
+//               own, hanging in the clear air (no picture twice in a reel: Chris, 2026-11-08, night); the
 //               marquee on the cyan band; the end card settles beneath (all in by frame 442, then still)
 // Music: the track the suite chose for the reel (src/music.tsx).
 
@@ -46,7 +47,10 @@ const SLATE = "#111519";                       // the bands
 const PAPER = "#EEF0EE";
 const INK = "#0A0A0B";
 const RAIN = "230,238,245";
-const ph = (p: ReelProps, i: number): Photo => p.photos[i % p.photos.length];
+// The post's seven photos, each seen once: the hero in the storm (slot 0, the cover), the three the words go with, the
+// clearing's, the picture the long lens tracks past and the one in the gale.
+export const SLOTS: Slots = { photos: 7, fillers: 0 };
+const HERO = 0, CLEARING = 4, TRACKED = 5, GALE = 6;
 
 const HEAVY: Face = { family: ANTON, weight: 400 };
 const LABEL: Face = { family: ARCHIVO, weight: 600, stretch: "semi-condensed" };
@@ -85,24 +89,10 @@ const slant = (g: number) => 12 + 13 * gust(g) + 6 * interpolate(g, [170, 180, 2
 
 // ------------------------------------------------------------------ the photos, whole
 
-const SHAPE = new Map<string, number>();        // width / height of each photo, read from its file
-/** Holds the frame until every photo's own shape is known, so each can be laid out whole. */
-const useShapes = (pics: Photo[]): boolean => {
-  const [ok, setOk] = useState(() => pics.every((q) => SHAPE.has(q.src)));
-  const [handle] = useState(() => (ok ? null : delayRender("Reading the photos' shapes")));
-  useEffect(() => {
-    if (handle === null) return;
-    const todo = pics.map((q) => q.src).filter((s) => !SHAPE.has(s));
-    Promise.all(todo.map((s) => getImageDimensions(staticFile(s)).then((d) => { SHAPE.set(s, d.width / d.height); })))
-      .then(() => { setOk(true); continueRender(handle); })
-      .catch((e) => cancelRender(e));                // a photo that will not load fails the render: never a blank frame
-  }, [handle, pics]);
-  return ok;
-};
 type Rect = { x: number; y: number; w: number; h: number };
 /** The photo's own rectangle, as large as fits in the box and centred in it. */
 const fitIn = (box: Rect, pic: Photo): Rect => {
-  const shape = SHAPE.get(pic.src) ?? 1.5;
+  const shape = shapeOf(pic);             // its shape from its props (slots.ts)
   const w = Math.min(box.w, box.h * shape), h = w / shape;
   return { x: box.x + (box.w - w) / 2, y: box.y + (box.h - h) / 2, w, h };
 };
@@ -321,7 +311,7 @@ type Scene = React.FC<{ f: number; g: number; p: ReelProps }>;
 // It holds to be read, and wipes out before the cut.
 const HERO_BOX: Rect = { x: 60, y: 250, w: 960, h: 680 };
 const Storm: Scene = ({ f, g, p }) => {
-  const r = fitIn(HERO_BOX, ph(p, 0));
+  const r = fitIn(HERO_BOX, photoAt(p, HERO));
   const size = Math.min(fit(p.open[0], HEAVY, 940, 210, 0.01, true), fit(p.open[1], HEAVY, 940, 210, 0.01, true));
   const cap = capOf(HEAVY, size);
   const sub = balance(p.openSub, STRONG, 900, 66, 54);
@@ -331,7 +321,7 @@ const Storm: Scene = ({ f, g, p }) => {
   return (
     <AbsoluteFill>
       <Sky g={g} />
-      <Print pic={ph(p, 0)} box={HERO_BOX} />
+      <Print pic={photoAt(p, HERO)} box={HERO_BOX} />
       <Streaks g={g} />
       <Band f={f} at={-20} out={66} x={0} y={r.y + r.h + 44} w={W} h={bandH}>
         <T text={p.open[0]} face={HEAVY} size={size} x={W / 2} inkTop={padT} align="center" color={PAPER} track={0.01} caps />
@@ -347,7 +337,7 @@ const Storm: Scene = ({ f, g, p }) => {
 // depths, the picture moving least). Line 1 wipes in above the picture from the left, line 2 below it from the right.
 const TRACK_BOX: Rect = { x: 40, y: 640, w: 1000, h: 640 };
 const Track: Scene = ({ f, g, p }) => {
-  const pic = ph(p, 1);
+  const pic = photoAt(p, TRACKED);
   const r = fitIn(TRACK_BOX, pic);
   const cam = lerp(110, -110, ramp(f, 0, 95, Easing.inOut(Easing.sin)));
   const room = Math.max(0, r.x - 16);
@@ -371,7 +361,7 @@ const Track: Scene = ({ f, g, p }) => {
 const CLOTH_X = -46, CLOTH_LEN = 1070, SLICES = 120;
 const GALE_BOX: Rect = { x: 90, y: 560, w: 900, h: 600 };
 const Gale: Scene = ({ f, g, p }) => {
-  const pic = ph(p, 3);
+  const pic = photoAt(p, GALE);
   const r = fitIn(GALE_BOX, pic);
   // the cloth
   const set = balance(p.stackLabel, HEAVY, 860, 130, 96, true);
@@ -461,7 +451,7 @@ const ROW_H = 467, ROW_GAP = 24, ROW_PHOTO_W = 700, ROW_EDGE = 20;
 const ROW_TOPS = [0, 1, 2].map((i) => 196 + i * (ROW_H + ROW_GAP));
 const ROW_WIPES: Dir[] = [[1, 0], [-1, 0], [0.62, 0.78]];
 const Words: Scene = ({ f, g, p }) => {
-  const idx = p.wordPhotos ?? [0, 1, 2];
+  const idx = p.wordPhotos;
   const size = Math.min(...p.words.map((w) => fit(w, HEAVY, W - ROW_EDGE - ROW_PHOTO_W - 20 - 76, 150, 0.01, true)));
   const cap = capOf(HEAVY, size), pad = Math.round(size * 0.36);
   const bh = cap + 2 * pad;
@@ -469,7 +459,7 @@ const Words: Scene = ({ f, g, p }) => {
     const at = 2 + i * 12;
     const left = i !== 1;
     const box: Rect = { x: left ? ROW_EDGE : W - ROW_EDGE - ROW_PHOTO_W, y: ROW_TOPS[i], w: ROW_PHOTO_W, h: ROW_H };
-    const r = fitIn(box, ph(p, idx[i]));
+    const r = fitIn(box, photoAt(p, idx[i]));
     return { i, at, left, box, r, k: ramp(f, at, at + 10, optical), bandX: left ? r.x + r.w + 20 : 0, bandW: left ? W - (r.x + r.w + 20) : r.x - 20 };
   }).filter((row) => row.k > 0);
   return (
@@ -478,7 +468,7 @@ const Words: Scene = ({ f, g, p }) => {
       {rows.map(({ i, box, r, k }) => (
         // revealed behind an edge travelling across the picture: what is left ahead of it, run backwards
         <AbsoluteFill key={i} style={{ clipPath: k < 1 ? ahead(1 - k, [-ROW_WIPES[i][0], -ROW_WIPES[i][1]], r) : undefined }}>
-          <Print pic={ph(p, idx[i])} box={box} />
+          <Print pic={photoAt(p, idx[i])} box={box} />
         </AbsoluteFill>
       ))}
       <Streaks g={g} />
@@ -492,13 +482,13 @@ const Words: Scene = ({ f, g, p }) => {
 };
 
 // 5 · the clearing. The weather front passes up the frame (the wipe into this movement) and behind it the air is clear:
-// the sky warming, the last fog lifting away, no rain, and the hero hanging in the clear air exactly as it hung in the
-// storm. The marquee on a band of Event Caliber's colour above it; the end card settles beneath; then everything holds
+// the sky warming, the last fog lifting away, no rain, and a picture of its own hanging in the clear air, as the hero
+// hung in the storm. The marquee on a band of Event Caliber's colour above it; the end card settles beneath; then everything holds
 // in still air.
 const CLEAR_BOX: Rect = { x: 90, y: 400, w: 900, h: 600 };
 const Clearing: Scene = ({ f, g, p }) => {
-  const hero = ph(p, 0);
-  const r = fitIn(CLEAR_BOX, hero);
+  const pic = photoAt(p, CLEARING);
+  const r = fitIn(CLEAR_BOX, pic);
   const warm = ramp(f, 0, 50, Easing.out(Easing.quad));
   const sky = `linear-gradient(180deg, ${mix("#B9C7D0", "#CFE0EA", warm)} 0%, ${mix("#D3DBDE", "#F2F0EA", warm)} 50%, ${mix("#DCDCD5", "#F8E4C2", warm)} 100%)`;
   const mS = fit(p.marquee, HEAVY, 860, 170, 0.06, true), capM = capOf(HEAVY, mS);
@@ -519,7 +509,7 @@ const Clearing: Scene = ({ f, g, p }) => {
       {/* the last of the fog, lifting away */}
       <Fog g={g} y={980 - f * 9} h={900} amount={0.5 * (1 - ramp(f, 6, 46, Easing.linear))} seed={7} speed={0.8} tint="0.74 0.79 0.83" blend="normal" />
       <Fog g={g} y={360 - f * 7} h={700} amount={0.36 * (1 - ramp(f, 0, 40, Easing.linear))} seed={3} speed={1.1} tint="0.78 0.82 0.86" blend="normal" />
-      <Print pic={hero} box={CLEAR_BOX} />
+      <Print pic={pic} box={CLEAR_BOX} />
       <Band f={f} at={18} x={0} y={r.y - 40 - mH} w={W} h={mH} bg={p.accent}>
         <T text={p.marquee} face={HEAVY} size={mS} x={W / 2} inkTop={(mH - capM) / 2} align="center" color={onColour(p.accent)} track={0.06} caps />
       </Band>
@@ -562,9 +552,9 @@ const Defs: React.FC = () => (
 );
 
 export const Weather: React.FC<ReelProps> = (p) => {
+  checkSlots(p, SLOTS, "Weather");
   const g = useCurrentFrame();
   useFontsReady();
-  const ready = useShapes(p.photos);
   const i = SCENES.reduce((n, s, k) => (g >= s.at ? k : n), 0);
   const { at, S } = SCENES[i];
   const w = WIPES[at];
@@ -573,8 +563,8 @@ export const Weather: React.FC<ReelProps> = (p) => {
     <AbsoluteFill style={{ background: SLATE, overflow: "hidden" }}>
       <Music track={p.music} />
       <Defs />
-      {ready && <S f={g - at} g={g} p={p} />}
-      {ready && prev && w && (
+      <S f={g - at} g={g} p={p} />
+      {prev && w && (
         <AbsoluteFill style={{ clipPath: ahead(optical(clamp01((g - at) / w.len)), w.dir) }}>
           <prev.S f={g - prev.at} g={g} p={p} />
         </AbsoluteFill>

@@ -2926,6 +2926,63 @@ everything".
   as "not an event photo in the library". His gallery picks and his hero pick now always come first into the pool.
 - Written into CLAUDE.md's laws: HIS APPROVAL IS FINAL.
 
+## 2026-11-08, night: no picture twice in a reel
+
+Chris, on the Axis reel: "You're wrong! And you need to refine your eye! I don't mind the reel but, there are
+duplicates! The women in red at the end you just used is also in the gallery on the left side! The masters wouldt be
+this sloppy!" Then: "I need the agents to know this shit! And I have you teaching them which can't even do it so
+what's the solution?" Asked how, he answered: "The 1st recommendation but, I like these portraits in axis now so only
+replace the duplicates for this one. Do not change anything else". The first recommendation, in the question's words
+(the option he took, not his words): "a code test that renders each look with numbered cards and fails if any picture
+shows twice, and each look takes as many different photos as it shows (the design itself unchanged)".
+
+- **Every slot a picture of its own** (`render/reel_looks.SLOTS`, each look's `SLOTS` in `reel-looks/src/looks/`): a
+  look's photo slots take the post's own photos, each seen once in a moment of its own (the cover, its word, its scene);
+  its other slots take fillers. A look takes as many of the post's photos as it shows (TAKES): Powers of Ten 6,
+  Manifesto 7, Darkroom 6, Titles 7, Section 5, Split Screen 8, Weather 7, Stillness 7, Chiaroscuro 7, Axis 8. With
+  fewer, a filler takes the least of its moments. A slot the props do not hold stops the render; nothing cycles. A
+  picture is never carried from one moment into another through a wipe, a dissolve or the strip's advance: that is two
+  moments, and for a while two places at once.
+- **Fillers** are more of his approved photos with a copy on the Mini, drawn as Powers of Ten's mosaic and the 3D wall
+  are (`reels3d.wall_picks`): in rotation, one per room per shoot, never the post's own, a copy of one of its pictures or
+  a frame of its moments, nothing of a shoot and shot type where a post photo, or the filler, has no camera time (a
+  sitting cannot be told without it), and never a photo another post still to go out holds (a draft, approved or
+  scheduled: #90's tiles had held photos of #80, #85 and #86), nor a portrait of other than one person (Portraits is one person, Chris, 2026-11-09; Axis's walls are its portraits gallery). The 3D walls follow the same rule. The ones a reel shows are recorded on the wall's record so they rotate, never
+  counted against the post's repeat window. Axis's are portraits; any other look's keep the reel at two portraits; the
+  mosaic's at most eight. They are drawn from every approved photo: the strongest 600 frames of the library had held 42
+  of his approved photos with a copy here. A look is chosen only when its words have their photos and its fillers are
+  here, so no reel falls back to a carousel for a reason the suite could see first.
+- **What each look shows now** (the moves, timing, words and grades as approved):
+  Manifesto and Titles: the photomontage, and the Psycho bars and the symbol, take fillers (they showed the second and
+  third words' photos before their words); the words go on three photos besides the hero, who is the cover.
+  Darkroom: the contact sheet is eleven different pictures (the hero, the post's three photos with no word, seven
+  fillers; it had shown five photos twice); the three prints on the line are first seen there.
+  Section: the exploded view's three lower plates take fillers; on the whole sheet the attic and the first floor's other
+  room, seen on their stops, stay drawn empty (they had come up again); the word rooms come up on their beats as before.
+  Split Screen: the contact sheet's six take fillers; the hero is the resolve only, the triptych's three words go on
+  three other photos, the split and the counterpoint are four more.
+  Weather: the long lens, the gale and the clearing each a photo of its own (the clearing had been the hero again); the
+  words on three besides the hero, who is the cover. Stillness: the hero rises, and is seen there only; the words, the
+  level line and the pair each photos of their own. Both now show every photo they take (each had taken photos it never
+  showed). Chiaroscuro: the picture under the number, the studies and the montage take fillers, the night watch a photo
+  of its own, the arches three besides the hero. Powers of Ten: unchanged on screen; its mosaic's rings are its
+  fillers, exactly the ones it places (up to 40: on photos of every shape it places 22 to 40 of 40, and the ones it left
+  off had been recorded as shown).
+  Axis, as in the hand-fixed Axis sent to him (v5), which he has not answered yet: the hero in the doorway, Poise,
+  Light and Presence on three other portraits, the first and last doors and the burst of two the post's own; the
+  gallery's eleven walls and the two middle doors take fillers.
+- **For him to rule on**: Darkroom's hero (the print, then the line, the daylight and the end card, the zone scale with
+  no picture between) and Section's hero (its room, then its word, then the exploded view's top plate, empty drawing or
+  the whip between) each come back with no other picture shown between. The check lists them and does not fail them.
+  Whether the hero belongs on Split Screen's cover is also his call.
+- **The check** (`ccs reel-check [LOOK ...]`, `render/reel_check.py`): it renders a look with a black card in every
+  slot, finds where in the look each slot is drawn, and shows each slot white at each of those places in turn. It fails
+  (exit 1) when a picture comes back after another was shown, when one is on screen from two places at once, when a
+  slot is never shown, or when the look will not render; a picture back with nothing between is listed. It runs on the
+  Mini, once for a look and not for each reel: `--record` writes a passing look's sources' hash to
+  `reel-looks/card-checks.json`, and CI (`tests/test_reel_slots.py`) fails for a look added or changed without one.
+- Supersedes nothing of his: the cycling was the build's.
+
 ## 2026-11-09: Portraits only over one person
 
 Draft #90 printed "Portraits." over a posed group of eight women (photo 52831). Chris ruled that the word Portraits

@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from "react";
 import { AbsoluteFill, Easing, Img, cancelRender, continueRender, delayRender, random, spring, staticFile, useCurrentFrame } from "remotion";
 import { noise2D } from "@remotion/noise";
-import { FPS, H, Photo, ReelProps, W, climaxIndex, heldForClimax, ramp } from "../look";
+import { FPS, H, Photo, ReelProps, W, ramp } from "../look";
+import { Slots, checkSlots, everyPicture, fillerAt, photoAt } from "../slots";
 import { HAND, MONO, SERIF, SERIF_ROMAN } from "../fonts";
 import { Face, fitSize, metrics, textWidth, useFontsReady } from "../measure";
 import { Music } from "../music";
@@ -13,8 +14,7 @@ import { Music } from "../music";
 // their true colours in a red room; the one change a photo may go through is a print developing in from paper white,
 // ending exactly as shot. Every photo is shown whole, at its own shape (portraits, stages and groups: a crop never cuts
 // a face); nothing is drawn around or over a photo; no photo comes toward the viewer; no loupe (Event Caliber's Loop reel
-// owns it). The climax is his best picture, the hero, on the line in daylight (or the photo props.climax names, whole
-// and untouched).
+// owns it). The climax is his best picture, the hero, on the line in daylight, whole and untouched.
 // The craft of the masters, not their look:
 //   the Magnum contact sheet: a whole roll printed on one sheet and edited there, the one decisive frame chosen from many
 //   (Cartier-Bresson), told here without a mark: the frame is cut from the sheet and lifted away by hand, and it is the one
@@ -30,6 +30,8 @@ import { Music } from "../music";
 //
 // 16 s (480 frames) on the 120 BPM grid (a beat is 15 frames, a bar 60), one idea a bar:
 //   0  the hook above the contact sheet on the light box: a roll of twelve, each frame whole   (frame 0 is the cover)
+//      and each a picture of its own: the hero, the post's photos that carry no word, and fillers (Chris, 2026-11-08,
+//      night: no picture twice in a reel); the three word photos are first seen on the line, so none is seen twice
 //   1  the choice: the decisive frame is cut from the sheet and lifted away by hand; the light box shows through where
 //      it was                                                                                   (bars 0-1 are one shot)
 //   2  the enlarger: the chosen frame slides into the carrier, the lamp clicks on and the beam lays the picture on the
@@ -39,7 +41,7 @@ import { Music } from "../music";
 //   4  the zone scale: eleven steps from Zone 0 to Zone X develop across the frame; the number set large above it
 //   5  three prints pegged up one a beat, each on its own line, swinging still; each word pencilled on its border; the
 //      safelight clicks off on the last beat and the room goes dark round them
-//   6  the climax: the hero (or the photo props.climax names) on the line in the dark room; the door opens and daylight fills the room
+//   6  the climax: the hero on the line in the dark room; the door opens and daylight fills the room
 //      round it; the marquee word beneath once the light has settled
 //   7  the end card as a fine print: the hero whole above, beneath it the name, the kicker, the call on a block of the
 //      Event Caliber's colour, the site, the town (all in by frame 441, then holds 1.3 s)
@@ -104,9 +106,16 @@ const useAspects = (photos: Photo[]): number[] => {
 };
 /** The largest box of a photo's own shape inside (maxW, maxH). */
 const fitBox = (ar: number, maxW: number, maxH: number) => (maxW / maxH > ar ? { w: maxH * ar, h: maxH } : { w: maxW, h: maxW / ar });
-/** Photo i and its shape; the photo the climax keeps (props.climax) is never set small or developed, so the hero takes its
- *  place outside the climax. */
-const pick = (p: ReelProps, ar: number[], i: number) => { const j = heldForClimax(p, i) ? 0 : i % p.photos.length; return { pic: p.photos[j], ar: ar[j] }; };
+// The post's six photos: the hero (slot 0), which carries the first word and is the decisive frame, the print, the
+// climax and the end card all in one; the two other word photos; and three more, each on the contact sheet once. The
+// sheet's seven other frames are fillers, more of his approved photos.
+export const SLOTS: Slots = { photos: 6, fillers: 7 };
+const HERO = 0, ON_SHEET = [3, 4, 5];
+type Shaped = { pic: Photo; ar: number };
+/** The post's photo in slot i, and its shape (`ar` is read in everyPicture's order: the photos, then the fillers). */
+const own = (p: ReelProps, ar: number[], i: number): Shaped => ({ pic: photoAt(p, i), ar: ar[i] });
+/** The filler in slot k, and its shape. */
+const filler = (p: ReelProps, ar: number[], k: number): Shaped => ({ pic: fillerAt(p, k), ar: ar[p.photos.length + k] });
 
 /** A photo exactly as shot, filling a box of its own shape. filter: only the developer's transition, never at rest. */
 const Shot: React.FC<{ pic: Photo; w: number; h: number; filter?: string }> = ({ pic, w, h, filter }) => (
@@ -165,12 +174,12 @@ const frameXY = (n: number) => ({ x: SM + FGAP + (n % 3) * (FW + FGAP), y: SM + 
 const HERO_N = 7;                                   // the decisive frame: the third strip, the middle one
 const HERO_MID: Pt = [frameXY(HERO_N).x + FW / 2, frameXY(HERO_N).y + FH / 2];
 
-/** The roll, as photo indexes: the leader fogged (null), then the other pictures twice each, as a photographer works a
- *  room, and the hero once, in the middle of the third strip. */
-const roll = (p: ReelProps): (number | null)[] => {
-  const others = [1, 2, 3, 4, 5].filter((i) => i < p.photos.length && !heldForClimax(p, i));
-  const o = (k: number) => others[k % others.length];
-  return [null, o(0), o(1), o(2), o(3), o(4), o(0), 0, o(1), o(2), o(3), o(4)];
+/** The roll: the leader fogged (null), then eleven pictures, each once: the hero in the middle of the third strip, the
+ *  post's photos that carry no word spread among the fillers. */
+const roll = (p: ReelProps, ar: number[]): (Shaped | null)[] => {
+  const [a, b, c] = ON_SHEET.map((i) => own(p, ar, i));
+  const f = (k: number) => filler(p, ar, k);
+  return [null, a, f(0), f(1), b, f(2), f(3), own(p, ar, HERO), f(4), c, f(5), f(6)];
 };
 
 /** One frame of the roll, whole, upright and as shot, in the film's black. */
@@ -188,7 +197,7 @@ const Frame: React.FC<{ pic: Photo; ar: number }> = ({ pic, ar }) => {
 /** The contact sheet, in its own units: neutral paper, the strips printed black, every frame as shot, the film's edge
  *  numbers. cut: the chosen frame has left its place, and the light box shows through the gap. */
 const Sheet: React.FC<{ p: ReelProps; ar: number[]; cut: boolean }> = ({ p, ar, cut }) => {
-  const r = roll(p);
+  const r = roll(p, ar);
   const holes = Array.from({ length: 24 }, (_, k) => FGAP / 2 + k * ((STRIP_W - FGAP) / 24) + 9);
   const h = frameXY(HERO_N);
   return (
@@ -215,14 +224,14 @@ const Sheet: React.FC<{ p: ReelProps; ar: number[]; cut: boolean }> = ({ p, ar, 
           </svg>
         </div>
       ))}
-      {r.map((i, n) => {
+      {r.map((s, n) => {
         if (n === HERO_N) return null;       // the chosen frame is drawn on its own, so it can be lifted away
         const { x, y } = frameXY(n);
         return (
           <div key={n} style={{ position: "absolute", left: x, top: y, width: FW, height: FH }}>
-            {i === null
+            {s === null
               ? <div style={{ position: "absolute", inset: 0, background: "linear-gradient(100deg, #FAFAF8, #DEDCD8 45%, #8E8C88 80%, #4A4946)" }} />
-              : <Frame pic={pick(p, ar, i).pic} ar={pick(p, ar, i).ar} />}
+              : <Frame pic={s.pic} ar={s.ar} />}
           </div>
         );
       })}
@@ -248,7 +257,7 @@ const Contact: Scene = ({ g, p, ar }) => {
   const top0 = toScreen([0, 0]), top1 = toScreen([SHEET_W, 0]);
   const slope = (top1[1] - top0[1]) / (top1[0] - top0[0]);
   const above = `polygon(0px 0px, ${W}px 0px, ${W}px ${(top0[1] + slope * (W - top0[0])).toFixed(1)}px, 0px ${(top0[1] - slope * top0[0]).toFixed(1)}px)`;
-  const hero = pick(p, ar, 0);
+  const hero = own(p, ar, HERO);
   // the hook: set at frame 0, held two seconds, gone before the choice
   const open = pair(p.open[0], p.open[1]);
   const openS = Math.min(208, 960 / runsEm(open));
@@ -340,7 +349,7 @@ const Timer: React.FC<{ cx: number; cy: number; r: number; f: number; hand: stri
 };
 
 const Enlarger: Scene = ({ f, g, p, ar }) => {
-  const hero = pick(p, ar, 0);
+  const hero = own(p, ar, HERO);
   // the chosen frame slides into the carrier, then the lamp clicks on
   const into = soft(clamp01(f / 10));
   const fb = fitBox(hero.ar, FW * 0.62, FH * 0.62);
@@ -405,7 +414,7 @@ const Enlarger: Scene = ({ f, g, p, ar }) => {
 // ··· bar 3 · the tray: the paper goes in and the picture comes up out of paper white, shadows first, highlights last
 
 const Tray: Scene = ({ f, p, ar }) => {
-  const hero = pick(p, ar, 0);
+  const hero = own(p, ar, HERO);
   const box = fitBox(hero.ar, 780, 700);
   const B = 28, BB = 118;                                  // the print's borders, the bottom one wide for pencil
   const pw = box.w + 2 * B, phh = box.h + B + BB;
@@ -509,7 +518,7 @@ const Peg: React.FC<{ x: number; y: number; open: number; day?: boolean; light?:
 );
 
 const Drying: Scene = ({ f, p, ar }) => {
-  const idx = p.wordPhotos ?? [0, 1, 2];
+  const idx = p.wordPhotos;
   const wordS = Math.min(...p.words.map((w) => fitSize(w, PENCIL, DP.maxW - 40, 78)));
   const room = 1 - ramp(f, 56, 59, Easing.in(Easing.quad));     // the safelight clicks off on the last beat
   return (
@@ -527,7 +536,7 @@ const Drying: Scene = ({ f, p, ar }) => {
         const x = LINE_X[i], y = sag(ly, x);
         const lf = f - i * 15;
         if (lf < 0) return <Peg key={i} x={x} y={y} open={1} light={room} />;
-        const { pic, ar: a } = pick(p, ar, idx[i]);
+        const { pic, ar: a } = own(p, ar, idx[i]);
         const box = fitBox(a, DP.maxW, DP.maxH);
         const pw = box.w + 2 * DP.b, phh = box.h + DP.b + DP.bb;
         const up = expoOut(clamp01(lf / 8));
@@ -563,7 +572,7 @@ const Drying: Scene = ({ f, p, ar }) => {
 
 const MOUNT = { side: 24, top: 64, bottom: 24 };          // the card it is pinned by, so the pegs never touch the picture
 const Daylight: Scene = ({ f, p, ar }) => {
-  const piece = { pic: p.photos[climaxIndex(p)], ar: ar[climaxIndex(p)] };
+  const piece = own(p, ar, HERO);
   const box = fitBox(piece.ar, 900, 760);
   const mTop = 360, px = W / 2 - box.w / 2, py = mTop + MOUNT.top;
   const mw = box.w + 2 * MOUNT.side, mh = MOUNT.top + box.h + MOUNT.bottom;
@@ -605,7 +614,7 @@ const Daylight: Scene = ({ f, p, ar }) => {
 // ··· bar 7 · the end card: a fine print, the hero whole above, its border annotated
 
 const FinePrint: Scene = ({ f, p, ar }) => {
-  const hero = pick(p, ar, 0);
+  const hero = own(p, ar, HERO);
   const box = fitBox(hero.ar, 840, 560);
   const imgTop = 190;
   const nameS = fitSize(p.business, ROMAN, 880, 164, -0.01);
@@ -638,9 +647,10 @@ const SCENES: { at: number; S: Scene }[] = [
 ];
 
 export const Darkroom: React.FC<ReelProps> = (p) => {
+  checkSlots(p, SLOTS, "Darkroom");
   const g = useCurrentFrame();
   useFontsReady();
-  const ar = useAspects(p.photos);
+  const ar = useAspects(everyPicture(p));
   const i = SCENES.reduce((n, s, k) => (g >= s.at ? k : n), 0);
   const { at, S } = SCENES[i];
   return (

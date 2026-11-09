@@ -753,11 +753,12 @@ def make_renderer(conn: sqlite3.Connection, agent: str, *, design: str, rows: li
                     if reel_video is not None:
                         video, word_frames = reel_looks.take_video(reel_video, video_at), None
                     else:
-                        ids = [r["id"] for r in rows]
                         photos = [reel_looks.LookPhoto(images[r["id"]], rooms[r["id"]],
                                                        tuple(focus) if r["id"] == hero["id"] else reel_looks.DEFAULT_FOCUS) for r in rows]
-                        tiles = reel_looks.tiles(conn, exclude=ids) if reel_style == "powersoften" else []
-                        made = reel_looks.render(reel_style, photos, plan=look_plan, out=video_at, tiles=tiles)
+                        # every slot a picture of its own: the look's other slots take fillers (2026-11-08, night)
+                        made = reel_looks.render(reel_style, photos, plan=look_plan, out=video_at,
+                                                 fillers=reel_looks.fillers(conn, reel_style, rows))
+                        reels3d.record_wall(conn, [f.id for f in made.fillers])     # the ones it showed rotate on
                         video, word_frames = made.video, made.word_frames
                     stills = reel_looks.stills(reel_style, video, out_dir=out_dir / f"{tag}-stills", meta=seo, frames=word_frames)
                 else:
@@ -841,7 +842,9 @@ def redraw(conn: sqlite3.Connection, row, meta: dict, *, agent: str = "content",
     from ..render import reel_looks, reels3d
     # a reel keeps its style or look; one with none known (made before either) gets the next its photos allow
     known = meta.get("reel") in (*reels3d.STYLES, *reel_looks.LOOKS)
-    style = meta["reel"] if known else (reel_style(conn, fits=lambda look: reel_looks.fits(look, rows)) if design == "reel" else None)
+    rooms, supply = checked_rooms(conn, [r["id"] for r in rows]), reel_looks.Supply(conn)
+    style = meta["reel"] if known else (reel_style(conn, fits=lambda look: reel_looks.fits(look, rows, rooms=rooms, supply=supply))
+                                         if design == "reel" else None)
     look_plan, reel_video = None, None
     if design == "reel" and style in reel_looks.LOOKS:
         look_plan, reel_video, track = look_parts(conn, row, meta, style)
@@ -927,7 +930,8 @@ def draft_one(ctx: runner.Context, fetch: Callable[[dict], bytes], *, now: Optio
     pool = order_pool(pool, design)
     # a reel's style is chosen before its photos: a look takes its photos under its own rule of portraits (2026-11-08)
     last_style = settings.get(ctx.conn, REEL_STYLE_KEY)
-    style = reel_style(ctx.conn, fits=lambda look: reel_looks.can_fill(look, pool)) if design == "reel" else None
+    supply = reel_looks.Supply(ctx.conn)          # the fillers' pool, read once if a look is weighed
+    style = reel_style(ctx.conn, fits=lambda look: reel_looks.can_fill(look, pool, supply)) if design == "reel" else None
     chosen: list[tuple[dict, bytes]] = []
     check_errors: list[str] = []
     picker, tries = Picker(pool, design, style=style), 0   # one frame per moment, at most the cap per shoot (2026-11-02)
@@ -1044,7 +1048,15 @@ def make_draft(ctx: runner.Context, day: date, chosen: list[tuple[dict, bytes]],
     look_plan = None
     if design == "reel":
         taken = [r for r, _ in chosen]
-        style = style or reel_style(ctx.conn, fits=lambda look: reel_looks.fits(look, taken))
+        rooms, supply = checked_rooms(ctx.conn, [r["id"] for r in taken]), reel_looks.Supply(ctx.conn)
+
+        def makes(look: str) -> bool:
+            return reel_looks.fits(look, taken, rooms=rooms, supply=supply)
+        if style in reel_looks.LOOKS and reel_video is None and not makes(style):
+            # the look chosen before its photos cannot be made of the ones that passed (too few confirmed rooms for its
+            # words, too few fillers here): another style these photos allow, rather than a carousel
+            style = None
+        style = style or reel_style(ctx.conn, fits=makes)
         if style in reel_looks.LOOKS and reel_video is None:
             # a look takes a track that suits it and a set of lines, each the one the reels used least lately
             played = music.for_look(ctx.conn, style, lambda f: learner.track_weight(ctx.conn, f))

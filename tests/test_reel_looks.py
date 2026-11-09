@@ -81,17 +81,20 @@ class Project(IsolatedCase):
             for n in names:
                 self.assertTrue((public / "textures" / look / n).is_file(), f"{look}/{n}")
 
-    def test_the_climax_is_a_prop_and_every_file_a_look_reads_is_in_its_public_dir(self):
-        """The climax photo of Chiaroscuro and Axis is a prop (`climax`), and Axis's burst too (`ending`); a look reads only
-        the reel's own files (its props name them) and the fonts and textures beside it, never a folder of its own."""
+    def test_every_slot_is_a_prop_and_every_file_a_look_reads_is_in_its_public_dir(self):
+        """A look's pictures are its props, the post's photos and the fillers, each slot its own (2026-11-08, night); it
+        reads only the reel's own files (its props name them) and the fonts and textures beside it, never a folder of its
+        own."""
         text = "\n".join(p.read_text() for p in SRC.rglob("*.ts*"))
         named = re.findall(r"staticFile\(`([^`$]*)", text)
         self.assertTrue(named)
         self.assertEqual({n.split("/")[0] for n in named}, {"fonts", "textures"})
         self.assertNotIn("isSample", text)
         look = (SRC / "look.ts").read_text()
-        for prop in ("climax?: number", "ending?: Photo[]", "tiles?:", "music?: Track"):
+        for prop in ("photos: Photo[];", "fillers: Photo[];", "wordPhotos: [number, number, number];", "music?: Track"):
             self.assertIn(prop, look)
+        for gone in ("climax", "ending", "tiles"):
+            self.assertNotRegex(look, rf"\b{gone}\??:", "every picture is a slot of its own: no photo held back, no second list")
 
     def test_the_powers_of_ten_layout_draws_on_the_looks_frame(self):
         layout = (SRC / "looks" / "powersOfTenLayout.ts").read_text()
@@ -184,10 +187,12 @@ class Photos(IsolatedCase):
         self.assertTrue(reel_looks.fits("darkroom", [s, p, s, p]))
         self.assertFalse(reel_looks.fits("darkroom", [p, s, p, p]))
         self.assertFalse(reel_looks.fits("darkroom", [s, s, s]), "fewer than the look's least")
-        self.assertTrue(reel_looks.fits("axis", [p] * 5))
-        self.assertFalse(reel_looks.fits("axis", [p] * 4 + [s]))
-        self.assertTrue(reel_looks.can_fill("axis", [p] * 7 + [s]))
-        self.assertFalse(reel_looks.can_fill("axis", [p] * 6 + [s] * 9), "Axis needs its seven portraits in the pool")
+        self.assertFalse(reel_looks.fits("darkroom", [s] * 7), "more than the look shows: a photo it would never show")
+        self.assertTrue(reel_looks.fits("axis", [p] * 6))
+        self.assertFalse(reel_looks.fits("axis", [p] * 5), "the doorway, three words and the burst of two at least")
+        self.assertFalse(reel_looks.fits("axis", [p] * 5 + [s]))
+        self.assertTrue(reel_looks.can_fill("axis", [p] * 8 + [s]))
+        self.assertFalse(reel_looks.can_fill("axis", [p] * 7 + [s] * 9), "Axis needs its eight portraits in the pool")
 
     def test_the_picker_keeps_a_looks_rule_and_takes_its_count(self):
         rows = [{"id": k, "folder_id": f"f{k}", "taken_at": None, "shot_type": "portrait" if k % 2 else "candid", "people_count": 1}
@@ -200,26 +205,51 @@ class Photos(IsolatedCase):
         picker = content.Picker(rows, "reel", style="axis")
         for r in picker.candidates():
             picker.take(r)
-        self.assertEqual([r["shot_type"] for r in picker.taken], ["portrait"] * 7)
+        self.assertEqual([r["shot_type"] for r in picker.taken], ["portrait"] * 8)
         picker = content.Picker(rows, "reel", style="loop")
         self.assertEqual((picker.need, picker.rule), (content.TAKES["reel"], None), "a 3D style: no rule, as before")
 
 
+def filler_files(root: Path, n: int, shapes=((3000, 2000),), tag="f") -> list[reel_looks.Filler]:
+    """`n` approved photos with a copy here, as reel_looks.fillers gives them: JPEG files, each its own colour."""
+    out = []
+    for k in range(n):
+        path = root / f"{tag}{k}.img"
+        Image.new("RGB", shapes[k % len(shapes)], (0, 100 + k % 100, k // 100)).save(path, "JPEG")
+        out.append(reel_looks.Filler(1000 + k, path))
+    return out
+
+
 class Props(IsolatedCase):
+    """Every slot a picture of its own (Chris, 2026-11-08, night): the post's photos in the look's photo slots, fillers in
+    the rest, exactly as many as the look shows."""
     def setUp(self):
         super().setUp()
         self.plan = reel_looks.Plan(4, track(self.root))
 
-    def props(self, look, photos, tiles=()):
+    def props(self, look, photos, fillers=None):
         public = self.root / f"{look}-public"
-        return reel_looks.props(look, photos, plan=self.plan, tiles=tiles, public=public), public
+        if fillers is None:
+            fillers = filler_files(self.root, reel_looks.SLOTS[look].fillers + reel_looks.TAKES[look] - len(photos))
+        return reel_looks.props(look, photos, plan=self.plan, fillers=fillers, public=public), public
+
+    def test_too_few_or_too_many_photos_or_fillers_stop_the_reel(self):
+        shots = [photo(r) for r in ("main_stage", "candid", "reception", None, "breakout", "backstage")]
+        with self.assertRaises(ValueError, msg="a filler short"):
+            self.props("darkroom", shots, filler_files(self.root, reel_looks.SLOTS["darkroom"].fillers - 1))
+        with self.assertRaises(ValueError, msg="a filler over"):
+            self.props("weather", shots, filler_files(self.root, 2))
+        with self.assertRaises(ValueError, msg="more of the post's photos than the look shows"):
+            self.props("section", shots)
+        with self.assertRaises(ValueError, msg="fewer than its least"):
+            self.props("manifesto", shots[:3])
 
     def test_the_words_sit_on_the_photos_whose_rooms_they_name_word_photos_first(self):
         rooms = [None, "main_stage", None, "portrait", "reception", "candid"]
         p, public = self.props("darkroom", [photo(r, focus=(0.3, 0.2) if k == 0 else reel_looks.DEFAULT_FOCUS)
                                             for k, r in enumerate(rooms)])
         self.assertEqual(p["words"], ["Main stage.", "Portraits.", "Reception."])
-        self.assertEqual(p["wordPhotos"], [0, 1, 2], "the word photos lead, in the reel's order")
+        self.assertEqual(p["wordPhotos"], [0, 1, 2], "in Darkroom the first word's photo is the print: the word photos lead")
         self.assertEqual([(x["fx"], x["fy"]) for x in p["photos"]][3], (0.3, 0.2),
                          "the post's hero, with no confirmed room, follows them with the art director's focus")
         self.assertEqual({(x["fx"], x["fy"]) for x in p["photos"][:3]}, {reel_looks.DEFAULT_FOCUS})
@@ -232,10 +262,11 @@ class Props(IsolatedCase):
                        ("cta", "Request a quote"), ("accent", "#00E1FF"), ("accent2", "#F3F3F1"),
                        ("kicker", "event & conference photography")):
             self.assertEqual(p[k], key)
-        self.assertNotIn("climax", p, "only Chiaroscuro and Axis hold a photo back")
-        self.assertNotIn("ending", p)
+        for gone in ("climax", "ending", "tiles"):
+            self.assertNotIn(gone, p)
         self.assertEqual((p["photos"][0]["w"], p["photos"][0]["h"]), (1400, 933))
-        self.assertTrue(all((public / x["src"]).is_file() for x in p["photos"]))
+        self.assertEqual(len(p["fillers"]), reel_looks.SLOTS["darkroom"].fillers, "the contact sheet's other frames")
+        self.assertTrue(all((public / x["src"]).is_file() for x in p["photos"] + p["fillers"]))
         self.assertEqual(p["music"], {"src": "music.mp3", "start": 17.986, "rate": 120 / 114.96})
         self.assertEqual((public / "fonts").resolve(), (reel_looks.REEL_LOOKS / "public" / "fonts").resolve())
         self.assertEqual((public / "textures").resolve(), (reel_looks.REEL_LOOKS / "public" / "textures").resolve())
@@ -244,43 +275,75 @@ class Props(IsolatedCase):
         with self.assertRaises(reel_lines.TooFewRooms):
             self.props("titles", [photo(r) for r in ("main_stage", None, None, "portrait", None, None)])
 
-    def test_chiaroscuro_holds_the_next_photo_back_for_its_climax(self):
-        p, _ = self.props("chiaroscuro", [photo(r) for r in ("main_stage", "candid", "reception", None, "portrait", None)])
-        self.assertEqual((p["wordPhotos"], p["climax"]), ([0, 1, 2], 3))
-        self.assertEqual(len(p["photos"]), 6)
+    def test_a_look_that_opens_on_the_hero_puts_its_words_on_the_three_after_it(self):
+        """Chiaroscuro's calling is the hero alone; seen again under an arch it would be shown twice."""
+        def coloured(k, room):
+            return reel_looks.LookPhoto(Image.new("RGB", (3000, 2000), (30 * k, 0, 0)), room)
+        rooms = ("main_stage", "candid", None, "reception", None, "portrait", "backstage")
+        p, public = self.props("chiaroscuro", [coloured(k, r) for k, r in enumerate(rooms)])
 
-    def test_axis_is_seven_portraits_its_last_two_the_burst_the_last_held_as_its_climax(self):
-        shots = [reel_looks.LookPhoto(Image.new("RGB", (2000, 3000) if k % 2 else (3000, 2000), (30 * k, 0, 0)), "portrait")
-                 for k in range(7)]
-        p, public = self.props("axis", shots)
-
-        def mark(x):                      # which of the seven a written photo is, by its colour
+        def mark(x):
             with Image.open(public / x["src"]) as im:
                 return round(im.getpixel((im.width // 2, im.height // 2))[0] / 30)
-        self.assertEqual(len(p["photos"]), 6)
-        self.assertEqual(len(p["ending"]), 2, "Chris chose a burst of two")
-        self.assertEqual(p["climax"], 3)
+        self.assertEqual(p["wordPhotos"], [1, 2, 3])
+        self.assertEqual([mark(x) for x in p["photos"]], [0, 1, 3, 5, 2, 4, 6], "the hero, its three word photos, then the rest")
+        self.assertEqual(len(p["fillers"]), reel_looks.SLOTS["chiaroscuro"].fillers, "the studies and the montage")
+
+    def test_axis_is_eight_portraits_its_last_two_the_burst_and_thirteen_fillers(self):
+        shots = [reel_looks.LookPhoto(Image.new("RGB", (2000, 3000) if k % 2 else (3000, 2000), (30 * k, 0, 0)), "portrait")
+                 for k in range(8)]
+        p, public = self.props("axis", shots)
+
+        def mark(x):                      # which of the eight a written photo is, by its colour
+            with Image.open(public / x["src"]) as im:
+                return round(im.getpixel((im.width // 2, im.height // 2))[0] / 30)
+        self.assertEqual([mark(x) for x in p["photos"]], list(range(8)),
+                         "the hero in the doorway, the words on the next three, the first and last doors, the burst of two")
+        self.assertEqual(p["wordPhotos"], [1, 2, 3], "Poise, Light and Presence on three portraits besides the hero")
         self.assertEqual(p["words"], ["Poise.", "Light.", "Presence."], "Chris's own three for every Axis reel")
         self.assertEqual(p["stackLabel"], "Portraits")
-        self.assertEqual({mark(x) for x in p["photos"] + p["ending"]}, set(range(7)), "every one of the seven is in the reel")
-        self.assertEqual([mark(x) for x in p["photos"]], [0, 1, 2, 6, 3, 4], "the hero first, the words on 0 to 2")
-        self.assertEqual([mark(x) for x in p["ending"]], [5, 6], "the last two of the reel's set, the last held")
-        self.assertEqual((p["ending"][1]["w"], p["ending"][1]["h"]), (1400, 933))
+        self.assertEqual(len(p["fillers"]), 13, "the gallery's eleven walls and the two middle doors")
+        self.assertEqual((p["photos"][7]["w"], p["photos"][7]["h"]), (933, 1400))
 
-    def test_powers_of_ten_takes_its_tiles_with_their_shapes(self):
-        tiles = []
-        for k in range(reel_looks.MIN_TILES):
-            path = self.root / f"t{k}.img"
-            Image.new("RGB", (2000, 3000) if k else (3000, 2000), (k, 0, 0)).save(path, "JPEG")
-            tiles.append(path)
-        p, public = self.props("powersoften", [photo(r) for r in ("main_stage", "candid", "reception", None)], tiles=tiles)
-        self.assertEqual([(t["w"], t["h"]) for t in p["tiles"]], [(1400, 933)] + [(933, 1400)] * (reel_looks.MIN_TILES - 1))
-        self.assertTrue(all((public / t["src"]).is_file() for t in p["tiles"]))
-        p, _ = self.props("manifesto", [photo(r) for r in ("main_stage", "candid", "reception", None)], tiles=tiles)
-        self.assertNotIn("tiles", p)
+    def test_a_photo_slot_the_post_had_no_photo_for_takes_a_filler_axiss_burst_stays_last(self):
+        shots = [reel_looks.LookPhoto(Image.new("RGB", (2000, 3000), (30 * k, 0, 0)), "portrait") for k in range(7)]
+        p, public = self.props("axis", shots, filler_files(self.root, 14, ((2000, 3000),)))
+
+        def mark(x):
+            with Image.open(public / x["src"]) as im:
+                r, g, _ = im.getpixel((im.width // 2, im.height // 2))
+                return "filler" if g > 50 else round(r / 30)
+        self.assertEqual([mark(x) for x in p["photos"]], [0, 1, 2, 3, 4, "filler", 5, 6])
+        self.assertEqual(len(p["fillers"]), 13)
+
+    def test_the_mosaic_is_given_only_the_fillers_it_places(self):
+        """It lays as many rings as cover the frame: on tall photos it places 38 of 40, and with fewer it may lay a ring
+        less, so it is laid out again on the ones it placed until it shows every filler it is given."""
+        asked = []
+
+        def placed(props_list):
+            k = len(props_list[0]["fillers"])
+            asked.append(k)
+            return [{40: 30, 30: 28}.get(k, k)]
+        self.assertEqual(reel_looks.fit_mosaic({"fillers": list(range(40))}, placed), 28)
+        self.assertEqual(asked, [40, 30, 28])
+        shots = [photo(r) for r in ("main_stage", "candid", "reception", None, "breakout", "backstage")]
+        p, public = self.props("powersoften", shots, filler_files(self.root, 40, ((1000, 2000),)))
+        self.assertLess(len(p["fillers"]), 40, "tall fillers: fewer fit")
+        self.assertEqual(reel_looks.mosaic_fillers([p]), [len(p["fillers"])], "each one it keeps is on the mosaic")
+        self.assertEqual(len(list((public / "photos").glob("f*.jpg"))), len(p["fillers"]), "and no file of one it left off")
         with self.assertRaises(ValueError, msg="too thin a mosaic for every word to hold"):
-            reel_looks.props("powersoften", [photo(r) for r in ("main_stage", "candid", "reception", None)], plan=self.plan,
-                             tiles=tiles[:reel_looks.MIN_TILES - 1], public=self.root / "thin-public")
+            reel_looks.props("powersoften", shots, plan=self.plan, fillers=filler_files(self.root, 40),
+                             public=self.root / "thin-public", placed=lambda ps: [5])
+
+    def test_powers_of_ten_rings_its_mosaic_with_the_fillers_it_places_with_their_shapes(self):
+        shapes = ((3000, 2000), (2000, 3000))
+        p, public = self.props("powersoften", [photo(r) for r in ("main_stage", "candid", "reception", None, "breakout", "backstage")],
+                               filler_files(self.root, 40, shapes))
+        kept = len(p["fillers"])
+        self.assertGreaterEqual(kept, reel_looks.SLOTS["powersoften"].fillers_from)
+        self.assertEqual([(t["w"], t["h"]) for t in p["fillers"]], ([(1400, 933), (933, 1400)] * 20)[:kept], "in order, each its shape")
+        self.assertTrue(all((public / t["src"]).is_file() for t in p["fillers"]))
 
 
 class Render(IsolatedCase):
@@ -300,7 +363,7 @@ class Render(IsolatedCase):
 
     def test_the_render_runs_the_looks_composition_on_its_own_public_dir_and_leaves_the_mp4_alone(self):
         out = self.root / "posts" / "7-reel-weather.mp4"
-        got = reel_looks.render("weather", [photo(r) for r in ("main_stage", "candid", "reception", None, "backstage")],
+        got = reel_looks.render("weather", [photo(r) for r in ("main_stage", "candid", "reception", None, "backstage", None, None)],
                                 plan=self.plan, out=out, run=self.remotion)
         self.assertEqual(got, reel_looks.Reel(out, reel_looks.STILL_FRAMES["weather"]))
         cmd, kw = self.runs[0]
@@ -308,17 +371,37 @@ class Render(IsolatedCase):
         for flag in (f"--timeout={reel_looks.ASSET_WAIT_MS}", f"--concurrency={reel_looks.CONCURRENCY}", "--log=error"):
             self.assertIn(flag, cmd)
         self.assertEqual(kw, {"cwd": str(reel_looks.REEL_LOOKS), "timeout": reel_looks.RENDER_TIMEOUT})
-        self.assertEqual(self.seen["files"], [f"p{k}.jpg" for k in range(5)])
+        self.assertEqual(self.seen["files"], [f"p{k}.jpg" for k in range(7)], "Weather's seven photo slots; it takes no fillers")
+        self.assertEqual(self.seen["props"]["fillers"], [])
         self.assertEqual(self.seen["public"], ["fonts", "music.mp3", "photos", "props.json", "textures"])
         self.assertEqual(self.seen["props"]["music"], {"src": "music.mp3", "start": 9.5, "rate": 1.0})
         self.assertEqual(out.read_bytes(), b"mp4")
         self.assertFalse((self.root / "posts" / "7-reel-weather-public").exists(), "the public dir is gone once the mp4 is made")
 
+    def test_the_reel_says_which_fillers_it_showed(self):
+        fill = filler_files(self.root, 3)
+        got = reel_looks.render("manifesto", [photo(r) for r in ("main_stage", "candid", "reception", "breakout", None, None)],
+                                plan=self.plan, out=self.root / "m.mp4", fillers=fill, run=self.remotion)
+        self.assertEqual(got.fillers, tuple(fill), "the seventh photo slot's and the photomontage's two: to the wall's record")
+        self.assertEqual((len(self.seen["props"]["photos"]), len(self.seen["props"]["fillers"])), (7, 2))
+
+    def test_the_reel_says_only_the_fillers_its_mosaic_placed(self):
+        """Powers of Ten's mosaic places 30 of its 40 here: the reel shows (and the wall records) the photo slot's filler
+        and those 30, never the ten it left off."""
+        fill = filler_files(self.root, 41)
+        got = reel_looks.render("powersoften", [photo(r) for r in ("main_stage", "candid", "reception", None, "breakout")],
+                                plan=self.plan, out=self.root / "p.mp4", fillers=fill, run=self.remotion,
+                                windows=lambda ps: [[[0, 100], [100, 200], [200, 300]]],
+                                placed=lambda ps: [min(len(ps[0]["fillers"]), 30)])
+        self.assertEqual(len(self.seen["props"]["fillers"]), 30)
+        self.assertEqual(got.fillers, tuple(fill[:31]), "the sixth photo slot's filler and the 30 placed, not the ten left off")
+
     def test_a_remotion_failure_says_what_it_said_and_leaves_nothing_behind(self):
         def failing(cmd, **kw):
             return subprocess.CompletedProcess(cmd, 1, "", "Error: Composition 'Axis' timed out\nat render\n")
         with self.assertRaises(RuntimeError) as e:
-            reel_looks.render("axis", [photo("portrait") for _ in range(7)], plan=self.plan, out=self.root / "x.mp4", run=failing)
+            reel_looks.render("axis", [photo("portrait") for _ in range(8)], plan=self.plan, out=self.root / "x.mp4",
+                              fillers=filler_files(self.root, 13), run=failing)
         self.assertIn("remotion stopped with code 1", str(e.exception))
         self.assertIn("timed out", str(e.exception))
         self.assertFalse((self.root / "x.mp4").exists())
@@ -331,7 +414,8 @@ class Render(IsolatedCase):
         with self.assertRaises(ValueError):
             reel_looks.render("titles", shots, plan=None, out=self.root / "x.mp4", run=self.remotion)
         with self.assertRaises(reel_lines.TooFewRooms):
-            reel_looks.render("titles", [photo(None)] * 4, plan=self.plan, out=self.root / "x.mp4", run=self.remotion)
+            reel_looks.render("titles", [photo(None)] * 4, plan=self.plan, out=self.root / "x.mp4", fillers=filler_files(self.root, 5),
+                              run=self.remotion)
         with self.assertRaises(ValueError):
             reel_looks.render("axis", [photo("portrait")] * 4, plan=self.plan, out=self.root / "x.mp4", run=self.remotion)
         self.assertEqual(self.runs, [])
@@ -381,9 +465,9 @@ class PowersOfTenWords(IsolatedCase):
         def shaped(name):
             a = rng.choice(self.SHAPES)
             return {"src": name, "w": 1400, "h": round(1400 / a)} if a >= 1 else {"src": name, "w": round(1400 * a), "h": 1400}
-        return {"photos": [shaped(f"photos/p{k}.jpg") for k in range(rng.randint(4, 6))],
-                "tiles": [shaped(f"photos/t{k}.jpg") for k in range(rng.randint(reel_looks.MIN_TILES, reel_looks.TILES))],
-                "wordPhotos": [0, 1, 2]}
+        slots = reel_looks.SLOTS["powersoften"]
+        return {"photos": [shaped(f"photos/p{k}.jpg") for k in range(slots.photos)],
+                "fillers": [shaped(f"photos/f{k}.jpg") for k in range(slots.fillers)], "wordPhotos": [0, 1, 2]}
 
     def test_every_word_holds_a_second_and_a_half_beside_its_photo_for_any_photo_shapes(self):
         rng = random.Random(20261108)
@@ -394,7 +478,7 @@ class PowersOfTenWords(IsolatedCase):
         self.assertEqual(short, [], "a word that would not hold 1.5 s beside its photo")
 
     def test_the_art_director_sees_each_word_in_the_middle_of_its_time_and_a_word_that_would_not_hold_stops_the_reel(self):
-        props_ = {"photos": [], "tiles": [], "wordPhotos": [0, 1, 2]}
+        props_ = {"photos": [], "fillers": [], "wordPhotos": [0, 1, 2]}
         self.assertEqual(reel_looks.frames_of("powersoften", props_, lambda ps: [[[0, 100], [45, 160], [90, 300]]]), (50, 102, 195))
         with self.assertRaises(RuntimeError):
             reel_looks.frames_of("powersoften", props_, lambda ps: [[[0, 100], [45, 80], [90, 300]]])
@@ -423,34 +507,109 @@ class Briefs(IsolatedCase):
         self.assertIn("25 second reel", reel_looks.brief("axis"))
 
 
-class Tiles(IsolatedCase):
-    def test_the_mosaic_takes_approved_photos_mostly_not_portraits_never_the_posts_own(self):
-        conn = db.connect()
-        self.addCleanup(conn.close)
+class Fillers(IsolatedCase):
+    """A look's other slots take more of his approved photos with a copy here, drawn as a 3D reel's wall is
+    (reels3d.fillers): in rotation, one per room per shoot, never the post's own, a copy of its pictures or a frame of
+    its moments (Chris, 2026-11-08, night: no picture twice in a reel)."""
+    def setUp(self):
+        super().setUp()
+        self.conn = db.connect()
+        self.addCleanup(self.conn.close)
         cache = config.get_config().data_root / "photos"
         cache.mkdir(parents=True, exist_ok=True)
-        ids = []
+        self.ids = {}
         for k in range(12):                                   # twelve shoots, a portrait and a stage photo in each
             for room in ("portrait", "main_stage"):
-                pid = event_photo(conn, f"t{k}{room}", kind="business", final="business", quality=5, folder=f"f{k}")
-                conn.execute("UPDATE classifications SET shot_type=? WHERE photo_id=?", (room, pid))
-                conn.execute("UPDATE photos SET thumbnail_link='t' WHERE id=?", (pid,))
+                pid = event_photo(self.conn, f"t{k}{room}", kind="business", final="business", quality=5, folder=f"f{k}")
+                self.conn.execute("UPDATE classifications SET shot_type=?, people_count=1 WHERE photo_id=?", (room, pid))
+                self.conn.execute("UPDATE photos SET thumbnail_link='t' WHERE id=?", (pid,))
                 Image.new("RGB", (30, 20), (k, 0, 0)).save(cache / f"t{k}{room}.img", "JPEG")
-                ids.append(pid)
+                self.ids[(k, room)] = pid
         # a frame of the post's own moment: the same shoot, five minutes after the post's photo
-        sibling = event_photo(conn, "t0moment", kind="business", final="business", quality=5, folder="f0")
-        conn.execute("UPDATE classifications SET shot_type='candid' WHERE photo_id=?", (sibling,))
-        then = datetime.strptime(db.one(conn, "SELECT taken_at FROM photos WHERE id=?", (ids[0],))["taken_at"], "%Y:%m:%d %H:%M:%S")
-        conn.execute("UPDATE photos SET thumbnail_link='t', taken_at=? WHERE id=?",
-                     ((then + timedelta(minutes=5)).strftime("%Y:%m:%d %H:%M:%S"), sibling))
+        sibling = event_photo(self.conn, "t0moment", kind="business", final="business", quality=5, folder="f0")
+        self.conn.execute("UPDATE classifications SET shot_type='candid' WHERE photo_id=?", (sibling,))
+        then = datetime.strptime(db.one(self.conn, "SELECT taken_at FROM photos WHERE id=?", (self.ids[(0, "portrait")],))["taken_at"],
+                                 "%Y:%m:%d %H:%M:%S")
+        self.conn.execute("UPDATE photos SET thumbnail_link='t', taken_at=? WHERE id=?",
+                          ((then + timedelta(minutes=5)).strftime("%Y:%m:%d %H:%M:%S"), sibling))
         Image.new("RGB", (30, 20), (0, 9, 0)).save(cache / "t0moment.img", "JPEG")
-        with mock.patch.object(reel_looks, "TILE_PORTRAITS", 3):
-            got = reel_looks.tiles(conn, exclude=[ids[0]])
-        names = [p.name for p in got]
-        self.assertEqual(sum(1 for n in names if "portrait" in n), 3, "at most TILE_PORTRAITS portraits")
+
+    def rows(self, *keys):
+        return [{"id": self.ids[key], "shot_type": key[1]} for key in keys]
+
+    def test_the_mosaic_takes_approved_photos_mostly_not_portraits_never_the_posts_own(self):
+        with mock.patch.object(reel_looks, "MOSAIC_PORTRAITS", 3):
+            got = reel_looks.fillers(self.conn, "powersoften", self.rows((0, "portrait")))
+        names = [f.path.name for f in got]
+        self.assertEqual(sum(1 for n in names if "portrait" in n), 3, "at most MOSAIC_PORTRAITS portraits")
         self.assertEqual(len(got), 3 + 12, "every stage photo and three portraits")
         self.assertNotIn("t0portrait.img", names, "never the post's own photo")
         self.assertNotIn("t0moment.img", names, "nor a frame of its moment")
+        self.assertEqual(db.rows(self.conn, "SELECT * FROM photo_use"), [], "recorded once a reel shows them (Drafts)")
+
+    def test_axiss_fillers_are_portraits_one_a_shoot_never_the_posts_own(self):
+        own = self.rows(*[(k, "portrait") for k in range(8)])
+        got = reel_looks.fillers(self.conn, "axis", own)
+        self.assertEqual(sorted(f.path.name for f in got), sorted(f"t{k}portrait.img" for k in range(8, 12)),
+                         "the four portraits the post does not hold, one a shoot; fewer than Axis needs stop the reel")
+
+    def test_any_other_look_keeps_the_reel_at_two_portraits_and_asks_for_a_slot_the_post_has_no_photo_for(self):
+        own = self.rows((0, "main_stage"), (1, "portrait"), (2, "main_stage"), (3, "main_stage"), (4, "main_stage"), (5, "main_stage"))
+        got = reel_looks.fillers(self.conn, "manifesto", own)
+        self.assertEqual(len(got), reel_looks.SLOTS["manifesto"].fillers + 1, "the photomontage's two and the seventh photo slot")
+        self.assertLessEqual(sum(1 for f in got if "portrait" in f.path.name), 1, "one portrait in the post: one more at most")
+        self.assertEqual(reel_looks.fillers(self.conn, "weather", own + self.rows((6, "main_stage"))), [], "Weather takes none")
+
+    def test_with_no_camera_time_a_sitting_cannot_be_told_so_its_shoot_and_shot_type_stay_off(self):
+        """A moment is told by the camera's clock. A post photo with none keeps fillers off its whole shoot and shot type,
+        and a photo with none never fills beside a post photo of its shoot and shot type: either could be another frame
+        of the same sitting."""
+        cache = config.get_config().data_root / "photos"
+        own_untimed, own_timed = self.ids[(3, "portrait")], self.ids[(5, "portrait")]
+        self.conn.execute("UPDATE photos SET taken_at=NULL WHERE id=?", (own_untimed,))
+        for name, folder, timed in (("t3sitting", "f3", True), ("t5untimed", "f5", False)):
+            pid = event_photo(self.conn, name, kind="business", final="business", quality=5, folder=folder)
+            self.conn.execute("UPDATE classifications SET shot_type='portrait' WHERE photo_id=?", (pid,))
+            self.conn.execute("UPDATE photos SET thumbnail_link='t' WHERE id=?", (pid,))
+            if not timed:
+                self.conn.execute("UPDATE photos SET taken_at=NULL WHERE id=?", (pid,))
+            Image.new("RGB", (20, 30), (9, 0, 0)).save(cache / f"{name}.img", "JPEG")
+        own = [{"id": own_untimed, "shot_type": "portrait"}, {"id": own_timed, "shot_type": "portrait"}]
+        names = {f.path.name for f in reel_looks.fillers(self.conn, "axis", own)}
+        self.assertNotIn("t3sitting.img", names, "the post's photo of that shoot has no time: its sitting cannot be told")
+        self.assertNotIn("t5untimed.img", names, "no time of its own, beside the post's photo of that shoot")
+        self.assertIn("t6portrait.img", names, "another shoot's portrait still fills")
+
+    def test_a_photo_another_post_still_to_go_out_holds_never_fills(self):
+        """#90's tiles held photos of #80, #85 and #86, all scheduled (2026-11-09): that post would show them again."""
+        now = db.utcnow()
+        for status, key in (("scheduled", (6, "main_stage")), ("draft", (7, "main_stage")), ("published", (8, "main_stage"))):
+            db.insert(self.conn, "content_queue", kind="photo", photo_ids=json.dumps([self.ids[key]]), targets="[]", caption="{}",
+                      status=status, rule_report="{}", created_at=now, updated_at=now)
+        names = {f.path.name for f in reel_looks.fillers(self.conn, "powersoften", self.rows((0, "portrait")))}
+        self.assertNotIn("t6main_stage.img", names, "in a scheduled post")
+        self.assertNotIn("t7main_stage.img", names, "in a draft")
+        self.assertIn("t8main_stage.img", names, "a post that has gone out is the rotation's to bring round again")
+
+    def test_a_portrait_of_more_than_one_person_never_fills(self):
+        """Portraits is one person (Chris, 2026-11-09): Axis's walls are its portraits gallery, so a pair or a group
+        labelled portrait, or one whose head count is not known, waits for its own label."""
+        self.conn.execute("UPDATE classifications SET people_count=5 WHERE photo_id=?", (self.ids[(3, "portrait")],))
+        self.conn.execute("UPDATE classifications SET people_count=2 WHERE photo_id=?", (self.ids[(4, "portrait")],))
+        self.conn.execute("UPDATE classifications SET people_count=NULL WHERE photo_id=?", (self.ids[(5, "portrait")],))
+        names = {f.path.name for f in reel_looks.fillers(self.conn, "axis", self.rows((0, "portrait")))}
+        self.assertNotIn("t3portrait.img", names, "a group")
+        self.assertNotIn("t4portrait.img", names, "a pair")
+        self.assertNotIn("t5portrait.img", names, "no head count")
+        self.assertIn("t6portrait.img", names, "one person")
+
+    def test_a_copy_of_the_posts_picture_filed_in_another_shoot_never_fills(self):
+        shown = self.ids[(5, "main_stage")]
+        self.conn.execute("UPDATE photos SET picture=? WHERE id=?", (shown, shown))
+        copy = event_photo(self.conn, "export-of-5", kind="business", final="business", quality=5, folder="exports")
+        self.conn.execute("UPDATE photos SET picture=?, thumbnail_link='t' WHERE id=?", (shown, copy))
+        got = reel_looks.fillers(self.conn, "powersoften", [{"id": copy, "shot_type": "main_stage"}])
+        self.assertNotIn("t5main_stage.img", [f.path.name for f in got], "the post's picture, by another file")
 
 
 class Rotation(IsolatedCase):
@@ -568,14 +727,14 @@ class LookCase(IsolatedCase):
             self.addCleanup(fake.stop)
 
     def fake_render(self, fail=False):
-        def job(look, photos, *, plan, out, tiles=()):
+        def job(look, photos, *, plan, out, fillers=()):
             self.made.append({"look": look, "rooms": [p.room for p in photos], "focus": [p.focus for p in photos], "plan": plan,
-                              "tiles": list(tiles)})
+                              "fillers": list(fillers)})
             if fail:
                 raise RuntimeError("remotion stopped with code 1: no reel made")
             out.parent.mkdir(parents=True, exist_ok=True)
             out.write_bytes(b"mp4")
-            return reel_looks.Reel(out, reel_looks.STILL_FRAMES[look])
+            return reel_looks.Reel(out, reel_looks.STILL_FRAMES[look], tuple(fillers))
         return job
 
     def fake_stills(self, look, video, *, out_dir, meta=None, frames=None):   # the cover first, then the word frames
@@ -614,7 +773,15 @@ class Drafts(LookCase):
                                      **({"art_client": self.eye} if kw else {}))
 
     def test_a_reel_in_a_look_takes_its_rule_its_track_and_its_words_and_says_so_on_the_draft(self):
-        line = self.draft("darkroom")
+        asked, wall = [], reel_looks.Filler(self.ids["s6"], Path("f.img"))
+
+        def fill(conn, look, rows, n=None, candidates=None):
+            if n is not None:                      # Supply.enough: is there enough for the look
+                return [wall] * n
+            asked.append((look, [r["id"] for r in rows]))
+            return [wall]
+        with mock.patch.object(reel_looks, "fillers", fill):
+            line = self.draft("darkroom")
         self.assertIn("reel with", line)
         row, meta_, renders, ids = self.last()
         self.assertEqual((meta_["design"], meta_["reel"], meta_["music"], meta_["lines"]), ("reel", "darkroom", self.tracks["darkroom"], 1))
@@ -626,17 +793,20 @@ class Drafts(LookCase):
         self.assertEqual(made["rooms"], [rooms[i] for i in ids], "each photo carries the room its final check confirmed")
         self.assertEqual(made["focus"][0], (0.5, 0.42), "the hero at the art director's focus")
         self.assertEqual((made["plan"].lines, made["plan"].track.file, made["plan"].track.start), (1, self.tracks["darkroom"], 2.0))
-        self.assertEqual(made["tiles"], [], "only Powers of Ten has a mosaic")
+        self.assertEqual(asked, [("darkroom", ids)], "the look's fillers, for the post's own photos")
+        self.assertEqual(made["fillers"], [wall], "and the render is given them")
+        self.assertEqual([r["photo_id"] for r in db.rows(self.conn, "SELECT photo_id FROM photo_use WHERE surface='grid'")],
+                         [wall.id], "the fillers it showed, recorded on the wall so they rotate")
         self.assertEqual(sorted(renders), ["2:3", "9:16", "cover", "linkedin", "stills"])
         self.assertEqual(Path(renders["cover"][0]).name, "darkroom-000.jpg", "the cover is the look's first frame")
         self.assertEqual([Path(p).name for p in renders["stills"]], ["darkroom-352.jpg"])
 
-    def test_axis_takes_portraits_only_seven_of_them(self):
+    def test_axis_takes_portraits_only_eight_of_them(self):
         self.draft("axis")
         _, meta_, _, ids = self.last()
         self.assertEqual((meta_["design"], meta_["reel"]), ("reel", "axis"))
-        self.assertEqual(self.shot_types(ids), ["portrait"] * 7)
-        self.assertEqual(self.made[0]["rooms"], ["portrait"] * 7)
+        self.assertEqual(self.shot_types(ids), ["portrait"] * 8)
+        self.assertEqual(self.made[0]["rooms"], ["portrait"] * 8)
 
     def test_a_look_that_cannot_be_made_is_a_carousel_of_the_same_photos_and_says_why(self):
         with mock.patch.object(reel_looks, "render", self.fake_render(fail=True)):
@@ -778,7 +948,7 @@ class Designed(LookCase):
                 mock.patch.object(content.notify, "push_result", return_value="sent"):
             line = designed.draft(self.ctx(live=True), self.fetch, now=ten, check_client=self.client,
                                   art_client=ArtClientAny([say("pass")] * 3), drafter=claude.TemplateDrafter())
-        self.assertIn("reel with 7 photo(s)", line)
+        self.assertIn("reel with 8 photo(s)", line)
         _, meta_, _, ids = self.last()
         self.assertEqual((meta_["source"], meta_["reel"], meta_["music"]), ("designed", "axis", self.tracks["axis"]))
-        self.assertEqual(self.shot_types(ids), ["portrait"] * 7, "Axis takes portraits only")
+        self.assertEqual(self.shot_types(ids), ["portrait"] * 8, "Axis takes portraits only")

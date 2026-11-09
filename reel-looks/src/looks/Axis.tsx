@@ -1,6 +1,7 @@
 import React from "react";
 import { AbsoluteFill, Easing, Img, random, staticFile, useCurrentFrame } from "remotion";
-import { H, Photo, ReelProps, W, climaxIndex, heldForClimax, ramp } from "../look";
+import { H, Photo, ReelProps, W, ramp } from "../look";
+import { Slots, checkSlots, fillerAt, photoAt } from "../slots";
 import { ARCHIVO } from "../fonts";
 import { Face, fitSize, metrics, textWidth, useFontsReady } from "../measure";
 import { Music } from "../music";
@@ -28,8 +29,8 @@ import { Music } from "../music";
 //             corridor ends at a lit wall carrying the stack, and the wall parts on the axis
 //   16-19 s   doors on the beats: each parts on the axis and the next is behind it; the last stays shut and light grows
 //             at its crack for a whole second: the held breath
-//   19-22 s   the climax, on the music's hit: the last door is open, and his picture floods into colour from the axis;
-//             with `ending`, the closing burst: one portrait a beat, the last held
+//   19-22 s   the climax, on the music's hit: the last door is open, and the closing burst floods into colour from
+//             the axis: one portrait a beat, the last held
 //   22-25 s   the end card on the far wall of the room (everything in by frame 24, then holds 2.2 s)
 // Music: the suite's Pixabay tracks for Axis, locked to the 120 BPM grid (music_tracks.grid), their hit on 19 s (frame 570).
 
@@ -41,7 +42,13 @@ const INK = "#0A0A0B";
 const K = "10,10,11";
 const SILVER = "#F3F2EE";
 const ASSET = (f: string) => staticFile(`textures/axis/${f}`);
-const ph = (p: ReelProps, i: number): Photo => p.photos[i % p.photos.length];
+// Every portrait once, and never the same person twice (Chris, 2026-11-08, night: "there are duplicates! The women in
+// red at the end you just used is also in the gallery on the left side!"). The post's eight portraits: the hero in the
+// doorway (slot 0), the three under Poise, Light and Presence, the first and last doors, and the burst of two. The
+// gallery's eleven walls and the two middle doors are fillers, more of his approved portraits.
+export const SLOTS: Slots = { photos: 8, fillers: 13 };
+const HERO = 0, FIRST_DOOR = 4, LAST_DOOR = 5, BURST_PHOTOS = [6, 7];
+const GALLERY = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10], MIDDLE_DOORS = [11, 12];      // filler slots
 
 const HEAVY: Face = { family: ARCHIVO, weight: 800, stretch: "expanded" };
 const BLACK: Face = { family: ARCHIVO, weight: 900, stretch: "expanded" };
@@ -199,7 +206,7 @@ const camOpen = (g: number) => Math.pow(FILL, g / 130);
 
 /** The approach (bars 0-2, under the cards): the corridor converging on the hero's doorway, the camera relentless. */
 const Approach: Scene = ({ g, p }) => {
-  const hero = ph(p, 0);
+  const hero = photoAt(p, HERO);
   const s = camOpen(g);
   const r = rectAt(s);
   const inside = s >= FILL;
@@ -252,7 +259,7 @@ const Card: React.FC<{ lines: [string, string]; f: number; p: ReelProps }> = ({ 
 
 /** 3 · three words on three beats, each across a black band on its picture; then the three as a list. */
 const Words: Scene = ({ f, p }) => {
-  const idx = p.wordPhotos ?? [0, 1, 2];
+  const idx = p.wordPhotos;
   const i = Math.min(3, Math.floor(f / 15));
   if (i === 3) {
     const size = Math.min(...p.words.map((w) => fitCaps(w, HEAVY, 900, 132, -0.005)));
@@ -266,7 +273,7 @@ const Words: Scene = ({ f, p }) => {
       </AbsoluteFill>
     );
   }
-  const pic = ph(p, idx[i]);
+  const pic = photoAt(p, idx[i]);
   const lf = f - i * 15;
   const size = fitCaps(p.words[i], HEAVY, 960, 210, -0.01);
   const ch = capH(HEAVY, size);
@@ -336,7 +343,7 @@ const PANEL_L = 820, PANEL_H = 1160, BEAT_Z = V3 * 15;
 const WALL_Z = -12 * BEAT_Z;      // the corridor's far wall: the camera reaches it on frame 180, the end of the scene
 const Gallery: Scene = ({ f, p }) => {
   const camZ = f * V3;
-  const pics = [1, 2, 4, 5, 0, 1, 2, 4, 5, 0, 1].map((i) => (heldForClimax(p, i) ? ph(p, 0) : ph(p, i)));
+  const pics = GALLERY.map((k) => fillerAt(p, k));
   const depthA = (zRel: number) => Math.max(0, Math.min(1, (7200 + zRel) / 2600));     // atmospheric: far things fade into the dark
   const els: React.ReactNode[] = [];
   // the door frames along the corridor, every half beat
@@ -415,7 +422,7 @@ const Gallery: Scene = ({ f, p }) => {
  *  will not open; light leaks along its crack, brighter and brighter: the held breath. */
 const R = FILL;                       // one door per beat: as one fills the frame, the next has reached scale 1
 const Doors: Scene = ({ f, g, p }) => {
-  const order = [4, 2, 1, 5].map((i) => (heldForClimax(p, i) ? 0 : i));
+  const order = [photoAt(p, FIRST_DOOR), ...MIDDLE_DOORS.map((k) => fillerAt(p, k)), photoAt(p, LAST_DOOR)];
   const SLAB = 4;
   const cam = Math.pow(R, f / 15);    // door k sits at scale cam / R^k
   const sc = (k: number) => cam / Math.pow(R, k);
@@ -431,7 +438,7 @@ const Doors: Scene = ({ f, g, p }) => {
     if ((k !== SLAB && s > 2.6) || splitOf(k) >= 0.999) continue;
     const behind = k < SLAB ? sc(k + 1) : 0.0;
     if (k === SLAB) nodes.push(<Door key="slab" s={Math.min(s, FILL * 1.002)} slab crack={0.25 + 0.75 * crack} accent={p.accent} jamb={0.4} />);
-    else nodes.push(<React.Fragment key={`d${k}`}><Corridor far={behind > 0 ? Math.max(behind, 0.05) : 0.05} near={s} phase={phaseOf(cam)} light={0.9} /><Door pic={ph(p, order[k])} s={s} split={splitOf(k)} /></React.Fragment>);
+    else nodes.push(<React.Fragment key={`d${k}`}><Corridor far={behind > 0 ? Math.max(behind, 0.05) : 0.05} near={s} phase={phaseOf(cam)} light={0.9} /><Door pic={order[k]} s={s} split={splitOf(k)} /></React.Fragment>);
   }
   const front = sc(nearestShut);
   return (
@@ -443,20 +450,18 @@ const Doors: Scene = ({ f, g, p }) => {
   );
 };
 
-/** 6 · the climax, on the hit: the last door has opened; the photo props.climax names (else the hero) floods into colour
- *  outward from the axis; the marquee word above it, the axis line running on below it. */
+/** 6 · the climax, on the hit: the last door has opened; the burst floods into colour outward from the axis; the marquee
+ *  word above it, the axis line running on below it. */
 const PW_POST = 720, PH_POST = 900, PCY = 1000;
 // Event Caliber (Chris, 2026-11-08): "three portraits that should be the ending of 10 as a quick, but not to quick burst
-// with a hold on the last image"; he chose two. With `ending` in the props, the climax is that burst: one picture a beat,
-// the last held.
+// with a hold on the last image"; he chose two: one picture a beat, the last held.
 const BURST = 15;
 const Colour: Scene = ({ f, p }) => {
-  const ending = p.ending ?? [];
-  const k = ending.length ? Math.min(ending.length - 1, Math.floor(f / BURST)) : -1;
-  const piece = k >= 0 ? ending[k] : ph(p, climaxIndex(p));
+  const k = Math.min(BURST_PHOTOS.length - 1, Math.floor(f / BURST));
+  const piece = photoAt(p, BURST_PHOTOS[k]);
   // a burst picture taken wide gets a wide window (3:2), as the approved burst had; one taken upright the 4:5 window, so
   // a portrait's face is never cut by the crop
-  const wide = k >= 0 && !(piece.w && piece.h && piece.h > piece.w);
+  const wide = !(piece.w && piece.h && piece.h > piece.w);
   const PW = wide ? 960 : PW_POST, PHh = wide ? 640 : PH_POST;
   const z = 1 + 0.06 * (f / 90);
   const flood = expoOut(Math.min(1, Math.max(0, (f - 2) / 14)));
@@ -567,6 +572,7 @@ const Grain: React.FC<{ g: number }> = ({ g }) => {
 };
 
 export const Axis: React.FC<ReelProps> = (p) => {
+  checkSlots(p, SLOTS, "Axis");
   const g = useCurrentFrame();
   useFontsReady();
   const seg = TIMELINE.find((s) => g >= s.at && g < s.end) ?? TIMELINE[TIMELINE.length - 1];

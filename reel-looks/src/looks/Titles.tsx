@@ -1,6 +1,7 @@
-import React, { useEffect, useState } from "react";
-import { AbsoluteFill, Easing, Img, continueRender, delayRender, random, spring, staticFile, useCurrentFrame } from "remotion";
+import React from "react";
+import { AbsoluteFill, Easing, Img, random, spring, staticFile, useCurrentFrame } from "remotion";
 import { FPS, H, Photo, ReelProps, W, ramp } from "../look";
+import { Slots, checkSlots, fillerAt, photoAt, shapeOf } from "../slots";
 import { ARCHIVO } from "../fonts";
 import { Face, emWidth, metrics, useFontsReady } from "../measure";
 import { Music } from "../music";
@@ -47,7 +48,11 @@ import { Music } from "../music";
 
 const BLACK = "#0A0A0B";
 const LIGHT = "#F3F3F1";               // light letters where a colour is too dark to carry black
-const ph = (p: ReelProps, i: number): Photo => p.photos[i % p.photos.length];
+// Every picture once (Chris, 2026-11-08, night: no picture twice in a reel): the post's seven photos are the hero (the
+// cover), the three the words go with (the three bars), the climax's, the end title's and the number's (the suite
+// fills a photo slot the post had no photo for from the last); the Psycho bars and the symbol each take a filler.
+export const SLOTS: Slots = { photos: 7, fillers: 2 };
+const HERO = 0, CLIMAX = 4, END = 5, NUMBER = 6;
 
 const CUT: Face = { family: ARCHIVO, weight: 900, stretch: "condensed" };
 const CUT_LIGHT: Face = { family: ARCHIVO, weight: 700, stretch: "condensed" };
@@ -69,26 +74,10 @@ const inkOn = (hex: string) => {
 
 // ------------------------------------------------------------------ the photographs, whole
 
-/** Each photo's own shape (width / height), read from the file before the first frame is drawn. */
-const ASPECT = new Map<string, number>();
-const useAspects = (photos: Photo[]) => {
-  const [todo] = useState(() => photos.filter((pic) => !ASPECT.has(pic.src)));
-  const [handle] = useState(() => (todo.length ? delayRender("Reading the photos' shapes") : null));
-  const [, redraw] = useState(0);
-  useEffect(() => {
-    if (handle === null) return;
-    Promise.all(todo.map((pic) => new Promise<void>((done) => {
-      const im = new Image();
-      im.onload = () => { ASPECT.set(pic.src, im.naturalWidth / im.naturalHeight); done(); };
-      im.onerror = () => { ASPECT.set(pic.src, 1.5); done(); };
-      im.src = staticFile(pic.src);
-    }))).then(() => { redraw((n) => n + 1); continueRender(handle); });
-  }, [handle, todo]);
-};
 type Box = { x: number; y: number; w: number; h: number };
 /** A photo at its own shape, as big as fits w x h, centred on (cx, cy). */
 const placed = (pic: Photo, w: number, h: number, cx: number, cy: number): Box => {
-  const a = ASPECT.get(pic.src) ?? 1.5;
+  const a = shapeOf(pic);                 // its shape from its props (slots.ts)
   const s = w / h > a ? { w: h * a, h } : { w, h: w / a };
   return { x: cx - s.w / 2, y: cy - s.h / 2, ...s };
 };
@@ -207,7 +196,7 @@ type Scene = React.FC<{ f: number; p: ReelProps }>;
 // 0-75 · the cover: the hook on bars of paper across the black; below it the hero, whole, standing on a bar of paper;
 // the bars drift, and on each beat another bar slides across a black margin.
 const Opening: Scene = ({ f, p }) => {
-  const hero = ph(p, 0);
+  const hero = photoAt(p, HERO);
   const footH = 30;
   const b = placed(hero, 1000, 660, W / 2, H - 70 - footH - 330);
   const a = p.open[0].toUpperCase(), bb = p.open[1].toUpperCase(), sub = p.openSub.toUpperCase();
@@ -246,7 +235,7 @@ const Opening: Scene = ({ f, p }) => {
 // below the band where the faces are, so faces travel whole) and locks into one; then line 1 and line 2, each cut into
 // strips that slide in from alternate sides and lock on the beat, with their tails.
 const Psycho: Scene = ({ f, p }) => {
-  const pic = ph(p, 1);
+  const pic = fillerAt(p, 0);
   const b = placed(pic, 1000, 600, W / 2, 60 + 300);
   const fy = Math.min(0.85, Math.max(0.15, pic.fy));
   const cuts = [0, Math.max(0.08, fy - 0.26), Math.min(0.92, fy + 0.3), 1].map((t) => b.y + b.h * t);
@@ -286,7 +275,7 @@ const Psycho: Scene = ({ f, p }) => {
 // set by hand along it; above it, on the black, a picture assembles from five jagged pieces cut from a point below the
 // faces (Anatomy of a Murder), each sliding in from its own side on the sixteenths.
 const Emblem: Scene = ({ f, p }) => {
-  const pic = ph(p, 2);
+  const pic = fillerAt(p, 1);
   const foot = 190;
   const b0 = placed(pic, 900, 600, W / 2, 0);
   const b: Box = { ...b0, y: H / 2 - (b0.h + foot) / 2 };
@@ -348,7 +337,7 @@ const Emblem: Scene = ({ f, p }) => {
 // frame), the label on a bar right under it; the figure in three jagged pieces sliding in from three sides on the
 // sixteenths, its cuts showing; the unit on a bar.
 const Figure: Scene = ({ f, p }) => {
-  const pic = ph(p, 4);
+  const pic = photoAt(p, NUMBER);
   const v = p.counter.value.toUpperCase();
   const label = p.counter.label.toUpperCase(), unit = p.counter.unit.toUpperCase();
   const b = placed(pic, 860, 470, W / 2, 50 + 235);
@@ -410,7 +399,7 @@ const Figure: Scene = ({ f, p }) => {
 // from the line of the faces (no paper left round it once it is open) and its word is set by hand on its bar. All three
 // stay.
 const Apertures: Scene = ({ f, p }) => {
-  const idx = p.wordPhotos ?? [0, 1, 2];
+  const idx = p.wordPhotos;
   const words = p.words.map((w) => w.toUpperCase());
   const fills = [p.accent, p.accent2, p.accent];
   const hS = H / 3;
@@ -423,7 +412,7 @@ const Apertures: Scene = ({ f, p }) => {
     <AbsoluteFill style={{ background: BLACK }}>
       {[0, 1, 2].map((i) => {
         const y = i * hS;
-        const pic = ph(p, idx[i]);
+        const pic = photoAt(p, idx[i]);
         const b = placed(pic, W - 140, winH, W / 2, y + 36 + winH / 2);
         const open = ramp(f, opens[i] - 3, opens[i] + 5, expoOut);
         const barIn = landing(f, opens[i] + 2, 8);
@@ -445,7 +434,7 @@ const Apertures: Scene = ({ f, p }) => {
 // paper the photograph stands on (a strip at its side and its foot, two sides only); on the beat the picture opens like
 // a window from the line of the faces, whole, with nothing round it; the marquee is set by hand on the foot.
 const Climax: Scene = ({ f, p }) => {
-  const pic = ph(p, 3);
+  const pic = photoAt(p, CLIMAX);
   const side = 60, foot = 270;
   const b0 = placed(pic, 900, 640, 0, 0);
   const b: Box = { ...b0, x: W / 2 - (b0.w + side) / 2 + side, y: H / 2 - (b0.h + foot) / 2 - 20 };
@@ -479,7 +468,7 @@ const Climax: Scene = ({ f, p }) => {
 // between two paper rules, the kicker, the call on a paper bar, the site and the town. Everything is in by frame 440,
 // then it holds.
 const EndTitle: Scene = ({ f, p }) => {
-  const pic = ph(p, 5);
+  const pic = photoAt(p, END);
   const name = p.business.toUpperCase();
   const ns = fitCut(name, CUT, 960, 260, 0.02), nCap = capOf(CUT, ns);
   const kick = p.kicker.toUpperCase();
@@ -532,9 +521,9 @@ const SCENES: { at: number; S: Scene }[] = [
 // ------------------------------------------------------------------ over everything
 
 export const Titles: React.FC<ReelProps> = (p) => {
+  checkSlots(p, SLOTS, "Titles");
   const g = useCurrentFrame();
   useFontsReady();
-  useAspects(p.photos);
   const i = SCENES.reduce((n, s, k) => (g >= s.at ? k : n), 0);
   const { at, S } = SCENES[i];
   return (
