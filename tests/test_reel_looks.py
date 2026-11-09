@@ -520,7 +520,7 @@ class Fillers(IsolatedCase):
         for k in range(12):                                   # twelve shoots, a portrait and a stage photo in each
             for room in ("portrait", "main_stage"):
                 pid = event_photo(self.conn, f"t{k}{room}", kind="business", final="business", quality=5, folder=f"f{k}")
-                self.conn.execute("UPDATE classifications SET shot_type=? WHERE photo_id=?", (room, pid))
+                self.conn.execute("UPDATE classifications SET shot_type=?, people_count=1 WHERE photo_id=?", (room, pid))
                 self.conn.execute("UPDATE photos SET thumbnail_link='t' WHERE id=?", (pid,))
                 Image.new("RGB", (30, 20), (k, 0, 0)).save(cache / f"t{k}{room}.img", "JPEG")
                 self.ids[(k, room)] = pid
@@ -589,6 +589,18 @@ class Fillers(IsolatedCase):
         self.assertNotIn("t6main_stage.img", names, "in a scheduled post")
         self.assertNotIn("t7main_stage.img", names, "in a draft")
         self.assertIn("t8main_stage.img", names, "a post that has gone out is the rotation's to bring round again")
+
+    def test_a_portrait_of_more_than_one_person_never_fills(self):
+        """Portraits is one person (Chris, 2026-11-09): Axis's walls are its portraits gallery, so a pair or a group
+        labelled portrait, or one whose head count is not known, waits for its own label."""
+        self.conn.execute("UPDATE classifications SET people_count=5 WHERE photo_id=?", (self.ids[(3, "portrait")],))
+        self.conn.execute("UPDATE classifications SET people_count=2 WHERE photo_id=?", (self.ids[(4, "portrait")],))
+        self.conn.execute("UPDATE classifications SET people_count=NULL WHERE photo_id=?", (self.ids[(5, "portrait")],))
+        names = {f.path.name for f in reel_looks.fillers(self.conn, "axis", self.rows((0, "portrait")))}
+        self.assertNotIn("t3portrait.img", names, "a group")
+        self.assertNotIn("t4portrait.img", names, "a pair")
+        self.assertNotIn("t5portrait.img", names, "no head count")
+        self.assertIn("t6portrait.img", names, "one person")
 
     def test_a_copy_of_the_posts_picture_filed_in_another_shoot_never_fills(self):
         shown = self.ids[(5, "main_stage")]

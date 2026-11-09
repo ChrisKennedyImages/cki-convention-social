@@ -215,7 +215,8 @@ def wall_picks(conn: sqlite3.Connection, *, exclude: Sequence[int] = (), n: int 
     (a frame of the same sitting could not be told from another), nor does a photo with none from a shoot and shot type
     the post holds. Nor does a photo another post still to go out holds (storage.OPEN: a draft, approved or scheduled),
     a copy of it or a frame of its moment: that post would show the picture again (#90's tiles held photos of #80, #85
-    and #86, 2026-11-09)."""
+    and #86, 2026-11-09). Nor does a photo labelled a portrait with other than one person in it: Portraits is one person
+    (Chris, 2026-11-09), and Axis's walls are its portraits gallery; a pair or a group waits for its own label."""
     from .. import storage
     from ..core import db
     from ..library import copies, moments, report
@@ -238,7 +239,8 @@ def wall_picks(conn: sqlite3.Connection, *, exclude: Sequence[int] = (), n: int 
     for r in wall_candidates(conn) if candidates is None else candidates:
         key = (r["folder_id"], r["shot_type"])
         if (r["id"] in seen or (only is not None and r["shot_type"] != only) or key in untimed_keys
-                or (key in own_keys and moments.taken(r["taken_at"]) is None)):
+                or (key in own_keys and moments.taken(r["taken_at"]) is None)
+                or (r["shot_type"] == "portrait" and r["people_count"] != 1)):
             continue
         usable.append(r)
     by_shoot: dict = {}

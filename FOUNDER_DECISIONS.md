@@ -2947,7 +2947,7 @@ shows twice, and each look takes as many different photos as it shows (the desig
   are (`reels3d.wall_picks`): in rotation, one per room per shoot, never the post's own, a copy of one of its pictures or
   a frame of its moments, nothing of a shoot and shot type where a post photo, or the filler, has no camera time (a
   sitting cannot be told without it), and never a photo another post still to go out holds (a draft, approved or
-  scheduled: #90's tiles had held photos of #80, #85 and #86). The 3D walls follow the same rule. The ones a reel shows are recorded on the wall's record so they rotate, never
+  scheduled: #90's tiles had held photos of #80, #85 and #86), nor a portrait of other than one person (Portraits is one person, Chris, 2026-11-09; Axis's walls are its portraits gallery). The 3D walls follow the same rule. The ones a reel shows are recorded on the wall's record so they rotate, never
   counted against the post's repeat window. Axis's are portraits; any other look's keep the reel at two portraits; the
   mosaic's at most eight. They are drawn from every approved photo: the strongest 600 frames of the library had held 42
   of his approved photos with a copy here. A look is chosen only when its words have their photos and its fillers are
