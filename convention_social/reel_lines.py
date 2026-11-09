@@ -6,6 +6,11 @@ lines here (SETS): the hook (two words and a short line under them), line 1, lin
 no event or person named. Any set goes with any look; a reel takes the set the reels used least lately (`choose`), so a
 set comes round again only after the others.
 
+A word or a line printed over his photos must be true of them (Chris, 2026-11-09). Set 6 says "Same moment. every
+angle." and "Stage and floor.": Split Screen sets those between two photos, which the suite never takes from one moment
+(moments.same_moment, 2026-11-02) and never knows the angle or the room of; so set 6 never goes on Split Screen
+(NOT_ON), and the other sets claim nothing about the pictures under them.
+
 The three beat words and the stack label come from the reel's own photos. Chris, 2026-11-08, of a preview whose words
 did not fit its pictures: "The screen shot says each award and they are portraits". So a beat word is the room the
 final check confirmed its photo plainly shows (content.checked_rooms, the same labels a post's title prints), in his
@@ -52,6 +57,10 @@ SETS = {
     9: Lines(("The", "light"), "finds the moment.", ("Wait", "for it."), ("Then", "the frame."), "Seen"),
     10: Lines(("Exactly", "right."), "every time.", ("On", "the line."), ("Dead", "center."), "Now"),
 }
+# Sets whose words say what the pictures under them show, and the looks that set them over pictures they would be untrue
+# of (Chris, 2026-11-09: a word over a photo is true of that photo). Split Screen's cover puts "Same moment. every angle."
+# between two photos of two moments and its split puts "Stage and floor." between two more.
+NOT_ON = {6: ("splitscreen",)}
 # The counter sits over photos that carry no word, so it says nothing a photo could contradict.
 COUNTER = {"label": "Every moment", "value": "1", "unit": "take"}
 # A confirmed room as its beat word ("Main stage.") and as the stack label lists it ("main stage"): his labels.
@@ -66,10 +75,15 @@ class TooFewRooms(ValueError):
     """Fewer than three of the reel's photos have a room the final check confirmed: no beat word may be guessed."""
 
 
-def choose(conn: sqlite3.Connection) -> int:
-    """The set the reels used least lately: one never used first (in number order), else the one whose last reel is
-    oldest. Read from the drafts themselves (rule_report.lines), every road and every outcome, so a set a turned-back
-    reel had also waits its turn."""
+def fits(lines: int, look: Optional[str]) -> bool:
+    """Set `lines` may go on a reel in `look`: its words say nothing the look's pictures could make untrue (NOT_ON)."""
+    return lines in SETS and look not in NOT_ON.get(lines, ())
+
+
+def choose(conn: sqlite3.Connection, look: Optional[str] = None) -> int:
+    """The set the reels used least lately among those that may go on `look` (fits): one never used first (in number
+    order), else the one whose last reel is oldest. Read from the drafts themselves (rule_report.lines), every road and
+    every outcome, so a set a turned-back reel had also waits its turn."""
     last: dict[int, str] = {}
     for r in db.rows(conn, "SELECT json_extract(rule_report, '$.lines') AS lines, MAX(created_at) AS at FROM content_queue "
                            "WHERE json_extract(rule_report, '$.lines') IS NOT NULL GROUP BY lines"):
@@ -77,7 +91,7 @@ def choose(conn: sqlite3.Connection) -> int:
             last[int(r["lines"])] = r["at"] or ""
         except (TypeError, ValueError):
             continue
-    return min(SETS, key=lambda n: (last.get(n, ""), n))
+    return min((n for n in SETS if fits(n, look)), key=lambda n: (last.get(n, ""), n))
 
 
 @dataclass(frozen=True)

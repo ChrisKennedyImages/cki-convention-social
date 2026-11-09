@@ -11,7 +11,7 @@
   ]
  },
  "chiaroscuro": {
-  "source": "e5238f350c42eb46bdbd6fa477bbcc4b3bed2a002ad156ce08eb533853e87b1d",
+  "source": "103cca4c8bd37fdae693750a5ed83588324edfdd44f446ba2980422ae8050bd0",
   "checked": "2026-11-09",
   "slots": 19,
   "repeats": 0,
@@ -20,7 +20,7 @@
   "back_with_nothing_between": []
  },
  "darkroom": {
-  "source": "20071b2a6becffdfd5559e06108ff422abe5b6d1c8cf6eedc271e08d1b189fcf",
+  "source": "9e3c703bedc010873cfb01a65c3633b330dfe19c5581aac99c939d66aa3216c3",
   "checked": "2026-11-09",
   "slots": 13,
   "repeats": 0,
@@ -33,7 +33,7 @@
   ]
  },
  "manifesto": {
-  "source": "e7028418709acd26c1a7c94ac332db42ddcb42defa78ce537e1647bdc1358a38",
+  "source": "7091d7f9cc93b49005f63aa8f7b234444137d7a5383a858c183a261070a14735",
   "checked": "2026-11-09",
   "slots": 9,
   "repeats": 0,
@@ -42,7 +42,7 @@
   "back_with_nothing_between": []
  },
  "powersoften": {
-  "source": "f65ca0caa263a447fa4e17e873691ef212f685f3fde093ec3ed5825da57209fd",
+  "source": "efb57f0cfac0af5404f62751cd9d2ee2fdcb10f37435a2f223316c9443471d01",
   "checked": "2026-11-09",
   "slots": 46,
   "repeats": 0,
@@ -63,7 +63,7 @@
   ]
  },
  "splitscreen": {
-  "source": "6457c342370c0917da392cbb14c05f329ddd1ffdc5697077c39a373e518c8d1b",
+  "source": "1f049f3037fd8d1a0bdcbcba2f6cce438c13713b98812c504d96575d76367601",
   "checked": "2026-11-09",
   "slots": 14,
   "repeats": 0,
@@ -72,7 +72,7 @@
   "back_with_nothing_between": []
  },
  "stillness": {
-  "source": "e1c023c41c71b302cc8362cf68b07790b01c38565b5770a5aee5fe93c77865ab",
+  "source": "4bd33818b3636d0e37ae95b48d91dc874194b153845df6eeff4b9d31333f996f",
   "checked": "2026-11-09",
   "slots": 7,
   "repeats": 0,
@@ -81,7 +81,7 @@
   "back_with_nothing_between": []
  },
  "titles": {
-  "source": "2bd2a03e0e97a3bbd52e2ff2ce8c0ef5d0c616fd02354947db4186756803c4aa",
+  "source": "3f652d4e19d7c243cc29d1f1bf3ee688b805ea49c3b6eb6050a74401f482b113",
   "checked": "2026-11-09",
   "slots": 9,
   "repeats": 0,
@@ -90,7 +90,7 @@
   "back_with_nothing_between": []
  },
  "weather": {
-  "source": "e75260a546d27c368738e994a5f721f6e450b19ceb48b3a813c1585287c3bcb7",
+  "source": "138d724a816f638eb479782492a12ab5f960a9ee6a92c98ff036c910926938a3",
   "checked": "2026-11-09",
   "slots": 7,
   "repeats": 0,

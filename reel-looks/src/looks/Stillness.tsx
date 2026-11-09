@@ -29,7 +29,7 @@ import { Music } from "../music";
 // 16 s (480 frames) on the 120 BPM grid; each dissolve starts on a beat:
 //     0-75   the intertitle, the cover: the hook on the paper
 //    60-150  the first picture on the level line, drawing slowly back; line 1 beneath
-//   135-240  two more, one above the other, drifting slowly apart; line 2 beneath, the stack label under it
+//   135-240  two more, one above the other, drifting slowly apart; line 2 beneath
 //   225-285  the number, plain on the paper
 //   270-360  the three words: three photos down the page, each drifting a little, each word beside its own photo
 //   345-445  silence, then the one movement: the hero rises over the level line and lands softly; the marquee beneath
@@ -159,8 +159,9 @@ const FirstLine: Shot = ({ f, n, p, ar }) => {
   );
 };
 
-/** Two pictures, one above the other, the lower on the level line, drifting slowly apart; line 2 beneath, and the
- *  stack label under it like a gallery's label. */
+/** Two pictures, one above the other, the lower on the level line, drifting slowly apart; line 2 beneath. No room list
+ *  under them: it named rooms these two do not show (Chris, 2026-11-09: a word over or beside a photo is true of that
+ *  photo); each room stands beside its own photo. */
 const Pair: Shot = ({ f, n, p, ar }) => {
   const [a, b] = PAIR.map((i) => pick(p, ar, i));
   const gap = 44, maxH = (LEVEL - 300 - gap) / 2;
@@ -168,13 +169,11 @@ const Pair: Shot = ({ f, n, p, ar }) => {
   const drift = 16 * (fade(f, 0, n) - 0.5);
   const runs = pair(p.line2[0], p.line2[1]);
   const s = Math.min(112, 860 / runsEm(runs));
-  const track = 0.16, ls = capsSize(p.stackLabel, 860, 40, track);
   return (
     <>
       <Standing pic={a.pic} w={ba.w} h={ba.h} cx={W / 2} bottom={LEVEL - bb.h - gap} dx={drift} />
       <Standing pic={b.pic} w={bb.w} h={bb.h} cx={W / 2} bottom={LEVEL} dx={-drift} />
       <Line runs={runs} size={s} capTop={UNDER} opacity={words(f, n)} />
-      <Line runs={capsRun(p.stackLabel)} size={ls} capTop={UNDER + capOf(ROMAN, s).cap + 74} caps track={track} color={GREY} opacity={words(f, n, DISSOLVE + 15)} />
     </>
   );
 };

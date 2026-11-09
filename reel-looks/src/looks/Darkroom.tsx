@@ -37,7 +37,8 @@ import { Music } from "../music";
 //   2  the enlarger: the chosen frame slides into the carrier, the lamp clicks on and the beam lays the picture on the
 //      easel, positive and in its own colours, the lamp's light warm on it; the timer's hand jumps on every beat; line 1
 //   3  the paper slides into the tray and the picture comes up out of paper white, shadows first, then mid-tones,
-//      highlights last, ending exactly as shot; line 2 above it, the stack label pencilled in its margin
+//      highlights last, ending exactly as shot; line 2 above it, its margin left bare (the reel's room list pencilled
+//      there named rooms this print does not show; Chris, 2026-11-09: a word over or beside a photo is true of it)
 //   4  the zone scale: eleven steps from Zone 0 to Zone X develop across the frame; the number set large above it
 //   5  three prints pegged up one a beat, each on its own line, swinging still; each word pencilled on its border; the
 //      safelight clicks off on the last beat and the room goes dark round them
@@ -416,14 +417,13 @@ const Enlarger: Scene = ({ f, g, p, ar }) => {
 const Tray: Scene = ({ f, p, ar }) => {
   const hero = own(p, ar, HERO);
   const box = fitBox(hero.ar, 780, 700);
-  const B = 28, BB = 118;                                  // the print's borders, the bottom one wide for pencil
+  const B = 28, BB = 118;                                  // the print's borders, the bottom one wide
   const pw = box.w + 2 * B, phh = box.h + B + BB;
   const tw = pw + 116, th = phh + 116, cy = 1110;         // the tray round it
   const sp = spring({ frame: f, fps: FPS, config: { damping: 15, stiffness: 105, mass: 0.9 } });
   const slide = (1 - sp) * -1500;
   const t = 1 - Math.pow(1 - clamp01((f - 10) / 40), 1.6);
   const rock = Math.sin(f * 0.11);
-  const stackS = fitSize(p.stackLabel, PENCIL, box.w - 40, 66);
   const l2 = pair(p.line2[0], p.line2[1]);
   const l2S = Math.min(150, 940 / runsEm(l2));
   const trayTop = cy - th / 2;
@@ -457,7 +457,6 @@ const Tray: Scene = ({ f, p, ar }) => {
         <div style={{ position: "absolute", left: B, top: B, width: box.w, height: box.h }}>
           <Shot pic={hero.pic} w={box.w} h={box.h} filter={t < 1 ? "url(#dr-dev)" : undefined} />
         </div>
-        <Pencil text={p.stackLabel} size={stackS} cx={pw / 2} top={B + box.h + (BB - stackS * 1.12) / 2 + 4} k={ramp(f, 30, 44, Easing.linear)} rot={-1.2} />
         {/* the wave the paper makes going in: one band of the safelight on the developer, crossing the print once */}
         {f >= 8 && f <= 22 && <div style={{ position: "absolute", left: -20, right: -20, top: lerp(-140, phh + 20, (f - 8) / 14), height: 120, mixBlendMode: "screen", opacity: 0.3 * Math.sin(Math.PI * (f - 8) / 14), background: `linear-gradient(180deg, transparent, ${rgb(safe(0.95))}, transparent)` }} />}
       </div>

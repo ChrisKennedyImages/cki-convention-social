@@ -3006,3 +3006,27 @@ re-judge waits until 2026-11-19 for budget reasons, and nothing is judged or sor
   dark backdrop), on the home page as Portraits, would read Event photography after the next build.
 - The brief's Portraits line ("a posed group off the stage with no award in hand") stays as it is; it changes with the
   re-judge.
+
+## 2026-11-09: a word over or beside a photo is true of that photo
+
+Chris chose on 2026-11-09 to take the reel's room list off the photos it does not describe. The room list (the stack
+label, "Main stage · reception · candid": the rooms of the reel's three word photos) was printed beside pictures it does
+not name in eight of the ten looks, and Split Screen's cover set "Same moment. every angle." between two photos of two
+moments. The rule he chose, as the coordinator put it to the build: a word or a line printed over or beside a photo must
+be true of that photo.
+
+- **The room list prints only where no picture it does not name is in view**: Section's roof, lettered while the
+  drawing's rooms are empty, and Axis's far wall. Each room is still named beside its own photo by the beat words.
+  Weather's cloth now blows bare over the gale's one photo; Split Screen's cyan field over the contact sheet of fillers is
+  empty; Chiaroscuro's night watch has no captions at the spot's stops and no ruled line under the picture; Manifesto's
+  climax keeps the marquee band and loses the beam under it; Titles' paper foot under the symbol is bare; Darkroom's tray
+  print keeps its margin bare; Stillness's pair has no gallery label; Powers of Ten's title strip is bare between line 2
+  and the number. Everything else in each look is as approved.
+- **Set 6 never goes on Split Screen** (`reel_lines.NOT_ON`, `reel_lines.fits`): "Same moment. every angle." and "Stage
+  and floor." sit between Split Screen's photos, which the suite never takes from one moment (2026-11-02) and whose angle
+  or room it does not know. Every other look may still take set 6; a Split Screen drawn again with set 6 takes the next
+  set (`content.look_parts`). The other nine sets claim nothing about the photos under them.
+- Pinned by `tests/test_room_list.py`, one test over all ten looks: a look prints the stack label only where
+  `ROOM_LIST_OVER_NO_PHOTO` says it sits over no picture, so a new look cannot print it beside other pictures unseen.
+- Already scheduled posts are not touched here: #94 (Manifesto) shows "INSIDE ▸ MAIN STAGE · RECEPTION" under one
+  main-stage photo at 12.0-13.5 s, and #95 (Split Screen), #96 (Weather) and #97 (Chiaroscuro) were made before this.

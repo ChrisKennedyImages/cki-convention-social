@@ -71,7 +71,7 @@ const HOOK_OUT = 62;                           // the hook lifts away
 const COUNTER = [68, 90] as const;             // the counterpoint gesture
 const LINES = { at: [92, 98], out: 164 };      // line 1 and line 2
 const ADVANCE: [number, number][] = [[170, 195], [270, 300], [380, 405]];   // the strip, layout to layout
-const SHEET_TEXT = { at: [197, 201], out: 263 };
+const SHEET_NUMBER = { at: 201, out: 263 };        // the number under the contact sheet
 const WORDS = { at: [302, 308], out: 372 };    // the centre's word, then the wings'
 const END = { marquee: 407, name: 410, kicker: 413, call: 416, site: 419, town: 422 };
 
@@ -188,17 +188,16 @@ const Opening: Layout = ({ g, p }) => {
   );
 };
 
-// 2 · the contact sheet (Ferro's multi-screen). Six photos at once in two columns, the label on the cyan field above them,
-// the number on paper below.
+// 2 · the contact sheet (Ferro's multi-screen). Six photos at once in two columns, the cyan field above them, the number
+// on paper below. The field carries no words: the six are fillers, and the reel's room list would name rooms they do not
+// show (Chris, 2026-11-09: a word over a photo is true of that photo); the rooms are named in the triptych, each word on
+// the field beside its own photo.
 const SHEET_TOP = 354, CELL_W = (IW - G) / 2, CELL_H = 348;
 const cellOf = (c: number, r: number): Rect => ({ x: G + c * (CELL_W + G), y: SHEET_TOP + r * (CELL_H + G), w: CELL_W, h: CELL_H });
 const SHEET = [{ c: 0, r: 0, filler: 0 }, { c: 1, r: 0, filler: 1 }, { c: 0, r: 1, filler: 2 }, { c: 1, r: 1, filler: 3 }, { c: 0, r: 2, filler: 4 }, { c: 1, r: 2, filler: 5 }];
-const LABEL_F: Rect = { x: G, y: G, w: IW, h: SHEET_TOP - 2 * G };
+const ABOVE_F: Rect = { x: G, y: G, w: IW, h: SHEET_TOP - 2 * G };
 const COUNT_F: Rect = { x: G, y: SHEET_TOP + 3 * CELL_H + 3 * G, w: IW, h: H - G - (SHEET_TOP + 3 * CELL_H + 3 * G) };
 const Sheet: Layout = ({ g, p }) => {
-  const set = balance(p.stackLabel, HEAVY, 960, 124, 86);
-  const capL = capOf(HEAVY, set.size), leadL = set.size * 1.0;
-  const labTop = LABEL_F.h / 2 - ((set.lines.length - 1) * leadL + capL) / 2;
   const { label, value, unit } = p.counter;
   const tS = fit(label, TAG, 900, 44, 0.14, true), capT = capOf(TAG, tS);
   const roomH = COUNT_F.h - 64 - capT - 46 - 70;
@@ -208,18 +207,16 @@ const Sheet: Layout = ({ g, p }) => {
   const uW = textWidth(unit, HEAVY, uS, -0.01);
   const vX = COUNT_F.w / 2 - (vW + 34 + uW) / 2;
   const base = 64 + capT + 46 + capV;
-  const ink = onColour(p.accent, p.accent2), inkP = onColour(p.accent2, p.accent2);
-  const [a, b] = SHEET_TEXT.at, out = SHEET_TEXT.out;
+  const inkP = onColour(p.accent2, p.accent2);
+  const { at, out } = SHEET_NUMBER;
   return (
     <>
       {SHEET.map((s) => <Pic key={`${s.c}${s.r}`} pic={fillerAt(p, s.filler)} box={cellOf(s.c, s.r)} />)}
-      <Field r={LABEL_F} bg={p.accent}>
-        {set.lines.map((l, i) => <Line key={i} g={g} at={a + i * 3} out={out} text={l} face={HEAVY} size={set.size} x={LABEL_F.w / 2} inkTop={labTop + i * leadL} align="center" color={ink} track={-0.01} />)}
-      </Field>
+      <Field r={ABOVE_F} bg={p.accent} />
       <Field r={COUNT_F} bg={p.accent2}>
-        <Line g={g} at={b} out={out} text={label} face={TAG} size={tS} x={COUNT_F.w / 2} inkTop={64} align="center" color={inkP} track={0.14} caps />
-        <Line g={g} at={b + 2} out={out} text={value} face={FIGURE} size={vS} x={vX} inkTop={base - capV} color={inkP} track={-0.02} />
-        <Line g={g} at={b + 5} out={out} text={unit} face={HEAVY} size={uS} x={vX + vW + 34} inkTop={base - capOf(HEAVY, uS)} color={inkP} track={-0.01} />
+        <Line g={g} at={at} out={out} text={label} face={TAG} size={tS} x={COUNT_F.w / 2} inkTop={64} align="center" color={inkP} track={0.14} caps />
+        <Line g={g} at={at + 2} out={out} text={value} face={FIGURE} size={vS} x={vX} inkTop={base - capV} color={inkP} track={-0.02} />
+        <Line g={g} at={at + 5} out={out} text={unit} face={HEAVY} size={uS} x={vX + vW + 34} inkTop={base - capOf(HEAVY, uS)} color={inkP} track={-0.01} />
       </Field>
     </>
   );

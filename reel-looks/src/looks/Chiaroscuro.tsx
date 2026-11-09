@@ -109,14 +109,15 @@ const Gilt: React.FC<{ x: number; y: number; w: number; k: number; a?: number; o
     background: `linear-gradient(90deg, rgba(${GILT},0), rgba(${GILT},${a}) 22%, rgba(255,236,196,${a}) 50%, rgba(${GILT},${a}) 78%, rgba(${GILT},0))` }} />
 );
 /** Small caps between two gilt hairlines. */
-const Ruled: React.FC<{ text: string; y: number; size: number; k: number; track?: number; reach?: number }> = ({ text, y, size, k, track = 0.26, reach = 110 }) => {
+const RULE = 110;                // each hairline's reach
+const Ruled: React.FC<{ text: string; y: number; size: number; k: number; track?: number }> = ({ text, y, size, k, track = 0.26 }) => {
   const tw = textWidth(text.toUpperCase(), CAPS, size, track) + track * size;
   const m = metrics(CAPS);
   const mid = y + (m.base - m.cap / 2) * size;
   return (
     <>
-      <Gilt x={W / 2 - tw / 2 - 30 - reach} y={mid} w={reach} k={k} origin="right" />
-      <Gilt x={W / 2 + tw / 2 + 30} y={mid} w={reach} k={k} origin="left" />
+      <Gilt x={W / 2 - tw / 2 - 30 - RULE} y={mid} w={RULE} k={k} origin="right" />
+      <Gilt x={W / 2 + tw / 2 + 30} y={mid} w={RULE} k={k} origin="left" />
       <Lit runs={[{ text, face: CAPS }]} size={size} top={y} k={k} caps track={track} glow={0.15} />
     </>
   );
@@ -339,17 +340,11 @@ const Figure: Scene = ({ f, g, p }) => {
 };
 
 // the night watch · one picture in the dark, and a spot of light that finds its details on the beats, the way Rembrandt
-// lit only what mattered: three stops, each named by a part of the stack ("Your logo", "license #", "town"), then on the
-// fourth the whole picture comes up and the stack is set beneath it between gilt rules.
-const stackParts = (s: string) => {
-  const dots = s.split(/\s+·\s+/).map((x) => x.trim()).filter(Boolean);
-  if (dots.length >= 2) return dots.slice(0, 3);
-  const comma = s.split(/,\s+/).map((x) => x.trim()).filter(Boolean);
-  return comma.length >= 2 ? comma.slice(0, 3) : [];
-};
+// lit only what mattered: three stops, then on the fourth the whole picture comes up. No words: the reel's rooms, named
+// at each stop and set beneath the picture, named rooms this one picture does not show (Chris, 2026-11-09: a word over a
+// photo is true of that photo); each is named under its own arch in the triptych.
 const NightWatch: Scene = ({ f, g, p }) => {
   const pic = photoAt(p, WATCHED);   // the work itself, examined: the light goes over it, detail by detail
-  const parts = stackParts(p.stackLabel);
   const clampP = (v: number) => Math.min(0.82, Math.max(0.18, v));
   const stops = [
     { x: clampP(pic.fx - 0.2), y: clampP(pic.fy - 0.12) },
@@ -367,10 +362,6 @@ const NightWatch: Scene = ({ f, g, p }) => {
   sx = lerp(sx, pic.fx - 0.03, whole); sy = lerp(sy, pic.fy - 0.04, whole);
   const r = lerp(0.34, 0.66, whole), core = lerp(0.14, 0.26, whole);
   const z = 1.12 + 0.05 * (f / 120);
-  const stepK = (k: number) => ramp(f, at(k), at(k) + 10, soft) * (1 - ramp(f, at(k + 1) - 4, at(k + 1) + 4, soft));
-  const capY = TCY + TH / 2 + 46;
-  const capS = Math.min(...(parts.length ? parts : [p.stackLabel]).map((t) => fitSize(t, ITALIC, 860, 110)));
-  const stackS = Math.min(34, 860 / (textWidth(p.stackLabel.toUpperCase(), CAPS, 1, 0.24) + 0.24));
   const spot = { x: TCX - TW / 2 + sx * TW, y: TCY - TH / 2 + sy * TH };
   return (
     <AbsoluteFill style={{ background: BIT }}>
@@ -378,10 +369,6 @@ const NightWatch: Scene = ({ f, g, p }) => {
       <Painting p={pic} cx={TCX} cy={TCY} w={TW} h={TH} s={z} ox={0.5} oy={0.5} pool={{ x: 0.48, y: 0.45, r: 0.75, core: 0.3, shade: 0.5 }} dim={lerp(0.2, 0.5, whole)} weave={0.1} />
       <Painting p={pic} cx={TCX} cy={TCY} w={TW} h={TH} s={z} ox={0.5} oy={0.5} pool={{ x: sx, y: sy, r, core, aspect: 1.1, shade: 0.4 }} dim={lerp(0.95, 1, whole)} />
       <Shaft g={g} sx={-260} sy={-700} tx={spot.x} ty={spot.y} spread={lerp(9, 16, whole)} k={0.95} seed={7} />
-      {parts.map((t, k) => (
-        <Lit key={k} runs={[{ text: t, face: ITALIC }]} size={capS} top={capY} k={stepK(k)} glow={0.4} />
-      ))}
-      <Ruled text={p.stackLabel} y={capY + 30} size={stackS} k={ramp(f, 90, 104, soft)} reach={80} />
     </AbsoluteFill>
   );
 };

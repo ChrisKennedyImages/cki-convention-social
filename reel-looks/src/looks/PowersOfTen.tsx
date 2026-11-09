@@ -31,7 +31,9 @@ import { CX, CY, END, M, Mosaic, STRIP, STRIP_UP, TAU_END, TOP_STRIP, tau, world
 //    2.3-7 s    the wall opens ring by ring: line 1, line 2; the other two words in their bands as their photos come by,
 //               each held at least 1.5 s beside its own photo (Chris, 2026-11-08: no word is ever left off; the mosaic,
 //               the move and the words' windows are in powersOfTenLayout.ts, checked by tests/test_reel_looks.py)
-//    7-9.4 s    the stack label in the title strip
+//    7-9.4 s    the title strip waits, bare: the reel's room list there named rooms the photos then under it do not all
+//               show (Chris, 2026-11-09: a word over or beside a photo is true of that photo); each word was set beside
+//               its own photo
 //    9.4-12 s   the number (label, figure, unit) in the title strip, the wall still filling the frame
 //   12-14 s     the strip lifts; the wall, still half the frame wide, draws into the night map, the bright town at its
 //               heart; the region's name and the marquee above it
@@ -361,7 +363,7 @@ const Readout: React.FC<{ power: number; p: ReelProps }> = ({ power, p }) => {
 const held = (g: number, at: number, until: number) => ({ k: expoOut(ramp(g, at, at + 10, Easing.linear)), gone: ramp(g, until - 7, until, Easing.in(Easing.quad)) });
 
 /** The title strip at the top, a solid panel over the mosaic's edge while the mosaic fills the frame: the hook (there at
- *  frame 0, the cover), line 1, line 2, then the stack label and the number (label, figure, unit); then it lifts away. */
+ *  frame 0, the cover), line 1, line 2, then, after a bare spell, the number (label, figure, unit); then it lifts away. */
 const TitleStrip: React.FC<{ g: number; p: ReelProps }> = ({ g, p }) => {
   if (g > STRIP_UP + 12) return null;
   const up = Easing.in(Easing.cubic)(ramp(g, STRIP_UP, STRIP_UP + 12, Easing.linear)) * TOP_STRIP;
@@ -376,13 +378,6 @@ const TitleStrip: React.FC<{ g: number; p: ReelProps }> = ({ g, p }) => {
     const size = Math.min(112, (W - 2 * M) / runsEm(runs, -0.01));
     const { op, dy } = fade(at, until);
     return <Type runs={runs} size={size} capTop={TOP_STRIP / 2 - capOf(HEAVY, size) / 2 + 10 + dy} track={-0.01} opacity={op} />;
-  };
-  const stack = () => {
-    if (g < 214 || g > 280) return null;
-    const text = `[ ${p.stackLabel} ]`;
-    const size = Math.min(44, (W - 2 * M) / emWidth(text.toUpperCase(), MONOF, 0.12));
-    const { op, dy } = fade(214, 280);
-    return <Type runs={[{ text, face: MONOF }]} size={size} capTop={TOP_STRIP / 2 - capOf(MONOF, size) / 2 + 10 + dy} track={0.12} caps opacity={op} />;
   };
   const counter = () => {
     if (g < 284 || g > STRIP_UP) return null;
@@ -412,7 +407,6 @@ const TitleStrip: React.FC<{ g: number; p: ReelProps }> = ({ g, p }) => {
       )}
       {line(p.line1, 70, 138)}
       {line(p.line2, 142, 210)}
-      {stack()}
       {counter()}
     </div>
   );

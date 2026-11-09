@@ -873,8 +873,8 @@ def redraw(conn: sqlite3.Connection, row, meta: dict, *, agent: str = "content",
 def look_parts(conn: sqlite3.Connection, row, meta: dict, look: str) -> tuple:
     """(plan, reel_video, track) a reel in one of the ten looks is drawn again with. A reel queued ready-made
     (`reel_given`, ccs queue-reel) is taken again as it is: its copy beside the post, else the file it was queued from.
-    Any other is rendered again with its own lines and track (the track it was made with while that is here, else the
-    look's next one)."""
+    Any other is rendered again with its own lines (another set when its own may not go on the look: reel_lines.fits)
+    and track (the track it was made with while that is here, else the look's next one)."""
     from .. import reel_lines
     from ..render import reel_looks
     if meta.get("reel_given"):
@@ -882,7 +882,7 @@ def look_parts(conn: sqlite3.Connection, row, meta: dict, look: str) -> tuple:
         given = made[0] if made else Path(meta["reel_given"])
         return None, given, (music.folder() / meta["music"]) if meta.get("music") else None
     played = music.played_as(conn, meta.get("music")) or music.for_look(conn, look, lambda f: learner.track_weight(conn, f))
-    lines = meta["lines"] if meta.get("lines") in reel_lines.SETS else reel_lines.choose(conn)
+    lines = meta["lines"] if reel_lines.fits(meta.get("lines"), look) else reel_lines.choose(conn, look)
     return (reel_looks.Plan(lines, played) if played else None), None, (played.path if played else None)
 
 
@@ -1061,7 +1061,7 @@ def make_draft(ctx: runner.Context, day: date, chosen: list[tuple[dict, bytes]],
             # a look takes a track that suits it and a set of lines, each the one the reels used least lately
             played = music.for_look(ctx.conn, style, lambda f: learner.track_weight(ctx.conn, f))
             if played is not None:
-                look_plan, track = reel_looks.Plan(reel_lines.choose(ctx.conn), played), played.path
+                look_plan, track = reel_looks.Plan(reel_lines.choose(ctx.conn, style), played), played.path
     else:
         style = None
     photo_ids = [r["id"] for r, _ in chosen]
