@@ -71,7 +71,7 @@ class Case(IsolatedCase):
                         first_seen_at=now, last_seen_at=now)
         db.insert(self.conn, "classifications", photo_id=pid, method="ollama", subject="event", convention_name=event, event_kind="business",
                   is_convention=1, quality=quality, possible_minor=0, personal_details="[]", space="interior", residential=0,
-                  empty_room=0, sharp=1, light=4, moment=4, shot_type=room, classified_at=now)
+                  empty_room=0, sharp=1, light=4, moment=4, shot_type=room, people_count=1, classified_at=now)
         return pid
 
     def library(self, specs) -> list[int]:

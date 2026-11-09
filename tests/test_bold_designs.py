@@ -76,7 +76,7 @@ class Drafting(IsolatedCase):
         db.insert(self.conn, "classifications", photo_id=pid, method="ollama", subject=subject, convention_name=None,
                   is_convention=int(subject == "event"), quality=q, possible_minor=0, personal_details="[]", space="exterior",
                   residential=0, empty_room=0, sharp=1, light=4, moment=4, shot_type="portrait" if subject == "event" else "building_exterior",
-                  classified_at=now)
+                  people_count=1, classified_at=now)
         self.ids[did] = pid
 
     def ctx(self, dry=True):

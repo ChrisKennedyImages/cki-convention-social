@@ -45,7 +45,7 @@ def stage_photo_called_a_portrait(conn) -> int:
                     first_seen_at=now, last_seen_at=now)
     db.insert(conn, "classifications", photo_id=pid, method="ollama", subject="event", convention_name="Liberty Summit",
               event_kind="business", is_convention=1, quality=5, possible_minor=0, personal_details="[]", space="exterior",
-              residential=0, empty_room=0, sharp=1, light=4, moment=4, shot_type="portrait", classified_at=now)
+              residential=0, empty_room=0, sharp=1, light=4, moment=4, shot_type="portrait", people_count=1, classified_at=now)
     return pid
 
 
