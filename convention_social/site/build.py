@@ -123,6 +123,7 @@ HERO_ROWS, COVERAGE_ROWS, VENUE_ROWS = 1, 12, 2      # 2026-10-14: the strip gre
 EVENT_POOL = 20               # eligible event photos the hero is chosen among; the strip draws from the whole usable pool
 HERO_CANDIDATES = 12          # landscape frames looked at (fetched) for the hero's colour and punch
 RECHECKS = 12                 # final checks one site build may spend on photos Claude has not looked at yet
+LIBRARY_LIMIT = 600           # the strongest of his photos a build reads; his own picks always among them
 HERO_KEY = "site.hero_photo_id"   # Chris's own pick for the hero (Photos tab, Approved: Site hero); it wins while it is usable
 SHOWN_KEY = "site.shown_photo_ids"   # JSON list: every library photo the last live build showed (2026-10-31), for the writer
 STAGE = ("main_stage", "stage_panel")
@@ -246,12 +247,18 @@ def library_rows(conn: sqlite3.Connection, keep: Optional[set] = None) -> list[d
     """The photos Chris used, event and building work alike (eligibility.WORK: a photo is event work unless it is
     architecture), one row per picture (one_per_picture; an id in `keep` stands for its picture), the least recently used
     first on any surface (the rotation, 2026-10-14), strength_order among equals. Only his: the site shows nothing else,
-    so the 600 strongest are 600 of his, not of the whole library."""
+    so the LIBRARY_LIMIT strongest are of his, not of the whole library, and his own picks (Site gallery, the hero) are
+    always among them, whatever their rank (2026-11-08: his approval is final; 16 of his 31 gallery picks ranked below
+    600 and were left out)."""
+    from ..core import settings
     from ..library import report
-    rows = db.rows(conn, """
+    hero = settings.get(conn, HERO_KEY)
+    hero_id = int(hero) if hero and str(hero).isdigit() else -1
+    rows = db.rows(conn, f"""
         SELECT p.*, c.subject, c.quality, c.sharp, c.light, c.moment, c.event_kind, c.shot_type, c.convention_name, c.summary
         FROM photos p JOIN classifications c ON c.photo_id=p.id WHERE p.trashed=0 AND p.clearance='cleared'
-        ORDER BY COALESCE(c.quality,0) DESC, p.width DESC LIMIT 600""")
+        ORDER BY (p.site_pick_at IS NOT NULL OR p.id = ?) DESC, COALESCE(c.quality,0) DESC, p.width DESC
+        LIMIT {LIBRARY_LIMIT}""", (hero_id,))
     rows = sorted((dict(r) for r in rows), key=strength_order)
     # the same picture under two ids is one photo, and its use under any id counts (2026-10-14: "same picked twice")
     rows, last = one_per_picture(rows, report.last_uses(conn), keep=keep)

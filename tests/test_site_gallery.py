@@ -2,6 +2,8 @@
 click to add to the site's gallery (we already have the button to make any photo the site hero)")."""
 from __future__ import annotations
 
+from unittest import mock
+
 import os
 
 from fastapi.testclient import TestClient
@@ -127,6 +129,18 @@ class TheGallery(IsolatedCase):
         self.assertEqual(sorted(shades[3:] + [hero]), [100, 101, 102, 103, 105], "then the rest of the pool, as before")
         self.assertEqual(photos.grid_ids[1:4], [summit, cpac[4], katsu], "the picks are recorded as used with the rest of the grid")
         self.assertEqual(photos.grid_note, f"your Site gallery picks lead the gallery, in your order: photos {summit}, {cpac[4]}, {katsu}")
+
+    def test_a_pick_below_the_strongest_is_still_his_pick(self):
+        """2026-11-08, his approval is final: 16 of his 31 gallery picks ranked below the 600 strongest and were left out.
+        His picks are always in the pool the build reads, whatever their rank."""
+        for i in range(3):
+            self.add(f"strong{i}", 100 + i, quality=5, light=5, moment=5)
+        weak = self.add("weak", 60, quality=1, light=1, moment=1)
+        pick_at(self.conn, weak, "2026-10-29T10:00:00+00:00")
+        with mock.patch.object(build, "LIBRARY_LIMIT", 2):
+            photos = build.pick_photos(self.conn, self.fetch)
+        self.assertEqual(self.shades(photos)[0], 60, "his pick leads, though two stronger frames fill the limit")
+        self.assertEqual(photos.grid_note, f"your Site gallery picks lead the gallery, in your order: photos {weak}")
 
     def test_a_pick_no_longer_usable_is_left_out_and_said(self):
         self.add("lead", 70, quality=5, light=5, moment=5)

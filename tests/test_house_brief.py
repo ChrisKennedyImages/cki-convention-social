@@ -414,8 +414,11 @@ class Relabel(IsolatedCase):
         classify.relabel(conn, mark=True)
         marked = {r["photo_id"] for r in db.rows(conn, "SELECT photo_id FROM classifications WHERE rejudge=1")}
         self.assertEqual(marked, {plaque, lounge})
-        self.assertIsNone(db.one(conn, "SELECT 1 FROM final_checks WHERE photo_id=?", (lounge,)),
-                          "its final check cleared: the full photo is looked at again, never the thumbnail's word over it")
+        check = db.one(conn, "SELECT shot_type, room FROM final_checks WHERE photo_id=?", (lounge,))
+        self.assertIsNotNone(check, "the check is kept: a draft already holding the photo stays approvable")
+        self.assertEqual((check["shot_type"], check["room"]), (None, None),
+                         "its label cleared: the full photo is labelled again, never the thumbnail's word over it")
+        self.assertTrue(eligibility.is_eligible(conn, lounge)[0], "still eligible after --mark")
         self.assertIn(plaque, [r["id"] for r in classify.queue(conn, 10)], "the sorter's queue takes them")
 
 
@@ -477,6 +480,24 @@ class TheTillCountsTheCache(IsolatedCase):
         self.assertEqual((row["units"], row["cost_usd"]), (3500, round(want, 6)))
         self.assertIn("cache_read=2000 cache_write=400", row["detail"])
         self.assertEqual(spend.cost_usd("claude-opus-5-5", 0, 0, cache_read=1_000_000), 0.2, "a twentieth on Opus 5.5")
+
+    def test_each_fallback_attempt_is_its_own_row_at_its_own_model(self):
+        """The response of platform.claude.com's "Refusals and fallback" example: Fable 5 declines, Opus 4.8 answers. The
+        attempts are the bill (usage.iterations); the top-level counts are only the answer, never added to them."""
+        from convention_social.ai import spend
+        conn = db.connect()
+        self.addCleanup(conn.close)
+        attempt = lambda model, kind, i, o: {"type": kind, "model": model, "input_tokens": i, "output_tokens": o,  # noqa: E731
+                                             "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0}
+        response = {"model": "claude-opus-4-8", "usage": {
+            "input_tokens": 412, "output_tokens": 264, "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0,
+            "iterations": [attempt("claude-fable-5", "message", 535, 0), attempt("claude-opus-4-8", "fallback_message", 412, 264)]}}
+        answered, cost = spend.record_response(conn, "content", response, "claude-fable-5", "caption")
+        fable, opus = 535 / 1e6 * 10, 412 / 1e6 * 5 + 264 / 1e6 * 25
+        self.assertEqual((answered, cost), ("claude-opus-4-8", round(fable + opus, 6)))
+        rows = db.rows(conn, "SELECT cost_usd, detail FROM api_usage ORDER BY id")
+        self.assertEqual([r["cost_usd"] for r in rows], [round(fable, 6), round(opus, 6)])
+        self.assertTrue(rows[0]["detail"].startswith("claude-fable-5 in=535 out=0 attempt 1 of 2"), rows[0]["detail"])
 
     def test_every_call_site_records_through_the_one_helper_and_the_final_check_is_cached(self):
         hand = [f"{p.relative_to(REPO)}" for p in sorted((REPO / "convention_social").rglob("*.py"))

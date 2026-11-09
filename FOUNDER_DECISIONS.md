@@ -2921,4 +2921,7 @@ everything".
   briefs): does each word name its photo, does a crop cut a face or the subject, can the text be read, is the look
   executed as designed. It never turns a post back for a photo itself, its darkness, black and white, quality or subject,
   or for a frame the look leaves empty or white on purpose; it may ask for another crop or another arrangement.
+- **His own site picks are in the site's pool whatever their rank** (`site/build.library_rows`): the build reads the
+  600 strongest of his photos (LIBRARY_LIMIT), and 16 of his 31 Site gallery picks ranked below that and were left out
+  as "not an event photo in the library". His gallery picks and his hero pick now always come first into the pool.
 - Written into CLAUDE.md's laws: HIS APPROVAL IS FINAL.

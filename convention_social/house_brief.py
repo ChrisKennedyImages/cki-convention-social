@@ -133,6 +133,7 @@ What public words never say
 - That the company is any event's official photographer, partner or sponsor.
 - What a service includes or comes with (Chris, 2026-10-11: "NOTHING INCLUDES ANYTHING").
 - Any kind of event besides the ones named above.
+A reply to someone who wrote to the company is not public: it greets them by name and may name their own event.
 CPAC, the American Conservative Union (ACU) and their affiliates are never contacted (Chris, 2026-10-13: "NEVER and that's a hard rule"); their photos are used like any other."""
 
 

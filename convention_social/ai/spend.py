@@ -82,13 +82,31 @@ def record_response(conn: sqlite3.Connection, agent: str, response, model: str, 
     writes). (the model that answered, the cost). The one way a call is recorded; no caller does its own arithmetic."""
     usage = response.get("usage") if isinstance(response, dict) else getattr(response, "usage", None)
     answered = (response.get("model") if isinstance(response, dict) else getattr(response, "model", None)) or model
+    # With server-side fallback, usage.iterations is the per-attempt record of what is billed (a declined attempt at its
+    # own model's rates) and the top-level counts are only the attempt that answered (platform.claude.com, "Refusals and
+    # fallback", read 2026-11-09): each attempt is its own row, at its own model. An attempt declined before any output
+    # in a category that is not billed is counted too: the till errs high, never low.
+    attempts = (usage.get("iterations") if isinstance(usage, dict) else getattr(usage, "iterations", None)) or []
+    if attempts:
+        total = 0.0
+        for k, attempt in enumerate(attempts):
+            ran = (attempt.get("model") if isinstance(attempt, dict) else getattr(attempt, "model", None)) or answered
+            words = f"attempt {k + 1} of {len(attempts)}" + (f" {detail}" if detail else "")
+            total += _record_usage(conn, agent, ran, attempt, words, reservation if k == 0 else None)
+        return answered, round(total, 6)
+    return answered, _record_usage(conn, agent, answered, usage, detail, reservation)
+
+
+def _record_usage(conn: sqlite3.Connection, agent: str, model: str, usage, detail: str | None,
+                  reservation: Optional[int]) -> float:
+    """One usage object's counts on the ledger at `model`: uncached input, output, and the prompt read from the cache and
+    written to it, by the entry's lifetime when the usage says (else the 5-minute entry the suite writes)."""
     written = _count(usage, "cache_creation_input_tokens")
     by_ttl = usage.get("cache_creation") if isinstance(usage, dict) else getattr(usage, "cache_creation", None)
     hour = min(written, _count(by_ttl, "ephemeral_1h_input_tokens"))
-    cost = record(conn, agent, answered, _count(usage, "input_tokens"), _count(usage, "output_tokens"), detail,
+    return record(conn, agent, model, _count(usage, "input_tokens"), _count(usage, "output_tokens"), detail,
                   reservation=reservation, cache_read=_count(usage, "cache_read_input_tokens"),
                   cache_write_5m=written - hour, cache_write_1h=hour)
-    return answered, cost
 
 
 def record(conn: sqlite3.Connection, agent: str, model: str, input_tokens: int, output_tokens: int,

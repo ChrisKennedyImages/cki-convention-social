@@ -238,7 +238,9 @@ def relabel(conn: sqlite3.Connection, *, mark: bool = False) -> Relabel:
                     None if price is None else float(price), counted is None and older is not None)
     if mark and found.ids:
         conn.executemany("UPDATE classifications SET rejudge = 1 WHERE photo_id = ?", [(i,) for i in found.ids])
-        conn.executemany("DELETE FROM final_checks WHERE photo_id = ?", [(i,) for i in found.ids])
+        # the label the final check gave is cleared, the check itself kept: a draft or a post already holding the photo
+        # stays approvable (eligibility asks only that the check ran), and its next pick or site build labels it again
+        conn.executemany("UPDATE final_checks SET shot_type = NULL, room = NULL WHERE photo_id = ?", [(i,) for i in found.ids])
         found.marked = True
     return found
 
