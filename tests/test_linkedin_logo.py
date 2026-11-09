@@ -1,9 +1,7 @@
 """Chris, 2026-11-01 evening, asked whether LinkedIn should skip photos where an organization's name or logo is prominent:
-"Yes, skip on LinkedIn". (The public-figure skip of the same day was withdrawn that night: "It can show a public figure!")
-The art director judges the hero photo once (one Claude look through the till, stored on the photo, never asked again,
-naming no one); judged so, the draft has no LinkedIn caption, photo or tick and the draft page says why; a photo not judged
-yet (a dry run, the cap, no key) is not sent to LinkedIn until it is, and the publisher judges it once when it can. The
-other networks are untouched."""
+"Yes, skip on LinkedIn". That skip is gone: 2026-11-08, "NOTHING IS PRIVATE because I have hand approved every photo! No
+one can override MY approvals and that is a law"; asked whether that covers the LinkedIn logo skip too, "Yes, override
+everything". A photo he used goes to every network he posts to, a logo in it or not, and no model is asked about it."""
 from __future__ import annotations
 
 import json
@@ -40,9 +38,8 @@ class FinalClient:
 
 
 class Eye:
-    """The art director's client: answers the logo question with `logo` and every look with pass; counts each."""
-    def __init__(self, logo: bool):
-        self.logo = logo
+    """The art director's client: passes every look; a question about a logo would be counted, and none is asked."""
+    def __init__(self):
         self.logo_calls = 0
         self.look_calls = 0
         self.beta = self
@@ -52,10 +49,9 @@ class Eye:
         schema = kw["output_config"]["format"]["schema"]
         if "prominent_logo" in schema["properties"]:
             self.logo_calls += 1
-            assert list(schema["properties"]) == ["prominent_logo"], "the one question"
-            assert "Never write a name" in kw["system"][0]["text"], "told to name no one and no organization"
-            assert sum(1 for b in kw["messages"][0]["content"] if b["type"] == "image") == 1, "one photo, on its own"
-            answer = {"prominent_logo": self.logo}
+            answer = {"prominent_logo": True}
+        elif "subject" in schema["properties"]:
+            answer = {"subject": "unclear"}
         else:
             self.look_calls += 1
             answer = {"pictures": ["Fine."], "verdict": "pass", "focus_x": 0.5, "focus_y": 0.42, "notes": "Fine."}
@@ -99,90 +95,28 @@ class DraftCase(IsolatedCase):
     def row(self):
         return db.one(self.conn, "SELECT * FROM content_queue ORDER BY id DESC LIMIT 1")
 
-    def photo(self):
-        return db.one(self.conn, "SELECT prominent_logo, prominent_logo_at FROM photos WHERE id=?", (self.pid,))
-
 
 class Draft(DraftCase):
-    def test_a_prominent_name_or_logo_is_skipped_for_linkedin_and_the_draft_says_why(self):
-        eye = Eye(True)
+    def test_a_photo_with_a_prominent_logo_gets_its_linkedin_caption_photo_and_tick(self):
+        eye = Eye()
         line = content.draft_one(self.live(), self.fetch, now=MONDAY_6AM, check_client=FinalClient(), art_client=eye, judge_client=eye)
         self.assertIn("drafted post", line)
-        self.assertIn("LinkedIn skipped", line)
-        row = self.row()
-        self.assertEqual(json.loads(row["targets"]), ["instagram", "facebook", "pinterest"])
-        self.assertNotIn("linkedin", json.loads(row["caption"]), "no LinkedIn caption")
-        self.assertNotIn(LINKEDIN_PHOTO, json.loads(row["render_paths"]), "no LinkedIn photo")
-        self.assertIn("2:3", json.loads(row["render_paths"]), "the other cards as before")
-        meta = json.loads(row["rule_report"])
-        self.assertEqual(meta["skipped"], {"linkedin": art_director.LOGO_SKIP})
-        self.assertNotIn("linkedin", meta["rules"])
-        self.assertEqual(self.photo()["prominent_logo"], 1)
-        self.assertTrue(self.photo()["prominent_logo_at"])
-        self.assertEqual((eye.logo_calls, eye.look_calls), (1, 1), "one judgement, one look at the design")
-
-    def test_no_prominent_logo_keeps_linkedin_whoever_is_in_the_photo(self):
-        """2026-11-01, late evening: "It can show a public figure!" The one question is the name or logo."""
-        eye = Eye(False)
-        line = content.draft_one(self.live(), self.fetch, now=MONDAY_6AM, check_client=FinalClient(), art_client=eye, judge_client=eye)
         self.assertNotIn("LinkedIn skipped", line)
         row = self.row()
         self.assertEqual(json.loads(row["targets"]), list(content.TARGETS))
         self.assertIn("linkedin", json.loads(row["caption"]))
         self.assertIn(LINKEDIN_PHOTO, json.loads(row["render_paths"]))
         self.assertNotIn("skipped", json.loads(row["rule_report"]))
-        self.assertEqual(self.photo()["prominent_logo"], 0, "judged no, stored so it is never asked again")
-        self.assertEqual(eye.logo_calls, 1)
-        self.assertFalse(hasattr(art_director, "public_figure"), "the public-figure question is gone")
-        self.assertNotIn("public_figure", [c[1] for c in self.conn.execute("PRAGMA table_info(photos)")], "and its columns with it")
-
-    def test_a_dry_run_judges_nothing_and_spends_nothing(self):
-        eye = Eye(True)
-        content.draft_one(self.ctx(dry=True), self.fetch, now=MONDAY_6AM, check_client=FinalClient(), art_client=eye, judge_client=eye)
-        row = self.row()
-        self.assertIn("linkedin", json.loads(row["targets"]), "not judged: the draft keeps LinkedIn, the publisher holds it")
-        self.assertIsNone(self.photo()["prominent_logo"])
-        self.assertEqual(eye.logo_calls, 0)
-
-    def test_judged_once_and_never_again(self):
-        os.environ["AI_MONTHLY_CAP_USD"] = "5"
-        config.reset()
-        eye = Eye(False)
-        image = jpeg_bytes(seed=1)
-        self.assertIs(art_director.prominent_logo(self.conn, self.pid, image, client=eye), False)
-        self.assertIs(art_director.prominent_logo(self.conn, self.pid, image, client=eye), False)
-        self.assertEqual(eye.logo_calls, 1, "the stored answer, not a second look")
-        self.conn.execute("UPDATE photos SET prominent_logo=1 WHERE id=?", (self.pid,))
-        self.assertIs(art_director.prominent_logo(self.conn, self.pid, image, client=Eye(False)), True, "the stored answer stands")
-        self.assertIsNone(art_director.prominent_logo(self.conn, 999999, image, client=eye), "a photo not in the library")
-
-    def test_the_cap_reached_or_no_key_means_no_call_and_no_answer(self):
-        os.environ["AI_MONTHLY_CAP_USD"] = "0"
-        config.reset()
-        eye = Eye(True)
-        self.assertIsNone(art_director.prominent_logo(self.conn, self.pid, jpeg_bytes(seed=1), client=eye))
-        self.assertEqual(eye.logo_calls, 0)
-        self.assertIsNone(self.photo()["prominent_logo"])
-        os.environ["AI_MONTHLY_CAP_USD"] = "5"
-        config.reset()
-        self.assertIsNone(art_director.prominent_logo(self.conn, self.pid, jpeg_bytes(seed=1), client=None), "no key: no look")
-        self.assertIsNone(self.photo()["prominent_logo"])
-
-    def test_an_answer_that_is_not_the_question_is_no_judgement(self):
-        os.environ["AI_MONTHLY_CAP_USD"] = "5"
-        config.reset()
-
-        class Review(Eye):
-            def create(self, **kw):
-                t = types.SimpleNamespace(type="text", text=json.dumps({"verdict": "pass", "notes": "", "pictures": []}))
-                return types.SimpleNamespace(content=[t], stop_reason="end_turn", model=kw["model"],
-                                             usage=types.SimpleNamespace(input_tokens=10, output_tokens=5))
-        self.assertIsNone(art_director.prominent_logo(self.conn, self.pid, jpeg_bytes(seed=1), client=Review(True)))
-        self.assertIsNone(self.photo()["prominent_logo"])
+        self.assertEqual((eye.logo_calls, eye.look_calls), (0, 1), "no question about a logo; one look at the design")
+        self.assertFalse(hasattr(art_director, "prominent_logo"), "the judgement is gone")
+        self.assertFalse(hasattr(art_director, "LOGO_SKIP"))
+        columns = [c[1] for c in self.conn.execute("PRAGMA table_info(photos)")]
+        self.assertNotIn("prominent_logo", columns, "and its columns (migration 0102)")
+        self.assertNotIn("prominent_logo_at", columns)
 
 
 class Publisher(IsolatedCase):
-    """The hold at the door: a photo with a prominent name or logo never goes to LinkedIn; one not judged yet waits."""
+    """At the door: a photo goes to LinkedIn like any other, and nothing is asked about a logo in it."""
 
     def setUp(self):
         super().setUp()
@@ -199,69 +133,24 @@ class Publisher(IsolatedCase):
                    LINKEDIN_PHOTO: [write_render(self.root / "renders", "r-linkedin.jpg")]}
         self.qid = add_post(self.conn, [self.pid], ("instagram", "linkedin"), render_paths=renders)
 
-    def judged(self, value):
-        self.conn.execute("UPDATE photos SET prominent_logo=? WHERE id=?", (value, self.pid))
-
     def row(self):
         return db.one(self.conn, "SELECT * FROM content_queue WHERE id=?", (self.qid,))
 
-    def test_a_prominent_logo_never_goes_to_linkedin_and_it_is_no_fault(self):
-        self.judged(1)
+    def test_it_goes_to_linkedin_in_a_dry_run(self):
         stats = publisher.publish_ready(make_ctx(self.conn), now=FRIDAY_8AM)
-        row = self.row()
-        self.assertEqual(set(json.loads(row["payload"])), {"instagram"})
-        self.assertEqual(stats["skipped_networks"], 1)
-        self.assertIn(art_director.LOGO_SKIP, row["last_error"])
-        self.assertEqual(json.loads(row["rule_report"])["skipped"], {"linkedin": art_director.LOGO_SKIP})
-        self.assertEqual(db.rows(self.conn, "SELECT kind FROM errors"), [], "a rule, not a fault")
-
-    def test_judged_no_logo_goes(self):
-        self.judged(0)
-        publisher.publish_ready(make_ctx(self.conn), now=FRIDAY_8AM)
         self.assertEqual(set(json.loads(self.row()["payload"])), {"instagram", "linkedin"})
+        self.assertEqual(stats["skipped_networks"], 0)
+        self.assertFalse(hasattr(publisher, "linkedin_hold"), "the hold is gone")
 
-    def test_not_judged_yet_waits_in_a_dry_run(self):
-        eye = Eye(False)
-        publisher.publish_ready(make_ctx(self.conn), now=FRIDAY_8AM, judge_client=eye)
-        row = self.row()
-        self.assertEqual(set(json.loads(row["payload"])), {"instagram"})
-        self.assertIn(art_director.WAIT, row["last_error"])
-        self.assertEqual(json.loads(row["rule_report"])["skipped"], {"linkedin": art_director.WAIT})
-        self.assertEqual(eye.logo_calls, 0, "a dry run pays for nothing")
-
-    def live_publish(self, eye):
-        os.environ["AI_MONTHLY_CAP_USD"] = os.environ.get("AI_MONTHLY_CAP_USD", "5")
+    def test_live_it_goes_to_both(self):
+        os.environ["AI_MONTHLY_CAP_USD"] = "5"
         config.reset()
         fake = FakeBuffer()
         client = BufferClient("test-key", conn=self.conn, transport=fake)
-
-        def up(path, key):
-            return f"https://media.example/m/{key}"
-        stats = publisher.publish_ready(make_ctx(self.conn, dry_run=False), client=client, uploader=up, now=FRIDAY_8AM, judge_client=eye)
-        return stats, fake
-
-    def test_live_the_publisher_judges_once_then_sends(self):
-        eye = Eye(False)
-        stats, fake = self.live_publish(eye)
+        stats = publisher.publish_ready(make_ctx(self.conn, dry_run=False), client=client,
+                                        uploader=lambda path, key: f"https://media.example/m/{key}", now=FRIDAY_8AM)
         self.assertEqual(stats["scheduled"], 1)
         self.assertEqual([c["channelId"] for c in fake.created], ["ch-ig", "ch-li"])
-        self.assertEqual(eye.logo_calls, 1)
-        self.assertEqual(db.one(self.conn, "SELECT prominent_logo FROM photos WHERE id=?", (self.pid,))["prominent_logo"], 0)
-
-    def test_live_a_logo_found_at_the_door_is_held(self):
-        eye = Eye(True)
-        stats, fake = self.live_publish(eye)
-        self.assertEqual([c["channelId"] for c in fake.created], ["ch-ig"])
-        self.assertIn(art_director.LOGO_SKIP, self.row()["last_error"])
-
-    def test_live_with_the_cap_reached_no_call_and_linkedin_waits(self):
-        os.environ["AI_MONTHLY_CAP_USD"] = "0"
-        eye = Eye(True)
-        stats, fake = self.live_publish(eye)
-        self.assertEqual([c["channelId"] for c in fake.created], ["ch-ig"], "Instagram goes, LinkedIn waits")
-        self.assertEqual(eye.logo_calls, 0)
-        self.assertIn(art_director.WAIT, self.row()["last_error"])
-        self.assertIsNone(db.one(self.conn, "SELECT prominent_logo FROM photos WHERE id=?", (self.pid,))["prominent_logo"])
 
 
 class Page(IsolatedCase):
@@ -275,14 +164,15 @@ class Page(IsolatedCase):
         self.client = TestClient(create_app())
         self.client.cookies.set(COOKIE, make_token("chris"))
 
-    def test_the_draft_page_says_why_linkedin_is_not_sent(self):
+    def test_the_draft_page_still_says_why_a_network_is_held(self):
+        """The repeat window still holds a network (when a photo airs, not whether), and the page says so."""
         pid = add_photo(self.conn, self.root / "photos", seed=1)
         qid = add_post(self.conn, [pid], ("instagram", "facebook", "pinterest"), status="draft")
+        why = "the photo went out on LinkedIn as post #3 inside the repeat window"
         self.conn.execute("UPDATE content_queue SET rule_report=? WHERE id=?",
-                          (json.dumps({"design": "single", "skipped": {"linkedin": art_director.LOGO_SKIP}}), qid))
+                          (json.dumps({"design": "single", "skipped": {"linkedin": why}}), qid))
         page = self.client.get(f"/queue/{qid}").text
-        self.assertIn("not sent: an organization&#39;s name or logo is prominent in the photo; LinkedIn posts avoid those (Chris, 2026-11-01)", page)
-        import re
+        self.assertIn(f"not sent: {why}", page)
         self.assertRegex(page, r'name="target_linkedin"\s+style', "the LinkedIn box is unticked")
         self.assertRegex(page, r'name="target_instagram"\s+checked')
         self.assertNotIn('name="caption_linkedin"', page, "no caption box under a network that is not sent")

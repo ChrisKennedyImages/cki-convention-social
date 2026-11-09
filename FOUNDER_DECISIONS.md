@@ -2801,3 +2801,127 @@ fill first. Then: "So let's do 2 -12 months out". Replaces 2026-11-01's three mo
 - **The same rule everywhere** (one constant, its words in LEAD_WORDS): the organizer drafts, a draft whose event is
   now under two months away is taken out, an approved note under two months away is not sent, and the scout and
   outreach pages, the agent list and the morning brief say "two months".
+
+## 2026-11-08: one Event Caliber brief for every AI step; portraits and headshots are the work
+
+After the final check blocked his studio portraits for a reel as "a wedding or a private occasion", Chris: "If you
+actually read the website, we provide portraits at many of our events for LinkedIn profiles or backstage for speakers or
+many reasons. The fucking art director would need this information and clear he doesn't have it. Maybe we need a chief
+that knows everything and leave the art director to do its work?" Offered one brief that every AI checker reads, and the
+headshot fix: "Yes, build it."
+
+- **One brief, one place** (`convention_social/house_brief.py`): who the company is, what it photographs (from his
+  rulings and eventcaliber.com: conferences, conventions and trade shows, galas, receptions and award dinners, in DC,
+  Maryland and Virginia and nationwide; every room, portraits and the venue), his labels (below), that his approval is
+  final (below) and what public words never say (no price, no event, organization or person named, no official role, no
+  "includes"; CPAC and the ACU never contacted). Every Claude call reads it first, in front of its own task: the sorter
+  (and the local sorter), the final check, the art director and its photo questions, the caption writer, the quote
+  reply, the scout's research and its structuring, the event dates reader, the site's photo text, the search changes'
+  writers and the morning read. The service notes each prompt carried (the caption writer's list of events, the search
+  writers' line about the two of them, "a one-person photography company") are gone from them. What the company sells and
+  how photos reach people stays in `offer.json`, read by the writers that may say it; the organizer note stays his own
+  template, written by no model.
+- **The till counts the cached prompt** (`ai/spend.record_response`, the one way a call is recorded): the brief made every
+  cached prompt about twice as long, and the till had counted only the uncached input and the output, never a cached
+  prompt read or written. It now reads all four counts off each response and prices a read and a write at their share of
+  the input rate (the Claude API's prompt caching guide). Rows before 2026-11-09 under-count. The final check's brief and
+  task are cached now too.
+- **Portraits and headshots are the work**: a studio or backstage portrait or headshot (a person posed for the camera and
+  lit for it on a backdrop, often with colored gels, no event in view) is business unless the photo itself shows a
+  wedding, never private for being a portrait. "private" is a family or personal occasion, a private party or a religious
+  ceremony; its old "a portrait session with no event around it" was the build's line, never his. One event_kind rule for
+  the sorter and the final check (`library/classify.KIND_RULE`).
+- **A nonprofit's public event is the company's event** (Chris, that night, of photo 52826, a certificate held up at an
+  Alzheimer's walk: "a great heart walk photo", after the final check had called a charity walk, photo 52978, private):
+  charity walks and runs, fundraisers, heart and Alzheimer's walks are business, in the brief and in KIND_RULE.
+- **What the art director is told of each look** (`render/reel_looks.ON_PURPOSE`): the Darkroom reel was turned back three
+  times (drafts 81, 88, 89) for "an empty white cell in position 1", "duplicate frames" and frames "underexposed to near
+  black" on its contact sheet: the roll's fogged leader, a photographer working a room, and his own photos sitting whole in
+  the film's black. Each look now names what it puts on the frame on purpose: Section's empty rooms and the exploded
+  view's skew, Titles' ragged cut-paper bars, Weather's rain and dark sky, Chiaroscuro's darkness, warm light and close
+  cover detail, Axis's black and white until the climax, Stillness's cover with no photo, and the others'.
+
+## 2026-11-08: his labels, ten of them
+
+The reel on draft 87 opened on an award-plaque group photo with the word "Portrait." and the stack label "PORTRAITS ·
+SESSIONS · STAGE"; nothing in it was a portrait. Chris: "There's only a handful of labels that we fucking use (candid,
+backstage, greenroom, panels, portraits, main stage, breakouts, awards, event building…. You should know them fucking
+all". He chose: "Candid, Backstage, Green room, Panels, Portraits, Main stage, Breakouts, Awards, Event building, and
+Reception kept." Then yes to judging again the photos now wrongly labelled (about $4).
+
+- **The list** lives in the house brief (`house_brief.LABELS`): the key the tables store, his word as it is printed, and
+  what a photo with it shows, which every model reads there. Keys: candid, backstage, green_room (new), stage_panel
+  (Panels), portrait (Portraits), main_stage, breakout (Breakouts), awards (new), building_exterior and building_interior
+  (both Event building, the venue with no event in it, now a room a post or a reel may name, not only the architecture
+  subject's), reception. Awards wins over portraits and the main stage: a group with an award in hand is Awards; the
+  main stage no longer takes "a group standing for an award"; a portrait is off the stage (a posed group on a stage is
+  the main stage's, or Awards with an award in hand). Candid is anything else, the exhibition hall and its booths
+  included (2026-10-12: "Exhibition Halls, vendors and booths are all the same thing"; 2026-10-29: the expo is candid).
+  The green room is speakers or guests waiting or relaxing; backstage keeps the wings, prep, rehearsal, mic check and
+  crew.
+- **His words, wherever a label prints**: a post's title (the card's capitals, `render/design_samples.ROOMS`), a reel's
+  beat words ("Main stage.", "Awards.") and stack label ("Main stage · awards · breakouts", `reel_lines`), the dashboard's
+  pickers and cards, the learner's lines, the site's photo labels (`site/build.site_label`). The stack label names only
+  rooms the final check confirmed: Axis's no longer counts a photo with no confirmed room as a portrait, and its
+  all-portrait label is "Portraits" (it was "Portraits · headshots"). The search words of the alt text and file names
+  stay search words (`seo/photo_text.SHOT_WORDS`), with the two new labels added. The green room's coverage page shows
+  green room photos first, then backstage; the dinners page takes awards after receptions.
+- This supersedes the eight titles of 2026-10-29 and the stage words of 2026-10-30, whose sentences it keeps.
+- **The re-label, a one-off, not run in the change**: `bin/ccs relabel` says how many photos' sort or final check
+  mentions an award, a plaque, a trophy, a certificate or a green room and what judging them again costs at the sorter's
+  measured price; `--mark` sends them to the sorter (classifications.rejudge, the 2026-10-29 road), approved photos first,
+  through the till, and clears their final checks (the sorter sees a 512-pixel thumbnail and would overwrite the label
+  the final check gave from the full photo; the next pick or site build checks it again). A photo whose label he set
+  himself is never touched. On a copy of the live database, 2026-11-08: 837 photos (573 portrait, 139 main stage, 66
+  candid, 48 backstage, 8 reception, 3 building interior), 22 of them with a final check; about $5.81 at the $0.0069 a
+  sort costs when it reads the cached prompt (4,271 tokens), plus about $0.03 each time a pass writes it again after a
+  pause (three sorts measured on the copy with the corrected till, 2026-11-09).
+
+## 2026-11-08, night: LAW: his approval is final
+
+Chris: "NOTHING IS PRIVATE because I have hand approved every photo! No one can override MY approvals and that is a law".
+Asked whether that covers the checks that protect people too (a readable detail, the LinkedIn logo skip): "Yes, override
+everything".
+
+- **A photo he used posts whatever any AI check says** (`library/eligibility.py`). What keeps a photo out is his alone:
+  his Use or Never use on it, an excluded folder, the do-not-use list, the consent in his credits sheet; and a model must
+  have sorted it, so it has a label. The final check labels (its room, kind of occasion, details) and never vetoes; a
+  refusal or an empty answer is a check with no labels (`classify.NO_LABELS`). The checks label, arrange and word things.
+- **Superseded, for every photo he used**: the 2026-10-09 "a photo is postable only after that Claude check passes" (it
+  must have looked, so the post has its label; nothing it says keeps the photo out); the 2026-10-11 "never a wedding" (a
+  wedding or a private occasion never a candidate, never eligible, never in the samples); the 2026-10-12 morning "a name
+  in the photo is fine" where it kept out a plate, a house number or a street sign on a photo of people (the
+  personal-details gate); the 2026-10-11 "no cosplay" where a costume photo was never used; the 2026-10-10 building rules
+  where the sorter's answers kept a building frame out (a home, an empty room, a bathroom, a closet); the 2026-10-15 list
+  of "what still stops a photo" after the age gate went (the age gate itself had gone that day: no model judges anyone's
+  age); and the 2026-11-01 evening LinkedIn skip of a photo with a prominent name or logo, which is gone with its
+  judgement (`agents/art_director.prominent_logo`, `agents/publisher.linkedin_hold`; migration 0102 drops
+  photos.prominent_logo and prominent_logo_at, and final_checks' details and kind, which nothing reads: the final check's
+  details and kind of occasion are labels kept in classifications, and it no longer asks about a costume).
+- **A turn-back is not a use**: the 2026-10-13 line that a set-aside post's "photo sits out for the repeat window like the
+  art director's" no longer holds for the art director. A draft it turned back aired nothing, so its photos are free for
+  the next draft at once, like a post he skipped (2026-10-15), and the day is drawn again in another arrangement; their
+  use stays on the rotation's record, so other photos come first (`content.recent_use`, `photo_holder`, `shoot_uses`).
+  His own set-asides (the do-not-use list) still sit out. On 2026-11-08, 15 turned-back drafts held 90 photos that never
+  aired, most turned back as "too dark" or "black and white".
+- **His own choices are never turned back**: a photo he sends from his phone or the share sheet, Post this on a sample he
+  chose and a reel he queued keep the art director's no as a note on the draft (`content.make_draft` `his_choice`); a
+  share-sheet send goes out as designed after the art director's rounds. Only no look at all (no key, the cap) still
+  waits for his Approve.
+- **Every photo he used that is not architecture is event work** (`library/eligibility.WORK`, `work_of`), in the draft
+  pool, the designed drafts, the site and the contact sheets: 24 photos he used were "other" to the sorter (a studio
+  headshot on a coloured gradient, photo 14833, among them) and no pool reached them. The sorter is told a posed portrait
+  or headshot is event work.
+- **Still his to decide, never vetoed**: To review and the contact sheets offer him only what the old rules allowed (no
+  wedding or private occasion, no costume, no readable detail, the building rules): those are photos he has not decided
+  on (`dashboard/app.VIEWS["review"]`, `library/report.best`).
+- **Not his approval, so kept**: the copy rules on the words the suite writes (no price, no event or person named in a
+  caption, the banned words), and the repeat and rotation windows (when a photo airs, not whether).
+- **The art director judges the design, never the photo** (`agents/art_director.SYSTEM`, the house brief, the reel
+  briefs): does each word name its photo, does a crop cut a face or the subject, can the text be read, is the look
+  executed as designed. It never turns a post back for a photo itself, its darkness, black and white, quality or subject,
+  or for a frame the look leaves empty or white on purpose; it may ask for another crop or another arrangement.
+- **His own site picks are in the site's pool whatever their rank** (`site/build.library_rows`): the build reads the
+  600 strongest of his photos (LIBRARY_LIMIT), and 16 of his 31 Site gallery picks ranked below that and were left out
+  as "not an event photo in the library". His gallery picks and his hero pick now always come first into the pool.
+- Written into CLAUDE.md's laws: HIS APPROVAL IS FINAL.

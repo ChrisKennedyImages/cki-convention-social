@@ -126,8 +126,10 @@ class Writers(IsolatedCase):
         text = seen["messages"][0]["content"][1]["text"]
         self.assertIn("a conference (never name which event, or anyone in the photo)", text)
         self.assertNotIn("Credit", text)
-        self.assertIn("Never name the event", seen["system"][0]["text"])
-        self.assertIn("never tag anyone with an @handle", seen["system"][0]["text"])
+        system = " ".join(b["text"] for b in seen["system"])          # the house brief, then the writer's own rules
+        self.assertIn("Never name the event", system)
+        self.assertIn("never tag anyone with an @handle", system)
+        self.assertIn("no event, organization or person is named, and no one is tagged", seen["system"][0]["text"])
         self.assertFalse(hasattr(claude.PostFacts("x"), "event_name"), "there is no field to pass a name through")
         conn.close()
 

@@ -176,7 +176,7 @@ def pool(conn: sqlite3.Connection) -> list[dict]:
     on = payloads.posting_networks()         # the window counts per network (Chris, 2026-11-02): held everywhere that is on
     held = content.held_on_networks(conn, on)
     out = []
-    for r in db.rows(conn, content.CANDIDATE_SQL, ("event",)):
+    for r in db.rows(conn, content.CANDIDATE_SQL["event"]):
         if not eligibility.is_candidate(conn, r["id"])[0]:
             continue
         credit = eligibility.credit_line(conn, r["id"])
@@ -192,7 +192,7 @@ def pool(conn: sqlite3.Connection) -> list[dict]:
 
 def room_of(row: dict) -> str:
     from ..render import design_samples
-    return design_samples.ROOMS.get(row.get("shot_type") or "", design_samples.OTHER)[0]
+    return design_samples.ROOMS.get(row.get("shot_type") or "", design_samples.UNCONFIRMED)[0]
 
 
 def event_of(row: dict) -> str:

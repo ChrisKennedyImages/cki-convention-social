@@ -38,7 +38,7 @@ from ..ai.claude import NETWORKS
 from ..buffer import payloads as buffer_payloads
 from ..buffer.client import BufferBudgetExceeded, BufferClient, BufferError, BufferRateLimited
 from ..core import access, approve_token, auth, config, db, previews, runner, secrets, settings, state_io
-from .. import music
+from .. import house_brief, music
 from ..library import copies, eligibility, report
 from . import alerts
 from . import today as today_view
@@ -46,6 +46,8 @@ from . import today as today_view
 TEMPLATES = Jinja2Templates(directory=str(Path(__file__).with_name("templates")))
 TEMPLATES.env.filters["local"] = today_view.local_words       # a stored UTC time in his own words and time zone
 TEMPLATES.env.filters["network"] = buffer_payloads.name_of    # a network as it writes its own name (LinkedIn, never Linkedin)
+# a shot type in his words (house_brief.LABELS)
+TEMPLATES.env.filters["label"] = lambda key: house_brief.word(key) or (key or "").replace("_", " ")
 COOKIE = "ccs_session"
 SESSION_DAYS = 30
 QUEUE_STATUSES = ("draft", "approved", "would_publish", "scheduled", "published", "failed", "rejected")
@@ -285,14 +287,14 @@ MEDIA_TYPES = {".mp4": "video/mp4", ".png": "image/png"}
 DESIGN_WORDS = {"single": "single photo"}       # every other design is called by its own name (fan, spotlight, carousel, reel)
 
 
-# what a photo shows, in plain words, for the draft page's correction (Chris, 2026-10-11: "it calls a
-# stage shot a portrait which, never can happen!")
-SHOT_CHOICES = [("main_stage", "Main stage"), ("stage_panel", "Stage panel"), ("breakout", "Breakout"),
-                ("portrait", "Portrait"), ("backstage", "Backstage"), ("candid", "Candid"), ("reception", "Reception"),
-                ("building_exterior", "Building exterior"), ("building_interior", "Building interior")]
-# the kinds he may choose on a photo of each subject: the event rooms, or the two building views
-SUBJECT_SHOTS = {"event": [c for c in SHOT_CHOICES if not c[0].startswith("building_")],
-                 "architecture": [c for c in SHOT_CHOICES if c[0].startswith("building_")]}
+# what a photo shows, in his labels, for the draft page's correction (Chris, 2026-10-11: "it calls a stage shot a portrait
+# which, never can happen!"; 2026-11-08: "Candid, Backstage, Green room, Panels, Portraits, Main stage, Breakouts, Awards,
+# Event building, and Reception kept.")
+SHOT_CHOICES = [(key, house_brief.picker_word(key)) for key in house_brief.KEYS]
+# the labels he may choose on a photo of each subject: every label on an event photo (the venue with no event in it is
+# Event building), the two building views on a building of his architecture work
+SUBJECT_SHOTS = {"event": SHOT_CHOICES,
+                 "architecture": [c for c in SHOT_CHOICES if c[0] in house_brief.SIDES]}
 
 
 def shot_type_of(conn, photo_id: int) -> str:
@@ -443,8 +445,8 @@ def prepare_photo_views(conn, decisions) -> None:
 
 
 # Chris, 2026-10-11: "Architecture images should be separated from event/convention photos". Each
-# list is shown in two parts: the event work, and the building work (the sorter's subject).
-SUBJECTS = {"event": "COALESCE(c.subject, '') != 'architecture'", "architecture": "c.subject = 'architecture'"}
+# list is shown in two parts: the event work, and the building work (library/eligibility.WORK).
+SUBJECTS = eligibility.WORK
 SUBJECT_WORDS = (("event", "Events"), ("architecture", "Buildings"))
 
 
@@ -474,7 +476,7 @@ def kind_words(photo: dict) -> str:
     """The kind of shot, in the words on a photo's card. A sorted photo the sorter gave no kind is said as it is
     (2026-11-02: 3,157 sorted photos read "not sorted yet"); most lost an old label and wait for Claude's second look."""
     if photo.get("shot_type"):
-        return photo["shot_type"].replace("_", " ")
+        return house_brief.word(photo["shot_type"]) or photo["shot_type"].replace("_", " ")
     if photo.get("method") not in eligibility.SORTED_METHODS:
         return "not sorted yet"
     return "kind of shot: being sorted again" if photo.get("rejudge") else "kind of shot not named"
@@ -1439,7 +1441,7 @@ def create_app() -> FastAPI:
             start_agent("content")
         words = f"Kind of shot: {dict(SHOT_CHOICES)[shot_type]}." + (" The draft with it is being made again." if redrafted else "")
         if "application/json" in request.headers.get("accept", ""):
-            return {"id": pid, "shot": shot_type, "kind": shot_type.replace("_", " "), "words": words}
+            return {"id": pid, "shot": shot_type, "kind": house_brief.word(shot_type), "words": words}
         return back_with(back, words)
 
     @app.post("/library/photos/clearance")

@@ -86,7 +86,7 @@ class AtTheDoor(DraftCase):
         p.start()
         self.addCleanup(p.stop)
         add_channels(self.conn, "instagram", "linkedin")
-        self.conn.execute("UPDATE photos SET prominent_logo=0, local_path=? WHERE id=?",
+        self.conn.execute("UPDATE photos SET local_path=? WHERE id=?",
                           (write_render(self.root / "photos", "e1.jpg"), self.pid))
         self.renders = {"4:5": [write_render(self.root / "renders", "r-45.jpg")], "2:3": [write_render(self.root / "renders", "r-23.jpg")],
                         LINKEDIN_PHOTO: [write_render(self.root / "renders", "r-li.jpg")]}

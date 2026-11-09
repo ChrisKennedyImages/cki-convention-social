@@ -78,7 +78,7 @@ class Keep(IsolatedCase):
         hero.save(jpeg_bytes(seed=3, size=(1600, 1000)))
         ok, note = hero.checked(self.conn, looker(self.conn, LookClient(event_kind="wedding")))
         self.assertTrue(ok)
-        self.assertIn("a wedding or a private occasion", note)
+        self.assertIn("its label for the occasion is wedding", note)
         hero.save(jpeg_bytes(seed=4, size=(1600, 1000)))
         self.assertEqual(hero.checked(self.conn, looker(self.conn, LookClient(personal_details=["vehicle_plate"]))),
                          (True, "your photo; Claude notes: it shows vehicle_plate"))

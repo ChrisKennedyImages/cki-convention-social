@@ -7,6 +7,11 @@ credit count the same days and two cycles cannot stack inside one credit.
 Rates are USD per million tokens (input, output), matched by longest model
 prefix (Anthropic price table, read 2026-10-10). Unknown models are counted with cost 0 so the count stays honest even
 when the price is unknown; the watchdog flags any zero-cost Anthropic row.
+
+A prompt read from Anthropic's cache or written to it is paid for too, at its own share of the input rate (CACHE_READ,
+CACHE_WRITE; the Claude API's prompt caching guide, read 2026-11-09). Until 2026-11-09 the till counted only the uncached
+input and the output, so every row before then under-counts a call that read or wrote a cached prompt. `record_response`
+is the one way a call is put on the ledger: it reads the four counts off the response's usage.
 """
 from __future__ import annotations
 
@@ -27,6 +32,7 @@ RATES = {
     # flags: better a loud zero than a quiet guess at the wrong price.
     "claude-fable-5": (10.00, 50.00),
     "claude-mythos-5": (10.00, 50.00),
+    "claude-opus-5-5": (4.00, 20.00),
     "claude-opus-5": (5.00, 25.00),
     "claude-sonnet-5": (2.00, 10.00),
     "claude-opus-4": (5.00, 25.00),
@@ -35,35 +41,94 @@ RATES = {
 }
 
 
-def rate_for(model: str) -> tuple[float, float] | None:
+# A cache read costs this share of the model's input rate: about a tenth, a twentieth on Claude Opus 5.5 and a fortieth
+# on Claude Fable 5.1 and Claude Mythos 5.1. A cache write costs 1.25 times the input rate for the 5-minute entry the
+# suite writes ({"type": "ephemeral"}) and twice it for a 1-hour one.
+CACHE_READ = {"": 0.1, "claude-opus-5-5": 0.05, "claude-fable-5-1": 0.025, "claude-mythos-5-1": 0.025}
+CACHE_WRITE = {"5m": 1.25, "1h": 2.0}
+
+
+def _longest(table: dict, model: str):
     best = None
-    for prefix, rate in RATES.items():
+    for prefix, value in table.items():
         if str(model).startswith(prefix) and (best is None or len(prefix) > len(best[0])):
-            best = (prefix, rate)
+            best = (prefix, value)
     return best[1] if best else None
 
 
-def cost_usd(model: str, input_tokens: int, output_tokens: int) -> float:
+def rate_for(model: str) -> tuple[float, float] | None:
+    return _longest(RATES, model)
+
+
+def cost_usd(model: str, input_tokens: int, output_tokens: int, cache_read: int = 0, cache_write_5m: int = 0,
+             cache_write_1h: int = 0) -> float:
     rate = rate_for(model)
     if not rate:
         return 0.0
-    return round(input_tokens / 1e6 * rate[0] + output_tokens / 1e6 * rate[1], 6)
+    prompt = (input_tokens + cache_read * _longest(CACHE_READ, model) + cache_write_5m * CACHE_WRITE["5m"]
+              + cache_write_1h * CACHE_WRITE["1h"])
+    return round(prompt / 1e6 * rate[0] + output_tokens / 1e6 * rate[1], 6)
+
+
+def _count(obj, key: str) -> int:
+    value = obj.get(key) if isinstance(obj, dict) else getattr(obj, key, None)
+    return int(value or 0) if isinstance(value, (int, float)) else 0
+
+
+def record_response(conn: sqlite3.Connection, agent: str, response, model: str, detail: str | None = None,
+                    reservation: Optional[int] = None) -> tuple[str, float]:
+    """A call's response on the ledger, at the model that answered: its uncached input, its output, and the prompt it read
+    from the cache and wrote to it, by the entry's lifetime when the usage says (else the 5-minute entry the suite
+    writes). (the model that answered, the cost). The one way a call is recorded; no caller does its own arithmetic."""
+    usage = response.get("usage") if isinstance(response, dict) else getattr(response, "usage", None)
+    answered = (response.get("model") if isinstance(response, dict) else getattr(response, "model", None)) or model
+    # With server-side fallback, usage.iterations is the per-attempt record of what is billed (a declined attempt at its
+    # own model's rates) and the top-level counts are only the attempt that answered (platform.claude.com, "Refusals and
+    # fallback", read 2026-11-09): each attempt is its own row, at its own model. An attempt declined before any output
+    # in a category that is not billed is counted too: the till errs high, never low.
+    attempts = (usage.get("iterations") if isinstance(usage, dict) else getattr(usage, "iterations", None)) or []
+    if attempts:
+        total = 0.0
+        for k, attempt in enumerate(attempts):
+            ran = (attempt.get("model") if isinstance(attempt, dict) else getattr(attempt, "model", None)) or answered
+            words = f"attempt {k + 1} of {len(attempts)}" + (f" {detail}" if detail else "")
+            total += _record_usage(conn, agent, ran, attempt, words, reservation if k == 0 else None)
+        return answered, round(total, 6)
+    return answered, _record_usage(conn, agent, answered, usage, detail, reservation)
+
+
+def _record_usage(conn: sqlite3.Connection, agent: str, model: str, usage, detail: str | None,
+                  reservation: Optional[int]) -> float:
+    """One usage object's counts on the ledger at `model`: uncached input, output, and the prompt read from the cache and
+    written to it, by the entry's lifetime when the usage says (else the 5-minute entry the suite writes)."""
+    written = _count(usage, "cache_creation_input_tokens")
+    by_ttl = usage.get("cache_creation") if isinstance(usage, dict) else getattr(usage, "cache_creation", None)
+    hour = min(written, _count(by_ttl, "ephemeral_1h_input_tokens"))
+    return record(conn, agent, model, _count(usage, "input_tokens"), _count(usage, "output_tokens"), detail,
+                  reservation=reservation, cache_read=_count(usage, "cache_read_input_tokens"),
+                  cache_write_5m=written - hour, cache_write_1h=hour)
 
 
 def record(conn: sqlite3.Connection, agent: str, model: str, input_tokens: int, output_tokens: int,
-           detail: str | None = None, reservation: Optional[int] = None) -> float:
+           detail: str | None = None, reservation: Optional[int] = None, *, cache_read: int = 0, cache_write_5m: int = 0,
+           cache_write_1h: int = 0) -> float:
     """The call's real cost on the ledger. With `reservation`, the in-flight row becomes this one (no second
-    row); an unknown reservation (swept, or none) still records the call."""
-    cost = cost_usd(model, input_tokens, output_tokens)
-    words = f"{model} in={input_tokens} out={output_tokens}" + (f" {detail}" if detail else "")
+    row); an unknown reservation (swept, or none) still records the call. A call's response goes through
+    record_response, which reads these counts off its usage."""
+    cost = cost_usd(model, input_tokens, output_tokens, cache_read, cache_write_5m, cache_write_1h)
+    cached = cache_read + cache_write_5m + cache_write_1h
+    words = (f"{model} in={input_tokens} out={output_tokens}"
+             + (f" cache_read={cache_read} cache_write={cache_write_5m + cache_write_1h}" if cached else "")
+             + (f" {detail}" if detail else ""))
+    units = input_tokens + output_tokens + cached
     if reservation is not None:
         done = conn.execute("UPDATE api_usage SET ts=?, agent=?, units=?, unit_kind='tokens', cost_usd=?, detail=? "
-                            "WHERE id=? AND detail LIKE ?", (db.utcnow(), agent, input_tokens + output_tokens, cost, words,
+                            "WHERE id=? AND detail LIKE ?", (db.utcnow(), agent, units, cost, words,
                                                            reservation, f"{RESERVED} %")).rowcount
         if done:
             return cost
     db.insert(conn, "api_usage", ts=db.utcnow(), provider="anthropic", agent=agent,
-              units=input_tokens + output_tokens, unit_kind="tokens", cost_usd=cost, detail=words)
+              units=units, unit_kind="tokens", cost_usd=cost, detail=words)
     return cost
 
 

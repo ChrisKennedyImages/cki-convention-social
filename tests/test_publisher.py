@@ -357,7 +357,7 @@ class RealEligibility(AgentCase):
         self.conn.execute("UPDATE photos SET folder_id='f-1' WHERE id=?", (self.pid,))
         db.insert(self.conn, "classifications", photo_id=self.pid, method="vision", possible_minor=0,
                   personal_details="[]", classified_at=now)
-        db.insert(self.conn, "final_checks", photo_id=self.pid, possible_minor=0, personal_details="[]",
+        db.insert(self.conn, "final_checks", photo_id=self.pid, possible_minor=0,
                   model="claude-opus-5", checked_at=now)
 
     def test_not_cleared_goes_back_and_cleared_goes_through(self):

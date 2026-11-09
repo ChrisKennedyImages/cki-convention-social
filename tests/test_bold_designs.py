@@ -36,7 +36,7 @@ def plate(color, size=WIDE, stripe=None):
 
 
 def shots(n, colors=((200, 40, 60), (40, 90, 200), (60, 160, 90), (220, 160, 40), (120, 60, 160), (40, 40, 44))):
-    rooms = ("MAIN STAGE", "PORTRAIT", "RECEPTION", "CANDID", "BACKSTAGE", "EVENT PHOTOGRAPHY")
+    rooms = ("MAIN STAGE", "PORTRAITS", "RECEPTION", "CANDID", "BACKSTAGE", "EVENT PHOTOGRAPHY")
     return [motion.Shot(plate(colors[i % len(colors)], WIDE if i % 3 else (2000, 3000)), rooms[i % len(rooms)], "In the moment.")
             for i in range(n)]
 
@@ -190,7 +190,7 @@ class Colour(IsolatedCase):
 
     def test_the_slit_scan_draws_out_the_photos_most_colourful_line(self):
         im = plate((90, 90, 94), stripe=(230, 40, 120))
-        made = bold.make("scan", [motion.Shot(im, "PORTRAIT", "Speakers and guests, between sessions.")], motion.MotionCopy())
+        made = bold.make("scan", [motion.Shot(im, "PORTRAITS", "Speakers and guests, between sessions.")], motion.MotionCopy())
         x0, y0, x1, _ = made.photos[0]
         streak = made.image.getpixel(((x0 + x1) // 2, y0 - 20))
         self.assertGreater(streak[0], streak[1] + 60, "the streak over the photo is the stripe's magenta, not its grey")
@@ -233,8 +233,8 @@ class Rooms(Drafting):
     """A room is printed only when Claude's final check of the full photo confirms it; otherwise EVENT PHOTOGRAPHY."""
 
     def confirm(self, did, room):
-        db.insert(self.conn, "final_checks", photo_id=self.ids[did], possible_minor=0, personal_details="[]", summary="ok",
-                  model="test", checked_at=db.utcnow(), shot_type="portrait", event_kind="business", room=room)
+        db.insert(self.conn, "final_checks", photo_id=self.ids[did], possible_minor=0, summary="ok",
+                  model="test", checked_at=db.utcnow(), shot_type="portrait", room=room)
 
     def test_the_final_check_is_asked_for_the_room_and_keeps_it(self):
         self.assertIn("room", classify.FINAL_SCHEMA["required"])
@@ -262,7 +262,8 @@ class Rooms(Drafting):
         self.confirm("e1", "portrait")
         self.confirm("e2", "none")
         words = content.confirmed_rooms(self.conn, [self.ids["e1"], self.ids["e2"], self.ids["e3"]])
-        self.assertEqual(words[self.ids["e1"]], design_samples.ROOM_WORDS["portrait"])
+        self.assertEqual(words[self.ids["e1"]], design_samples.ROOMS["portrait"])
+        self.assertEqual(design_samples.ROOMS["portrait"][0], "PORTRAITS", "his label (2026-11-08)")
         self.assertEqual(words[self.ids["e2"]], design_samples.UNCONFIRMED)
         self.assertEqual(words[self.ids["e3"]], design_samples.UNCONFIRMED)
         self.assertEqual(design_samples.UNCONFIRMED[0], "EVENT PHOTOGRAPHY")
@@ -278,7 +279,7 @@ class Rooms(Drafting):
         from unittest import mock
         with mock.patch.object(bold, "make", spy):
             content.draft_one(self.ctx(), self.fetch, now=datetime(2026, 10, 19, 10, 0, tzinfo=timezone.utc))   # tomorrow Tuesday: poster
-        self.assertEqual(seen[0], ("poster", ["PORTRAIT"], "EVENT PHOTOGRAPHY"))
+        self.assertEqual(seen[0], ("poster", ["PORTRAITS"], "EVENT PHOTOGRAPHY"))
         self.conn.execute("DELETE FROM final_checks")
         self.conn.execute("DELETE FROM content_queue")
         seen.clear()

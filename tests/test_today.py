@@ -78,8 +78,8 @@ class Case(IsolatedCase):
         return [self.photo(i, room, event, q) for i, (room, event, q) in enumerate(specs)]
 
     def checked(self, pid):
-        db.insert(self.conn, "final_checks", photo_id=pid, possible_minor=0, personal_details="[]", model="m", checked_at=db.utcnow(),
-                  shot_type="stage_panel", event_kind="business")
+        db.insert(self.conn, "final_checks", photo_id=pid, possible_minor=0, model="m", checked_at=db.utcnow(),
+                  shot_type="stage_panel")
 
     def row(self, ids, *, status="draft", design="fan", source=None, video=False, art="pass", for_day=None, created=None,
             scheduled_for=None, payload=None, asap=None) -> int:

@@ -10,7 +10,8 @@
    and no event or credited person repeated inside VARIETY_DAYS. The least
    recently used first, quality breaking ties.
 3. The final check: the full-size photo is downloaded (read only) and Claude
-   looks once more; a photo that fails is skipped and the next one is tried.
+   looks once more, for its labels; nothing it says keeps out a photo Chris used (2026-11-08). A photo it cannot look
+   at (no key, the cap) is skipped and the next one is tried.
 4. Captions (ai/claude.py), the day's design from the motion set (render/motion.py:
    spotlight, single, carousel, fan, face match or a reel; see DESIGNS), and a draft row. Nothing leaves: the publisher sends only what Chris
    approves.
@@ -150,13 +151,13 @@ def drafting_lock(wait: float):
 
 def photo_holder(conn: sqlite3.Connection, photo_ids, days: int, network: Optional[str] = None) -> Optional[tuple[int, int]]:
     """(photo id, post id) when one of these photos is on another post inside the window, by the same rule as
-    recent_use (open, sent, turned back by the art director or set aside by the do-not-use list; a skipped one is not).
+    recent_use (open, sent, or set aside by the do-not-use list; a skipped one and one the art director turned back are
+    not).
     With `network`, only a post that targets it: the window counts per network (Chris, 2026-11-02)."""
     wanted = moments.siblings(conn, photo_ids)          # a frame of the same moment on another post holds these too (2026-11-02)
     since = (datetime.now(timezone.utc) - timedelta(days=days)).replace(microsecond=0).isoformat()
     for r in db.rows(conn, "SELECT id, status, photo_ids, targets, rule_report FROM content_queue WHERE created_at >= ? AND "
-                           "(status != 'rejected' OR rule_report LIKE '%\"verdict\": \"reject\"%' "
-                           "OR rule_report LIKE '%\"rejected_by\"%') ORDER BY id", (since,)):
+                           "(status != 'rejected' OR rule_report LIKE '%\"rejected_by\"%') ORDER BY id", (since,)):
         if r["status"] == "rejected" and f'"rejected_by": "{SKIPPED}"' in (r["rule_report"] or ""):
             continue
         if network and network not in networks_of(r):
@@ -203,23 +204,23 @@ def held_on(conn: sqlite3.Connection, photo_ids, days: int, people, variety_days
 
 def recent_use(conn: sqlite3.Connection, days: int, network: Optional[str] = None) -> tuple[set, set, set]:
     """(photo ids, event names, credited people) used by posts drafted inside the window, by any road (the daily
-    draft, a designed draft, Post this, the phone): every post not rejected, the ones the art director turned back,
-    and the photos of the ones set aside by the do-not-use list (`rule_report.rejected_by`; the event and the people
-    of a set-aside post are not "used", since nothing of it aired). A post Chris skipped is not counted at all
-    (2026-10-15: "Skip puts the photos back in rotation"): its photos come round again, after the others, since
+    draft, a designed draft, Post this, the phone): every post not rejected, and the photos of the ones set aside by the
+    do-not-use list (`rule_report.rejected_by`, his decision; the event and the people of a set-aside post are not "used",
+    since nothing of it aired). A post Chris skipped is not counted at all (2026-10-15: "Skip puts the photos back in
+    rotation"), and neither is one the art director turned back (2026-11-08, his approval is final: nothing of it aired,
+    and the art director never rules a photo he used unfit): their photos come round again, after the others, since
     their use stays on the rotation's record (library/report.photo_use). With `network`, only the posts that target it:
     the window counts per network (Chris, 2026-11-02)."""
     since = (datetime.now(timezone.utc) - timedelta(days=days)).replace(microsecond=0).isoformat()
     photos, events, people = set(), set(), set()
     for r in db.rows(conn, "SELECT status, photo_ids, targets, rule_report FROM content_queue WHERE created_at >= ? AND "
-                           "(status != 'rejected' OR rule_report LIKE '%\"verdict\": \"reject\"%' "
-                           "OR rule_report LIKE '%\"rejected_by\"%')", (since,)):
+                           "(status != 'rejected' OR rule_report LIKE '%\"rejected_by\"%')", (since,)):
         if r["status"] == "rejected" and f'"rejected_by": "{SKIPPED}"' in (r["rule_report"] or ""):
             continue
         if network and network not in networks_of(r):
             continue
         photos.update(int(p) for p in json.loads(r["photo_ids"] or "[]"))
-        if r["status"] == "rejected" and '"verdict": "reject"' not in (r["rule_report"] or ""):
+        if r["status"] == "rejected":
             continue                       # set aside: the photo sits out; the event and the people were never shown
         meta = json.loads(r["rule_report"] or "{}")
         if meta.get("event"):
@@ -270,13 +271,15 @@ def free_on_first(pool: list[dict], networks) -> tuple[list[dict], bool]:
     return (free, False) if free or not pool else (pool, True)
 
 
-# The photos a post may take, before the rules: sorted, in Drive, and only the file that stands for its picture (its largest
-# sorted file), so a post never takes a small copy or two copies of one picture (library/copies.py, 2026-11-02). The designed
-# drafts read it too.
-CANDIDATE_SQL = f"""SELECT p.*, c.subject, c.convention_name, c.event_kind, c.shot_type, c.quality, c.people_count, c.summary
-                    FROM photos p JOIN classifications c ON c.photo_id = p.id
-                    WHERE p.trashed = 0 AND {copies.STANDS_FOR_ITS_PICTURE} AND c.subject = ? AND c.method IN ('ollama', 'vision')
-                    ORDER BY COALESCE(c.quality, 0) DESC, COALESCE(c.people_count, 0) DESC, p.id"""
+# The photos a post may take, before the rules, by kind of work (eligibility.WORK): sorted, in Drive, and only the file that
+# stands for its picture (its largest sorted file), so a post never takes a small copy or two copies of one picture
+# (library/copies.py, 2026-11-02). The designed drafts read it too.
+CANDIDATE_SQL = {
+    work: f"""SELECT p.*, c.subject, c.convention_name, c.event_kind, c.shot_type, c.quality, c.people_count, c.summary
+              FROM photos p JOIN classifications c ON c.photo_id = p.id
+              WHERE p.trashed = 0 AND {copies.STANDS_FOR_ITS_PICTURE} AND {where} AND c.method IN ('ollama', 'vision')
+              ORDER BY COALESCE(c.quality, 0) DESC, COALESCE(c.people_count, 0) DESC, p.id"""
+    for work, where in eligibility.WORK.items()}
 
 
 def candidates(conn: sqlite3.Connection, subject: str) -> list[dict]:
@@ -284,7 +287,7 @@ def candidates(conn: sqlite3.Connection, subject: str) -> list[dict]:
     on = payloads.posting_networks()
     held = held_on_networks(conn, on)
     _, used_events, _ = used_everywhere(conn, cfg.variety_days, on)
-    rows = db.rows(conn, CANDIDATE_SQL, (subject,))
+    rows = db.rows(conn, CANDIDATE_SQL[subject])
     fresh, lately = [], []
     for r in rows:
         if not eligibility.is_candidate(conn, r["id"])[0]:
@@ -311,14 +314,13 @@ def candidates(conn: sqlite3.Connection, subject: str) -> list[dict]:
 
 def shoot_uses(conn: sqlite3.Connection, networks) -> dict[str, str]:
     """{shoot (Drive folder): when a post for one of `networks` last took a photo of it}, by the posts recent_use counts
-    (open, sent, turned back by the art director or the do-not-use list; a skipped one is not), all time. A photo with no
-    folder is its event's shoot (designed.shoot_of)."""
+    (open, sent, or set aside by the do-not-use list; a skipped one and one the art director turned back are not), all
+    time. A photo with no folder is its event's shoot (designed.shoot_of)."""
     from . import designed
     wanted = set(networks)
     by_photo: dict[int, str] = {}
     for r in db.rows(conn, "SELECT status, photo_ids, targets, rule_report, created_at FROM content_queue WHERE "
-                           "(status != 'rejected' OR rule_report LIKE '%\"verdict\": \"reject\"%' "
-                           "OR rule_report LIKE '%\"rejected_by\"%') ORDER BY created_at"):
+                           "(status != 'rejected' OR rule_report LIKE '%\"rejected_by\"%') ORDER BY created_at"):
         if r["status"] == "rejected" and f'"rejected_by": "{SKIPPED}"' in (r["rule_report"] or ""):
             continue
         if wanted and not (networks_of(r) & wanted):
@@ -649,7 +651,7 @@ def order_pool(pool: list, design: str) -> list:
 
 def checked_rooms(conn: sqlite3.Connection, photo_ids: list) -> dict[int, Optional[str]]:
     """{photo id: the room Claude's final check of the full photo says it plainly shows (a key of
-    design_samples.ROOM_WORDS), else None}. A photo with no final check (a dry run), one checked before the question was
+    design_samples.ROOMS), else None}. A photo with no final check (a dry run), one checked before the question was
     asked, or one whose room was "none" has none."""
     from ..render import design_samples
     got = {}
@@ -657,22 +659,20 @@ def checked_rooms(conn: sqlite3.Connection, photo_ids: list) -> dict[int, Option
     if ids:
         marks = ",".join("?" * len(ids))
         got = {r["photo_id"]: r["room"] for r in db.rows(conn, f"SELECT photo_id, room FROM final_checks WHERE photo_id IN ({marks})", ids)}
-    return {i: got.get(i) if got.get(i) in design_samples.ROOM_WORDS else None for i in ids}
+    return {i: got.get(i) if got.get(i) in design_samples.ROOMS else None for i in ids}
 
 
 def confirmed_rooms(conn: sqlite3.Connection, photo_ids: list) -> dict:
     """{photo id: (room, line)}: the room Claude's final check of the full photo says it plainly shows, else
     EVENT PHOTOGRAPHY (2026-10-15: the sorter's shot type had put "After Dark" on a sunny garden)."""
     from ..render import design_samples
-    return {i: design_samples.ROOM_WORDS.get(room or "", design_samples.UNCONFIRMED) for i, room in checked_rooms(conn, photo_ids).items()}
+    return {i: design_samples.ROOMS.get(room or "", design_samples.UNCONFIRMED) for i, room in checked_rooms(conn, photo_ids).items()}
 
 
 def shot_for(row: dict, image: Image.Image, focus=(0.5, 0.45), words: Optional[tuple] = None):
     """The photo with the room and line printed on it: `words` from confirmed_rooms; without them nothing is named."""
     from ..render import design_samples, motion
     room, line = words or design_samples.UNCONFIRMED
-    if room == "THE VENUE" and row.get("shot_type") == "building_exterior":
-        line = design_samples.ROOMS["building_exterior"][1]
     return motion.Shot(image, room, line, focus)
 
 
@@ -839,7 +839,7 @@ def redraw(conn: sqlite3.Connection, row, meta: dict, *, agent: str = "content",
         look_plan, reel_video, track = look_parts(conn, row, meta, style)
     out_dir = cfg.data_root / "renders" / "posts" / day.isoformat()
     out_dir.mkdir(parents=True, exist_ok=True)
-    targets = [n for n in json.loads(row["targets"] or "[]") if not (n == "linkedin" and hero.get("prominent_logo"))]
+    targets = json.loads(row["targets"] or "[]")
     render, reel_failed = make_renderer(conn, agent, design=design, rows=rows, hero=hero, images=images, day=day, track=track,
                                         out_dir=out_dir, seo=image_meta.for_photo(conn, hero), reel_style=style,
                                         aspects=only if only is not None else aspects_for(targets, meta.get("skipped") or {}),
@@ -966,9 +966,10 @@ def draft_one(ctx: runner.Context, fetch: Callable[[dict], bytes], *, now: Optio
         return f"the photos for {day} could not be kept: {e}; the day is drafted again"
     line += f"; {picker.words()}" if picker.words() else ""
     if art.get("verdict") == "reject":
-        # the photos do not hold up: they sit out like used ones (make_draft kept the row), and this run drafts again
+        # the design did not work with these photos as arranged: make_draft kept a record of the try, the photos stay free
+        # and this run draws the day again in another arrangement; no photo is ruled unfit (2026-11-08)
         if _depth + 1 >= MAX_TRIES:
-            return f"{line}; no photo passed for {day} after {MAX_TRIES} tries"
+            return f"{line}; the art director passed no arrangement for {day} in {MAX_TRIES} tries"
         return line + "; " + draft_one(ctx, fetch, now=now, check_client=check_client, drafter=drafter,
                                        art_client=art_client, judge_client=judge_client, extra=extra, _depth=_depth + 1)
     return line
@@ -985,10 +986,14 @@ def photo_file(cfg, row) -> Path:
 def make_draft(ctx: runner.Context, day: date, chosen: list[tuple[dict, bytes]], design: str, *, want: str, kind_used: str,
                asked: str, track, drafter=None, art_client=None, judge_client=None, why: str = "", note: str = "",
                extra_meta: Optional[dict] = None, ping: Optional[tuple[str, str]] = None, quiet: bool = False,
-               style: Optional[str] = None, reel_video: Optional[Path] = None) -> tuple[int, dict, str]:
+               style: Optional[str] = None, reel_video: Optional[Path] = None,
+               his_choice: bool = False) -> tuple[int, dict, str]:
     """One draft from photos already chosen and checked: the captions, the design, the art director, the queue row and
     the ping. (queue id, the art director's verdict, the run line). The daily draft (draft_one) and a photo sent from
-    the phone (agents/phone.py) both end here. A turned-back draft is kept as a rejected row and said in the line.
+    the phone (agents/phone.py) both end here. A draft the art director turned back is kept as a rejected row and said in
+    the line, and its photos stay free (recent_use), so the day is drawn again in another arrangement. `his_choice`: the
+    photos and the design are Chris's own (a send from his phone, Post this on a sample he chose, a reel he queued), so
+    the art director's no is a note on the draft, never a turn-back (2026-11-08: his approval is final).
     `quiet`: no ping here; the caller pings (a photo from the share sheet is approved by his send, 2026-10-15).
     `style`: a reel's style or look, when the caller chose it before the photos (a look's photos follow its rule); else
     it is chosen here among those the photos allow. `reel_video`: a reel in a look rendered before (ccs queue-reel)."""
@@ -1008,12 +1013,7 @@ def make_draft(ctx: runner.Context, day: date, chosen: list[tuple[dict, bytes]],
         if len(chosen) < NEEDS.get(design, 1):
             design, chosen = fallback_for(day), chosen[:1]
     hero = chosen[0][0]
-    # Chris, 2026-11-01 evening: LinkedIn skips a photo where an organization's name or logo is prominent. The art director
-    # judges the hero once (stored on the photo; none in a dry run): judged so, the draft has no LinkedIn caption, photo or
-    # tick, and the draft page says why. Not judged yet: the publisher holds LinkedIn until it is (publisher.linkedin_hold).
-    logo = None if ctx.dry_run else art_director.prominent_logo(ctx.conn, hero["id"], chosen[0][1], client=judge_client, agent=ctx.agent)
-    targets = [n for n in TARGETS if not (n == "linkedin" and logo)]
-    skipped = {"linkedin": art_director.LOGO_SKIP} if logo else {}
+    targets = list(TARGETS)            # every network he posts to: no model's look keeps a photo off one (2026-11-08)
     li_style = linkedin_style(ctx.conn) if "linkedin" in targets else ""   # his voice rotates (2026-11-01 evening)
     facts = claude.PostFacts(brand_name=ctx.cfg.brand_name, event_kind=hero.get("event_kind") or "unknown",
                              shot_type=hero.get("shot_type") or "", subject=hero["subject"],
@@ -1063,20 +1063,20 @@ def make_draft(ctx: runner.Context, day: date, chosen: list[tuple[dict, bytes]],
     # the look and the track ride on the draft for the learner and the rotations (lines: the set of words it carried)
     reel_meta = ({"reel": style, "music": track.name, **({"lines": look_plan.lines} if look_plan else {}),
                   **({"reel_given": str(reel_video)} if reel_video else {})} if design == "reel" else {})
-    if art.get("verdict") == "reject":
-        # the photos do not hold up: they sit out like used ones
+    if art.get("verdict") == "reject" and not his_choice:
+        # the design did not work with these photos as arranged: a record of the try, the photos free for the next one
         now_r = db.utcnow()
         qid_r = db.insert(ctx.conn, "content_queue", kind="photo", photo_ids=json.dumps(photo_ids), targets=json.dumps(targets),
                           caption=json.dumps(captions), render_paths=json.dumps(render_paths), status="rejected",
                           last_error=f"Art director: {art.get('notes', '')}",
                           rule_report=json.dumps({"for_day": "turned back", "art": art, "subject": hero["subject"], "design": design,
-                                                  **reel_meta, **({"skipped": skipped} if skipped else {}), **(extra_meta or {})}),
+                                                  **reel_meta, **(extra_meta or {})}),
                           created_at=now_r, updated_at=now_r)
         report.record_use(ctx.conn, "post", photo_ids, ref=f"post:{qid_r}")
         return qid_r, art, f"art director turned back photo {hero['id']}: {art.get('notes', '')}"
     meta = {"for_day": day.isoformat(), "subject": hero["subject"], "event": hero.get("convention_name") or "",
             "people": people, "model": writer, "rules": reports, "wanted": want, "art": art, "design": design,
-            "design_wanted": asked, "seo": seo_record, "alt_text": alt, **reel_meta, **({"skipped": skipped} if skipped else {}),
+            "design_wanted": asked, "seo": seo_record, "alt_text": alt, **reel_meta,
             **({"linkedin_style": li_style} if li_style else {}), **(extra_meta or {})}
     if reel_failed:
         meta["reel_failed"] = reel_failed[0]
@@ -1119,7 +1119,7 @@ def make_draft(ctx: runner.Context, day: date, chosen: list[tuple[dict, bytes]],
                     agent=ctx.agent, **ping_extras(ctx.conn, {"id": qid, "updated_at": now_s}, art))
     fell = (f", the reel could not be made ({reel_failed[0]})" if reel_failed
             else f", {asked} wanted but too few photos passed" if asked != design else "")
-    fell += ", LinkedIn skipped" if skipped else f", LinkedIn {linkedin.STYLE_WORDS[li_style]}" if li_style else ""
+    fell += f", LinkedIn {linkedin.STYLE_WORDS[li_style]}" if li_style else ""
     fell += f", held off {' and '.join(payloads.name_of(n) for n in held)}" if held else ""
     fell += f", left out photo {' and '.join(str(p) for p in left_out)} (the same moment as another on this post)" if left_out else ""
     line = (f"{'DRY RUN ' if ctx.dry_run else ''}drafted post #{qid} for {day} ({kind_used}"
@@ -1172,10 +1172,10 @@ def queue_reel(ctx: runner.Context, fetch: Callable[[dict], bytes], *, video: Pa
                 return None, f"not queued: photo {pid} could not be read or checked ({type(e).__name__}: {e})"
             if not ctx.dry_run:
                 if verdict is None:
-                    return None, f"not queued: Claude could not look at photo {pid} (no key, the monthly cap, or a refusal)"
+                    return None, f"not queued: Claude could not look at photo {pid} (no key, or the monthly cap)"
                 ok, why = eligibility.is_eligible(ctx.conn, pid)
                 if not ok:
-                    return None, f"not queued: photo {pid} did not pass the final check: {why}"
+                    return None, f"not queued: photo {pid} cannot be posted: {why}"
                 if verdict.get("shot_type") in classify.SHOT_TYPES:
                     row["shot_type"] = verdict["shot_type"]
                 if verdict.get("event_kind") in classify.KINDS and verdict["event_kind"] != "unknown":
@@ -1184,9 +1184,7 @@ def queue_reel(ctx: runner.Context, fetch: Callable[[dict], bytes], *, video: Pa
         qid, art, line = make_draft(ctx, day, chosen, "reel", want=subject_for(day), kind_used="event", asked="reel",
                                     track=music.folder() / track_file, drafter=drafter, art_client=art_client,
                                     judge_client=judge_client, why=f"queued from {Path(video).name}", style=look,
-                                    reel_video=Path(video), quiet=quiet)
-        if art.get("verdict") == "reject":
-            return None, f"not queued: {line}"
+                                    reel_video=Path(video), quiet=quiet, his_choice=True)
     except PhotosTaken as e:
         return None, f"not queued: {e}"
     finally:

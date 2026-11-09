@@ -378,7 +378,7 @@ def cmd_site(args) -> int:
         print(f"{why} Building without photos.")
 
     def recheck(row, image):
-        # Claude's final check, for a photo it has not yet judged for the kind of occasion (a wedding is never used)
+        # Claude's final check, for a photo it has not looked at yet: its labels (it never keeps a photo out, 2026-11-08)
         from .library import classify
         buf = io.BytesIO()
         image.convert("RGB").save(buf, "JPEG", quality=90)
@@ -475,6 +475,33 @@ def drive_fetch(ctx):
     return lambda row: content.read_photo(ctx.cfg, row, reader.download)
 
 
+def cmd_relabel(args) -> int:
+    """Chris, 2026-11-08: Awards and Green room became labels; the photos labelled before them are judged again. Says how
+    many and what it costs; --mark sends them to the sorter (its run after this one sorts them, approved photos first)
+    and clears their final checks, so the full photo is looked at again when one is next picked."""
+    from .library import classify
+    conn = db.connect()
+    found = classify.relabel(conn, mark=args.mark)
+    labels = ", ".join(f"{k} {v}" for k, v in sorted(found.by_label.items(), key=lambda kv: -kv[1])) or "none"
+    print(f"{len(found.ids)} photos mention an award, a plaque, a trophy, a certificate or a green room (their labels now: "
+          f"{labels}); {found.checked} of them carry a final check.")
+    if found.per_photo_usd is None:
+        print("The sorter has no priced look in the till in the last two weeks, so no cost can be said.")
+    else:
+        print(f"Judging them again: about ${found.usd:.2f} at the sorter's measured ${found.per_photo_usd:.4f} a photo, "
+              "plus a few cents each time a pass starts after a pause and writes the cached prompt again (free when the "
+              "local sorter does it).")
+        if found.undercounts:
+            print("That price under-counts: the sorter's rows in the till before 2026-11-09 did not count the cached prompt "
+                  "each sort reads (and writes, after a pause of five minutes), so the real cost is higher.")
+    why = classify.budget_stop(conn)
+    if why:
+        print(f"The paid sorter is stopped now: {why}.")
+    print("Marked for the sorter, and their final checks cleared." if found.marked
+          else "Nothing marked: run again with --mark to send them to the sorter.")
+    return 0
+
+
 def cmd_copy_key(args) -> int:
     """Chris, 2026-10-11: "Use my Anthropic key from [my other suite's] .env (DO NOT TOUCH ANYTHING IN
     THAT ENV)". The source file is opened for reading only and checked unchanged afterwards; the value
@@ -548,6 +575,9 @@ def build_parser() -> argparse.ArgumentParser:
     st.add_argument("--no-check", action="store_true", help="deploy: skip the check from outside (go-live checks after the secrets)")
     st.add_argument("--wait", type=float, default=0, help="check: keep retrying this many seconds until everything passes")
     st.set_defaults(fn=cmd_site)
+    rl = sub.add_parser("relabel", help="the photos labelled before Awards and Green room were labels: count, cost, --mark")
+    rl.add_argument("--mark", action="store_true", help="send them to the sorter to be judged again")
+    rl.set_defaults(fn=cmd_relabel)
     ck = sub.add_parser("copy-key", help="copy one key from another .env file (only read) into this suite's .env")
     ck.add_argument("name"); ck.add_argument("--from", dest="source", required=True)
     ck.add_argument("--as", dest="as_name", default="", help="the key's name in that file, if it differs")

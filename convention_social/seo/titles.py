@@ -40,7 +40,6 @@ EXPECTED_CTR = {1: 0.276, 2: 0.158, 3: 0.110, 4: 0.084, 5: 0.063, 6: 0.049, 7: 0
 LAST_PLACE = max(EXPECTED_CTR)
 
 SYSTEM = """You rewrite the words one page of eventcaliber.com shows in Google's results: its title and its description.
-Event Caliber is Chris and Nic Kennedy, two brothers who photograph conventions, conferences, galas and award dinners. They are based in Washington, DC and travel nationwide.
 The page is shown in Google often, but few people click it. Write a title and a description that match what the people searching typed, using the words of the searches given, so this result is plainly the one they want.
 Rules:
 1. Plain, short words in sentence case. No hype, no exclamation marks, no superlatives such as best, top or number one, nothing guaranteed or award winning.

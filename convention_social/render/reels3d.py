@@ -55,8 +55,7 @@ ON_PURPOSE = {
             "the held photo at full brightness while the rest of the grid dims around it, its room named under it; the "
             "grid is bright again while the camera travels. A card-sized oval of liquid glass glides onto the held "
             "photo, magnifies what is under it, faces included, and travels on to the next card ahead of the camera: "
-            "the oval is the design, not a defect and not an overlay to remove, and the photo under it is the one to "
-            "judge.",
+            "the oval is the design, not a defect and not an overlay to remove.",
     "ring": "on paper white, the photos unspool as square cards into a ring turning around a small EVENT CALIBER; then "
             "the ring opens and the cards cascade past the camera at their full shape to rest on one photo. The square "
             "crop in the ring and the soft shadow behind each card are the design.",
@@ -83,8 +82,8 @@ def brief(style: str) -> str:
     return (f"{2 + len(STILLS_S)} pictures of a fifteen second reel in the {style} style: its cover frame, the first photo "
             f"on a 2:3 card, and {len(STILLS_S)} more frames from later in the reel. In the reel {ON_PURPOSE[style]} A card "
             "cut by the frame's edge is the camera's move, not the crop. Nothing in the render softens or darkens a "
-            "featured photo: these frames have no motion blur, no fade and no transition, so a featured photo that reads "
-            "soft or dark is soft or dark in the photo itself, and that is a fault, as is a photo that does not belong.")
+            "featured photo: these frames have no motion blur, no fade and no transition, and every photo is shown as Chris "
+            "shot and approved it, never a fault in itself.")
 
 
 def cuts_for(n: int) -> list[int]:

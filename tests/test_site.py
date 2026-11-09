@@ -392,7 +392,7 @@ class Site(IsolatedCase):
             db.insert(conn, "classifications", photo_id=pid, method="ollama", subject=subject, possible_minor=0,
                       personal_details="[]", quality=5 - n, space="exterior", residential=0, empty_room=0, sharp=1, light=4, moment=4, classified_at=now)
             if final:
-                db.insert(conn, "final_checks", photo_id=pid, possible_minor=0, personal_details="[]", model="m", checked_at=now)
+                db.insert(conn, "final_checks", photo_id=pid, possible_minor=0, model="m", checked_at=now)
         fetched = []
         photos = build.pick_photos(conn, lambda r: fetched.append(r["drive_id"]) or im())
         self.assertEqual(sorted(fetched), ["d0", "d2"])            # d1 never passed the final check

@@ -142,26 +142,29 @@ class Words(IsolatedCase):
         """Chris, 2026-11-08: "The screen shot says each award and they are portraits"."""
         b = reel_lines.beats([None, "main_stage", "portrait", None, "reception", "candid"])
         self.assertEqual(b.photos, (1, 2, 4))
-        self.assertEqual(b.words, ("Stage.", "Portrait.", "Reception."))
-        self.assertEqual(b.stack, "Stage · portraits · reception")
+        self.assertEqual(b.words, ("Main stage.", "Portraits.", "Reception."))          # his labels (2026-11-08)
+        self.assertEqual(b.stack, "Main stage · portraits · reception")
         b = reel_lines.beats(["main_stage", "main_stage", "backstage", "main_stage", "breakout"])
-        self.assertEqual((b.photos, b.words), ((0, 2, 4), ("Stage.", "Backstage.", "Session.")), "three different words first")
+        self.assertEqual((b.photos, b.words), ((0, 2, 4), ("Main stage.", "Backstage.", "Breakouts.")), "three different words first")
         b = reel_lines.beats(["portrait"] * 5)
-        self.assertEqual((b.photos, b.words, b.stack), ((0, 1, 2), ("Portrait.",) * 3, "Portraits"), "the same room: its word again")
+        self.assertEqual((b.photos, b.words, b.stack), ((0, 1, 2), ("Portraits.",) * 3, "Portraits"), "the same room: its word again")
         with self.assertRaises(reel_lines.TooFewRooms):
             reel_lines.beats(["main_stage", None, "portrait", None, "not_a_room"])
 
     def test_axis_says_chriss_own_three_words_on_its_first_three_portraits(self):
         """Chris, 2026-11-08: "Poise." "Light." "Presence." for every Axis reel: it is all portraits, and the room words
-        would all be "Portrait."."""
+        would all be "Portraits."."""
         b = reel_lines.beats(["portrait", None, "portrait", "portrait", "portrait"], "axis")
-        self.assertEqual((b.photos, b.words, b.stack), ((0, 1, 2), ("Poise.", "Light.", "Presence."), "Portraits · headshots"))
+        self.assertEqual((b.photos, b.words, b.stack), ((0, 1, 2), ("Poise.", "Light.", "Presence."), "Portraits"))
         b = reel_lines.beats(["portrait", "main_stage", None, "reception"], "axis")
-        self.assertEqual((b.words, b.stack), (("Poise.", "Light.", "Presence."), "Portraits · stage"),
-                         "the stack label is still the rooms of its three photos")
-        self.assertEqual(reel_lines.beats([None] * 5, "axis").words, ("Poise.", "Light.", "Presence."), "no room needed")
-        self.assertEqual(reel_lines.beats(["portrait"] * 3).words, ("Portrait.",) * 3, "every other look keeps the room words")
-        self.assertEqual(set(reel_lines.BEAT_WORDS), {"main_stage", "stage_panel", "breakout", "portrait", "backstage", "candid", "reception"})
+        self.assertEqual((b.words, b.stack), (("Poise.", "Light.", "Presence."), "Portraits · main stage"),
+                         "the stack label is still the rooms of its three photos, a photo with none adding nothing")
+        self.assertEqual(reel_lines.beats([None, None, None, "portrait", None], "axis").stack, "Portraits", "else the rest's")
+        with self.assertRaises(reel_lines.TooFewRooms):
+            reel_lines.beats([None] * 5, "axis")            # nothing confirmed: the label says nothing it does not know
+        self.assertEqual(reel_lines.beats(["portrait"] * 3).words, ("Portraits.",) * 3, "every other look keeps the room words")
+        from convention_social import house_brief
+        self.assertEqual(set(reel_lines.BEAT_WORDS), set(house_brief.KEYS))
 
 
 class Photos(IsolatedCase):
@@ -214,12 +217,12 @@ class Props(IsolatedCase):
         rooms = [None, "main_stage", None, "portrait", "reception", "candid"]
         p, public = self.props("darkroom", [photo(r, focus=(0.3, 0.2) if k == 0 else reel_looks.DEFAULT_FOCUS)
                                             for k, r in enumerate(rooms)])
-        self.assertEqual(p["words"], ["Stage.", "Portrait.", "Reception."])
+        self.assertEqual(p["words"], ["Main stage.", "Portraits.", "Reception."])
         self.assertEqual(p["wordPhotos"], [0, 1, 2], "the word photos lead, in the reel's order")
         self.assertEqual([(x["fx"], x["fy"]) for x in p["photos"]][3], (0.3, 0.2),
                          "the post's hero, with no confirmed room, follows them with the art director's focus")
         self.assertEqual({(x["fx"], x["fy"]) for x in p["photos"][:3]}, {reel_looks.DEFAULT_FOCUS})
-        self.assertEqual(p["stackLabel"], "Stage · portraits · reception")
+        self.assertEqual(p["stackLabel"], "Main stage · portraits · reception")
         self.assertEqual(p["counter"], reel_lines.COUNTER)
         s = reel_lines.SETS[4]
         self.assertEqual((p["open"], p["openSub"], p["line1"], p["line2"], p["marquee"]),
@@ -257,7 +260,7 @@ class Props(IsolatedCase):
         self.assertEqual(len(p["ending"]), 2, "Chris chose a burst of two")
         self.assertEqual(p["climax"], 3)
         self.assertEqual(p["words"], ["Poise.", "Light.", "Presence."], "Chris's own three for every Axis reel")
-        self.assertEqual(p["stackLabel"], "Portraits · headshots")
+        self.assertEqual(p["stackLabel"], "Portraits")
         self.assertEqual({mark(x) for x in p["photos"] + p["ending"]}, set(range(7)), "every one of the seven is in the reel")
         self.assertEqual([mark(x) for x in p["photos"]], [0, 1, 2, 6, 3, 4], "the hero first, the words on 0 to 2")
         self.assertEqual([mark(x) for x in p["ending"]], [5, 6], "the last two of the reel's set, the last held")
@@ -551,8 +554,8 @@ class LookCase(IsolatedCase):
             db.insert(self.conn, "classifications", photo_id=pid, method="ollama", subject="event", convention_name="Liberty Summit",
                       is_convention=1, quality=5 - k % 3, possible_minor=0, personal_details="[]", space="exterior", residential=0,
                       empty_room=0, sharp=1, light=4, moment=4, shot_type=shot, classified_at=now)
-            db.insert(self.conn, "final_checks", photo_id=pid, possible_minor=0, personal_details="[]", summary="ok", model="t",
-                      checked_at=now, shot_type=shot, event_kind="business", room=room)
+            db.insert(self.conn, "final_checks", photo_id=pid, possible_minor=0, summary="ok", model="t",
+                      checked_at=now, shot_type=shot, room=room)
             self.ids[did] = pid
         self.tracks = {look: self.conn.execute("SELECT file FROM music_tracks WHERE id=?", (
             music.add(self.conn, f"{look}.wav", tone(), **dict(RECORD, title=look), looks=[look], start_s=2.0),)).fetchone()[0]

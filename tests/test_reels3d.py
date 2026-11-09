@@ -59,7 +59,7 @@ class Styles(IsolatedCase):
             self.assertIn(f"reel in the {style} style", told)
             self.assertIn(reels3d.ON_PURPOSE[style], told)
             self.assertIn("no motion blur, no fade and no transition", told)
-            self.assertIn("soft or dark in the photo itself, and that is a fault", told)
+            self.assertIn("every photo is shown as Chris shot and approved it, never a fault in itself", told)   # 2026-11-08
             self.assertTrue(told.startswith(f"{2 + len(reels3d.STILLS_S)} pictures of"), "told how many pictures, cover first")
         loop = reels3d.brief("loop")
         for words in ("oval of liquid glass", "magnifies what is under it, faces included", "not a defect",

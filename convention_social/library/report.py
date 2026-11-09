@@ -43,15 +43,21 @@ ROW_FIELDS = """
         WHERE p.trashed = 0 AND """
 
 
+# A photo Chris used (his own Use on it) is his, whatever a model said it shows (2026-11-08: "No one can override MY
+# approvals and that is a law"): the sorter's kind of occasion, a readable detail and the building rules keep only the
+# photos he has not decided on off the contact sheets.
+HIS = "p.clearance = 'cleared'"
+
+
 def convention_rows(conn: sqlite3.Connection) -> list[sqlite3.Row]:
-    return db.rows(conn, ROW_FIELDS + "c.is_convention = 1")
+    return db.rows(conn, ROW_FIELDS + f"(c.is_convention = 1 OR ({eligibility.WORK['event']} AND {HIS}))")
 
 
 def architecture_rows(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     """Chris's building work: his own exteriors and interiors, which the suite may use as venue
     shots one day a week and in the site portfolio (Chris, 2026-10-09). Never convention frames,
     so the convention sheet has never shown any of it."""
-    return db.rows(conn, ROW_FIELDS + "c.subject = 'architecture'")
+    return db.rows(conn, ROW_FIELDS + eligibility.WORK["architecture"])
 
 
 def summary(conn: sqlite3.Connection) -> dict:
@@ -206,20 +212,25 @@ def ranking(r) -> tuple:
     return (-strength(r), -(min(r["people_count"] or 0, 3)), -(r["width"] or 0))
 
 
+def offered(r, subject: str) -> bool:
+    """A photo Chris has not decided on is offered to him only with no readable detail and, for a building frame, none
+    of what he ruled out (eligibility.blocking_details, building_blocked)."""
+    return (not eligibility.blocking_details(json.loads(r["personal_details"] or "[]"), subject)
+            and not (subject == "architecture" and eligibility.building_blocked(r)))
+
+
 def best(conn: sqlite3.Connection, n: int = 30, *, subject: str = "event", cap: int | None = PER_EVENT_CAP) -> list[sqlite3.Row]:
     """The strongest frames, at most PER_EVENT_CAP per event, one file per picture (the one that stands for it,
     library/copies.py: a reel's wall and the samples never show a picture twice or its small copy).
 
-    `subject` is "event" for convention work or "architecture" for Chris's building work. The
-    same safety filters apply to both: sorted by a model, no readable
-    personal detail. For buildings that last one matters most, since a house number or a street
-    sign keeps a photo out (Chris, 2026-10-09).
+    `subject` is "event" for convention work or "architecture" for Chris's building work. Both are sorted by a model;
+    a photo he has not decided on is offered only with no readable personal detail (for buildings that one matters most,
+    since a house number or a street sign says where somebody lives, 2026-10-09). A photo he used is his (`HIS`).
     """
     source = architecture_rows if subject == "architecture" else convention_rows
     rows = [r for r in source(conn)
             if r["method"] in ("vision", "ollama") and r["thumbnail_link"] and copies.stands_for_its_picture(r)
-            and not eligibility.blocking_details(json.loads(r["personal_details"] or "[]"), subject)
-            and not (subject == "architecture" and eligibility.building_blocked(r))]
+            and (r["clearance"] == "cleared" or offered(r, subject))]
     rows.sort(key=ranking)
     picked, per = [], Counter()
     for r in rows:

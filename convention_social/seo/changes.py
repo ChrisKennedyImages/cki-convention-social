@@ -42,7 +42,7 @@ import sqlite3
 from datetime import date, datetime, timedelta, timezone
 from typing import Callable, Optional
 
-from .. import offer
+from .. import house_brief, offer
 from ..ai import spend
 from ..ai.claude import FALLBACK_BETA, tidy
 from ..core import approve_token, config, db, notify, runner, secrets, settings
@@ -463,13 +463,11 @@ def ask(conn: sqlite3.Connection, client, *, model: str, system: str, schema: di
         response = client.beta.messages.create(
             model=model, max_tokens=3000, betas=[FALLBACK_BETA], fallbacks="default", thinking={"type": "adaptive"},
             output_config={"effort": "low", "format": {"type": "json_schema", "schema": schema}},
-            system=system, messages=[{"role": "user", "content": json.dumps(facts, indent=1)}])
+            system=house_brief.system(system), messages=[{"role": "user", "content": json.dumps(facts, indent=1)}])
     except Exception:
         spend.release(conn, held)
         raise
-    u = response.usage
-    spend.record(conn, agent, getattr(response, "model", None) or model, int(u.input_tokens or 0), int(u.output_tokens or 0),
-                 detail, reservation=held)
+    spend.record_response(conn, agent, response, model, detail, reservation=held)
     text = next((b.text for b in response.content if b.type == "text"), None)
     if response.stop_reason == "refusal" or not text:
         return None

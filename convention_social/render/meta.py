@@ -22,6 +22,7 @@ from xml.sax.saxutils import escape
 from PIL import Image
 
 from ..core import config
+from ..seo import photo_text
 
 TAG_DESCRIPTION, TAG_ARTIST, TAG_COPYRIGHT = 0x010E, 0x013B, 0x8298
 
@@ -118,9 +119,8 @@ def is_clean(path: Path) -> list[str]:
     return found
 
 
-SHOT_WORDS = {"main_stage": "Main stage", "stage_panel": "Stage panel", "breakout": "Breakout session",
-              "portrait": "Portrait", "backstage": "Backstage", "candid": "Candid moment", "reception": "Reception",
-              "building_exterior": "Building exterior", "building_interior": "Building interior"}
+# the search words of a shot (seo/photo_text.SHOT_WORDS), and a building's two views
+SHOT_WORDS = {**photo_text.SHOT_WORDS, "building_exterior": "Building exterior", "building_interior": "Building interior"}
 
 
 def for_photo(conn, row) -> ImageMeta:

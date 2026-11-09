@@ -199,22 +199,19 @@ class ThePress(Case):
 
 
 class FinalCheck(Case):
-    def test_a_photo_that_fails_the_final_check_drops_the_draft_and_says_why(self):
+    def test_what_the_final_check_sees_never_drops_a_photo_he_used(self):
+        """2026-10-15: "someone may be under 18" is no longer a failing answer (no age gate); since 2026-11-08 ("No one can
+        override MY approvals and that is a law"; "Yes, override everything") neither is a plate or a wedding: labels."""
         self.live()
-        # 2026-10-15: "someone may be under 18" is no longer a failing answer (no age gate); a plate and a wedding are
-        for answer, said in (({"personal_details": ["vehicle_plate"]}, "vehicle_plate"), ({"event_kind": "wedding"}, "wedding")):
+        for n, answer in enumerate(({"personal_details": ["vehicle_plate"]}, {"event_kind": "wedding"})):
             self.conn.execute("DELETE FROM final_checks")
+            self.conn.execute("DELETE FROM content_queue")
             self.press("fan")
             line = sample.run(self.ctx(), fetch=self.fetch, check_client=LookClient(**answer), art_client=ArtClientAny([say("pass")] * 4))
-            self.assertIn("did not pass the final check", line)
-            self.assertIn(said, line)
-            rec = db.one(self.conn, "SELECT status, error FROM sample_posts ORDER BY id DESC LIMIT 1")
-            self.assertEqual(rec["status"], "failed")
-            self.assertIn(said, rec["error"])
-            self.assertEqual(self.queued(), [], "no draft")
-            self.assertIn("Not drafted:", self.page())
-            self.assertIn(said, self.page())
-        self.assertEqual(db.one(self.conn, "SELECT agent FROM errors ORDER BY id DESC LIMIT 1")["agent"], "sample", "on the Agents page")
+            self.assertNotIn("cannot be posted", line)
+            self.assertEqual(len(self.queued()), 1, "drafted")
+            rec = db.one(self.conn, "SELECT status FROM sample_posts ORDER BY id DESC LIMIT 1")
+            self.assertNotEqual(rec["status"], "failed")
 
 
 class Stale(Case):

@@ -13,8 +13,8 @@ pass never marks it trashed and the nightly sweep never deletes its file.
 
 Then this agent (`ccs run phone`, started by the page; a second start while one runs waits its turn) does
 for the one photo what the daily draft does: the sorter when one is on (the free local one even in dry
-run), Claude's final check (a readable plate or a wedding: the draft stops and the page
-says why; no age gate, 2026-10-15), the captions with his line as a fact, the single design, the art director, a queue row for
+run), Claude's final check (its labels; since 2026-11-08 nothing it says stops his own photo, his approval is
+final), the captions with his line as a fact, the single design, the art director, a queue row for
 today marked `asap` (the publisher sends it as soon as he approves it, never at the day's usual slot), and
 the ping with the card and the Approve button. Nothing posts without his Approve; the pre-post window
 stays. The lane follows the content lane's dry-run switch: it is a draft of that lane.
@@ -24,11 +24,11 @@ dashboard to auto post immediately"): a share sheet button on his iPhone sends t
 (worker/index.js /api/send, his SEND_TOKEN), where it waits under private/sends/, never served. This agent's
 one-minute job (`--when-waiting`: a quiet minute leaves no run behind) pulls each one with the Mini's own token, keeps
 it exactly like a send from the page (`via` 'share'), deletes it at the site and drafts it on the same road. His send
-is his approval: a draft whose art director passed it and whose captions pass the publisher's door (one rewrite, as
+is his approval: a draft the art director looked at and whose captions pass the publisher's door (one rewrite, as
 at the door) is approved at once and posts right away (Buffer's shareNow, no pre-post window: Chris, 2026-10-15,
-"Right away"), and the publisher is started. A readable plate, a wedding, a
-caption that still breaks a rule, the art director's no or no look stop it, and the phone hears why. In the content
-lane's dry run Claude does not look, so nothing is approved; the phone hears what it would have posted.
+"Right away"), and the publisher is started. A caption that still breaks a rule, or no look at all (no key, the cap),
+stops it, and the phone hears why; the art director's no on the design is a note on the draft, never a stop (2026-11-08).
+In the content lane's dry run Claude does not look, so nothing is approved; the phone hears what it would have posted.
 """
 from __future__ import annotations
 
@@ -235,16 +235,10 @@ def local_time(ctx: runner.Context, iso: str) -> str:
         return (iso or "")[11:16]
 
 
-DETAIL_WORDS = {"badge_name": "a name on a badge", "vehicle_plate": "a readable car plate", "screen": "a readable screen",
-                "document": "a readable document", "house_number": "a house number", "street_sign": "a street sign"}
-
-
 def plain(why: str) -> str:
-    """A reason in words for the phone: the final check's codes (library/classify.py DETAILS) in plain words, a network
-    named as it is written, no full stop of its own (the ping adds the next sentence)."""
+    """A reason in words for the phone: a network named as it is written, no full stop of its own (the ping adds the next
+    sentence)."""
     why = (why or "no reason recorded").strip().rstrip(".")
-    why = re.sub(r"shows personal details: ([a-z_, ]+)",
-                 lambda m: "it shows " + " and ".join(DETAIL_WORDS.get(d.strip(), d.strip().replace("_", " ")) for d in m.group(1).split(",")), why)
     why = re.sub(r"\b(instagram|facebook|pinterest|linkedin)\b", lambda m: payloads.name_of(m.group(1)), why)
     return why[0].lower() + why[1:] if why.startswith(("The ", "Today's ")) else why
 
@@ -282,9 +276,9 @@ def fill_sort_from_check(conn: sqlite3.Connection, photo_id: int, verdict: dict)
     if row is None or row["method"] in eligibility.SORTED_METHODS:
         return
     kind = verdict.get("event_kind") if verdict.get("event_kind") in classify.KINDS else "unknown"
-    conn.execute("UPDATE classifications SET method='vision', personal_details=?, costume=?, "
+    conn.execute("UPDATE classifications SET method='vision', personal_details=?, "
                  "shot_type=COALESCE(shot_type, ?), event_kind=?, is_convention=?, summary=?, model=?, classified_at=? WHERE photo_id=?",
-                 (__import__("json").dumps(verdict.get("personal_details") or []), int(bool(verdict.get("costume"))),
+                 (__import__("json").dumps(verdict.get("personal_details") or []),
                   verdict.get("shot_type") if verdict.get("shot_type") in classify.SHOT_TYPES else None, kind,
                   0 if kind in classify.NOT_OFFERED_KINDS else 1, (verdict.get("summary") or "")[:300],
                   verdict.get("model_used") or "", db.utcnow(), photo_id))
@@ -315,7 +309,7 @@ def draft_send(ctx: runner.Context, send, *, check_client=None, drafter=None, ar
         except Exception as e:  # noqa: BLE001  the API or the network, not the photo
             return _failed(ctx, send, f"Claude's final check could not run ({type(e).__name__}: {e}); send it again in a few minutes")
         if verdict is None:
-            return _failed(ctx, send, "Claude could not look at the photo (no key, the monthly cap, or a refusal: the Agents page says which)")
+            return _failed(ctx, send, "Claude could not look at the photo (no key, or the monthly cap: the Agents page says which)")
         fill_sort_from_check(conn, photo["id"], verdict)
         ok, why = eligibility.is_eligible(conn, photo["id"])
     else:
@@ -340,9 +334,7 @@ def draft_send(ctx: runner.Context, send, *, check_client=None, drafter=None, ar
         ping=(f"{ctx.cfg.brand_name}: your photo from the floor, a post to approve",
               "A single post for today from the photo you sent. Post now and it goes out at once, or follow the pace, or "
               "skip. Tap to see it."),
-        quiet=shared)                         # a send from the share sheet is answered below, once it is approved or stopped
-    if art.get("verdict") == "reject":
-        return _failed(ctx, send, f"the art director turned it back: {art.get('notes', '')}", queue_id=qid)
+        quiet=shared, his_choice=True)        # a send from the share sheet is answered below, once it is approved or stopped
     if shared:
         add_story(ctx, qid, row, data)
     if from_team:
@@ -408,10 +400,11 @@ def ask_chris(ctx: runner.Context, send, qid: int, art: dict, line: str) -> str:
 
 def approve_sent(ctx: runner.Context, send, qid: int, art: dict, line: str) -> str:
     """Chris, 2026-10-15: a photo he sends from the share sheet is approved by the act of sending. What still stops it:
-    Claude's final check (above), the art director's no or no look, and the publisher's own door (the captions, one
-    rewrite, then they still break a rule; the photo; a repeat). In the content lane's dry run Claude did not look, so
-    nothing is approved. Approved, it posts right away (Chris, 2026-10-15: Buffer's shareNow, publisher.posts_now, no
-    pre-post window), and the publisher is started now."""
+    no look by Claude (no key, the cap), no look by the art director, and the publisher's own door (the captions, one
+    rewrite, then they still break a rule; his own takedowns; a repeat). The art director's no never does: his send is
+    his approval (2026-11-08), so after its rounds the post goes as designed, its notes on the draft. In the content
+    lane's dry run Claude did not look, so nothing is approved. Approved, it posts right away (Chris, 2026-10-15:
+    Buffer's shareNow, publisher.posts_now, no pre-post window), and the publisher is started now."""
     from . import publisher
     conn = ctx.conn
     row = db.one(conn, "SELECT * FROM content_queue WHERE id=?", (qid,))
@@ -424,14 +417,13 @@ def approve_sent(ctx: runner.Context, send, qid: int, art: dict, line: str) -> s
              "Claude did not check it, and nothing is approved without that check. Tap to see what it would have posted.",
              click=notify.link(f"/queue/{qid}"))
         return f"{line}; dry run: not approved, and the phone was told"
-    if art.get("verdict") != "pass":
+    if art.get("verdict") == "not reviewed":
         _status(conn, send["id"], "drafted", queue_id=qid)
-        why = ("the art director could not look at it this time" if art.get("verdict") == "not reviewed"
-               else f"the art director did not pass it: {plain(art.get('notes') or str(art.get('verdict')))}")
         tell(ctx, f"{brand}: your photo was not posted yet",
-             f"The photo you sent at {at} is drafted as post {qid} but not posted: {why}. It waits for your Approve. Tap to see it.",
+             f"The photo you sent at {at} is drafted as post {qid} but not posted: the art director could not look at it "
+             "this time. It waits for your Approve. Tap to see it.",
              click=notify.link(f"/queue/{qid}"), **content_ping(conn, row, art))
-        return f"{line}; not approved: the art director did not pass it"
+        return f"{line}; not approved: the art director could not look"
     stop, row = publisher.check_in(ctx, row)
     if stop:
         why = stop[1]

@@ -55,8 +55,8 @@ class Mend(IsolatedCase):
         db.insert(self.conn, "classifications", photo_id=self.pid, method="ollama", subject="event", convention_name="Liberty Summit",
                   event_kind="business", shot_type="stage_panel", is_convention=1, quality=5, possible_minor=0, personal_details="[]",
                   classified_at=now)
-        db.insert(self.conn, "final_checks", photo_id=self.pid, possible_minor=0, personal_details="[]", model="m", checked_at=now,
-                  shot_type="stage_panel", event_kind="business")
+        db.insert(self.conn, "final_checks", photo_id=self.pid, possible_minor=0, model="m", checked_at=now,
+                  shot_type="stage_panel")
 
     def draft(self, caption=BROKEN, status="draft", **meta):
         now = db.utcnow()

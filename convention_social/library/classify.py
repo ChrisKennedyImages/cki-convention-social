@@ -11,12 +11,12 @@
    The sorter is Ollama on the Mini when it has a vision model (free; Chris
    2026-10-09), otherwise Claude (claude-haiku-4-5, CLASSIFY_MODEL) under the
    monthly spend cap.
-3. final_check(): Claude (claude-opus-5) looks once more at the one photo
-   picked for a post, for personal details and the kind of occasion. Only a
-   passing final check makes a photo postable (eligibility.py). No model judges
-   anyone's age (Chris, 2026-10-15: his Approve is the check).
+3. final_check(): Claude (claude-opus-5) looks once more, at the full photo, at each photo picked for a post: its
+   label, the room the post prints, the kind of occasion and any readable detail. It labels; it never keeps out a
+   photo Chris used (2026-11-08: "No one can override MY approvals and that is a law"; "Yes, override everything").
+   A refusal or an empty answer is a check with no labels, not a veto. No model judges anyone's age.
 
-A refusal or an unreadable answer leaves the photo unchecked (never postable).
+Both read the house brief first (house_brief.py): what the company photographs and the labels, in one place.
 """
 from __future__ import annotations
 
@@ -27,11 +27,12 @@ import re
 import sqlite3
 import time
 from dataclasses import dataclass
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Callable, Optional
 
 from PIL import Image, ImageOps
 
+from .. import house_brief
 from ..ai import names, spend
 from ..core import config, db, secrets
 from . import heuristics
@@ -46,13 +47,11 @@ VISION_HINTS = ("llava", "vision", "-vl", "vl:", "qwen2.5vl", "qwen3-vl", "gemma
 THUMB_EDGE = 512
 # portraits and headshots are one thing (Chris, 2026-10-12); rows sorted "headshot" before then read as portrait
 # exhibition halls, vendors and booths are one thing too (Chris, 2026-10-12): rows sorted "booth" read as vendor_hall
-# Chris, 2026-10-29: "It's only one of these: main stage, stage panel, stage, breakout, portrait, backstage, candid (if you
-# can't identify where) and reception." The two building frames are the architecture subject's own. One vocabulary:
-# the sorter's shot type, the final check's room and the title printed on a post are the same word.
-# 2026-10-30, Chris: on a stage it is "Main Stage and stage panel (both)": every stage photo is main_stage unless it
-# is a panel, which "typically are on the main stage, but need to be identified as a stage panel".
-EVENT_SHOTS = ("main_stage", "stage_panel", "breakout", "portrait", "backstage", "candid", "reception")
-SHOT_TYPES = EVENT_SHOTS + ("building_exterior", "building_interior")
+# Chris, 2026-11-08: "Candid, Backstage, Green room, Panels, Portraits, Main stage, Breakouts, Awards, Event building, and
+# Reception kept." The labels, their words and what each shows live in the house brief (house_brief.LABELS), which every
+# model is told before its task. One vocabulary: the sorter's shot type, the final check's room and the label printed on
+# a post are the same key. It replaces the eight titles of 2026-10-29.
+SHOT_TYPES = house_brief.KEYS
 DETAILS = ("badge_name", "vehicle_plate", "screen", "document", "house_number", "street_sign")
 # What an architecture frame shows. Chris, 2026-10-10, after the first building sheet: the
 # building work is buildings, never rooms. The library's architecture is largely commissioned
@@ -65,9 +64,24 @@ SPACES = ("exterior", "lobby", "atrium", "ballroom_or_event_space", "office", "r
 # turns on the `residential` answer, which catches a flat's hallway as surely as its bedroom.
 BANNED_SPACES = frozenset({"bathroom", "closet_or_utility"})
 
-SYSTEM = """You sort a photographer's archive of event and architecture work. For each photo, say what it shows, factually and briefly.
-subject: "event" for conventions, conferences, galas, expos and similar gatherings; "architecture" for a building, its exterior or its interior shown as architecture; "other" for anything else.
-event_kind: "fan" for a fan convention (comics, anime, gaming), "business" for a business, trade or political conference or a corporate gala; "wedding" for a wedding or its reception (a bride, a groom, a wedding party, a first dance, a cake); "private" for a party, a family or personal occasion, a religious ceremony or a portrait session with no event around it; "unknown" when the kind of gathering cannot be told.
+# What kind of occasion a photo is from, for the sorter and the final check alike. Chris, 2026-11-08: a studio or backstage
+# portrait is the company's own work, never private for being a portrait ("we provide portraits at many of our events for
+# LinkedIn profiles or backstage for speakers or many reasons"), and a nonprofit's public event is the company's event (a
+# charity walk the final check had called private; "a great heart walk photo"). "private" had also taken in "a portrait
+# session with no event around it", a line no ruling of his said.
+KIND_RULE = ("fan for a fan convention (comics, anime, gaming); business for a business, trade, association or political "
+             "conference, a corporate gala, reception or award dinner, a nonprofit's public event (a charity walk or run, a "
+             "fundraiser, a heart walk or an Alzheimer's walk), and the company's own portrait work: a studio or backstage "
+             "portrait or headshot (a person posed for the camera and lit for it on a backdrop, often with colored gels, no "
+             "event in view) is business unless the photo itself shows a wedding, never private for being a portrait; "
+             "wedding for a wedding or its reception (a bride, a groom, a wedding party, a first dance, a cake, a wedding "
+             "dress); private for a family or personal occasion (a family gathering, a birthday), a private party or a "
+             "religious ceremony; unknown only when nothing visible tells. A wedding "
+             "is never business.")
+
+SYSTEM = f"""You sort the company's photo archive of event and architecture work. For each photo, say what it shows, factually and briefly.
+subject: "event" for conventions, conferences, galas, expos, fundraisers, charity walks and similar gatherings, and for every posed portrait or headshot, which is the company's portrait work at events; "architecture" for a building, its exterior or its interior shown as architecture; "other" for anything else.
+event_kind: {KIND_RULE}
 Judge only what is visible.
 
 Read the picture for text before you answer about it. Look at signs above doors, numbers on
@@ -89,23 +103,7 @@ sharp: true when the main subject is in focus.
 light: 1 (flat, blown or muddy) to 5 (light that makes the picture).
 moment: 1 (nothing happening, a blink, a turned back) to 5 (a real expression or a moment worth
 keeping). For a building, judge the composition instead.
-shot_type: one of these, and nothing else (Chris, 2026-10-29):
-main_stage: anyone on a stage presenting to the room: standing, at a lectern or podium, mic in hand, screens behind,
-facing the audience; performers; a group standing for an award or a photo. Two people talking at a podium are
-main_stage. Every stage photo is main_stage unless it is a panel.
-stage_panel: several people seated on a stage in conversation, a moderator and panelists; a panel is usually on the
-main stage and is still stage_panel. Two to six people seated across the stage in chairs, stools or armchairs,
-turned toward each other, one talking and the rest listening to the speaker rather than facing the room; mics,
-often a low table, name cards or names on a screen; a fireside chat of two armchairs is a panel. It reads as a
-panel at any crop, the whole row or one panelist mid-sentence with a neighbour's chair in frame. The count of
-people does not decide it: standing and facing out is main_stage; seated and facing each other is stage_panel.
-breakout: a session in a smaller room: an audience at tables or in rows, a presenter without a main stage.
-portrait: a professional posed portrait only: the subject posed for the camera and lit for it, on a backdrop or in a
-deliberate setting; a headshot or a posed group. A face in a frame is never a portrait; an unposed person is candid.
-backstage: green room, wings, prep, rehearsal, mic check.
-reception: dinner, drinks, networking, the gala floor, the dance floor.
-candid: anything else at the event, when the place cannot be told.
-building_exterior or building_interior: a building with no event in it (subject architecture).
+shot_type: the label the photo shows, by its key, one of the labels in the brief above and nothing else.
 costume: true when a person in the frame is in costume (cosplay).
 summary: one short sentence saying what kind of picture this is and what is happening, in general terms (a
 speaker at a podium; attendees at an expo booth; a building's entrance at dusk). Never a person's name, title
@@ -115,7 +113,9 @@ event_name_seen.
 Return JSON only, matching the schema."""
 
 KINDS = ("fan", "business", "wedding", "private", "unknown")
-NOT_OFFERED_KINDS = ("wedding", "private")     # Event Caliber photographs conventions and conferences (Chris, 2026-10-11)
+# What the sorter keeps off To review and the contact sheets (is_convention 0), for the photos Chris has not decided on;
+# never a reason to keep out a photo he used (2026-11-08: his approval is final).
+NOT_OFFERED_KINDS = ("wedding", "private")
 
 SCHEMA = {
     "type": "object",
@@ -143,33 +143,17 @@ SCHEMA = {
     "additionalProperties": False,
 }
 
-# the rooms a post may name (render/design_samples.ROOM_WORDS gives each its words); Claude says which one a photo plainly
-# shows, or none (2026-10-15: the sorter's shot type had put "After Dark" on a sunny garden)
-ROOMS = EVENT_SHOTS                      # the room the final check names is the title printed on the post: the same eight words
+# the label a post may print (render/design_samples.ROOMS gives each its words); Claude says which one a photo plainly
+# shows, or none (2026-10-15: the sorter's shot type had put "After Dark" on a sunny garden). Every label is a room since
+# 2026-11-08, Event building included: the venue with no event in it is no longer the architecture subject's alone.
+ROOMS = SHOT_TYPES
 
-FINAL_SYSTEM = """You are the last check before a photographer posts a photo publicly.
-Answer four things about the photo only from what is visible:
+FINAL_SYSTEM = f"""You look at a photo Chris approved, before the company posts it, and label it. Your answers word and arrange the post; none keeps the photo out.
+Answer from what is visible:
 personal_details: anything readable that identifies a private person or a home: a name on a badge, a vehicle plate, a screen or document with private information (a message, an email, a form, a medical or financial paper), a house number, a street sign. A book cover, a program, a slide, signage, a title or a name on its own is not private information. Empty when none.
-shot_type: one of these, and nothing else (Chris, 2026-10-29):
-main_stage: anyone on a stage presenting to the room: standing, at a lectern or podium, mic in hand, screens behind,
-facing the audience; performers; a group standing for an award or a photo. Two people talking at a podium are
-main_stage. Every stage photo is main_stage unless it is a panel.
-stage_panel: several people seated on a stage in conversation, a moderator and panelists; a panel is usually on the
-main stage and is still stage_panel. Two to six people seated across the stage in chairs, stools or armchairs,
-turned toward each other, one talking and the rest listening to the speaker rather than facing the room; mics,
-often a low table, name cards or names on a screen; a fireside chat of two armchairs is a panel. It reads as a
-panel at any crop, the whole row or one panelist mid-sentence with a neighbour's chair in frame. The count of
-people does not decide it: standing and facing out is main_stage; seated and facing each other is stage_panel.
-breakout: a session in a smaller room: an audience at tables or in rows, a presenter without a main stage.
-portrait: a professional posed portrait only: the subject posed for the camera and lit for it, on a backdrop or in a
-deliberate setting; a headshot or a posed group. A face in a frame is never a portrait; an unposed person is candid.
-backstage: green room, wings, prep, rehearsal, mic check.
-reception: dinner, drinks, networking, the gala floor, the dance floor.
-candid: anything else at the event, when the place cannot be told.
-building_exterior or building_interior: a building with no event in it (subject architecture).
-costume: true when a person in the frame is in costume (cosplay).
-event_kind: what kind of occasion the photo is from. fan for a fan convention (comics, anime, gaming); business for a business, trade or political conference or a corporate gala; wedding for a wedding or its reception (a bride, a groom, a wedding party, a first dance, a cake, wedding dress); private for a party, a family or personal occasion, a religious ceremony or a portrait session with no event around it; unknown only when nothing visible tells. A wedding is never business.
-room: the one room of an event the photo plainly shows, printed on the post as its title; none unless it is plain from the photo itself. main_stage for someone speaking or presenting on a stage with the stage in view; backstage for behind the scenes of an event (the wings, the crew, the preparation); portraits for a posed, lit portrait of a speaker or guest; expo_floor for an exhibition hall, its booths or a vendor at one; after_dark for a reception, dinner or party that is plainly in the evening or at night; the_crowd for an audience or a room full of people in the moment; the_venue for the room or the building itself with no event in it. A daytime garden reception is not after_dark; a speech at a reception with no stage is not main_stage; when in doubt, none.
+shot_type: the label the photo shows, by its key, one of the labels in the brief above and nothing else.
+event_kind: what kind of occasion the photo is from. {KIND_RULE}
+room: the label the photo plainly shows, by its key, printed on the post as its title; none unless it is plain from the photo itself. A speech at a reception with no stage is reception, not main_stage; when in doubt, none.
 summary: one short sentence on what kind of picture it is; never a person's name, title or identity, and no company, sponsor or venue name.
 Return JSON only, matching the schema."""
 
@@ -178,12 +162,11 @@ FINAL_SCHEMA = {
     "properties": {
         "personal_details": {"type": "array", "items": {"type": "string", "enum": list(DETAILS)}},
         "shot_type": {"type": "string", "enum": list(SHOT_TYPES)},
-        "costume": {"type": "boolean", "description": "a person in the frame is in costume (cosplay)"},
         "event_kind": {"type": "string", "enum": list(KINDS)},
         "room": {"type": "string", "enum": [*ROOMS, "none"]},
         "summary": {"type": "string", "description": "the kind of picture; no person's name, title or identity, no company or venue name"},
     },
-    "required": ["personal_details", "shot_type", "costume", "event_kind", "room", "summary"],
+    "required": ["personal_details", "shot_type", "event_kind", "room", "summary"],
     "additionalProperties": False,
 }
 
@@ -205,6 +188,61 @@ def his_shot_type(conn: sqlite3.Connection, photo_id: int) -> Optional[str]:
     """The kind of shot Chris set on this photo, if he set one."""
     row = db.one(conn, "SELECT shot_type FROM classifications WHERE photo_id=? AND shot_by='chris'", (photo_id,))
     return row["shot_type"] if row else None
+
+
+# Chris, 2026-11-08, after an award plaque came out as a portrait: the photos labelled before Awards and Green room were
+# labels are judged again ("yes" to re-labelling, about $4). Found by what the sorter or the final check already said a
+# photo shows; a photo whose label he set himself is never touched.
+RELABEL_WORDS = re.compile(r"\b(?:awards?|plaques?|troph(?:y|ies)|certificates?|green ?rooms?)\b", re.I)
+
+
+@dataclass
+class Relabel:
+    ids: list
+    by_label: dict
+    checked: int                    # how many of them carry a final check, which --mark clears
+    per_photo_usd: Optional[float]
+    undercounts: bool               # the price comes from rows that did not count the cached prompt (before 2026-11-09)
+    marked: bool = False
+
+    @property
+    def usd(self) -> Optional[float]:
+        return None if self.per_photo_usd is None else round(len(self.ids) * self.per_photo_usd, 2)
+
+
+def relabel(conn: sqlite3.Connection, *, mark: bool = False) -> Relabel:
+    """The photos whose sort or final check mentions an award, a plaque, a trophy, a certificate or a green room, by the
+    label they carry now, and what judging them again would cost at the sorter's own measured price (its rows in the
+    till over the last two weeks): from the sorts that read the cached prompt when the till has any, else from the older
+    rows, which under-count it (ai/spend.py). `mark` sends them to the sorter's queue (classifications.rejudge, the road
+    the 2026-10-29 re-sort took), approved photos first, through the till and CLASSIFY_BUDGET like any sort, and clears
+    their final checks: the sorter sees a 512-pixel thumbnail and would overwrite the label the final check gave from the
+    full photo, so the next draft that picks one, or the next site build, checks it again on the full photo."""
+    rows = db.rows(conn, "SELECT c.photo_id, c.shot_type, c.summary, f.summary AS checked, f.photo_id AS has_check "
+                         "FROM classifications c JOIN photos p ON p.id = c.photo_id LEFT JOIN final_checks f "
+                         "ON f.photo_id = c.photo_id WHERE p.trashed = 0 AND c.method IN ('ollama', 'vision') "
+                         "AND COALESCE(c.shot_by, '') != 'chris' AND c.rejudge = 0")
+    hits = [r for r in rows if RELABEL_WORDS.search(f"{r['summary'] or ''} {r['checked'] or ''}")]
+    by_label: dict = {}
+    for r in hits:
+        by_label[r["shot_type"] or "none"] = by_label.get(r["shot_type"] or "none", 0) + 1
+    since = (datetime.now(timezone.utc) - timedelta(days=14)).isoformat()
+    sorts = "FROM api_usage WHERE provider = 'anthropic' AND agent = 'scanner' AND detail LIKE '% classify' AND cost_usd > 0 AND ts >= ?"
+    # a sort that read the cached prompt: the steady price, a pass being one sort after another (one that wrote it, after a
+    # pause of five minutes, costs about four times as much and comes once a pass)
+    counted = db.one(conn, f"SELECT AVG(cost_usd) AS a {sorts} AND detail LIKE '% cache_read=%' "
+                           "AND detail NOT LIKE '% cache_read=0 %'", (since,))["a"]
+    older = db.one(conn, f"SELECT AVG(cost_usd) AS a {sorts}", (since,))["a"]
+    price = counted if counted is not None else older
+    found = Relabel([r["photo_id"] for r in hits], by_label, sum(1 for r in hits if r["has_check"] is not None),
+                    None if price is None else float(price), counted is None and older is not None)
+    if mark and found.ids:
+        conn.executemany("UPDATE classifications SET rejudge = 1 WHERE photo_id = ?", [(i,) for i in found.ids])
+        # the label the final check gave is cleared, the check itself kept: a draft or a post already holding the photo
+        # stays approvable (eligibility asks only that the check ran), and its next pick or site build labels it again
+        conn.executemany("UPDATE final_checks SET shot_type = NULL, room = NULL WHERE photo_id = ?", [(i,) for i in found.ids])
+        found.marked = True
+    return found
 
 
 # 2026-11-06: sorting every folder is about $88, more than was left of the month's cap. The paid sorter always stops with a
@@ -337,12 +375,10 @@ class ClaudeSorter:
             model=self.model,
             max_tokens=2000,
             output_config={"effort": "low", "format": {"type": "json_schema", "schema": SCHEMA}},
-            system=[{"type": "text", "text": SYSTEM, "cache_control": {"type": "ephemeral"}}],
+            system=house_brief.system(SYSTEM, cache=True),
             messages=[{"role": "user", "content": [jpeg_block(thumb), {"type": "text", "text": hint}]}],
         )
-        u = response.usage
-        spend.record(self.conn, self.agent, getattr(response, "model", None) or self.model,
-                     int(u.input_tokens or 0), int(u.output_tokens or 0), "classify")
+        spend.record_response(self.conn, self.agent, response, self.model, "classify")
         if response.stop_reason == "refusal":
             return None
         text = next((b.text for b in response.content if b.type == "text"), None)
@@ -370,7 +406,7 @@ class OllamaSorter:
     def classify(self, thumb: bytes, hint: str) -> Optional[dict]:
         r = self.post(f"{self.base}/api/chat", json={
             "model": self.model, "stream": False, "format": SCHEMA, "options": {"temperature": 0},
-            "messages": [{"role": "system", "content": SYSTEM},
+            "messages": [{"role": "system", "content": house_brief.prompt(SYSTEM)},
                          {"role": "user", "content": hint, "images": [base64.b64encode(jpeg_bytes(thumb)).decode("ascii")]}]})
         if getattr(r, "status_code", 200) >= 300:
             return None
@@ -530,9 +566,14 @@ vision_pass = sort_pass   # the name the first build used
 
 
 # ------------------------------------------------------------------------ the final check
+# what a refusal or an empty answer leaves: no detail, no label, no room, the kind not told
+NO_LABELS = {"personal_details": [], "shot_type": None, "event_kind": "unknown", "room": "none", "summary": ""}
+
+
 def look(conn: sqlite3.Connection, image: bytes, *, client=None, agent: str = "content") -> Optional[dict]:
-    """Claude's final look at one picture: the answer (personal_details, shot_type,
-    event_kind, summary), or None (no key, cap reached, refused, unreadable). Paid through the one till.
+    """Claude's final look at one picture: the answer (personal_details, shot_type, event_kind, room, summary), or None
+    when it could not look (no key, the cap reached). A refusal or an empty answer is NO_LABELS: Claude said nothing,
+    which labels nothing and vetoes nothing (2026-11-08: his approval is final). Paid through the one till.
     final_check stores it for a library photo; the website's uploaded hero (site/hero.py) keeps its own."""
     from ..core import runner
     if spend.cap_reached(conn):
@@ -554,28 +595,25 @@ def look(conn: sqlite3.Connection, image: bytes, *, client=None, agent: str = "c
         response = client.beta.messages.create(
             model=model, max_tokens=4000, betas=[FALLBACK_BETA], fallbacks="default", thinking={"type": "adaptive"},
             output_config={"effort": "medium", "format": {"type": "json_schema", "schema": FINAL_SCHEMA}},
-            system=[{"type": "text", "text": FINAL_SYSTEM}],
+            system=house_brief.system(FINAL_SYSTEM, cache=True),   # the brief and the task, the same on every check: cached
             messages=[{"role": "user", "content": [jpeg_block(image, 1568), {"type": "text", "text": "Check this photo."}]}],
         )
     except Exception:
         spend.release(conn, held)
         raise
-    u = response.usage
-    answered = getattr(response, "model", None) or model
-    spend.record(conn, agent, answered, int(u.input_tokens or 0), int(u.output_tokens or 0), "final check", reservation=held)
-    if response.stop_reason == "refusal":
-        return None
+    answered, _ = spend.record_response(conn, agent, response, model, "final check", reservation=held)
     text = next((b.text for b in response.content if b.type == "text"), None)
-    if not text:
-        return None
+    if response.stop_reason == "refusal" or not text:
+        return {**NO_LABELS, "model_used": answered, "refused": True}
     data = json.loads(text)
     data["model_used"] = answered
     return data
 
 
 def final_check(conn: sqlite3.Connection, photo_id: int, image: bytes, *, client=None, agent: str = "content") -> Optional[dict]:
-    """Claude's last look at one photo before it may be posted. Writes final_checks and returns the
-    answer, or None (refused, cap reached, unreadable): then the photo stays unpostable."""
+    """Claude's last look at one photo before it is posted: its labels, written to final_checks, and the answer. None
+    when Claude could not look (no key, the cap reached): then the photo waits for a check, as a post waits for its
+    caption. What the answer says never keeps the photo out (eligibility.py)."""
     data = look(conn, image, client=client, agent=agent)
     if data is None:
         return None
@@ -586,19 +624,21 @@ def final_check(conn: sqlite3.Connection, photo_id: int, image: bytes, *, client
     his = his_shot_type(conn, photo_id)
     if his:                                    # Chris set the kind of shot: his word stands, and is the room printed
         shot, room = his, (his if his in ROOMS else None)
+    # the check's own row: what it saw, the label and the room the post prints. Its readable details and kind of occasion
+    # are words for the photo, kept where they are read (classifications; the hero's card), not here (migration 0102).
     # possible_minor is a NOT NULL column from before 2026-10-15; no model is asked and nothing reads it (no age gate)
-    conn.execute("INSERT INTO final_checks (photo_id, possible_minor, personal_details, summary, model, checked_at, shot_type, event_kind, room) "
-                 "VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT(photo_id) DO UPDATE SET possible_minor=excluded.possible_minor, "
-                 "personal_details=excluded.personal_details, summary=excluded.summary, model=excluded.model, "
-                 "checked_at=excluded.checked_at, shot_type=excluded.shot_type, event_kind=excluded.event_kind, room=excluded.room",
-                 (photo_id, 0, json.dumps(data.get("personal_details") or []),
-                  (data.get("summary") or "")[:300], answered, db.utcnow(), shot, kind, room))
+    conn.execute("INSERT INTO final_checks (photo_id, possible_minor, summary, model, checked_at, shot_type, room) "
+                 "VALUES (?,?,?,?,?,?,?) ON CONFLICT(photo_id) DO UPDATE SET possible_minor=excluded.possible_minor, "
+                 "summary=excluded.summary, model=excluded.model, checked_at=excluded.checked_at, "
+                 "shot_type=excluded.shot_type, room=excluded.room",
+                 (photo_id, 0, (data.get("summary") or "")[:300], answered, db.utcnow(), shot, room))
     if shot:
         # Claude's word beats the local sorter's guess (2026-10-11: a stage shot called a portrait)
         conn.execute("UPDATE classifications SET shot_type=? WHERE photo_id=? AND COALESCE(shot_type, '') != ? "
                      "AND COALESCE(shot_by, '') != 'chris'", (shot, photo_id, shot))
     if kind != "unknown":
-        # and what kind of occasion it is (2026-10-11: a wedding on the website as the hero)
+        # and what kind of occasion it is, a label: it words the post and keeps To review to the work, and never keeps out a
+        # photo Chris used (2026-11-08)
         conn.execute("UPDATE classifications SET event_kind=?, is_convention=? WHERE photo_id=?",
                      (kind, 0 if kind in NOT_OFFERED_KINDS else 1, photo_id))
     return data

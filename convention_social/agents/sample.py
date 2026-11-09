@@ -11,8 +11,9 @@ drafted waits its turn, never lost). For each press this agent does what the dai
   (design_samples.stale), and none of its photos is on a post inside the repeat window by any road (used_lately,
   2026-10-15); else it says why and drafts nothing;
 - the same photos, fetched again at full size (the cache of the Drive original, else Drive, read only);
-- Claude's final check on every one (someone who may be under 18, a readable plate, a wedding) and eligibility; one
-  photo that fails drops the draft and says which and why (one gone would change the design);
+- Claude's final check on every one, for its labels (since 2026-11-08 nothing it says keeps out a photo Chris used),
+  and eligibility, his own decisions; one photo that fails drops the draft and says which and why (one gone would
+  change the design);
 - then agents/content.make_draft: the captions through the same writer and copy rules, the same renderer with the
   same design (the reel with the current music track, the carousel when the reel fails; a reel never goes out
   silent, so with no track it is refused), the art director's look, a queue row and the ping with Approve, and the
@@ -125,10 +126,10 @@ def draft_sample(ctx: runner.Context, rec, fetch: Callable[[dict], bytes], *, ch
         except Exception as e:  # noqa: BLE001  the API or the network, not the photo
             return _failed(ctx, rec, f"Claude's final check could not run ({type(e).__name__}: {e}); press Post this again in a few minutes")
         if verdict is None:
-            return _failed(ctx, rec, f"Claude could not look at photo {pid} (no key, the monthly cap, or a refusal: the Agents page says which)")
+            return _failed(ctx, rec, f"Claude could not look at photo {pid} (no key, or the monthly cap: the Agents page says which)")
         ok, no = eligibility.is_eligible(conn, pid)
         if not ok:
-            return _failed(ctx, rec, f"photo {pid} did not pass the final check: {no}")
+            return _failed(ctx, rec, f"photo {pid} cannot be posted: {no}")
         if verdict.get("shot_type") in classify.SHOT_TYPES:
             row["shot_type"] = verdict["shot_type"]          # what the photo shows, by the model that looked at it in full
         if verdict.get("event_kind") in classify.KINDS and verdict["event_kind"] != "unknown":
@@ -144,11 +145,9 @@ def draft_sample(ctx: runner.Context, rec, fetch: Callable[[dict], bytes], *, ch
             extra_meta={"source": "sample", "asap": True, "sample_folder": rec["folder"], "sample_id": rec["id"]},
             ping=(f"{ctx.cfg.brand_name}: the sample you chose, a post to approve",
                   f"The {design} idea, made into a post for today. Post now and it goes out at once, or follow the pace, or "
-                  "skip. Tap to see it."))
+                  "skip. Tap to see it."), his_choice=True)
     except content.PhotosTaken as e:
         return _failed(ctx, rec, f"{e}, and a photo goes out once inside the repeat window")
-    if art.get("verdict") == "reject":
-        return _failed(ctx, rec, f"the art director turned it back: {art.get('notes', '')}", queue_id=qid)
     _status(conn, rec["id"], "drafted", queue_id=qid)
     return line
 

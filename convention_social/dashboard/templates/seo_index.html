@@ -35,7 +35,7 @@
     <div style="flex:1;min-width:180px">
       <strong>{{ r.title }}</strong>
       <div class="muted">{{ r.slug }}</div>
-      <div class="muted">{{ (r.subject or '') }}{% if r.shot_type %}, {{ r.shot_type.replace('_',' ') }}{% endif %}.
+      <div class="muted">{{ (r.subject or '') }}{% if r.shot_type %}, {{ r.shot_type | label }}{% endif %}.
         {% if r.edited_at %}<span class="badge ok">edited by you</span>{% else %}written by {{ r.model }}{% endif %}</div>
     </div>
   </div>

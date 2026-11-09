@@ -32,6 +32,7 @@ import unicodedata
 from dataclasses import dataclass, replace
 from typing import Optional
 
+from .. import house_brief
 from ..ai import copy_rules, spend
 from ..ai import names as ai_names
 from ..ai.claude import FALLBACK_BETA, tidy
@@ -48,9 +49,12 @@ KEYWORDS_MIN, KEYWORDS_MAX = 5, 10
 PER_RUN_DEFAULT = 300
 MAX_DEPTH = 64
 
+# the kind of shot in the words a search and a screen reader read (the photo's alt text, title and file name); the label
+# printed on the site is his (house_brief.word, site/build.words_for)
 SHOT_WORDS = {
     "main_stage": "Main stage", "stage_panel": "Stage panel", "breakout": "Breakout session",
-    "portrait": "Portrait", "backstage": "Backstage", "candid": "Candid moment", "reception": "Reception",
+    "portrait": "Portrait", "backstage": "Backstage", "green_room": "Green room", "candid": "Candid moment",
+    "reception": "Reception", "awards": "Award presentation",
 }
 PEOPLE_SHOTS = {"portrait"}
 # Chris, 2026-10-12: no "fan conventions" anywhere public; a convention is a convention
@@ -85,7 +89,7 @@ ADDRESS = re.compile(
 HANDLE = re.compile(r"@[A-Za-z0-9_.]+")
 WORD = re.compile(r"[A-Za-z][A-Za-z'’]*")
 
-SYSTEM = """You write search text for one photo from an event and convention photography company's archive: a short title, alt text for people using screen readers, a one or two sentence description, and search keywords.
+SYSTEM = """You write search text for one photo from the company's archive: a short title, alt text for people using screen readers, a one or two sentence description, and search keywords.
 Write plain, short sentences in sentence case. Use commas and periods, never a dash of any kind.
 Rules:
 1. The alt text says literally what the photo shows, in under 125 characters. Do not start it with "image of" or "photo of".
@@ -181,7 +185,7 @@ def gather(conn: sqlite3.Connection, photo_id: int, cfg: Optional[config.Config]
                        "c.summary, c.view FROM photos p JOIN classifications c ON c.photo_id = p.id WHERE p.id=?", (photo_id,))
     if row is None or not row["subject"]:
         return None
-    subject = row["subject"]
+    subject = eligibility.work_of(row["subject"])          # a photo the sorter called "other" is event work (2026-11-08)
     # Chris, 2026-10-11: no public text says which event or who is in the photo (ai/names.py), so the
     # writers are never given the event's name or a credit; the calendar is read for the year and city
     event_name = ""
@@ -434,7 +438,7 @@ class ClaudeWriter:
         """Claude's raw answer as a dict (with '_model'), or None when it refused or answered nothing readable."""
         if spend.cap_reached(self.conn):
             raise CapReached("monthly AI spend cap reached")
-        common = dict(model=self.model, system=[{"type": "text", "text": SYSTEM, "cache_control": {"type": "ephemeral"}}],
+        common = dict(model=self.model, system=house_brief.system(SYSTEM, cache=True),
                       messages=[{"role": "user", "content": user_text(f)}])
         if self.model.startswith("claude-opus"):
             response = self.client.beta.messages.create(
@@ -445,10 +449,7 @@ class ClaudeWriter:
             # weekly run from 2026-10-12 to 10-19 failed on its first photo and every photo kept template text
             response = self.client.messages.create(
                 **common, max_tokens=1500, output_config={"format": {"type": "json_schema", "schema": SCHEMA}})
-        u = response.usage
-        answered = getattr(response, "model", None) or self.model
-        spend.record(self.conn, self.agent, answered, int(u.input_tokens or 0), int(u.output_tokens or 0),
-                     f"seo text photo {f.photo_id}")
+        answered, _ = spend.record_response(self.conn, self.agent, response, self.model, f"seo text photo {f.photo_id}")
         if response.stop_reason == "refusal":
             return None
         text = next((b.text for b in response.content if b.type == "text"), None)

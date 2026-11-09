@@ -128,14 +128,14 @@ def checked(conn: sqlite3.Connection, look: Optional[Callable[[bytes], Optional[
     rec = record(conn)
     if rec is None and look is not None:
         data = look(source().read_bytes())
-        if data is not None:
+        if data is not None and not data.get("refused"):       # Claude said nothing: nothing kept, the next build asks again
             details = eligibility.blocking_details(list(data.get("personal_details") or []), "event")
             kind = data.get("event_kind") if data.get("event_kind") in classify.KINDS else "unknown"
             notes = []
             if details:
                 notes.append("it shows " + ", ".join(map(str, details)))
             if kind in classify.NOT_OFFERED_KINDS:
-                notes.append(eligibility.NOT_OFFERED_KIND_WHY)
+                notes.append(f"its label for the occasion is {kind}")
             why = "your photo; Claude notes: " + "; ".join(notes) if notes else "your photo, seen by Claude"
             rec = {"sha": _sha(), "why": why, "kind": kind, "shot_type": data.get("shot_type") or "",
                    "summary": (data.get("summary") or "")[:200], "at": db.utcnow(), "notes": notes}

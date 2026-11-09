@@ -145,8 +145,8 @@ class Pieces(IsolatedCase):
             for word in ("your", "we ", "get ", "lit ", "properly", "every", "covered", "too"):
                 self.assertNotIn(word, line.lower(), (room, line))
             self.assertLessEqual(len(line.split()), 6, (room, line))
-        self.assertEqual(design_samples.ROOMS["portrait"], ("PORTRAIT", "Speakers and guests, between sessions."))
-        motion.check_copy(*design_samples.OTHER, motion.MotionCopy().words(), social=True)
+        self.assertEqual(design_samples.ROOMS["portrait"], ("PORTRAITS", "Speakers and guests, between sessions."))
+        motion.check_copy(*design_samples.UNCONFIRMED, motion.MotionCopy().words(), social=True)
         self.assertFalse((self.root / "x.jpg").exists())
 
 
@@ -235,13 +235,14 @@ class DesignSamples(IsolatedCase):
                                 "candid")):
             self.photo(n, st)
         picked = design_samples.pick(self.conn, 6)
-        rooms = [design_samples.ROOMS.get(r["shot_type"], design_samples.OTHER)[0] for r in picked]
+        rooms = [design_samples.ROOMS.get(r["shot_type"], design_samples.UNCONFIRMED)[0] for r in picked]
         self.assertEqual(len(picked), 6)
         self.assertEqual(len(set(rooms)), 6)                 # the second stage frame waits for a seventh place
 
-    def test_never_a_blocked_a_listed_or_a_detail_photo_and_an_age_flag_stops_nothing(self):
+    def test_never_a_blocked_a_listed_or_an_unapproved_photo_and_no_model_flag_stops_one_he_used(self):
         """Fewer good frames than asked for, so anything the filter lets through would be picked. Deliberate change,
-        2026-10-15 (no age gate): the photo flagged as maybe under 18 is now picked like any approved photo."""
+        2026-10-15 (no age gate): the photo flagged as maybe under 18 is now picked like any approved photo; 2026-11-08 (his
+        approval is final): so is the one with a readable plate."""
         for n, st in enumerate(("stage_panel", "backstage", "portrait")):
             self.photo(n, st)
         self.photo(10, "breakout", minor=1)
@@ -249,9 +250,9 @@ class DesignSamples(IsolatedCase):
         self.photo(14, "reception", clearance="inherit")     # never approved: Chris, "don't use it yet or at all"
         self.photo(12, "candid")
         db.insert(self.conn, "do_not_use", kind="photo", value="d12", reason="takedown", added_at=db.utcnow())
-        self.photo(13, "candid", details='["vehicle_plate"]')          # a name badge would be fine (2026-10-12); a plate is not
+        self.photo(13, "candid", details='["vehicle_plate"]')          # a label: it keeps out nothing he used
         picked = [r["drive_id"] for r in design_samples.pick(self.conn, 6)]
-        self.assertEqual(sorted(picked), ["d0", "d1", "d10", "d2"])
+        self.assertEqual(sorted(picked), ["d0", "d1", "d10", "d13", "d2"])
 
     def test_makes_every_still_the_carousel_and_one_page(self):
         for n, st in enumerate(("stage_panel", "backstage", "portrait", "breakout")):

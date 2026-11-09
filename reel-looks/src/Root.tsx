@@ -26,8 +26,8 @@ const DEFAULTS: ReelProps = {
   business: "Event Caliber", kicker: "event & conference photography", town: "DC · MD · VA", phone: "eventcaliber.com",
   cta: "Request a quote", accent: "#00E1FF", accent2: "#F3F3F1",
   photos: [], open: ["Every", "room."], openSub: "every moment.", line1: ["Step", "back."], line2: ["Then", "the room."],
-  stackLabel: "Stage · portraits · reception", marquee: "Seen", counter: { label: "Every moment", value: "1", unit: "take" },
-  words: ["Stage.", "Portrait.", "Reception."],
+  stackLabel: "Main stage · portraits · reception", marquee: "Seen", counter: { label: "Every moment", value: "1", unit: "take" },
+  words: ["Main stage.", "Portraits.", "Reception."],
 };
 
 export const RemotionRoot: React.FC = () => (

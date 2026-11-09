@@ -83,39 +83,60 @@ BRIEF_WORDS = "Each beat word must name what its own photo plainly shows; a word
 # Axis's three words are Chris's own for every portrait (reel_lines.FIXED_WORDS), not a room: the director judges the photos
 FIXED_BRIEF_WORDS = ("Its three beat words ({words}) are the photographer's own, the same on every reel in this look: a word "
                      "is a fault only where its own portrait plainly contradicts it.")
-# What each look puts on the frame on purpose, for the art director: it judges the photos and the words, not the design.
+# What each look puts on the frame on purpose, for the art director: it judges the words and the design, never the photos
+# (2026-11-08: his approval is final), and nothing named here is a fault. Each look's own elements that a picky eye could
+# take for one are named: the Darkroom reel was turned back three times (drafts 81, 88 and 89) for "an empty white cell
+# in position 1", "duplicate frames" and frames "underexposed to near black" on its contact sheet, which are the roll's
+# fogged leader, a photographer working a room, and his own photos as shot sitting in the film's black.
 ON_PURPOSE = {
     "powersoften": "the camera pulls back without a cut from the hero over one plane of the photographer's photos laid "
                    "edge to edge with small dark gaps, ring after ring, into a night map of the region; each beat word "
                    "sits in a dark band beside its own photo, the hook and lines in a dark strip at the top, a readout "
-                   "at the foot. Photos small and far off as the camera pulls back are the design.",
+                   "at the foot. Photos small and far off as the camera pulls back, the dark gaps between them and the "
+                   "dark map around the mosaic are the design.",
     "manifesto": "a constructivist poster: hard diagonals, cyan wedges and beams on white paper and black, big slanted "
                  "capitals; every photo whole at its own shape, beside the shapes; each beat word runs along the wedge "
-                 "that points at its own photo.",
-    "darkroom": "a darkroom under a red safelight: a contact sheet on a light box, the enlarger, a print developing in "
-                "from paper white in the tray, prints pegged on lines with a word pencilled on each print's border; the "
-                "red room around the prints and the white paper borders are the design.",
-    "titles": "film opening titles in cut paper: ragged bars of cyan and white paper on black, letters cut by hand; each "
-              "photo whole at its own shape, standing on its bar, its beat word on the bar beneath it.",
-    "section": "an architect's section drawing: a house cut through on drafting paper, every room the shape of its "
-               "photo, numbered callouts and a legend; the small photos in the drawing's rooms and the legend's numbers, "
-               "which tie each beat word to its room, are the design.",
+                 "that points at its own photo. Nothing sits level: the slanted words and shapes, photos of different "
+                 "sizes side by side and the bare paper and black around them are the design.",
+    "darkroom": "a darkroom under a red safelight. The cover is a contact sheet on a light box: a roll of twelve frames "
+                "in black film strips with their edge numbers. The first frame, top left, is the roll's fogged leader, "
+                "white fading to grey and empty on purpose, as the first frame of every roll is. The other eleven are "
+                "small prints of the photographer's own photos exactly as shot, the hero once in the middle of the third "
+                "strip and the other photos repeated, as he works a room; each sits whole in the film's black, so a dark or "
+                "narrow photo makes a dark frame. Then the enlarger, a print developing in from paper white in the tray, "
+                "and prints pegged on lines with a word pencilled on each print's border. The fogged leader, the repeated "
+                "frames, the film's black, the red room around the prints and the white paper borders are the design.",
+    "titles": "film opening titles in cut paper: ragged, hand cut bars of cyan and white paper on black, letters cut by "
+              "hand and set a little off their neighbours, bars that slide across and split the frame; each photo whole "
+              "at its own shape, standing on its bar, its beat word on the bar beneath it. The ragged edges, the uneven "
+              "letters, the bars and the black around the photos are the design.",
+    "section": "an architect's section drawing: a house cut through on drafting paper, the cut walls, floors and roof "
+               "solid black and hatched, every room the shape of its photo, numbered callouts and a legend. A room is "
+               "drawn empty in thin line until its photo is up in it, so empty rooms on the drawing are the design. The "
+               "small photos in the drawing's rooms and the legend's numbers, which tie each beat word to its room, are "
+               "the design. In the exploded view the photos hang apart below the hero on a dashed axis, skewed flat as "
+               "plates in an axonometric drawing, then snap together into the hero straight on: that skew is the design.",
     "splitscreen": "split screen: the frame divided into panels on a fine gutter, the photos whole in their panels, the "
                    "words on solid cyan, paper or black fields beside them; each beat word on the field beside its own "
-                   "photo.",
-    "weather": "a storm: dark sky, fog and blown leaves around the photos, thin rain streaks crossing them, slate bands "
-               "for the words; each beat word on the band beside its own photo. The rain crossing a photo is the "
-               "design; between the drops the photo is as shot.",
+                   "photo. Panels of solid colour with no photo, the gutters and photos of different sizes side by side "
+                   "are the design.",
+    "weather": "a storm: dark sky, fog, grain and blown leaves around the photos, thin rain streaks crossing them in "
+               "layers, slate bands for the words; each beat word on the band beside its own photo. The rain crossing a "
+               "photo is the design; between the drops the photo is as shot. The dark sky and the fog are around the "
+               "photos, never on them.",
     "stillness": "quiet paper and ink: the photos stand whole on a level line on warm paper, large serif words beside "
-                 "them, slow dissolves; each beat word stands beside its own photo.",
+                 "them, slow dissolves; each beat word stands beside its own photo. The cover is the intertitle, the hook "
+                 "alone on the paper with no photo. The wide empty paper around the photos is the design.",
     "chiaroscuro": "an old master's gallery in the dark: one warm light from above finds each photo and everything else "
                    "falls to near black, the photos graded warm and lit like paintings with a canvas weave, gilt lines "
-                   "and arches; each beat word under its own arched panel. The darkness, the warm grade and the pool of "
-                   "light on a photo are the design.",
+                   "and arches; each beat word under its own arched panel. The cover is a close detail of the hero in "
+                   "the beam, the start of a slow pull back to the whole photo, so its close crop is the design. The "
+                   "darkness, a photo half in shadow outside the pool of light, the warm grade and the canvas weave are "
+                   "the design.",
     "axis": "a black corridor on one cyan line: portraits in silver black and white, doors parting on the line, heavy "
             "white capitals on a black band across the photo, and at the climax one portrait floods back into colour; "
-            "each beat word across its own portrait. The black and white, the black band and the cyan line are the "
-            "design.",
+            "each beat word across its own portrait. The black and white until the climax, the black band across a "
+            "portrait, the dark corridor and the cyan line are the design.",
 }
 
 
@@ -156,15 +177,13 @@ def brief(look: str, *, card: bool = True, stills: Optional[int] = None) -> str:
     seen = ["its cover frame"] + (["the first photo on a 2:3 card"] if card else []) + \
            [f"{('one', 'two', 'three')[stills - 1]} frame{'s' if stills > 1 else ''} where its three beat words are on screen, "
             "each with its own photo"]
-    photos = ("The grade and the light on the photos are the look; a photo must still be sharp where it matters."
-              if look in GRADED else
-              "Nothing in the render changes a photo's colour or light: a featured photo that reads soft or dark is soft "
-              "or dark in the photo itself, and that is a fault.")
+    photos = ("The grade and the light on the photos are the look." if look in GRADED else
+              "Nothing in the render changes a photo's colour or light: each photo is as Chris shot and approved it.")
     words = (FIXED_BRIEF_WORDS.format(words=" ".join(reel_lines.FIXED_WORDS[look])) if look in reel_lines.FIXED_WORDS
              else BRIEF_WORDS)
     return (f"{1 + int(card) + stills} pictures of a {FRAMES[look] // FPS} second reel in the {NAMES[look]} look: "
-            f"{', '.join(seen[:-1])} and {seen[-1]}. In the reel {ON_PURPOSE[look]} {photos} A photo that does not belong "
-            f"is a fault, and so is a face cut by a crop. {words}")
+            f"{', '.join(seen[:-1])} and {seen[-1]}. In the reel {ON_PURPOSE[look]} {photos} No approved photo is a fault "
+            f"in itself; a face cut by a crop is. {words}")
 
 
 @dataclass

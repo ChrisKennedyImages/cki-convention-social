@@ -1,40 +1,49 @@
 """May this photo ever be posted? One function answers, and it fails closed.
 
-Two answers, both failing closed:
+HIS APPROVAL IS FINAL (Chris, 2026-11-08: "NOTHING IS PRIVATE because I have hand approved every photo! No one can
+override MY approvals and that is a law"; then "Yes, override everything"). What keeps a photo out is his alone: his
+Use (or Never use) on it, an excluded folder, the do-not-use list and the consent in his credits sheet. No model's
+answer about what a photo shows keeps it out once he has used it: not the kind of occasion (a wedding, a private
+occasion), not a readable detail, not a costume, not what a building frame shows. Those answers are labels: they word a
+post, arrange a reel and keep what he is offered on To review (dashboard/app.py) and the contact sheets
+(library/report.best) to the work, for the photos he has not decided on.
 
-  is_candidate()  may the daily picker consider it? (rules 1 to 6, with the
-                  sorter's details answer, Ollama or Claude)
-  is_eligible()   may it be POSTED? A candidate that also passed Claude's final
-                  check (final_checks: no blocking personal detail, not a wedding
-                  or a private occasion; a name badge or a name in the photo is
-                  fine, 2026-10-12). No age gate (Chris, 2026-10-15: his Approve
-                  is the check).
-                  The dashboard's Approve and the publisher's door ask this one.
+  is_candidate()  may the daily picker consider it? Rules 1 to 4.
+  is_eligible()   may it be POSTED? A candidate Claude's final check has looked at, so the post prints the label Claude
+                  gave it on the full photo (library/classify.final_check). The check never vetoes; what it says is the
+                  photo's label. The dashboard's Approve and the publisher's door ask this one.
 
 A photo is a candidate only when ALL of these hold:
-  1. it is still in Drive (not trashed) and is a postable image;
-  2. Chris cleared it: his own Use on the photo ('cleared'), and no folder above
-     it excluded. A folder never approves its photos (2026-11-02: "MANY of the
-     approved photos, I never approved": two folders approved whole had made
-     1,648 photos ready to use that he had never looked at);
-  3. a model sorted it (method ollama or vision; the free folder row is a no);
-  4. no readable personal detail (badge name, plate, screen, document) was seen;
-  5. nothing on the do-not-use list covers it: the photo, any folder above it,
-     or a person or handle credited on it;
-  6. no credit row for it (or its folders) records consent 'no'.
+  1. it is still in Drive (not trashed);
+  2. Chris cleared it: his own Use on the photo ('cleared'), and no folder above it excluded. A folder never approves its
+     photos (2026-11-02: "MANY of the approved photos, I never approved": two folders approved whole had made 1,648
+     photos ready to use that he had never looked at);
+  3. nothing on the do-not-use list covers it, and no credit row for it (or its folders) records consent 'no';
+  4. a model sorted it (method ollama or vision; the free folder row is a no), so it has a label to print.
 
-The publisher asks again at the door, right before anything leaves, so a
-takedown added after approval still stops the post.
+The publisher asks again at the door, right before anything leaves, so a takedown added after approval still stops the
+post.
 """
 from __future__ import annotations
 
-import json
 import sqlite3
 
 from ..core import db
 
 MAX_DEPTH = 64
 SORTED_METHODS = ("ollama", "vision")    # a model looked at it; 'folder' is the free guess from the path
+# The two kinds of work a photo is, wherever photos are drawn (posts, reels, samples, the site, the contact sheets, the
+# dashboard's lists): the building work the sorter called architecture, and event work, which is every other photo.
+# Chris, 2026-10-11: "Architecture images should be separated from event/convention photos". 2026-11-08 (his approval is
+# final): 24 photos he used were "other" to the sorter, a studio headshot on a coloured gradient among them (photo
+# 14833), and no event pool reached them; the dashboard had listed them as event work since 2026-10-11. SQL over
+# classifications c.
+WORK = {"event": "COALESCE(c.subject, '') != 'architecture'", "architecture": "c.subject = 'architecture'"}
+
+
+def work_of(subject) -> str:
+    """'architecture' or 'event', by the rule WORK writes in SQL."""
+    return "architecture" if subject == "architecture" else "event"
 
 
 def folder_chain(conn: sqlite3.Connection, folder_id: str | None) -> list[sqlite3.Row]:
@@ -48,13 +57,6 @@ def folder_chain(conn: sqlite3.Connection, folder_id: str | None) -> list[sqlite
         out.append(row)
         folder_id = row["parent_id"]
     return out
-
-
-# Chris, 2026-10-11: "We are going to NOT do ANY COSPLAY ... erase that from everything". The sorter still
-# tells costume photos apart, only so that none is ever used or offered for review.
-NOT_OFFERED_WHY = "a costume photo: Event Caliber does no cosplay"
-NOT_OFFERED_KINDS = ("wedding", "private")     # Chris, 2026-10-11: "not a wedding!"; Event Caliber does conventions and conferences
-NOT_OFFERED_KIND_WHY = "a wedding or a private occasion: Event Caliber photographs conventions and conferences"
 
 
 def copies_of(conn: sqlite3.Connection, photo_id: int) -> list[int]:
@@ -171,20 +173,21 @@ def do_not_use_photos(conn: sqlite3.Connection) -> set[int]:
             if r["drive_id"] in photo_ids or r["picture"] in pictures or (folder_ids and covered(r["folder_id"]))}
 
 
-# A street number or a street name on a building Chris photographed is not a personal detail:
-# they are public buildings and he holds releases for them (Chris, 2026-10-10). On a photo of
-# people it still blocks, because there the number says where somebody lives.
+# What keeps a photo off what Chris is offered to decide on (To review, the contact sheets), never off what he used
+# (2026-11-08: his approval is final). A street number or a street name on a building he photographed is not a personal
+# detail: they are public buildings and he holds releases for them (Chris, 2026-10-10). On a photo of people it is,
+# because there the number says where somebody lives.
 ADDRESS_DETAILS = frozenset({"house_number", "street_sign"})
 # Chris, 2026-10-12: "If they're wearing a name badge or there's a name in the photo it's fine to
 # use." A name badge, and the screens and documents the sorter flags at an event (a book cover, a
-# program, a slide, signage: a name or a title), never keep a photo out. A plate, a house number or
-# a street sign on a photo of people still does: those say where somebody lives.
+# program, a slide, signage: a name or a title), are not one. A plate, a house number or a street sign
+# on a photo of people is: those say where somebody lives.
 NAME_DETAILS = frozenset({"badge_name", "document", "screen"})
 
 
 def blocking_details(details: list, subject: str | None) -> list:
-    """The readable details that stop this photo: never a name (NAME_DETAILS); addresses are kept
-    out of the answer for architecture, and only for architecture."""
+    """The readable details that keep a photo he has not decided on off what he is offered: never a name
+    (NAME_DETAILS); addresses are kept out of the answer for architecture, and only for architecture."""
     out = [d for d in details if d not in NAME_DETAILS]
     if subject != "architecture":
         return out
@@ -192,13 +195,13 @@ def blocking_details(details: list, subject: str | None) -> list:
 
 
 def building_blocked(cls: sqlite3.Row) -> str:
-    """Why this building frame may never be used, or "".
+    """Why this building frame is not offered to him on a contact sheet, or "" (once he uses one, it is his).
 
     Chris, 2026-10-10, after the first building sheet: the architecture work is buildings, never
     rooms. No empty room, no bathroom, no closet, nothing residential. Bars are fine anywhere.
     The library's building work is largely commissioned real estate photography of apartments, so
     most of it is exactly what he ruled out. Fails closed: a frame sorted before these questions
-    existed has space NULL and is not used until it is sorted again.
+    existed has space NULL and is not offered until it is sorted again.
     """
     from . import classify
     space = cls["space"]
@@ -231,25 +234,9 @@ def is_candidate(conn: sqlite3.Connection, photo_id: int) -> tuple[bool, str]:
     for c in credits_for(conn, photo):
         if c["consent"] == "no":
             return False, "the credits sheet says no consent"
-    cls = db.one(conn, "SELECT method, personal_details, subject, space, residential, empty_room, shot_type, costume, event_kind "
-                       "FROM classifications WHERE photo_id=?", (photo_id,))
+    cls = db.one(conn, "SELECT method FROM classifications WHERE photo_id=?", (photo_id,))
     if cls is None or cls["method"] not in SORTED_METHODS:
         return False, "not sorted yet"
-    if cls["costume"]:
-        return False, NOT_OFFERED_WHY
-    if cls["event_kind"] in NOT_OFFERED_KINDS:
-        return False, NOT_OFFERED_KIND_WHY
-    if cls["subject"] == "architecture":
-        why = building_blocked(cls)
-        if why:
-            return False, why
-    try:
-        details = json.loads(cls["personal_details"] or "[]")
-    except ValueError:
-        return False, "personal details check unreadable"
-    details = blocking_details(details, cls["subject"])
-    if details:
-        return False, "shows personal details: " + ", ".join(map(str, details))
     return True, "ok"
 
 
@@ -257,28 +244,14 @@ def is_eligible(conn: sqlite3.Connection, photo_id: int) -> tuple[bool, str]:
     ok, why = is_candidate(conn, photo_id)
     if not ok:
         return ok, why
-    fc = db.one(conn, "SELECT personal_details, event_kind FROM final_checks WHERE photo_id=?", (photo_id,))
-    if fc is None:
+    if db.one(conn, "SELECT 1 FROM final_checks WHERE photo_id=?", (photo_id,)) is None:
         return False, "not given the final check yet"
-    if fc["event_kind"] in NOT_OFFERED_KINDS:
-        return False, "the final check says " + NOT_OFFERED_KIND_WHY
-    try:
-        details = json.loads(fc["personal_details"] or "[]")
-    except ValueError:
-        return False, "final check unreadable"
-    subject = db.one(conn, "SELECT subject FROM classifications WHERE photo_id=?", (photo_id,))
-    details = blocking_details(details, subject["subject"] if subject else None)
-    if details:
-        return False, "the final check found personal details: " + ", ".join(map(str, details))
     return True, "ok"
 
 
-def needs_kind_check(conn: sqlite3.Connection, photo_id: int) -> bool:
-    """True when Claude has not yet said what kind of occasion this event photo is from: no final check,
-    or one from before the question existed (2026-10-11). The site build and every live draft ask then."""
-    row = db.one(conn, "SELECT c.subject, f.event_kind FROM classifications c LEFT JOIN final_checks f ON f.photo_id = c.photo_id "
-                       "WHERE c.photo_id=?", (photo_id,))
-    return bool(row) and row["subject"] != "architecture" and row["event_kind"] is None
+def needs_final_check(conn: sqlite3.Connection, photo_id: int) -> bool:
+    """True when Claude's final check has not looked at this photo yet: the site build asks then, up to its limit."""
+    return db.one(conn, "SELECT 1 FROM final_checks WHERE photo_id=?", (photo_id,)) is None
 
 
 def eligible_photo_ids(conn: sqlite3.Connection, ids) -> list[int]:

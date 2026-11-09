@@ -90,7 +90,6 @@ VENUE = frozenset("venue building architecture architectural interior exterior h
 SAME = {"headshot": "portrait", "vendor": "exhibition", "booth": "exhibition"}
 
 SYSTEM = """You write one new page for eventcaliber.com, for a search people make often in Google that no page of the site answers yet.
-Event Caliber is Chris and Nic Kennedy, two brothers who photograph conventions, conferences, galas and award dinners. They are based in Washington, DC and travel nationwide.
 The page stands under Coverage, beside the site's pages for each room of an event (the_business.coverage), and it is about what the searches ask for (what_they_ask_for). Write:
 heading: the page's headline and its row in the coverage list, a few plain words, like "Main stage and keynotes" or "Portraits".
 name: what the page is about, written the way the site's page titles are, like "Main stage and keynote photography". The site writes the page title as the name, then ", Washington, DC", then " | Event Caliber". It must carry every word of what_they_ask_for, singular or plural.

@@ -1,27 +1,29 @@
-"""Art director: looks at every rendered post before Chris does, and reworks what is off.
+"""Art director: looks at every rendered post before Chris does, and reworks what is off in the design.
 
-Inside the daily draft (content.py calls direct()), Claude looks at the
-rendered designs, small, side by side, and judges them the way a photo editor
-would: is a head, a hand or a face cut by the crop, is the subject placed
-well, can the type and the credit be read against the photo, is the photo
-sharp where it matters, does it look like the brand. The verdict is one of:
+Inside the daily draft (content.py calls direct()), Claude looks at the rendered designs, small, side by side, and judges
+the design that carries the photos: does each word name what its own photo shows, is a head, a hand or a face cut by the
+crop, is the subject placed well, can the type and the credit be read against the photo, is the look executed as
+designed. It never judges the photos themselves. Chris, 2026-11-08: "NOTHING IS PRIVATE because I have hand approved
+every photo! No one can override MY approvals and that is a law"; then "Yes, override everything". Every photo here is
+one he used, so a dark, soft or black and white photo, its subject or its quality is never a reason to turn a post
+back, and neither is a frame the look leaves empty or white on purpose. The verdict is one of:
 
   pass    goes to Chris's queue as it is
   redo    the crop is the problem: it gives a new focus point, the post is
           rendered again and looked at again (at most MAX_REDOS times)
-  reject  the photo itself does not hold up: the draft is turned back with
-          the reason, and the content agent tries the next photo
+  reject  the design does not work with these photos as arranged and no crop
+          fixes it (a word that does not name its photo, the look not executed
+          as designed): the draft is turned back with the reason, and the
+          content agent draws the day again in another arrangement
 
-Before it looks it is told what it is looking at (the brief): the design,
-and for a reel its style and what the style puts on the frame on purpose
-(render/reels3d.brief). Post 33 (2026-10-24), a Loop reel, was turned back
-for "a large dark circular artifact over the faces": the loop's own glass,
-which Chris approved as the style. Told, the director passes the glass and
-still turns back a cut face, a soft or dark frame, a wrong photo.
+Before it looks it is told what it is looking at (the brief): the design, and for a reel its style and what the style
+puts on the frame on purpose (render/reels3d.brief, render/reel_looks.brief). Post 33 (2026-10-24), a Loop reel, was
+turned back for "a large dark circular artifact over the faces": the loop's own glass, which Chris approved as the
+style; the Darkroom reel three times for "an empty white cell in position 1", the look's fogged first frame. And before
+everything it reads the house brief (house_brief.py): the company, its labels and that his approval is final.
 
-Its notes, and its line on each picture, ride on the draft for Chris to
-read. Dry run: no paid look; the draft says so. A refusal or a missing
-answer never blocks: the draft goes to Chris marked "not reviewed".
+Its notes, and its line on each picture, ride on the draft for Chris to read. Dry run: no paid look; the draft says
+so. A refusal or a missing answer never blocks: the draft goes to Chris marked "not reviewed".
 """
 from __future__ import annotations
 
@@ -34,9 +36,10 @@ from typing import Callable, Optional
 
 from PIL import Image
 
+from .. import house_brief
 from ..ai import claude as claude_mod
 from ..ai import spend
-from ..core import config, db, runner, secrets
+from ..core import config, runner, secrets
 from ..render.photo import LINKEDIN_PHOTO
 
 MODEL = "claude-opus-5"
@@ -44,15 +47,15 @@ MAX_REDOS = 2
 EDGE = 900
 STILLS = {".jpg", ".jpeg", ".png"}   # a reel is judged by its cover and stills, never the mp4 itself
 
-SYSTEM = """You are the art director for a photography company's social posts. You see the post as rendered, and the message says what you are looking at: the design, and for a reel its style and what that style puts on the frame on purpose. What the message says the design does is never a fault; nothing else is the design, so do not excuse a soft or dark photo as a transition or an effect. A fault in a photo is one wherever it shows.
-Look at every picture in turn, as a picky photo editor would:
-1. Crop: is anyone's head, face, hands or feet cut awkwardly, or is the subject jammed against an edge?
-2. Placement: is the main subject well placed for the format?
-3. Legibility: can the small text and the logo at the bottom be read against the photo?
-4. Quality: is the photo sharp where it matters and well exposed?
-5. Brand: does it look clean and deliberate?
-pictures: one short line per picture, in the order given, saying what it shows and any fault in it.
-verdict: for the weakest picture. "pass" if it is ready; "redo" if a different crop would fix it (give focus_x and focus_y between 0 and 1: the point of the original photo the crop should center on); "reject" if a photo itself is not good enough.
+SYSTEM = """You are the art director for the company's social posts. You see the post as rendered, and the message says what you are looking at: the design, and for a reel its style and what that style puts on the frame on purpose. What the message says the design does is never a fault.
+Every photo in the post is one Chris approved by hand, and his approval is final: you never rule an approved photo unfit, and you never turn a post back because of a photo itself, its darkness, black and white, sharpness, exposure, subject or quality, or for a frame the design leaves empty or white on purpose. You judge the design that carries the photos, every picture in turn:
+1. Words: does each word on the post name what its own photo plainly shows?
+2. Crop: is anyone's head, face, hands or feet cut awkwardly, or is the subject jammed against an edge?
+3. Placement: is the main subject well placed for the format?
+4. Legibility: can the words, the small text and the logo at the bottom be read against the photo?
+5. The look: is it executed as designed, clean and deliberate?
+pictures: one short line per picture, in the order given, saying what it shows and any fault of the design in it.
+verdict: for the weakest picture. "pass" if it is ready; "redo" if a different crop would fix it (give focus_x and focus_y between 0 and 1: the point of the original photo the crop should center on); "reject" only when the design does not work with these photos as arranged and no crop fixes it (a word that does not name its own photo, the look not executed as designed), so the post is drawn again in another arrangement. Never "reject" for a photo itself.
 notes: one or two short plain sentences for the photographer, naming the picture a fault is in. No dashes. Return JSON only."""
 
 SCHEMA = {
@@ -99,16 +102,14 @@ def look(conn: sqlite3.Connection, paths: list[Path], *, brief: str, client=None
         response = client.beta.messages.create(
             model=model, max_tokens=3000, betas=[claude_mod.FALLBACK_BETA], fallbacks="default", thinking={"type": "adaptive"},
             output_config={"effort": "medium", "format": {"type": "json_schema", "schema": SCHEMA}},
-            system=[{"type": "text", "text": SYSTEM, "cache_control": {"type": "ephemeral"}}],
+            system=house_brief.system(SYSTEM, cache=True),
             messages=[{"role": "user", "content": content}])
     except Exception as e:  # noqa: BLE001  the API or the network: the draft goes to Chris not reviewed, said once, never a dead run
         spend.release(conn, held)
         runner.record_error_once(conn, agent, "art_director",
                                  f"The art director could not look ({type(e).__name__}: {e}); the draft goes to Chris not reviewed.")
         return None
-    u = response.usage
-    spend.record(conn, agent, getattr(response, "model", None) or model, int(u.input_tokens or 0), int(u.output_tokens or 0), "art review",
-                 reservation=held)
+    spend.record_response(conn, agent, response, model, "art review", reservation=held)
     text = next((b.text for b in response.content if b.type == "text"), None)
     if response.stop_reason == "refusal" or not text:
         return None
@@ -120,18 +121,7 @@ def look(conn: sqlite3.Connection, paths: list[Path], *, brief: str, client=None
     return data
 
 
-# Chris, 2026-11-01 evening, asked whether LinkedIn should skip photos where an organization's name or logo is prominent:
-# "Yes, skip on LinkedIn". (A public-figure skip ruled the same day was withdrawn that night: "It can show a public figure!")
-# The art director judges a photo once, by looking: the model is told to name no organization and no one, and nothing here
-# compares names. The answer is stored on the photo (photos.prominent_logo, with when) and never asked again.
-LOGO_QUESTION = ("Is an organization's name or logo prominent in this photograph: large, central or clearly readable, as on a "
-                 "banner, a backdrop, a step-and-repeat, a lectern sign, a screen or a shirt? A small badge, a distant sign or a "
-                 "blurred word in the background is not prominent.")
-JUDGE_SYSTEM = """You look at one photograph for a photography company and answer the one question you are asked, judging only by what the picture shows. Never write a name, a title, who anyone is, or which organization it is. Return JSON only."""
-LOGO_SCHEMA = {"type": "object", "properties": {"prominent_logo": {"type": "boolean"}}, "required": ["prominent_logo"],
-               "additionalProperties": False}
-LOGO_SKIP = "an organization's name or logo is prominent in the photo; LinkedIn posts avoid those (Chris, 2026-11-01)"
-WAIT = "the photo has not been judged yet for a prominent name or logo; LinkedIn waits (the next live run with budget judges it)"
+JUDGE_SYSTEM = """You look at one photograph for the company and answer the one question you are asked, judging only by what the picture shows. Never write a name, a title, who anyone is, or which organization it is. Return JSON only."""
 
 
 SUBJECT_QUESTION = ("Is the one main person in this photograph clearly a woman, clearly a man, or is it unclear (no single main person, "
@@ -158,38 +148,17 @@ def _ask(conn: sqlite3.Connection, image, question: str, schema: dict, *, client
         response = client.beta.messages.create(
             model=model, max_tokens=1500, betas=[claude_mod.FALLBACK_BETA], fallbacks="default", thinking={"type": "adaptive"},
             output_config={"effort": "low", "format": {"type": "json_schema", "schema": schema}},
-            system=[{"type": "text", "text": JUDGE_SYSTEM}],
+            system=house_brief.system(JUDGE_SYSTEM),
             messages=[{"role": "user", "content": [_block(image), {"type": "text", "text": question}]}])
     except Exception as e:  # noqa: BLE001  the API or the network: no answer, said once
         spend.release(conn, held)
         runner.record_error_once(conn, agent, "photo_judgement", f"The {what} could not run ({type(e).__name__}: {e}).")
         return None
-    u = response.usage
-    spend.record(conn, agent, getattr(response, "model", None) or model, int(u.input_tokens or 0), int(u.output_tokens or 0), what,
-                 reservation=held)
+    spend.record_response(conn, agent, response, model, what, reservation=held)
     text = next((b.text for b in response.content if b.type == "text"), None)
     if response.stop_reason == "refusal" or not text or not text.strip().startswith("{"):
         return None
     return json.loads(text)
-
-
-def prominent_logo(conn: sqlite3.Connection, photo_id: int, image, *, client=None, agent: str = "content") -> Optional[bool]:
-    """Is an organization's name or logo prominent in this photo? The stored answer when the photo has one; else one look
-    through the till, stored on the photo with the time and never asked again. `image`: the photo's bytes or its file.
-    None when it is not judged and cannot be now: then the photo does not go to LinkedIn until it is
-    (agents/publisher.linkedin_hold)."""
-    row = db.one(conn, "SELECT prominent_logo FROM photos WHERE id=?", (photo_id,))
-    if row is None:
-        return None
-    if row["prominent_logo"] is not None:
-        return bool(row["prominent_logo"])
-    data = _ask(conn, image, LOGO_QUESTION, LOGO_SCHEMA, client=client, agent=agent, what="photo judgement")
-    answer = data.get("prominent_logo") if data else None
-    if not isinstance(answer, bool):
-        return None                      # not the answer asked for: not judged, nothing stored
-    conn.execute("UPDATE photos SET prominent_logo=?, prominent_logo_at=? WHERE id=? AND prominent_logo IS NULL",
-                 (int(answer), db.utcnow(), photo_id))
-    return answer
 
 
 def subject_of(conn: sqlite3.Connection, image, *, client=None, agent: str = "content") -> Optional[str]:
