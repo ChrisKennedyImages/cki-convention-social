@@ -3006,3 +3006,50 @@ re-judge waits until 2026-11-19 for budget reasons, and nothing is judged or sor
   dark backdrop), on the home page as Portraits, would read Event photography after the next build.
 - The brief's Portraits line ("a posed group off the stage with no award in hand") stays as it is; it changes with the
   re-judge.
+
+## 2026-11-09: no picture twice in a 3D reel
+
+Chris chose on 2026-11-09 to fix the five 3D styles too. While the ten looks are off, every daily reel draft is one of
+them, and they showed pictures again: the wall cycled 28 photos over its 93 other tiles, the loop laid about 30 over 77
+cells, and the ring's cascade took cards round from the bottom of its column to the top (#76 showed one panel photo at
+8.7 s and again at 12.7 s; it was pulled from Buffer). His words of 2026-11-08, night, hold here as in the looks: "I need
+the agents to know this shit!"
+
+- **Each style shows every picture once, and takes exactly as many fillers as it shows** (`render/reels3d.fillers`,
+  `fillers_wanted`; each style refuses props of another count, so a reel short of a picture is never made by showing one
+  again, and the render refuses it first):
+  - Wall: every tile that comes into the frame is a picture of its own, 63 in all (the post's photos on the hero tiles,
+    57 to 59 fillers); a tile never in the frame is not drawn. A tile that drifts out and comes back into view when the
+    camera backs away for the close stays dark under the end card.
+  - Ring: 30 cards, the post's photos then fillers. The cascade falls once: no card is taken round, and each column
+    starts its fall with its highest card inside the frame, so no card rises out of the top and falls back in (the hero
+    among them: it is on screen from the ring to its rest).
+  - Loop: the grid lays only the cards that come into the frame (`reels3d/src/loopGrid.ts`): each visited card on its spot
+    (the fourth as near its spot as the cards between allow), each row reaching out card by card while a card there
+    would come into the frame; every card a picture of its own, the fifth and sixth photo among them; 12 to 26 fillers,
+    as the photos' shapes make (`reels3d/loop-fillers.mjs`). Motion, timing, the loupe and the four visits are as
+    approved.
+  - Orbit: the hook's spin turns every card past the front once or twice before its beat; each of those flashes shows a
+    filler of its own (6, 8 or 9 for 4, 5 or 6 photos), a card shows its photo on its pass at its beat only, and a pass
+    after it nothing (the face dark), so the close's turn brings back no picture. Motion as approved.
+  - Gallery: a print hangs dark (its frame, no picture) until the camera swoops to it, and dark again once passed; the
+    close shows the room's frames dark but the last print. Motion as approved.
+- **Fillers** are drawn by the wall's rule (`reels3d.wall_picks`: in rotation, one per room per shoot, never the post's
+  own, a copy of one, a frame of its moments, a photo another open post holds, nor a portrait of other than one person),
+  and recorded on the wall's record only once the reel is made, the ones it showed.
+- **The 3D card check** (`ccs reel-check STYLE`, `render/reel_check.check_style`), numbered cards in the literal sense:
+  each slot at each place a style draws it gets a number (`reels3d/src/slots.ts`), and each render shows the white card of
+  every place whose number has one bit set, then the same bit cleared, so 2 x bits renders see every place. A card hidden
+  behind a nearer card while it stays in the frame is one pass, by the style's own geometry (the ring's next card sliding
+  over it, the wall's tiles behind the lifted photo); a card that leaves the frame and comes back is two (the old ring's
+  wrap fails it). Passing styles are recorded in `reels3d/card-checks.json`, and CI (`tests/test_reels3d.py`) fails a style
+  changed without a pass.
+- **Loop's grid is one still plane** (the coordinator's ruling, 2026-11-09, pending Chris): the camera passing back over
+  a card's cell, unchanged on the grid, is one picture in one place, not a second use; a picture in two cells fails the
+  check, and no visited photo is also on the grid elsewhere. The alternative, named for him: each pass of a cell through
+  the frame a picture of its own (about 7 more fillers; cells would change picture while off screen).
+- **For him to rule on, Loop's frame map** (the card check's cards, six photos): 7 of its 28 cards scroll out of the
+  frame and back in as the grid slides between the visits. The first visited photo is on screen 0.00-6.57 s and its
+  edge again 8.80-10.13 s; the fourth visited photo at the frame's edge 0.00-1.20 s and again from 8.63 s for its visit;
+  the sixth photo, in the grid, 0.00-3.77 s and from 5.87 s; four fillers likewise (0.00-1.23 and 3.03-3.83 s, 3.30-3.50
+  s and from 6.03 s, 0.00-3.10 s and from 8.80 s, 6.60-7.20 and 8.53-9.50 s).
