@@ -18,7 +18,7 @@
   {# each tap comes back to this same photo (#p<id>), never to the top of a long folder #}
   <div class="card{% if p.clearance == 'blocked' %} off{% endif %}" id="p{{ p.id }}" style="padding:8px;margin:0">
     <img src="/media/thumb/{{ p.id }}" loading="lazy" alt="">
-    <div class="muted" style="margin-top:6px">{{ (p.shot_type or '').replace('_',' ') }}{% if p.quality %} q{{ p.quality }}{% endif %}</div>
+    <div class="muted" style="margin-top:6px">{{ p.shot_type | label }}{% if p.quality %} q{{ p.quality }}{% endif %}</div>
     <span class="badge {{ 'ok' if p.eligible[0] else 'blocked' }}">{{ 'ready to pick' if p.eligible[0] else p.eligible[1] }}</span>
     <div class="row" style="margin-top:6px">
     {% for state, label, cls in ([('inherit', 'Put back', '')] if p.clearance == 'blocked'

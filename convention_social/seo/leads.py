@@ -44,7 +44,6 @@ WORD = re.compile(r"[a-z0-9'’]+")
 TOKEN = re.compile(r"[A-Za-z][A-Za-z'’]*|\d+")
 
 SYSTEM = """You reword the lead sentence of one page of eventcaliber.com: the plain sentence under the page's headline.
-Event Caliber is Chris and Nic Kennedy, two brothers who photograph conventions, conferences, galas and award dinners. They are based in Washington, DC and travel nationwide.
 People searching Google for the search given find this page just off the first page of results. Reword the lead so it works the words of that search in, naturally, the way a person writes them, and still says truthfully what the page is about.
 Rules:
 1. Keep the lead's meaning and as many of its own words as you can; change only what working the search in needs. One or two plain, short sentences in sentence case.

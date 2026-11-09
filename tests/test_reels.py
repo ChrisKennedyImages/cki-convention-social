@@ -334,8 +334,8 @@ class Saturday(IsolatedCase):
                       empty_room=0, sharp=1, light=4, moment=4, shot_type=room, classified_at=now)
             confirmed = {"stage_panel": "main_stage", "backstage": "backstage", "portrait": "portrait"}.get(room)
             if confirmed:                    # the final check confirmed the room, so the reel may name it (2026-10-15)
-                db.insert(self.conn, "final_checks", photo_id=pid, possible_minor=0, personal_details="[]", summary="ok",
-                          model="t", checked_at=now, shot_type=room, event_kind="business", room=confirmed)
+                db.insert(self.conn, "final_checks", photo_id=pid, possible_minor=0, summary="ok",
+                          model="t", checked_at=now, shot_type=room, room=confirmed)
             self.ids[did] = pid
         self.reels = []
         for fake in (mock.patch.object(reels3d, "render", self.fake_reel()), mock.patch.object(reels3d, "stills", self.fake_stills)):
@@ -395,7 +395,7 @@ class Saturday(IsolatedCase):
         self.assertEqual(len(self.reels), 1)
         kind, rooms, audio = self.reels[0]
         self.assertEqual((kind, audio), (meta_["reel"], track))
-        self.assertEqual(sorted(rooms[:4]), ["BACKSTAGE", "EVENT PHOTOGRAPHY", "MAIN STAGE", "PORTRAIT"],
+        self.assertEqual(sorted(rooms[:4]), ["BACKSTAGE", "EVENT PHOTOGRAPHY", "MAIN STAGE", "PORTRAITS"],
                          "one photo per room first; a room repeats only after every room has had one; a room is named "
                          "only when the final check confirmed it (2026-10-15), the rest say EVENT PHOTOGRAPHY")
         self.assertIn(ids[0], (self.ids["e1"],) if rooms[0] == "EVENT PHOTOGRAPHY" else (self.ids["s1"], self.ids["s2"]),
@@ -499,20 +499,22 @@ class Saturday(IsolatedCase):
         [(images, told)] = eye.looks
         self.assertEqual(len(images), 4, "the cover, the 2:3 card and the two stills; never the mp4")
         self.assertEqual(told, reels3d.brief("loop") + "\n\nReview this post.")
-        for words in ("reel in the loop style", "oval of liquid glass", "not a defect", "soft or dark in the photo itself"):
+        for words in ("reel in the loop style", "oval of liquid glass", "not a defect", "never a fault in itself"):
             self.assertIn(words, told)
 
-    def test_told_what_the_glass_is_the_art_director_still_turns_back_a_bad_photo(self):
+    def test_told_what_the_glass_is_the_art_director_still_turns_back_a_word_that_does_not_name_its_photo(self):
+        """Since 2026-11-08 it never turns a post back for a photo itself (his approval is final): a design fault, such
+        as a word that does not name its own photo, still draws the day again in another arrangement."""
         self.with_music()
-        eye = Eye([say("reject", notes="The second still is soft on the faces and underexposed."), say("pass")])
+        eye = Eye([say("reject", notes="The word under the second still does not name what that photo shows."), say("pass")])
         with mock.patch.object(content, "reel_style", lambda conn, rng=None, **kw: "loop"):
             line = content.draft_one(self.live(), self.fetch, now=FRIDAY, check_client=FinalClient({}), art_client=eye)
         self.assertIn("turned back photo", line)
         rows = self.queue()
         self.assertEqual(rows[0]["status"], "rejected")
-        self.assertIn("soft on the faces", rows[0]["last_error"])
+        self.assertIn("does not name what that photo shows", rows[0]["last_error"])
         self.assertEqual(json.loads(rows[0]["rule_report"])["art"]["verdict"], "reject")
-        self.assertIn("reel in the loop style", eye.looks[0][1], "it was told, and said no to the photo, not the glass")
+        self.assertIn("reel in the loop style", eye.looks[0][1], "it was told, and said no to the word, not the glass")
 
     def test_a_reel_that_fell_back_to_a_carousel_is_briefed_as_a_carousel(self):
         self.with_music()

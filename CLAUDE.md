@@ -15,6 +15,10 @@ FOUNDER_DECISIONS.md is the source of truth. Read it first.
   use, do not send".
 - **The photo library is read only.** The suite lists and downloads; it never
   writes to Drive. Only the `drive.readonly` scope is ever requested.
+- **HIS APPROVAL IS FINAL.** A photo Chris cleared is never kept out by any AI
+  judgment of what it shows; the checks label and arrange, they do not veto
+  (his law, 2026-11-08: "No one can override MY approvals and that is a law";
+  "Yes, override everything"; `library/eligibility.py`).
 - **People's photos fail closed.** Not cleared by default; the do-not-use list
   is honoured everywhere. No model judges anyone's age: Chris's Approve is the
   check (his ruling, 2026-10-15).

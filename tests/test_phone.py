@@ -212,22 +212,24 @@ class Draft(IsolatedCase):
         self.assertEqual(db.one(self.conn, "SELECT agent, kind FROM errors")["agent"], "phone")
         self.assertIsNone(self.last_post()[0])
 
-    def test_live_claude_looks_and_the_draft_fails_closed(self):
+    def test_live_claude_looks_and_nothing_it_sees_stops_his_own_photo(self):
         """Deliberate change, 2026-10-15: "someone may be under 18" no longer stops a draft (Chris: "If I approve
-        something, it means I checked it"); a plate and a wedding still do, and an old-style age answer drafts."""
+        something, it means I checked it"); and since 2026-11-08 ("No one can override MY approvals and that is a law";
+        "Yes, override everything") neither does a plate or a wedding: his send is his approval. Only no look at all (no
+        key, the cap) stops it."""
         ctx = self.live()
+        for look in (LookClient(personal_details=["vehicle_plate"]), LookClient(event_kind="wedding"), LookClient(possible_minor=True)):
+            sid = self.send()
+            line = phone.run(ctx, check_client=look, art_client=ArtClientAny([say("pass")]))
+            self.assertIn("drafted post", line)
+            self.assertNotIn("under 18", line)
+            self.assertEqual(db.one(self.conn, "SELECT status FROM phone_sends WHERE id=?", (sid,))["status"], "drafted")
+        os.environ["AI_MONTHLY_CAP_USD"] = "0"
+        config.reset()
         sid = self.send()
-        line = phone.run(ctx, check_client=LookClient(personal_details=["vehicle_plate"]), art_client=ArtClientAny([say("pass")]))
-        self.assertIn("vehicle_plate", line)
+        line = phone.run(self.ctx(dry=False), check_client=LookClient(), art_client=ArtClientAny([say("pass")]))
+        self.assertIn("Claude could not look at the photo (no key, or the monthly cap", line)
         self.assertEqual(db.one(self.conn, "SELECT status FROM phone_sends WHERE id=?", (sid,))["status"], "failed")
-        sid = self.send()
-        line = phone.run(ctx, check_client=LookClient(event_kind="wedding"), art_client=ArtClientAny([say("pass")]))
-        self.assertIn("wedding", line)
-        self.assertIsNone(self.last_post()[0])
-        sid = self.send()
-        line = phone.run(ctx, check_client=LookClient(possible_minor=True), art_client=ArtClientAny([say("pass")]))
-        self.assertIn("drafted post", line)
-        self.assertNotIn("under 18", line)
 
     def test_live_the_check_passes_and_the_post_is_drafted_with_the_card_and_the_ping(self):
         ctx = self.live()
@@ -239,10 +241,9 @@ class Draft(IsolatedCase):
         self.assertNotIn("DRY RUN", line)
         row, meta_ = self.last_post()
         self.assertEqual((row["status"], meta_["art"]["verdict"], meta_["asap"]), ("draft", "pass", True))
-        fc = db.one(self.conn, "SELECT possible_minor, event_kind FROM final_checks WHERE photo_id=?", (pid,))
-        self.assertEqual(tuple(fc), (0, "business"))
-        c = db.one(self.conn, "SELECT method, shot_type FROM classifications WHERE photo_id=?", (pid,))
-        self.assertEqual(tuple(c), ("vision", "stage_panel"), "no sorter ran: Claude's look is the sort")
+        self.assertEqual(db.one(self.conn, "SELECT possible_minor FROM final_checks WHERE photo_id=?", (pid,))["possible_minor"], 0)
+        c = db.one(self.conn, "SELECT method, shot_type, event_kind FROM classifications WHERE photo_id=?", (pid,))
+        self.assertEqual(tuple(c), ("vision", "stage_panel", "business"), "no sorter ran: Claude's look is the sort")
         from convention_social.library import eligibility
         self.assertEqual(eligibility.is_eligible(self.conn, pid), (True, "ok"))
         self.assertEqual(push.call_count, 1)
@@ -253,16 +254,16 @@ class Draft(IsolatedCase):
         self.assertIn(f"/media/card/{row['id']}/", push.call_args[1]["attach"])
         self.assertEqual(db.one(self.conn, "SELECT status, queue_id FROM phone_sends WHERE id=?", (sid,))["queue_id"], row["id"])
 
-    def test_the_art_directors_reject_fails_the_send_and_says_why(self):
+    def test_the_art_directors_no_leaves_his_photo_drafted_with_its_note(self):
+        """2026-11-08: his send is his approval; the art director's no is a note on the draft, never a failed send."""
         ctx = self.live()
         sid = self.send()
-        line = phone.run(ctx, check_client=LookClient(), art_client=ArtClientAny([say("reject", notes="Flat light, no moment.")]))
-        self.assertIn("the art director turned it back: Flat light, no moment.", line)
-        row, _ = self.last_post()
-        self.assertEqual(row["status"], "rejected")
-        s = db.one(self.conn, "SELECT status, queue_id, error FROM phone_sends WHERE id=?", (sid,))
-        self.assertEqual((s["status"], s["queue_id"]), ("failed", row["id"]))
-        self.assertIn("Flat light", s["error"])
+        line = phone.run(ctx, check_client=LookClient(), art_client=ArtClientAny([say("reject", notes="The word misses.")]))
+        self.assertIn("drafted post", line)
+        row, meta = self.last_post()
+        self.assertEqual((row["status"], meta["art"]["verdict"], meta["art"]["notes"]), ("draft", "reject", "The word misses."))
+        s = db.one(self.conn, "SELECT status, queue_id FROM phone_sends WHERE id=?", (sid,))
+        self.assertEqual((s["status"], s["queue_id"]), ("drafted", row["id"]))
 
     def test_the_caption_writer_hears_his_line(self):
         seen = []

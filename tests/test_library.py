@@ -140,9 +140,9 @@ class Eligibility(IsolatedCase):
         for d in drive_ids:
             self.conn.execute("UPDATE photos SET clearance='cleared', clearance_at=? WHERE drive_id=?", (db.utcnow(), d))
 
-    def final(self, drive_id, minor=0, details="[]"):
-        db.insert(self.conn, "final_checks", photo_id=self.pid(drive_id), possible_minor=minor, personal_details=details,
-                  model="claude-opus-5", checked_at=db.utcnow())
+    def final(self, drive_id, minor=0):
+        db.insert(self.conn, "final_checks", photo_id=self.pid(drive_id), possible_minor=minor, model="claude-opus-5",
+                  checked_at=db.utcnow())
 
     def test_nothing_eligible_by_default(self):
         self.vision()
@@ -206,15 +206,17 @@ class Eligibility(IsolatedCase):
         self.conn.execute("UPDATE drive_folders SET clearance='cleared' WHERE drive_id='fcon'")
         self.assertEqual(eligibility.is_candidate(self.conn, self.pid("p1")), (False, "Chris marked it Never use"), "Never use wins over everything")
 
-    def test_final_check_details_block_and_an_age_flag_does_not(self):
+    def test_neither_the_final_checks_details_nor_an_age_flag_block_a_photo_he_used(self):
         """Deliberate change, Chris's ruling of 2026-10-15: "Get rid of the gate all together! If I approve something,
-        it means I checked it." An old final check that flagged someone as maybe under 18 no longer blocks."""
+        it means I checked it." An old final check that flagged someone as maybe under 18 no longer blocks; nor, since
+        2026-11-08 ("No one can override MY approvals"; "Yes, override everything"), does a readable detail."""
         self.use("p1", "p2")
         self.vision()
         self.final("p1", minor=1)
         self.assertEqual(eligibility.is_eligible(self.conn, self.pid("p1")), (True, "ok"))
-        self.final("p2", details='["house_number"]')
-        self.assertIn("house_number", eligibility.is_eligible(self.conn, self.pid("p2"))[1])
+        self.conn.execute("UPDATE classifications SET personal_details='[\"house_number\"]' WHERE photo_id=?", (self.pid("p2"),))
+        self.final("p2")
+        self.assertEqual(eligibility.is_eligible(self.conn, self.pid("p2")), (True, "ok"))
 
     def test_an_old_age_flag_from_the_sorter_never_blocks(self):
         """Deliberate change, Chris's ruling of 2026-10-15 (it was test_possible_minor_never_eligible): a sort row that
@@ -226,14 +228,15 @@ class Eligibility(IsolatedCase):
         self.final("p1", minor=1)
         self.assertEqual(eligibility.is_eligible(self.conn, self.pid("p1")), (True, "ok"))
 
-    def test_personal_details_block_but_never_a_name(self):
-        # Chris, 2026-10-12: "If they're wearing a name badge or there's a name in the photo it's fine to use"
+    def test_personal_details_keep_only_what_he_is_offered_and_never_a_name(self):
+        # Chris, 2026-10-12: "If they're wearing a name badge or there's a name in the photo it's fine to use"; 2026-11-08:
+        # a detail never keeps out a photo he used, and keeps a plate off what he is offered (blocking_details)
         self.use("p1", "p2")
         self.vision({**ADULTS, "personal_details": ["badge_name", "document", "screen"]})
         why = eligibility.is_candidate(self.conn, self.pid("p1"))[1]
         self.assertNotIn("personal details", why, why)
         self.conn.execute("UPDATE classifications SET personal_details='[\"vehicle_plate\"]' WHERE photo_id=?", (self.pid("p1"),))
-        self.assertIn("vehicle_plate", eligibility.is_eligible(self.conn, self.pid("p1"))[1])
+        self.assertEqual(eligibility.is_candidate(self.conn, self.pid("p1")), (True, "ok"))
         self.assertEqual(eligibility.blocking_details(["badge_name", "screen", "document", "vehicle_plate", "house_number"], "event"),
                          ["vehicle_plate", "house_number"])
         self.assertEqual(eligibility.blocking_details(["badge_name", "house_number", "street_sign"], "architecture"), [])
@@ -996,10 +999,11 @@ class FinalCheck(IsolatedCase):
         self.assertEqual(calls[0]["model"], "claude-opus-5")
         self.assertEqual(calls[0]["fallbacks"], "default")
         fc = db.one(conn, "SELECT * FROM final_checks WHERE photo_id=?", (pid,))
-        self.assertEqual((fc["possible_minor"], fc["personal_details"]), (0, "[]"))
+        self.assertEqual((fc["possible_minor"], fc["summary"]), (0, "ok"))
         self.assertGreater(db.one(conn, "SELECT SUM(cost_usd) c FROM api_usage")["c"], 0)
-        # a refusal writes nothing new and returns None
-        self.assertIsNone(classify.final_check(conn, pid, thumb_bytes(), client=Beta({}, stop="refusal")))
+        # a refusal is a check with no labels, never a veto (2026-11-08): written, and the photo is not kept out
+        refused = classify.final_check(conn, pid, thumb_bytes(), client=Beta({}, stop="refusal"))
+        self.assertEqual((refused["room"], refused["event_kind"], refused["personal_details"]), ("none", "unknown", []))
         # at the cap, no call at all
         os.environ["AI_MONTHLY_CAP_USD"] = "0"
         config.reset()

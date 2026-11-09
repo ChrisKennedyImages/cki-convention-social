@@ -72,7 +72,6 @@ class WhatGoesOut(IsolatedCase):
         self.addCleanup(self.conn.close)
         add_channels(self.conn, "instagram", "facebook", "linkedin")
         self.pid = add_photo(self.conn, self.root / "photos", seed=1)
-        self.conn.execute("UPDATE photos SET prominent_logo=0 WHERE id=?", (self.pid,))
         self.renders = {"4:5": [write_render(self.root / "renders", "card-45.jpg")], "2:3": [write_render(self.root / "renders", "card-23.jpg")],
                         photo.LINKEDIN_PHOTO: [write_render(self.root / "renders", "hero-as-shot.jpg")]}
         self.qid = add_post(self.conn, [self.pid], ("instagram", "facebook", "linkedin"), render_paths=self.renders)

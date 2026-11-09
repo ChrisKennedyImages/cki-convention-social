@@ -33,6 +33,7 @@ from datetime import date
 from typing import Optional
 from urllib.parse import urlsplit, urlunsplit
 
+from .. import house_brief
 from ..ai import spend
 from ..ai.claude import FALLBACK_BETA
 from ..core import config, db
@@ -47,7 +48,7 @@ MAX_EVENTS = 25
 KINDS = ("fan", "business", "other")
 LIMITS = {"name": 200, "city": 120, "venue": 200, "organizer": 160, "website": 500}
 
-SYSTEM = """You find upcoming conventions and conferences that a convention and event photographer could pitch to photograph. You search the web and report only what the sources you found say.
+SYSTEM = """You find upcoming conventions and conferences the company could pitch to photograph. You search the web and report only what the sources you found say.
 Rules:
 1. Only events in the region you are given, starting between the two dates you are given. Search the whole region, every city and county in it, not only its best-known city. Business, trade and association conferences, conventions and trade shows, corporate events, and galas and award dinners count. Fan conventions (comic, anime, gaming, pop culture) do not: leave them out.
 2. Never invent anything. A field you did not find in a source is an empty string. A date you are not sure of is empty. Dates are YYYY-MM-DD.
@@ -149,9 +150,7 @@ def collect(res: Research, response) -> None:
 def record_usage(conn: sqlite3.Connection, agent: str, response, model: str, detail: str, reservation=None) -> tuple[str, int]:
     """Tokens through ai.spend at the model that answered; web searches as their own priced row. -> (model, searches)"""
     usage = _get(response, "usage", None)
-    answered = _get(response, "model", None) or model
-    spend.record(conn, agent, answered, int(_get(usage, "input_tokens", 0) or 0), int(_get(usage, "output_tokens", 0) or 0), detail,
-                 reservation=reservation)
+    answered, _ = spend.record_response(conn, agent, response, model, detail, reservation=reservation)
     server = _get(usage, "server_tool_use", None)
     n = int(_get(server, "web_search_requests", 0) or 0) if server is not None else 0
     if n:
@@ -206,7 +205,7 @@ def research(conn: sqlite3.Connection, client, *, region: str, today: date, earl
     effort = config.getenv("SCOUT_EFFORT") or "medium"
     res = Research(model=model)
     ask = prompt(region, today, earliest, horizon, known, far_from)
-    system = [{"type": "text", "text": SYSTEM, "cache_control": {"type": "ephemeral"}}]
+    system = house_brief.system(SYSTEM, cache=True)
     messages: list = [{"role": "user", "content": ask}]
     turn: list = []
     for _ in range(1 + MAX_CONTINUATIONS):
@@ -241,7 +240,7 @@ def research(conn: sqlite3.Connection, client, *, region: str, today: date, earl
     if events is None and res.text.strip() and not spend.cap_reached(conn):
         response = _create(client, model,
                            output_config={"effort": "low", "format": {"type": "json_schema", "schema": EVENTS_SCHEMA}},
-                           system=[{"type": "text", "text": STRUCTURE_SYSTEM}],
+                           system=house_brief.system(STRUCTURE_SYSTEM),
                            messages=[{"role": "user", "content": "Research notes:\n\n" + res.text}])
         res.calls += 1
         record_usage(conn, agent, response, model, "scout structuring")

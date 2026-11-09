@@ -33,8 +33,7 @@ def photo(conn, n, *, minor, folder="f-1", clearance="cleared", details="[]", ki
     db.insert(conn, "classifications", photo_id=pid, method="ollama", subject="event", is_convention=1, possible_minor=minor,
               personal_details=details, event_kind=kind, shot_type="candid", quality=5, light=4, moment=4, sharp=1, classified_at=now)
     if final:
-        db.insert(conn, "final_checks", photo_id=pid, possible_minor=minor, personal_details=details, event_kind=kind,
-                  model="m", checked_at=now)
+        db.insert(conn, "final_checks", photo_id=pid, possible_minor=minor, model="m", checked_at=now)
     return pid
 
 
@@ -50,9 +49,11 @@ class NoAgeGate(IsolatedCase):
         self.assertEqual(eligibility.is_eligible(self.conn, flagged), (True, "ok"))
         self.assertEqual(eligibility.eligible_photo_ids(self.conn, [flagged]), [flagged])
 
-    def test_everything_else_still_stops_a_photo(self):
-        self.assertIn("vehicle_plate", eligibility.is_eligible(self.conn, photo(self.conn, 2, minor=0, details='["vehicle_plate"]'))[1])
-        self.assertFalse(eligibility.is_eligible(self.conn, photo(self.conn, 3, minor=0, kind="wedding"))[0])
+    def test_only_his_own_decisions_stop_a_photo(self):
+        # 2026-11-08, his law: "No one can override MY approvals"; "Yes, override everything". A readable plate or a
+        # wedding label no longer keeps out a photo he used.
+        self.assertEqual(eligibility.is_eligible(self.conn, photo(self.conn, 2, minor=0, details='["vehicle_plate"]')), (True, "ok"))
+        self.assertEqual(eligibility.is_eligible(self.conn, photo(self.conn, 3, minor=0, kind="wedding")), (True, "ok"))
         undecided = photo(self.conn, 4, minor=0, folder="f-2", clearance="inherit")
         self.conn.execute("UPDATE drive_folders SET clearance='cleared' WHERE drive_id='f-2'")      # a folder never approves
         self.assertEqual(eligibility.is_eligible(self.conn, undecided), (False, "not cleared yet"))

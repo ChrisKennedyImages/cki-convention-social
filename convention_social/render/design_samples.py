@@ -23,28 +23,29 @@ from PIL import Image
 
 from ..core import config, db, settings
 from ..library import eligibility, report
-from .. import music
+from .. import house_brief, music
 from . import motion
 
 # The room a photo is from and one line about what it shows. Never what is offered or how it is done
 # (Chris, 2026-10-11: "keep to specifics and not talk about what is offered or what is a service").
-# Chris, 2026-10-29: the eight titles, his words; the building frames keep THE VENUE
-ROOMS = {
-    "main_stage": ("MAIN STAGE", "The keynote, from the room."),
-    "stage_panel": ("STAGE PANEL", "The conversation on stage."),
-    "breakout": ("BREAKOUT", "The session, up close."),
-    "portrait": ("PORTRAIT", "Speakers and guests, between sessions."),      # Chris, 2026-10-12: the speakers and VIPs, not the attendees
-    "backstage": ("BACKSTAGE", "The minutes before the doors open."),
-    "candid": ("CANDID", "In the moment."),
-    "reception": ("RECEPTION", "After the last session."),
-    "building_exterior": ("THE VENUE", "The building, before the event."),
-    "building_interior": ("THE VENUE", "The room, before the event."),
+# The title is his label (house_brief.LABELS, 2026-11-08), set in the card's capitals; the line is the card's own.
+LINES = {
+    "candid": "In the moment.",
+    "backstage": "The minutes before the doors open.",
+    "green_room": "Before they go on.",
+    "stage_panel": "The conversation on stage.",
+    "portrait": "Speakers and guests, between sessions.",      # Chris, 2026-10-12: the speakers and VIPs, not the attendees
+    "main_stage": "The keynote, from the room.",
+    "breakout": "The session, up close.",
+    "awards": "The award, in their hands.",
+    "building_exterior": "The building, before the event.",
+    "building_interior": "The room, before the event.",
+    "reception": "After the last session.",
 }
-OTHER = ("ON THE FLOOR", "In the moment.")
+ROOMS = {key: (house_brief.word(key).upper(), LINES[key]) for key in house_brief.KEYS}
 # A post prints a room only when Claude's final check of the full photo says it plainly shows that room
 # (library/classify.ROOMS; 2026-10-15: the sorter's shot type had put "After Dark" on a sunny garden and "Main Stage" on
 # a reception room). Anything else, a photo checked before then included, says EVENT PHOTOGRAPHY.
-ROOM_WORDS = {room: ROOMS[room] for room in ("main_stage", "stage_panel", "breakout", "portrait", "backstage", "candid", "reception")}
 UNCONFIRMED = ("EVENT PHOTOGRAPHY", "In the moment.")
 COPY_VERSION = "2026-10-15"              # bump when the words on the cards change: the samples are made again (2026-10-15: once, so
 #                                          every set on the Mini records its photos per sample and has its Post this)
@@ -152,10 +153,6 @@ def usable(conn, row) -> bool:
         return False
     if eligibility.blocked_by_list(conn, photo):
         return False
-    if ("costume" in row.keys() and row["costume"]):
-        return False                     # a costume photo, which Event Caliber does not offer
-    if (row["event_kind"] if "event_kind" in row.keys() else None) in eligibility.NOT_OFFERED_KINDS:
-        return False                     # a wedding or a private occasion (Chris, 2026-10-11)
     return not any(c["consent"] == "no" for c in eligibility.credits_for(conn, photo))
 
 
@@ -171,7 +168,7 @@ def pick(conn, n: int = 6) -> list:
     picked, rooms, events = [], set(), set()
     for want_room, want_event in ((True, True), (True, False), (False, True), (False, False)):
         for r in rows:
-            room = ROOMS.get(r["shot_type"] or "", OTHER)[0]
+            room = ROOMS.get(r["shot_type"] or "", UNCONFIRMED)[0]
             event = (r["convention_name"] or "").strip().lower() or r["folder_id"]
             if r in picked or (want_room and room in rooms) or (want_event and event in events):
                 continue
@@ -190,7 +187,7 @@ def make(conn, fetch: Callable[[str], bytes], *, out_root: Optional[Path] = None
         raise RuntimeError(too_few(readiness(conn)))
     shots = []
     for r in rows:
-        room, line = ROOMS.get(r["shot_type"] or "", OTHER)
+        room, line = ROOMS.get(r["shot_type"] or "", UNCONFIRMED)
         im = Image.open(io.BytesIO(fetch(r["drive_id"])))
         im.load()
         shots.append(motion.Shot(im.convert("RGB"), room, line))

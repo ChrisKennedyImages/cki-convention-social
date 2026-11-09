@@ -39,7 +39,7 @@ from typing import Callable, Optional
 
 from PIL import Image, ImageOps, ImageStat
 
-from .. import offer
+from .. import house_brief, offer
 from ..ai import copy_rules
 from ..ai import names as ai_names
 from ..core import config, db
@@ -65,10 +65,10 @@ TITLE_MAX, DESCRIPTION_MAX = 75, 160       # what a search result shows whole; a
 LEAD_MAX = 200     # a lead sentence a search change writes: one or two plain sentences (the longest of the site's own is 180)
 # which kinds of shot a coverage page shows (2026-10-14): the library's own shot words, by the room the page is about
 COVERAGE_SHOTS = {
-    "backstage": ("backstage",), "green_room": ("backstage",),
+    "backstage": ("backstage",), "green_room": ("green_room", "backstage"),       # the green room's own label first (2026-11-08)
     "breakouts": ("breakout",), "stage": ("main_stage", "stage_panel"),
-    "evening_events": ("reception", "candid"), "dinners": ("reception",),
-    "portraits": ("portrait",), "exhibition_hall": (),               # no expo title in the eight: the page fills from the pool
+    "evening_events": ("reception", "candid"), "dinners": ("reception", "awards"),
+    "portraits": ("portrait",), "exhibition_hall": (),       # the hall has no label of its own (it is candid): the pool fills it
     "on_site_delivery": ("candid",),
     "selects": ("main_stage", "portrait"),                       # what an organizer asks for first: the stage and the people
 }
@@ -122,7 +122,7 @@ HERO_ROWS, COVERAGE_ROWS, VENUE_ROWS = 1, 12, 2      # 2026-10-14: the strip gre
 # 2026-10-15, the venues: "Just one or two venue picks at most and not labeled on the image itself"
 EVENT_POOL = 20               # eligible event photos the hero is chosen among; the strip draws from the whole usable pool
 HERO_CANDIDATES = 12          # landscape frames looked at (fetched) for the hero's colour and punch
-RECHECKS = 12                 # Claude calls one site build may spend asking what kind of occasion a photo is from
+RECHECKS = 12                 # final checks one site build may spend on photos Claude has not looked at yet
 HERO_KEY = "site.hero_photo_id"   # Chris's own pick for the hero (Photos tab, Approved: Site hero); it wins while it is usable
 SHOWN_KEY = "site.shown_photo_ids"   # JSON list: every library photo the last live build showed (2026-10-31), for the writer
 STAGE = ("main_stage", "stage_panel")
@@ -243,12 +243,14 @@ def strength_order(r: dict) -> tuple:
 
 
 def library_rows(conn: sqlite3.Connection, keep: Optional[set] = None) -> list[dict]:
-    """The library's sorted event and building photos, one row per picture (one_per_picture; an id in `keep` stands for
-    its picture), the least recently used first on any surface (the rotation, 2026-10-14), strength_order among equals."""
+    """The photos Chris used, event and building work alike (eligibility.WORK: a photo is event work unless it is
+    architecture), one row per picture (one_per_picture; an id in `keep` stands for its picture), the least recently used
+    first on any surface (the rotation, 2026-10-14), strength_order among equals. Only his: the site shows nothing else,
+    so the 600 strongest are 600 of his, not of the whole library."""
     from ..library import report
     rows = db.rows(conn, """
         SELECT p.*, c.subject, c.quality, c.sharp, c.light, c.moment, c.event_kind, c.shot_type, c.convention_name, c.summary
-        FROM photos p JOIN classifications c ON c.photo_id=p.id WHERE p.trashed=0 AND c.subject IN ('event','architecture')
+        FROM photos p JOIN classifications c ON c.photo_id=p.id WHERE p.trashed=0 AND p.clearance='cleared'
         ORDER BY COALESCE(c.quality,0) DESC, p.width DESC LIMIT 600""")
     rows = sorted((dict(r) for r in rows), key=strength_order)
     # the same picture under two ids is one photo, and its use under any id counts (2026-10-14: "same picked twice")
@@ -260,9 +262,10 @@ def library_rows(conn: sqlite3.Connection, keep: Optional[set] = None) -> list[d
 
 def page_pool(conn: sqlite3.Connection) -> list[dict]:
     """Every usable event photo, least recently used first: the pool the coverage pages draw from (pick_photos), for a
-    preview of a page a search change proposes (seo/pages.py). Nothing is paid for here: a photo Claude has not yet judged
-    for its kind of occasion waits, as it does in any build without the key."""
-    return [r for r in library_rows(conn) if r["subject"] == "event" and eligibility.is_eligible(conn, r["id"])[0]]
+    preview of a page a search change proposes (seo/pages.py). Nothing is paid for here: a photo Claude has not looked at
+    yet waits, as it does in any build without the key."""
+    return [r for r in library_rows(conn)
+            if eligibility.work_of(r["subject"]) == "event" and eligibility.is_eligible(conn, r["id"])[0]]
 
 
 def pick_photos(conn: sqlite3.Connection, fetch: Callable[[dict], Image.Image],
@@ -270,12 +273,11 @@ def pick_photos(conn: sqlite3.Connection, fetch: Callable[[dict], Image.Image],
                 look: Optional[Callable[[bytes], Optional[dict]]] = None) -> SitePhotos:
     """Postable photos only: event work for the hero and the grid, building work for venues. Each photo
     is judged on its own: the strongest frame first (sharp, lit, a moment), a known conference or
-    convention before an unknown kind, and never a wedding or a private occasion (Chris, 2026-10-11:
-    "The main photo when you open the website is from a damn wedding! That one needs to be the best of
-    the best"). The hero is Chris's own pick when he made one and it is usable; otherwise the landscape
+    convention before an unknown kind. Every one is a photo Chris used, and no model's label keeps it out (2026-11-08:
+    his approval is final). The hero is Chris's own pick when he made one and it is usable; otherwise the landscape
     frame with the highest hero_score among the strongest HERO_CANDIDATES. The grid is spread across
     events, so no one event is the first thing on everything. `recheck` gives Claude's final check to a
-    photo it has not yet judged for its kind, up to RECHECKS per build; without it such a photo waits."""
+    photo it has not looked at yet, up to RECHECKS per build; without it such a photo waits."""
     from ..core import settings
     chosen = settings.get(conn, HERO_KEY)
     chosen_id = int(chosen) if chosen and str(chosen).isdigit() else None
@@ -289,7 +291,7 @@ def pick_photos(conn: sqlite3.Connection, fetch: Callable[[dict], Image.Image],
         nonlocal rechecks
         if not eligibility.is_candidate(conn, r["id"])[0]:
             return False
-        if recheck is not None and rechecks < RECHECKS and eligibility.needs_kind_check(conn, r["id"]):
+        if recheck is not None and rechecks < RECHECKS and eligibility.needs_final_check(conn, r["id"]):
             rechecks += 1
             images[r["id"]] = fetch(r)
             if recheck(r, images[r["id"]]) is None:
@@ -298,7 +300,7 @@ def pick_photos(conn: sqlite3.Connection, fetch: Callable[[dict], Image.Image],
 
     pool: list[dict] = []                               # every usable event photo, least recently used first (the coverage pages draw here)
     for r in rows:
-        if r["subject"] == "architecture":
+        if eligibility.work_of(r["subject"]) == "architecture":
             if len(venues) < VENUE_ROWS and usable(r):
                 venues.append(r)
             continue
@@ -328,16 +330,16 @@ def pick_photos(conn: sqlite3.Connection, fetch: Callable[[dict], Image.Image],
     def note(text):
         out.hero_note = (out.hero_note + "; " if out.hero_note else "") + text
     if chosen_id is not None:
-        picked = next((r for r in rows if r["id"] == chosen_id and r["subject"] == "event"), None)
-        if picked is None:
-            note(f"your Site hero pick (photo {chosen_id}) is not an event photo in the library; the build chose instead")
-        elif picked in events or usable(picked):
+        picked = next((r for r in rows if r["id"] == chosen_id and eligibility.work_of(r["subject"]) == "event"), None)
+        if picked is not None and (picked in events or usable(picked)):
             hero = picked
             note(f"your Site hero pick (photo {chosen_id}, {site_alt(picked).lower()})")
-        else:
-            ok, why = eligibility.is_candidate(conn, picked["id"])
-            why = why if not ok else eligibility.is_eligible(conn, picked["id"])[1]
-            note(f"your Site hero pick (photo {chosen_id}) could not be used: {why}; the build chose instead")
+        else:                                   # the pool holds only his photos: one he took back is not in it
+            ok, why = eligibility.is_eligible(conn, chosen_id)
+            known = db.one(conn, "SELECT 1 FROM photos WHERE id=?", (chosen_id,)) is not None
+            note(f"your Site hero pick (photo {chosen_id}) "
+                 + (f"could not be used: {why}" if known and not ok else "is not an event photo in the library")
+                 + "; the build chose instead")
     if hero is None:
         wide = [r for r in events if (r["width"] or 0) > (r["height"] or 0)]
         # his gallery picks are for the gallery: the build's own hero is another frame while there is one (2026-10-29)
@@ -424,16 +426,16 @@ def words_for(conn: Optional[sqlite3.Connection], row: dict) -> tuple[str, Image
     keywords for the file's own metadata and the sitemap, and a slug for the file name; each checked against the names
     rule and the copy rules when written, and Chris can edit them on the dashboard). Before 2026-10-31 every photo said
     only the kind of shot, so four photos on a page all read "Main stage" and the files were cover-stage-0.jpg (Chris:
-    "SEO is VERY important for this website!"). The kind of shot stays as the label: the strip's captions keep it, and
-    a photo without the writer's words, or whose words no longer pass the copy rules, says it everywhere, as before."""
-    label = site_alt(row)
-    generic = ImageMeta(title=label, description=label, keywords=GENERIC_KEYWORDS)
+    "SEO is VERY important for this website!"). The label printed under it is his (site_label); a photo without the
+    writer's words, or whose words no longer pass the copy rules, says the kind of shot in its alt text, as before."""
+    label, plain = site_label(row), site_alt(row)
+    generic = ImageMeta(title=plain, description=plain, keywords=GENERIC_KEYWORDS)
     seo = db.one(conn, "SELECT slug, title, alt, description, keywords FROM photo_seo WHERE photo_id=?", (row["id"],)) if conn is not None and row.get("id") is not None else None
     if seo is None:
-        return label, generic, "", label
+        return plain, generic, "", label
     title, alt, description = (seo["title"] or "").strip(), (seo["alt"] or "").strip(), (seo["description"] or "").strip()
     if not (title and alt and description) or any(not copy_rules.check(t).ok for t in (title, alt, description)):
-        return label, generic, "", label
+        return plain, generic, "", label
     try:
         keywords = tuple(str(k) for k in json.loads(seo["keywords"] or "[]") if str(k).strip()) or GENERIC_KEYWORDS
     except ValueError:
@@ -441,11 +443,19 @@ def words_for(conn: Optional[sqlite3.Connection], row: dict) -> tuple[str, Image
     return alt, ImageMeta(title=title, description=description, keywords=keywords), (seo["slug"] or "").strip(), label
 
 
+def site_label(row: dict) -> str:
+    """The label printed under a photo on the site: his word for its kind of shot (house_brief.LABELS, Chris, 2026-11-08:
+    "There's only a handful of labels that we fucking use"); a building of his architecture work is an Event building."""
+    if eligibility.work_of(row.get("subject")) == "architecture":
+        return house_brief.word("building_exterior")
+    return house_brief.word(row.get("shot_type")) or "Event photography"
+
+
 def site_alt(row: dict) -> str:
     """Alt text from the kind of shot, never the sorter's own description, which may name the event or
     a person (Chris, 2026-10-11: no public words say which event or who; ai/names.py)."""
     from ..seo.photo_text import SHOT_WORDS
-    if row.get("subject") == "architecture":
+    if eligibility.work_of(row.get("subject")) == "architecture":
         return "Venue and architecture photography"
     return SHOT_WORDS.get(row.get("shot_type") or "", "Event photography")
 

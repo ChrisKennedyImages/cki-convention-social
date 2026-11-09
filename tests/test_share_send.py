@@ -258,23 +258,17 @@ class Approved(ShareCase):
                       art_client=ArtClientAny([say("pass")]))
         self.assertEqual(seen[-1], ("MAIN STAGE", "CONFERENCE PHOTOGRAPHY"), "a confirmed room keeps the kind of work above it")
 
-    def test_a_readable_plate_or_a_wedding_stops_it_and_he_hears_why(self):
+    def test_a_readable_plate_or_a_wedding_label_never_stops_his_own_photo(self):
+        """2026-11-08, his law: "No one can override MY approvals and that is a law"; "Yes, override everything". His send
+        is his approval, so what Claude sees in the photo is a label, never a stop."""
         ctx = self.live()
-        for i, (look, word) in enumerate(((LookClient(personal_details=["vehicle_plate"]), "it shows a readable car plate"),
-                                          (LookClient(event_kind="wedding"), "a wedding"))):
-            self.pings.clear()
-            phone.run(ctx, api=self.api(self.site(ID1 if i == 0 else ID2)), check_client=look, art_client=ArtClientAny([say("pass")]))
-            self.assertIsNone(db.one(self.conn, "SELECT 1 FROM content_queue WHERE status IN ('approved', 'scheduled')"), "nothing posts")
-            self.assertEqual(self.send_row()["status"], "failed")
-            self.assertEqual(len(self.pings), 1)
-            (title, message), kw = self.pings[0]
-            self.assertIn("not posted", title + message)
-            self.assertIn(word, message)
-            self.assertNotIn("vehicle_plate", message, "plain words on the phone, never the check's code")
-            self.assertNotIn("..", message)
-            self.assertFalse(kw["dry_run"])
-            self.assertIn(f"from the share sheet, not posted: {word}", phone.recent(self.conn)[0]["line"], "the Send page, in the same words")
-        self.assertEqual(self.started, [], "the publisher is not started for a photo that stopped")
+        for i, look in enumerate((LookClient(personal_details=["vehicle_plate"]), LookClient(event_kind="wedding"))):
+            line = phone.run(ctx, api=self.api(self.site(ID1 if i == 0 else ID2)), check_client=look,
+                             art_client=ArtClientAny([say("pass")]))
+            self.assertIn("approved by your send", line)
+            self.assertEqual(self.send_row()["status"], "drafted")
+        self.assertEqual(db.one(self.conn, "SELECT COUNT(*) n FROM content_queue WHERE status='approved'")["n"], 2)
+        self.assertIn((("publisher",), {"wait": True}), self.started)
 
     def test_a_caption_that_still_breaks_a_rule_after_one_rewrite_stops_it(self):
         ctx = self.live()
@@ -294,14 +288,16 @@ class Approved(ShareCase):
         self.assertNotIn("..", message)
         self.assertTrue(kw["click"].endswith(f"/queue/{row['id']}"))
 
-    def test_the_art_directors_no_stops_it(self):
+    def test_the_art_directors_no_never_stops_his_send(self):
+        """2026-11-08: his send is his approval, and the art director never rules a photo he used unfit: after its rounds
+        the post goes as designed, its note on the draft."""
         ctx = self.live()
-        phone.run(ctx, api=self.api(self.site()), check_client=LookClient(), art_client=ArtClientAny([say("reject", notes="Flat light.")]))
-        row, _ = self.post()
-        self.assertEqual(row["status"], "rejected")
-        (title, message), _ = self.pings[0]
-        self.assertIn("not posted", title + message)
-        self.assertIn("the art director turned it back: Flat light. Tap to see it.", message)
+        line = phone.run(ctx, api=self.api(self.site()), check_client=LookClient(),
+                         art_client=ArtClientAny([say("reject", notes="The word does not name the photo.")]))
+        self.assertIn("approved by your send", line)
+        row, meta = self.post()
+        self.assertEqual((row["status"], meta["art"]["verdict"]), ("approved", "reject"))
+        self.assertEqual(self.send_row()["status"], "drafted")
 
     def test_an_art_director_who_could_not_look_leaves_it_for_his_approve(self):
         ctx = self.live()

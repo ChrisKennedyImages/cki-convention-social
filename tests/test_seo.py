@@ -77,7 +77,7 @@ class SeoCase(AgentCase):
                   event_kind=kind, view=view, possible_minor=0, personal_details="[]", summary=summary,
                   space="exterior", residential=0, empty_room=0, sharp=1, light=4, moment=4, classified_at=now)
         if final:
-            db.insert(self.conn, "final_checks", photo_id=pid, possible_minor=0, personal_details="[]", model="claude-opus-5",
+            db.insert(self.conn, "final_checks", photo_id=pid, possible_minor=0, model="claude-opus-5",
                       checked_at=now)
         return pid
 

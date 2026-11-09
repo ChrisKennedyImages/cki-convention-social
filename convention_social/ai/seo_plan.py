@@ -38,9 +38,10 @@ PIN_DESCRIPTION_MAX = 500
 IG_MAX = 2200
 IG_TAGS, PIN_TAGS = 5, 3
 
-# the room a photo is from, by the sorter's shot type
-ROOM = {"main_stage": "stage", "stage_panel": "stage", "breakout": "stage", "backstage": "backstage",
-        "portrait": "portrait", "reception": "evening", "candid": "crowd"}
+# the room a photo is from, by the sorter's shot type, for the search words (the green room is backstage to a search;
+# awards are given at the galas and dinners "corporate event photography" finds)
+ROOM = {"main_stage": "stage", "stage_panel": "stage", "breakout": "stage", "backstage": "backstage", "green_room": "backstage",
+        "portrait": "portrait", "reception": "evening", "awards": "evening", "candid": "crowd"}
 
 PRIMARY = {
     "business": {"stage": "conference photography", "backstage": "backstage event photography", "portrait": "conference headshots",

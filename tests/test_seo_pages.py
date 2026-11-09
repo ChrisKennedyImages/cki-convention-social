@@ -160,7 +160,7 @@ class Drafting(PageCase):
         self.assertEqual([s["search"] for s in facts["searches"]], [SEARCH, "dc conference photographers"])
         self.assertEqual(facts["name_max_characters"], 75 - len(" | Event Caliber") - len(", Washington, DC"))
         self.assertEqual(set(facts["photo_kinds"]), set(build.SHOT_KINDS))
-        self.assertIn("Never name an event", fake.calls[0]["system"])
+        self.assertIn("Never name an event", fake.calls[0]["system"][-1]["text"], "its own rules, after the house brief")
         self.assertEqual(fake.calls[0]["output_config"]["format"]["schema"], pages.SCHEMA)
         row = self.row(1)
         self.assertEqual((row["kind"], row["page"], row["status"], row["search"]), ("page", NEW, "proposed", SEARCH))
@@ -366,7 +366,7 @@ class Building(PageCase):
         pool = [{"id": i, "shot_type": s} for i, s in ((1, "portrait"), (2, "breakout"), (3, "portrait"))]
         picked = build.pick_page_photos(pool, [("conference", ("portrait",))])
         self.assertEqual([r["id"] for r in picked["conference"]], [1, 3, 2])
-        self.assertEqual([label for *_, label in got.pages["conference"]], ["Portrait"] * 3)
+        self.assertEqual([label for *_, label in got.pages["conference"]], ["Portraits"] * 3)      # his label (2026-11-08)
         self.assertTrue(set(ids) <= set(got.ids))
 
     def test_approve_is_refused_when_the_page_would_no_longer_pass(self):

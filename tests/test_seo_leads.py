@@ -105,7 +105,7 @@ class Drafting(LeadCase):
         self.assertEqual((facts["lead_now"], facts["search"], facts["lead_max_characters"]), (own, SEARCH, build.LEAD_MAX))
         self.assertEqual(facts["numbers"], {"shown": 64, "clicked": 0, "average_place": 11.4})
         self.assertIn("We photograph the main stage from several positions", facts["page_text"])
-        self.assertIn("Never name an event", fake.calls[0]["system"])
+        self.assertIn("Never name an event", fake.calls[0]["system"][-1]["text"], "its own rules, after the house brief")
         self.assertEqual(fake.calls[0]["model"], leads.MODEL)
         row = self.row(1)
         self.assertEqual((row["kind"], row["page"], row["status"], row["search"]), ("lead", STAGE, "proposed", SEARCH))

@@ -13,7 +13,7 @@ import sqlite3
 from dataclasses import dataclass
 from typing import Optional
 
-from .. import offer
+from .. import house_brief, offer
 from ..core import config, secrets
 from . import copy_rules, spend
 from .claude import FALLBACK_BETA, tidy
@@ -21,7 +21,7 @@ from .claude import FALLBACK_BETA, tidy
 QUOTE_MARK = "[[QUOTE: write the price and what it covers here, or delete this line]]"
 DEFAULT_MODEL = "claude-opus-5"
 
-SYSTEM = """You draft a reply email from a photographer to someone who asked for a quote for event photography. Write in his voice: warm, plain, short sentences, commas and periods, never a dash, no exclamation marks in a row, no hype.
+SYSTEM = """You draft a reply email from Chris to someone who asked the company for a quote for event photography. Write in his voice: warm, plain, short sentences, commas and periods, never a dash, no exclamation marks in a row, no hype.
 Rules:
 1. Never write a price, a rate, a discount or a package. Where the price belongs, put this exact line on its own: {mark}
 2. Never claim past clients, an official role at any event, awards, or that you have covered their event before.
@@ -81,12 +81,10 @@ def draft(conn: sqlite3.Connection, inquiry, *, client=None, agent: str = "inbox
     response = client.beta.messages.create(
         model=model, max_tokens=4000, betas=[FALLBACK_BETA], fallbacks="default", thinking={"type": "adaptive"},
         output_config={"effort": "medium", "format": {"type": "json_schema", "schema": SCHEMA}},
-        system=[{"type": "text", "text": SYSTEM, "cache_control": {"type": "ephemeral"}}],
+        system=house_brief.system(SYSTEM, cache=True),
         messages=[{"role": "user", "content": facts(inquiry)}],
     )
-    u = response.usage
-    answered = getattr(response, "model", None) or model
-    spend.record(conn, agent, answered, int(u.input_tokens or 0), int(u.output_tokens or 0), "reply draft")
+    answered, _ = spend.record_response(conn, agent, response, model, "reply draft")
     text = next((b.text for b in response.content if b.type == "text"), None)
     if response.stop_reason == "refusal" or not text:
         return template_draft(inquiry)

@@ -206,13 +206,15 @@ class Prompt(IsolatedCase):
 
     def test_the_writer_is_told_portraits_are_backstage_and_never_for_every_attendee(self):
         """Chris, 2026-10-12: portraits are backstage for the speakers and VIPs, lit on site with our own lights and
-        color gels; portraits for every attendee are a different product, never advertised."""
+        color gels; portraits for every attendee are a different product, never advertised. How they are made is said
+        once, in the house brief every writer reads first (2026-11-08)."""
+        from convention_social import house_brief
+        for words in ("made backstage", "lit on site with our own lights and color gels", "finished in the camera"):
+            self.assertIn(words, house_brief.text(), words)
         portrait = claude.user_text(claude.PostFacts(brand_name="Event Caliber", event_kind="business", shot_type="portrait"))
-        for words in ("made backstage", "lit on site with professional lights", "color gels", "finished in the camera",
-                      "never say that every attendee gets one"):
+        for words in ("one of the company's portraits, made as the brief says", "never say that every attendee gets one"):
             self.assertIn(words, portrait, words)
-        self.assertIn("made backstage", claude.user_text(claude.PostFacts(brand_name="Event Caliber", shot_type="headshot")))
-        self.assertNotIn("backstage", claude.user_text(claude.PostFacts(brand_name="Event Caliber", shot_type="stage_panel")))
+        self.assertNotIn("portrait", claude.user_text(claude.PostFacts(brand_name="Event Caliber", shot_type="stage_panel")))
         plan = seo_plan.plan_for(subject="event", event_kind="business", shot_type="portrait")
         caps = seo_plan.template_captions(plan, "eventcaliber.com/book", "Event Caliber")
         self.assertIn(": a portrait lit on site, backstage.", caps["instagram"])
@@ -290,7 +292,7 @@ class NoCosplay(IsolatedCase):
             self.assertNotIn("political", (root / rel).read_text().lower(), rel)
         self.assertNotIn("political", photo_text.KIND_WORDS["business"])
 
-    def test_a_costume_photo_is_never_used(self):
+    def test_a_costume_photo_is_never_offered_for_review_and_one_he_used_is_his(self):
         conn = db.connect()
         now = db.utcnow()
         db.insert(conn, "drive_folders", drive_id="f", name="F", first_seen_at=now, last_seen_at=now)
@@ -298,7 +300,7 @@ class NoCosplay(IsolatedCase):
                         first_seen_at=now, last_seen_at=now)
         db.insert(conn, "classifications", photo_id=pid, method="ollama", subject="event", possible_minor=0, personal_details="[]",
                   shot_type="candid", costume=1, classified_at=now)
-        self.assertEqual(eligibility.is_candidate(conn, pid), (False, "a costume photo: Event Caliber does no cosplay"))
+        self.assertEqual(eligibility.is_candidate(conn, pid), (True, "ok"), "he used it: his approval is final (2026-11-08)")
         from convention_social.dashboard import app as dash
         self.conn = conn
         conn.execute("UPDATE photos SET clearance='inherit', clearance_at=NULL")      # undecided, as To review lists them

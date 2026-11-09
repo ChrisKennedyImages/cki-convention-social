@@ -116,7 +116,7 @@ class TheMoment(Case):
         self.addCleanup(p.stop)
         add_channels(self.conn, "instagram", "linkedin")
         sibling = self.photo("fe", "2025:02:14 10:04:00")
-        self.conn.execute("UPDATE photos SET prominent_logo=0, local_path=? WHERE id IN (?, ?)",
+        self.conn.execute("UPDATE photos SET local_path=? WHERE id IN (?, ?)",
                           (write_render(self.root / "photos", "e1.jpg"), self.pid, sibling))
         old = aired(self.conn, self.pid, ["instagram"])
         renders = {"4:5": [write_render(self.root / "renders", "r-45.jpg")]}

@@ -70,7 +70,6 @@ class NoFanConventions(IsolatedCase):
         self.assertIn("fan", classify.KINDS)
         self.assertNotIn("fan", classify.NOT_OFFERED_KINDS)
         from convention_social.library import eligibility
-        self.assertNotIn("fan", eligibility.NOT_OFFERED_KINDS)
         from tests.test_wedding import event_photo
         conn = db.connect()
         self.addCleanup(conn.close)
@@ -99,13 +98,15 @@ class OnePortrait(IsolatedCase):
         self.assertNotIn("headshots", keys)
         self.assertNotIn("headshots", (REPO / "worker" / "index.js").read_text().split("const COVERAGE")[1].split("]")[0])
         self.assertNotIn("headshot", classify.SHOT_TYPES)
-        self.assertIn("a headshot or a posed group", classify.FINAL_SYSTEM)
+        from convention_social import house_brief
+        self.assertIn("a headshot, or a posed group off the stage with no award in hand", house_brief.text(),
+                      "the label every model reads")
         self.assertNotIn("headshot", json.dumps(classify.FINAL_SCHEMA))
         note = draft.template_first({"event_name": "Sample Con", "event_kind": "business"}).body.lower()
         self.assertNotIn("headshot", note)
         self.assertIn("portraits", note)
         self.assertEqual(dict(dashboard.SHOT_CHOICES).get("headshot"), None)
-        self.assertEqual(dict(dashboard.SHOT_CHOICES)["portrait"], "Portrait")
+        self.assertEqual(dict(dashboard.SHOT_CHOICES)["portrait"], "Portraits")     # his label (2026-11-08)
 
     def test_the_migration_turns_stored_headshots_into_portraits(self):
         from tests.test_wedding import event_photo

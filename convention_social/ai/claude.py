@@ -26,6 +26,7 @@ from typing import TYPE_CHECKING, Optional, Protocol, Sequence
 
 from PIL import Image, ImageOps
 
+from .. import house_brief
 from ..core import config, secrets
 from . import linkedin, spend
 
@@ -40,7 +41,7 @@ NETWORKS = ("instagram", "facebook", "pinterest", "linkedin")
 # what kind of event, said instead of which one (ai/names.py: no event or person is ever named)
 KIND_WORDS = {"fan": "a convention", "business": "a conference"}        # never "fan convention" in public (Chris, 2026-10-12)
 
-SYSTEM_PROMPT = """You write social posts for an event and convention photography company, in the photographer's own voice. A post is about the photo: what it shows, where in the event it was made, the moment. It is never about the company's services, what it offers, how it works or what a client gets; that is between the photographer and the client. The company photographs business, corporate and association conferences, conventions, galas and award dinners. The LinkedIn post goes on the photographer's own profile, not the company's page, and is written in his own rhythm: plain action beats strung with commas, present tense, then the payoff, "we got it" or "we got the shot"; short, casual, literal, nothing more. It never says how the photo was made and never reflects or reaches for a phrase. The other captions speak for the company.
+SYSTEM_PROMPT = """You write the company's social posts, in the photographer's own voice. A post is about the photo: what it shows, where in the event it was made, the moment. It is never about the company's services, what it offers, how it works or what a client gets; that is between the photographer and the client. The LinkedIn post goes on the photographer's own profile, not the company's page, and is written in his own rhythm: plain action beats strung with commas, present tense, then the payoff, "we got it" or "we got the shot"; short, casual, literal, nothing more. It never says how the photo was made and never reflects or reaches for a phrase. The other captions speak for the company.
 
 Write plain, short sentences. Use commas and periods, never a dash of any kind. No hype words, no emojis, no exclamation marks in a row. Describe only what the photo shows and what the facts give you.
 
@@ -132,10 +133,10 @@ def user_text(facts: PostFacts) -> str:
         ("Subject: a building or venue from the photographer's architecture work. Say what the building shows, never name "
          "the owner, the address or the client."
          if facts.subject == "architecture" else "Subject: event photography"),
-        # Chris, 2026-10-12: portraits are backstage, for the speakers and the people the event is about, lit on site
-        *(["A portrait here is made backstage, for a speaker or a guest of honor, lit on site with professional lights and "
-           "color gels and finished in the camera. Say that plainly when it fits the photo; never say that every attendee gets one."]
-          if facts.shot_type in ("portrait", "headshot") else []),
+        # Chris, 2026-10-12: portraits are backstage, for the speakers and the people the event is about, lit on site; how
+        # they are made is in the house brief, the one place it is said
+        *(["This is one of the company's portraits, made as the brief says. Say that plainly when it fits the photo; never "
+           "say that every attendee gets one."] if facts.shot_type == "portrait" else []),
         *([f"The photographer, who took it minutes ago, says of this moment: {facts.note}. Use that, in your own words; "
            "it names no event and no person, and neither do you."] if facts.note else []),
         *(facts.plan.prompt_lines() if facts.plan else []),
@@ -186,8 +187,7 @@ class ClaudeDrafter:
             spend.release(self.conn, held)
             raise DraftError(f"{type(e).__name__}: {e}") from e
         usage = response.usage
-        answered_by = getattr(response, "model", None) or self.model
-        spend.record(self.conn, self.agent, answered_by, int(usage.input_tokens or 0), int(usage.output_tokens or 0), "caption", reservation=held)
+        answered_by, _ = spend.record_response(self.conn, self.agent, response, self.model, "caption", reservation=held)
         if response.stop_reason == "refusal":
             raise DraftError("model refused this photo")
         text = next((b.text for b in response.content if b.type == "text"), None)
@@ -207,7 +207,7 @@ class ClaudeDrafter:
             fallbacks="default",
             thinking={"type": "adaptive"},
             output_config={"effort": self.effort, "format": {"type": "json_schema", "schema": OUTPUT_SCHEMA}},
-            system=[{"type": "text", "text": SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}}],
+            system=house_brief.system(SYSTEM_PROMPT, cache=True),
             messages=[{"role": "user", "content": [image_block(photo), {"type": "text", "text": user_text(facts) + (
                 "\n\nYour last draft missed these; fix them and change nothing else that was right:\n- " + "\n- ".join(notes)
                 if notes else "")}]}],

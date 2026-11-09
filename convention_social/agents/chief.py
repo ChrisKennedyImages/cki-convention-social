@@ -27,6 +27,7 @@ import sqlite3
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
+from .. import house_brief
 from ..ai import claude as claude_mod
 from ..ai import copy_rules, spend
 from ..buffer import payloads
@@ -37,6 +38,9 @@ SENT_KEY = "chief.brief_sent_on"        # the mail went (or the dry outbox has i
 PUSHED_KEY = "chief.brief_pushed_on"    # the phone was told, once a day however the mail fares
 BRIEF_KEY = "chief.brief"
 MODEL = "claude-opus-5"
+READ_SYSTEM = ("You are the company's chief of staff. From the facts, write at most three short, plain sentences for Chris's "
+               "morning: what matters most today and why. Use only the facts given. No dashes, no hype, no exclamation marks. "
+               "Return JSON.")
 
 
 def _count(conn, sql: str, params=()) -> int:
@@ -144,12 +148,9 @@ def written_read(conn, b: dict, client=None, agent: str = "chief") -> str:
         model=MODEL, max_tokens=1500, betas=[claude_mod.FALLBACK_BETA], fallbacks="default", thinking={"type": "adaptive"},
         output_config={"effort": "low", "format": {"type": "json_schema", "schema": {
             "type": "object", "properties": {"read": {"type": "string"}}, "required": ["read"], "additionalProperties": False}}},
-        system=("You are the chief of staff for a one-person photography company. From the facts, write at most three short, "
-                "plain sentences for the owner's morning: what matters most today and why. Use only the facts given. "
-                "No dashes, no hype, no exclamation marks. Return JSON."),
+        system=house_brief.system(READ_SYSTEM),
         messages=[{"role": "user", "content": facts}])
-    u = response.usage
-    spend.record(conn, agent, getattr(response, "model", None) or MODEL, int(u.input_tokens or 0), int(u.output_tokens or 0), "brief")
+    spend.record_response(conn, agent, response, MODEL, "brief")
     text = next((x.text for x in response.content if x.type == "text"), None)
     if response.stop_reason == "refusal" or not text:
         return plain_read(b)

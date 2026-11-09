@@ -46,7 +46,7 @@ class Dashboard(IsolatedCase):
         return db.one(self.conn, "SELECT id FROM photos")["id"]
 
     def final_check(self, pid, minor=0):
-        db.insert(self.conn, "final_checks", photo_id=pid, possible_minor=minor, personal_details="[]",
+        db.insert(self.conn, "final_checks", photo_id=pid, possible_minor=minor,
                   model="claude-opus-5", checked_at=db.utcnow())
 
     def draft(self, caption="Green room before the keynote. Request a quote for your event.", photo_ids=(), convention_id=None):

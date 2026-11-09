@@ -183,7 +183,7 @@ class Drafting(LoopCase):
         self.assertEqual([s["search"] for s in facts["searches"]], [q for q, *_ in SEARCHES])
         self.assertEqual((facts["title_now"], facts["description_now"]), self.own(STAGE))
         self.assertEqual((facts["title_suffix"], facts["title_max_characters"]), (" | Event Caliber", 75 - 16))
-        self.assertIn("Never name an event", fake.calls[0]["system"])
+        self.assertIn("Never name an event", fake.calls[0]["system"][-1]["text"], "its own rules, after the house brief")
         self.assertEqual(fake.calls[0]["model"], titles.MODEL)
         row = self.row(1)
         self.assertEqual((row["kind"], row["page"], row["status"]), ("title", STAGE, "proposed"))

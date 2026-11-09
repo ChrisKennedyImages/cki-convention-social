@@ -21,6 +21,7 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Optional
 
+from .. import house_brief
 from ..ai import spend
 from ..core import config, secrets
 from . import keys
@@ -122,16 +123,14 @@ class Reader:
             return Dates(note="the monthly AI cap is reached; the dates are read on a later run", later=True)
         try:
             response = self.client.messages.create(
-                model=self.model, max_tokens=300, system=SYSTEM,
+                model=self.model, max_tokens=300, system=house_brief.system(SYSTEM),
                 output_config={"format": {"type": "json_schema", "schema": SCHEMA}},
                 messages=[{"role": "user", "content": f"Today: {today.isoformat()}\nPage: {page_url}\n\n"
                                                       f"{flat(page_text)[:TEXT_MAX]}"}])
         except Exception as e:  # noqa: BLE001 — the API or the network: nothing spent, read again on a later run
             spend.release(self.conn, held)
             return Dates(note=f"the dates could not be read this run ({type(e).__name__}); a later run tries again", later=True)
-        u = response.usage
-        spend.record(self.conn, self.agent, getattr(response, "model", None) or self.model, int(u.input_tokens or 0),
-                     int(u.output_tokens or 0), f"event dates {page_url}"[:300], reservation=held)
+        spend.record_response(self.conn, self.agent, response, self.model, f"event dates {page_url}"[:300], reservation=held)
         text = next((b.text for b in response.content if b.type == "text"), None)
         if response.stop_reason == "refusal" or not text:
             return Dates(note=f"no dates read off {page_url}")

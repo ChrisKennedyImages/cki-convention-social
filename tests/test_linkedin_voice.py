@@ -181,7 +181,7 @@ class Judge:
     def create(self, **kw):
         self.calls += 1
         assert list(kw["output_config"]["format"]["schema"]["properties"]) == ["subject"]
-        assert "Never write a name" in kw["system"][0]["text"]
+        assert "Never write a name" in kw["system"][-1]["text"], "after the house brief, its own one question"
         t = types.SimpleNamespace(type="text", text=json.dumps({"subject": self.subject}))
         return types.SimpleNamespace(content=[t], stop_reason="end_turn", model=kw["model"],
                                      usage=types.SimpleNamespace(input_tokens=800, output_tokens=10))

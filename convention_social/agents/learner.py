@@ -58,6 +58,7 @@ from datetime import date, datetime, time, timedelta, timezone
 from typing import Optional
 from zoneinfo import ZoneInfo
 
+from .. import house_brief
 from ..buffer import metrics, payloads
 from ..buffer.client import BufferClient
 from ..core import config, db, runner, settings
@@ -471,6 +472,8 @@ def kind_words(fieldname: str, value: str) -> str:
         return f"reels with the track {value}"
     if fieldname == "event_kind":
         return {"fan": "convention photos", "business": "business event photos"}.get(value, f"{value} event photos")
+    if fieldname == "shot_type" and house_brief.word(value):
+        return f"{house_brief.word(value)} photos"                  # his label (2026-11-08)
     return value.replace("_", " ") + " photos"
 
 
@@ -643,7 +646,8 @@ def dashboard_view(conn: sqlite3.Connection) -> dict:
         a = applied_w.get(fieldname) if isinstance(applied_w.get(fieldname), dict) else {}
         s = suggested_w.get(fieldname) if isinstance(suggested_w.get(fieldname), dict) else {}
         for value in sorted(set(a) | set(s)):
-            weights.append({"field": fieldname.replace("_", " "), "value": value.replace("_", " "),
+            label = house_brief.word(value) if fieldname == "shot_type" else None     # a label in his words (2026-11-08)
+            weights.append({"field": fieldname.replace("_", " "), "value": label or value.replace("_", " "),
                             "applied": _weight(a, value) if value in a else None,
                             "suggested": _weight(s, value) if value in s else None})
     history = [dict(r) for r in db.rows(conn, "SELECT id, created_at, status, applied, posts_seen, note FROM learner_history "

@@ -183,9 +183,10 @@ class Content(IsolatedCase):
         report.record_use(self.conn, "site", [self.ids["e1"]], ref="site:x", now="2026-10-20T10:00:00+00:00")
         self.assertEqual(report.last_uses(self.conn)[self.ids["e2"]], when, "the rotation sees the copy's use: the post three days ago, not the older site use")
 
-    def test_live_final_check_skips_a_photo_with_a_plate(self):
-        """Deliberate change, 2026-10-15 (no age gate): this pinned the skip of a possible minor; the final check's
-        skip is now pinned with a readable plate, which still stops a photo."""
+    def test_live_final_check_labels_a_photo_with_a_plate_and_keeps_it(self):
+        """Deliberate change, 2026-10-15 (no age gate): this pinned the skip of a possible minor, then the skip of a
+        readable plate. 2026-11-08, his law ("No one can override MY approvals"; "Yes, override everything"): the plate is
+        a label, and the photo he used stays in."""
         os.environ["AI_MONTHLY_CAP_USD"] = "5"
         os.environ["AI_MODEL"] = "template"
         config.reset()
@@ -197,11 +198,10 @@ class Content(IsolatedCase):
             return orig(row)
         line = content.draft_one(self.ctx(dry=False), fetch, now=MONDAY_6AM, check_client=client)
         self.assertIn("drafted post", line)
-        self.assertEqual(json.loads(self.queue()[0]["photo_ids"]), [self.ids["e2"]])
-        self.assertEqual(client.calls, 2)
+        self.assertEqual(json.loads(self.queue()[0]["photo_ids"]), [self.ids["e1"]])
+        self.assertEqual(client.calls, 1)
         from convention_social.library import eligibility
-        self.assertTrue(eligibility.is_eligible(self.conn, self.ids["e2"])[0])
-        self.assertFalse(eligibility.is_eligible(self.conn, self.ids["e1"])[0])
+        self.assertEqual(eligibility.is_eligible(self.conn, self.ids["e1"]), (True, "ok"))
 
     def test_live_an_age_answer_skips_nothing(self):
         """Chris, 2026-10-15: "Get rid of the gate all together!" A final check that answers possible_minor true
@@ -317,16 +317,17 @@ class ArtDirector(Content):
         self.assertEqual((meta["art"]["verdict"], meta["art"]["rounds"], meta["art"]["focus"]), ("pass", 2, [0.3, 0.2]))
         self.assertEqual(self.queue()[0]["status"], "draft")
 
-    def test_reject_turns_the_photo_back_and_the_next_one_is_drafted(self):
-        art = ArtClient([say("reject", notes="Soft focus on the face."), say("pass")])
+    def test_reject_turns_the_design_back_and_the_day_is_drawn_again(self):
+        art = ArtClient([say("reject", notes="The word does not name the photo."), say("pass")])
         line = content.draft_one(self.live(), self.fetch, now=MONDAY_6AM, check_client=FinalClient({}), art_client=art)
         self.assertIn("turned back photo", line)
         rows = self.queue()
         self.assertEqual([r["status"] for r in rows], ["rejected", "draft"])
-        self.assertIn("Soft focus", rows[0]["last_error"])
-        self.assertEqual(json.loads(rows[1]["photo_ids"]), [self.ids["e2"]])      # the turned back post never aired, so its event is still fair
-        # the turned back photo sits out next time too
-        self.assertIn(self.ids["e1"], content.recent_use(self.conn, 30)[0])
+        self.assertIn("does not name the photo", rows[0]["last_error"])
+        # another arrangement: the rotation leads with the photo the try did not use (its use is on the record)
+        self.assertEqual(json.loads(rows[1]["photo_ids"]), [self.ids["e2"]])
+        # and the turned back photo is free again: a turn-back aired nothing and never rules a photo unfit (2026-11-08)
+        self.assertNotIn(self.ids["e1"], content.recent_use(self.conn, 30)[0])
 
     def test_redo_stops_after_the_limit(self):
         art = ArtClient([say("redo")] * 5)
@@ -572,7 +573,7 @@ class NewDesigns(Content):
         self.assertEqual((meta_["design"], ids), ("poster", [self.ids["e1"]]))
         self.assertNotIn("facematch", content.DESIGNS.values())
 
-    def test_live_every_photo_on_the_post_passes_the_final_check(self):
+    def test_live_every_photo_on_the_post_is_given_the_final_check_and_a_plate_keeps_none_out(self):
         os.environ["AI_MONTHLY_CAP_USD"] = "5"
         os.environ["AI_MODEL"] = "template"
         config.reset()
@@ -587,8 +588,8 @@ class NewDesigns(Content):
         content.draft_one(self.ctx(dry=False), fetch, now=SUNDAY, check_client=client, art_client=art)
         _, meta_, _, ids = self.last()
         self.assertEqual(meta_["design"], "spotlight")
-        self.assertNotIn(self.ids["e2"], ids)                              # a readable plate: never on the post
-        self.assertEqual(len(ids), 3)
+        self.assertIn(self.ids["e2"], ids)                                 # a readable plate is a label (2026-11-08)
+        self.assertEqual(len(ids), 4, "every approved photo in the pool, the plate's included")
         from convention_social.library import eligibility
         self.assertTrue(all(eligibility.is_eligible(self.conn, i)[0] for i in ids))
         self.assertEqual((art.calls, meta_["art"]["verdict"]), (1, "pass"))  # several photos: no crop to redo

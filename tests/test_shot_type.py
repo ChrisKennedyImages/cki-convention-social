@@ -59,7 +59,9 @@ class FinalCheck(IsolatedCase):
         self.assertEqual(data["shot_type"], "stage_panel")
         self.assertEqual(db.one(conn, "SELECT shot_type FROM final_checks WHERE photo_id=?", (pid,))["shot_type"], "stage_panel")
         self.assertEqual(db.one(conn, "SELECT shot_type FROM classifications WHERE photo_id=?", (pid,))["shot_type"], "stage_panel")
-        self.assertIn("stage_panel: several people seated on a stage", classify.FINAL_SYSTEM)
+        from convention_social import house_brief
+        self.assertIn('stage_panel ("Panels"): several people seated on a stage', house_brief.text())
+        self.assertIn("one of the labels in the brief above", classify.FINAL_SYSTEM)
         self.assertIn("shot_type", classify.FINAL_SCHEMA["required"])
         # Chris, 2026-10-26: "The sorting should also not name names! Just the type of image!"
         from pathlib import Path
@@ -112,7 +114,7 @@ class CorrectionCase(IsolatedCase):
         self.client = TestClient(create_app())
         self.client.cookies.set(COOKIE, make_token("chris"))
         self.pid = stage_photo_called_a_portrait(self.conn)
-        db.insert(self.conn, "final_checks", photo_id=self.pid, possible_minor=0, personal_details="[]", model="m",
+        db.insert(self.conn, "final_checks", photo_id=self.pid, possible_minor=0, model="m",
                   checked_at=db.utcnow(), shot_type="portrait")
 
     def shot(self, table):
@@ -123,7 +125,7 @@ class Correction(CorrectionCase):
     def test_chris_fixes_the_word_and_a_new_draft_is_made(self):
         qid = add_post(self.conn, [self.pid], status="draft")
         page = self.client.get(f"/queue/{qid}").text
-        self.assertIn("shows: portrait", page)
+        self.assertIn("shows: Portraits", page)
         self.assertIn("Wrong? Fix and draft again", page)
         with mock.patch.object(dash, "start_agent") as start:
             r = self.client.post(f"/queue/{qid}/photo/{self.pid}/shot", data={"shot_type": "stage_panel"}, follow_redirects=False)
@@ -132,7 +134,7 @@ class Correction(CorrectionCase):
         self.assertEqual((self.shot("classifications"), self.shot("final_checks")), ("stage_panel", "stage_panel"))
         row = db.one(self.conn, "SELECT status, last_error FROM content_queue WHERE id=?", (qid,))
         self.assertEqual(row["status"], "rejected")
-        self.assertIn("shows Stage panel", row["last_error"])
+        self.assertIn("shows Panels", row["last_error"])
         self.assertIn("new one is being made", self.client.get("/?msg=redraft").text)
 
     def test_refusals_and_a_post_already_approved(self):
@@ -182,7 +184,7 @@ class HisWord(CorrectionCase):
         copies.link(self.conn)                         # the scanner's pass makes them one picture
         page = self.client.get("/library?view=approved").text
         self.assertIn(f'action="/library/photo/{self.pid}/shot"', page)
-        self.assertIn('<option value="portrait" selected>Portrait</option>', page)
+        self.assertIn('<option value="portrait" selected>Portraits</option>', page)
         self.assertIn('<option value="backstage">Backstage</option>', page)
         draft = add_post(self.conn, [self.pid], status="draft")
         approved = add_post(self.conn, [self.pid], status="approved")
@@ -190,7 +192,7 @@ class HisWord(CorrectionCase):
             self.assertEqual(self.client.post(f"/library/photo/{self.pid}/shot", data={"shot_type": "selfie"}).status_code, 400)
             r = self.client.post(f"/library/photo/{self.pid}/shot", data={"shot_type": "backstage"},
                                  headers={"Accept": "application/json"})
-        self.assertEqual(r.json(), {"id": self.pid, "shot": "backstage", "kind": "backstage",
+        self.assertEqual(r.json(), {"id": self.pid, "shot": "backstage", "kind": "Backstage",
                                     "words": "Kind of shot: Backstage. The draft with it is being made again."})
         for pid in (self.pid, twin):
             row = db.one(self.conn, "SELECT shot_type, shot_by FROM classifications WHERE photo_id=?", (pid,))
@@ -207,9 +209,11 @@ class HisWord(CorrectionCase):
         self.conn.execute("UPDATE classifications SET method='vision' WHERE photo_id=?", (self.pid,))
         page = self.client.get("/library/swipe").text
         self.assertIn('<label for="kind">Kind of shot</label>', page)
-        self.assertIn('<option value="portrait" selected>Portrait</option>', page)
+        self.assertIn('<option value="portrait" selected>Portraits</option>', page)
         self.assertIn('<option value="backstage">Backstage</option>', page)
-        self.assertNotIn("Building exterior", page.split('id="kind"')[1].split("</select>")[0], "an event photo's kinds only")
+        kinds = page.split('id="kind"')[1].split("</select>")[0]
+        for word in ("Green room", "Awards", "Event building, inside"):       # his labels (2026-11-08), the venue included
+            self.assertIn(word, kinds, word)
         self.assertIn('"shot": "portrait"', page)
 
 
