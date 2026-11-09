@@ -226,7 +226,7 @@ class DesignSamples(IsolatedCase):
                           "VALUES (?,?,?,?,?,?,?,?)", (f"d{n}", f"{n}.jpg", 3000, 2000, clearance, "https://x/t=s220", now, now))
         pid = db.one(self.conn, "SELECT id FROM photos WHERE drive_id=?", (f"d{n}",))["id"]
         db.insert(self.conn, "classifications", photo_id=pid, method="ollama", subject="event", is_convention=1, possible_minor=minor,
-                  personal_details=details, quality=5, sharp=1, light=4, moment=4, shot_type=shot_type,
+                  personal_details=details, quality=5, sharp=1, light=4, moment=4, shot_type=shot_type, people_count=1,
                   convention_name=f"Con {n}", classified_at=now)
         return pid
 
@@ -330,7 +330,8 @@ class ApprovedOnly(IsolatedCase):
                          "VALUES (?,?,?,?,?,?, 'https://x/t=s220', ?, ?)", (f"a{n}", f"{n}.jpg", 3000, 2000, clearance, folder, now, now))
             pid = db.one(conn, "SELECT id FROM photos WHERE drive_id=?", (f"a{n}",))["id"]
             db.insert(conn, "classifications", photo_id=pid, method="ollama", subject="event", is_convention=1, possible_minor=0,
-                      personal_details="[]", quality=5, sharp=1, light=4, moment=4, shot_type="portrait", classified_at=now)
+                      personal_details="[]", quality=5, sharp=1, light=4, moment=4, shot_type="portrait", people_count=1,
+                      classified_at=now)
         self.assertEqual(sorted(r["drive_id"] for r in design_samples.pick(conn, 6)), ["a1", "a2"],
                          "his Use on each, in either folder; a0 under a folder row saying cleared is not approved")
         conn.close()

@@ -39,7 +39,7 @@ class Case(IsolatedCase):
                         clearance_at=now if clearance != "inherit" else None, thumbnail_link="https://lh3.example/t", width=3000, height=2000, first_seen_at=now, last_seen_at=now)
         db.insert(self.conn, "classifications", photo_id=pid, method="ollama" if sorted_ else "folder", subject="event",
                   is_convention=1, event_kind="business", quality=4, possible_minor=0 if sorted_ else None, personal_details="[]",
-                  sharp=1, light=4, moment=4, shot_type=shot or ROOMS[self.n % len(ROOMS)], classified_at=now)
+                  sharp=1, light=4, moment=4, shot_type=shot or ROOMS[self.n % len(ROOMS)], people_count=1, classified_at=now)
         return pid
 
 

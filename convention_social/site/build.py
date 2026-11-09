@@ -255,7 +255,8 @@ def library_rows(conn: sqlite3.Connection, keep: Optional[set] = None) -> list[d
     hero = settings.get(conn, HERO_KEY)
     hero_id = int(hero) if hero and str(hero).isdigit() else -1
     rows = db.rows(conn, f"""
-        SELECT p.*, c.subject, c.quality, c.sharp, c.light, c.moment, c.event_kind, c.shot_type, c.convention_name, c.summary
+        SELECT p.*, c.subject, c.quality, c.sharp, c.light, c.moment, c.event_kind, c.shot_type, c.people_count, c.convention_name,
+               c.summary
         FROM photos p JOIN classifications c ON c.photo_id=p.id WHERE p.trashed=0 AND p.clearance='cleared'
         ORDER BY (p.site_pick_at IS NOT NULL OR p.id = ?) DESC, COALESCE(c.quality,0) DESC, p.width DESC
         LIMIT {LIBRARY_LIMIT}""", (hero_id,))
@@ -452,10 +453,12 @@ def words_for(conn: Optional[sqlite3.Connection], row: dict) -> tuple[str, Image
 
 def site_label(row: dict) -> str:
     """The label printed under a photo on the site: his word for its kind of shot (house_brief.LABELS, Chris, 2026-11-08:
-    "There's only a handful of labels that we fucking use"); a building of his architecture work is an Event building."""
+    "There's only a handful of labels that we fucking use"); a building of his architecture work is an Event building.
+    Portraits only under a photo of one person (house_brief.may_name, Chris, 2026-11-09)."""
     if eligibility.work_of(row.get("subject")) == "architecture":
         return house_brief.word("building_exterior")
-    return house_brief.word(row.get("shot_type")) or "Event photography"
+    shot = row.get("shot_type")
+    return (house_brief.word(shot) if house_brief.may_name(shot, row.get("people_count")) else None) or "Event photography"
 
 
 def site_alt(row: dict) -> str:

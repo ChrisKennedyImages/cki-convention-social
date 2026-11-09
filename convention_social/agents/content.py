@@ -39,7 +39,7 @@ from ..core import approve_token, config, db, notify, runner, settings
 from ..library import classify, copies, eligibility, moments, report
 
 from . import art_director, learner
-from .. import music
+from .. import house_brief, music
 from ..render import meta as image_meta
 
 try:                                    # HEIC originals from a phone
@@ -369,7 +369,9 @@ class Picker:
     at most moments.cap_for(need, shoots) photos from one shoot (FOLDER_CAP while enough shoots are free; more, spread
     evenly, when fewer shoots are free than the post needs, and `words()` says so for the run line). `candidates()`
     yields the rows worth trying next, against what `take()` has kept so far. A reel in one of the ten looks (`style`)
-    takes the look's own count under the look's rule of portraits (render/reel_looks.photo_rule, 2026-11-08)."""
+    takes the look's own count under the look's rule of portraits (render/reel_looks.photo_rule, 2026-11-08). A photo
+    labelled a portrait with other than one person in it is never taken, by the sorter's label before the final check or
+    by the check's after it: Portraits prints only over one person (house_brief.may_name, Chris, 2026-11-09)."""
 
     def __init__(self, pool: list[dict], design: str, *, style: Optional[str] = None):
         from . import designed
@@ -385,6 +387,8 @@ class Picker:
         self.cap = moments.cap_for(self.need, sizes.values())
 
     def fits(self, row: dict) -> bool:
+        if not house_brief.may_name(row.get("shot_type"), row.get("people_count")):
+            return False
         if any(r["id"] == row["id"] for r in self.taken) or any(moments.same_moment(row, r) for r in self.taken):
             return False
         if self.rule is not None and not self.rule(row, self.taken):
@@ -652,13 +656,17 @@ def order_pool(pool: list, design: str) -> list:
 def checked_rooms(conn: sqlite3.Connection, photo_ids: list) -> dict[int, Optional[str]]:
     """{photo id: the room Claude's final check of the full photo says it plainly shows (a key of
     design_samples.ROOMS), else None}. A photo with no final check (a dry run), one checked before the question was
-    asked, or one whose room was "none" has none."""
+    asked, or one whose room was "none" has none; so has a portrait of other than one person, so no post or reel prints
+    Portraits over a pair or a group and none takes one as a word photo (house_brief.may_name, Chris, 2026-11-09)."""
     from ..render import design_samples
     got = {}
     ids = [int(i) for i in photo_ids]
     if ids:
         marks = ",".join("?" * len(ids))
-        got = {r["photo_id"]: r["room"] for r in db.rows(conn, f"SELECT photo_id, room FROM final_checks WHERE photo_id IN ({marks})", ids)}
+        got = {r["photo_id"]: r["room"] for r in db.rows(conn, "SELECT f.photo_id, f.room, c.people_count FROM final_checks f "
+                                                               "LEFT JOIN classifications c ON c.photo_id = f.photo_id "
+                                                               f"WHERE f.photo_id IN ({marks})", ids)
+               if house_brief.may_name(r["room"], r["people_count"])}
     return {i: got.get(i) if got.get(i) in design_samples.ROOMS else None for i in ids}
 
 
@@ -943,7 +951,7 @@ def draft_one(ctx: runner.Context, fetch: Callable[[dict], bytes], *, now: Optio
             if verdict.get("event_kind") in classify.KINDS and verdict["event_kind"] != "unknown":
                 row["event_kind"] = verdict["event_kind"]     # and what kind of occasion, likewise
             if not picker.fits(row):
-                continue                                      # the full look made it a portrait the look has no room for
+                continue                                      # the full look made it a portrait the look has no room for, or not of one person
         picker.take(row)
         chosen.append((row, data))
     if len(chosen) < NEEDS[design]:

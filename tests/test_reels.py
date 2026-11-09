@@ -331,7 +331,7 @@ class Saturday(IsolatedCase):
                             first_seen_at=now, last_seen_at=now)
             db.insert(self.conn, "classifications", photo_id=pid, method="ollama", subject="event", convention_name="Awesome Con",
                       is_convention=1, quality=q, possible_minor=0, personal_details="[]", space="exterior", residential=0,
-                      empty_room=0, sharp=1, light=4, moment=4, shot_type=room, classified_at=now)
+                      empty_room=0, sharp=1, light=4, moment=4, shot_type=room, people_count=1, classified_at=now)
             confirmed = {"stage_panel": "main_stage", "backstage": "backstage", "portrait": "portrait"}.get(room)
             if confirmed:                    # the final check confirmed the room, so the reel may name it (2026-10-15)
                 db.insert(self.conn, "final_checks", photo_id=pid, possible_minor=0, summary="ok",

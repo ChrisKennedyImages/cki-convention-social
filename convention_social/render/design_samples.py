@@ -159,8 +159,10 @@ def usable(conn, row) -> bool:
 def pick(conn, n: int = 6) -> list:
     """Up to n of the frames Chris approved, one per room first so the samples show the range.
     Chris, 2026-10-11: "if it's not approved then don't use it yet or at all"."""
-    # every approved photo counts here, not four per event: most of the work Chris approved can be from one
-    rows = [r for r in report.best(conn, 400, cap=None) if eligibility.clearance_of(conn, r) == "cleared" and usable(conn, r)]
+    # every approved photo counts here, not four per event: most of the work Chris approved can be from one. A sample
+    # prints its photo's label, so a portrait of other than one person waits for its own (house_brief.may_name, 2026-11-09)
+    rows = [r for r in report.best(conn, 400, cap=None) if eligibility.clearance_of(conn, r) == "cleared" and usable(conn, r)
+            and house_brief.may_name(r["shot_type"], r["people_count"])]
     # the rotation (2026-10-14): the least recently used first, on any surface, so each set of samples shows photos the
     # posts, the site and the last samples did not; the strength order only breaks ties, and equal frames come by chance
     rows = report.rotate(conn, rows, alike=report.ranking)
