@@ -54,11 +54,15 @@ export const PLACEMENTS: Placement[] = [
  *  reel's own photos sit nearest the centre; the hero carries the first word in a band beneath it, the other two word
  *  photos sit in bottom rows by `placement`, their words in a band above them. */
 export const buildMosaic = (p: ReelProps, aspect: (pic: Photo) => number, cover: number, placement: Placement = PLACEMENTS[0]): Mosaic => {
-  const idx = p.wordPhotos ?? [0, 1, 2];
+  const idx = p.wordPhotos;
   const wordOf = (i: number) => { const n = idx.indexOf(i); return n < 0 ? undefined : n; };
-  const reel = (i: number): Pic => ({ src: p.photos[i].src, a: aspect(p.photos[i]), word: wordOf(i) });
+  const reel = (i: number): Pic => {
+    if (!Number.isInteger(i) || i < 0 || i >= p.photos.length) throw new Error(`no photo slot ${i}: the props hold ${p.photos.length}`);
+    return { src: p.photos[i].src, a: aspect(p.photos[i]), word: wordOf(i) };
+  };
   const wordRest = idx.filter((i) => i !== 0);
-  const queue: Pic[] = [1, 2, 3, 4, 5].filter((i) => i < p.photos.length && !wordRest.includes(i)).map(reel).concat((p.tiles ?? []).map((t) => ({ src: t.src, a: t.w / t.h })));
+  const others = p.photos.map((_, i) => i).filter((i) => i !== 0 && !wordRest.includes(i));
+  const queue: Pic[] = others.map(reel).concat(p.fillers.map((t) => ({ src: t.src, a: aspect(t) })));
   const wordQueue: Pic[] = wordRest.map(reel);
   if (placement.swap) wordQueue.reverse();
   const cellA = (c: Pic) => (c.word === undefined ? c.a : c.a / (1 + BAND_K));

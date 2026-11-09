@@ -27,6 +27,10 @@
   ccs queue-reel MP4 LOOK --photos ID,ID,... --day YYYY-MM-DD --track FILE [--quiet]
                               queue a reel rendered before in one of the ten looks as the post for a day, on the daily
                               draft's road (photos checked, art director, repeat window); --quiet sends no ping
+  ccs reel-check [LOOK ...] [--out DIR] [--keep] [--record]
+                              render each look (all ten when none is named) with a card in every slot and fail (exit 1)
+                              if any picture comes back or a slot is never shown; on the Mini, never in CI; --record
+                              writes each look that passes to reel-looks/card-checks.json, which CI requires
 """
 from __future__ import annotations
 
@@ -466,6 +470,26 @@ def cmd_queue_reel(args) -> int:
     return 0 if queued else 1
 
 
+def cmd_reel_check(args) -> int:
+    """The option Chris took, 2026-11-08, night (its words): "a code test that renders each look with numbered cards and
+    fails if any picture shows twice" (render/reel_check.py). Renders in --out (a fresh temporary folder unless named), the table on the screen and
+    in reel-check.json there; exit 1 on any repeat, any slot never shown, or a look that will not render."""
+    import tempfile
+    from pathlib import Path
+    from .render import reel_check
+    try:
+        looks = reel_check.looks_named(args.looks)
+    except ValueError as e:
+        print(e)
+        return 2
+    work = Path(args.out).expanduser() if args.out else Path(tempfile.mkdtemp(prefix="reel-check-"))
+    reports = reel_check.run_checks(looks, work=work, keep=args.keep, log=lambda line: print(line, flush=True),
+                                    record_to=reel_check.REGISTRY if args.record else None)
+    print(reel_check.table(reports))
+    print(f"report: {work / 'reel-check.json'}")
+    return 0 if all(r.ok for r in reports) else 1
+
+
 def drive_fetch(ctx):
     """`fetch(row) -> bytes` for a photo the drafts read: the copy on this machine, else Drive (read only)."""
     from .agents import content
@@ -592,6 +616,12 @@ def build_parser() -> argparse.ArgumentParser:
     qr.add_argument("--track", required=True, help="its music: a file name from the Music page (music_tracks.file)")
     qr.add_argument("--quiet", action="store_true", help="no ping")
     qr.set_defaults(fn=cmd_queue_reel)
+    rc = sub.add_parser("reel-check", help="render each look with a card in every slot; fail if any picture comes back")
+    rc.add_argument("looks", nargs="*", help="the looks to check (all ten when none is named)")
+    rc.add_argument("--out", help="the folder the renders and reel-check.json go in (a fresh temporary one if not named)")
+    rc.add_argument("--keep", action="store_true", help="keep each look's renders")
+    rc.add_argument("--record", action="store_true", help="record each look that passes in reel-looks/card-checks.json")
+    rc.set_defaults(fn=cmd_reel_check)
     return p
 
 

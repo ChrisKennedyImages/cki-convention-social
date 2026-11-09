@@ -299,7 +299,8 @@ def _draft(ctx: runner.Context, fetch: Callable[[dict], bytes], *, now: Optional
     # a reel's style is chosen before its photos: a look takes its photos under its own rule of portraits (2026-11-08)
     from ..render import reel_looks
     last_style = settings.get(conn, content.REEL_STYLE_KEY)
-    style = content.reel_style(conn, fits=lambda look: reel_looks.can_fill(look, order)) if design == "reel" else None
+    supply = reel_looks.Supply(conn)              # the fillers' pool, read once if a look is weighed
+    style = content.reel_style(conn, fits=lambda look: reel_looks.can_fill(look, order, supply)) if design == "reel" else None
     picker, tries = content.Picker(order, design, style=style), 0   # one frame per moment, at most the cap per shoot (2026-11-02)
     for row in picker.candidates():
         if tries >= picker.need + MAX_TRIES:

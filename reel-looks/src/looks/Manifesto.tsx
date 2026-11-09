@@ -1,6 +1,7 @@
-import React, { useEffect, useState } from "react";
-import { AbsoluteFill, Easing, Img, continueRender, delayRender, interpolate, spring, staticFile, useCurrentFrame } from "remotion";
+import React from "react";
+import { AbsoluteFill, Easing, Img, interpolate, spring, staticFile, useCurrentFrame } from "remotion";
 import { FPS, H, Photo, ReelProps, W, ramp } from "../look";
+import { Slots, checkSlots, fillerAt, photoAt, shapeOf } from "../slots";
 import { ANTON, ARCHIVO } from "../fonts";
 import { Face, emWidth, fitSize, metrics, textWidth, useFontsReady } from "../measure";
 import { Music } from "../music";
@@ -43,7 +44,11 @@ import { Music } from "../music";
 
 const INK = "#0A0A0B";
 const LIGHT = "#F3F3F1";               // light text on ink, where a colour is too dark to carry ink
-const ph = (p: ReelProps, i: number): Photo => p.photos[i % p.photos.length];
+// Every picture once (Chris, 2026-11-08, night: no picture twice in a reel): the post's seven photos are the hero (the
+// shout), the three the words go with (the wedges), the climax's, the manifesto's and the number's (the suite fills a
+// photo slot the post had no photo for from the last); the photomontage collides two fillers, more approved photos.
+export const SLOTS: Slots = { photos: 7, fillers: 2 };
+const HERO = 0, CLIMAX = 4, POSTER = 5, NUMBER = 6;
 
 const SHOUT: Face = { family: ANTON, weight: 400 };
 
@@ -69,25 +74,9 @@ const inkOn = (hex: string) => {
 
 // ------------------------------------------------------------------ the photographs, whole
 
-/** Each photo's own shape (width / height), read from the file before the first frame is drawn. */
-const ASPECT = new Map<string, number>();
-const useAspects = (photos: Photo[]) => {
-  const [todo] = useState(() => photos.filter((pic) => !ASPECT.has(pic.src)));
-  const [handle] = useState(() => (todo.length ? delayRender("Reading the photos' shapes") : null));
-  const [, redraw] = useState(0);
-  useEffect(() => {
-    if (handle === null) return;
-    Promise.all(todo.map((pic) => new Promise<void>((done) => {
-      const im = new Image();
-      im.onload = () => { ASPECT.set(pic.src, im.naturalWidth / im.naturalHeight); done(); };
-      im.onerror = () => { ASPECT.set(pic.src, 1.5); done(); };
-      im.src = staticFile(pic.src);
-    }))).then(() => { redraw((n) => n + 1); continueRender(handle); });
-  }, [handle, todo]);
-};
 /** The biggest size of a photo, at its own shape, inside w x h. */
 const fitIn = (pic: Photo, w: number, h: number) => {
-  const a = ASPECT.get(pic.src) ?? 1.5;
+  const a = shapeOf(pic);                 // its shape from its props (slots.ts)
   return w / h > a ? { w: h * a, h } : { w, h: w / a };
 };
 
@@ -187,7 +176,7 @@ const shoutLines = (a: string, b: string, Ax: number, k: number): { A: Glyph[]; 
   return { A, B };
 };
 const Shout: Scene = ({ f, p }) => {
-  const hero = ph(p, 0);
+  const hero = photoAt(p, HERO);
   const hs = fitIn(hero, W, 760);
   const hx = (W - hs.w) / 2, hy = H - 56 - hs.h;
   const a = p.open[0].toUpperCase(), b = p.open[1].toUpperCase();
@@ -249,7 +238,7 @@ const Shout: Scene = ({ f, p }) => {
 // and strikes the bigger edge to edge on the beat (it gives, and settles); then the couplet slides in on two girders
 // below them, line 1 from the left, line 2 from the right, each heavy word with its tail on one beam.
 const Montage: Scene = ({ f, p }) => {
-  const one = ph(p, 1), two = ph(p, 2);
+  const one = fillerAt(p, 0), two = fillerAt(p, 1);
   const s1 = fitIn(one, 820, 550), s2 = fitIn(two, 560, 380);
   const x1 = 30, y1 = 60;
   const x2 = Math.min(W - 150 - s2.w, x1 + s1.w - 200), y2 = y1 + s1.h;
@@ -292,7 +281,7 @@ const Montage: Scene = ({ f, p }) => {
 // cut along its axis into two halves that slide together along the cut and lock on the beat; the label on a beam above
 // it, the unit on a beam below, each sliding in along its own axis.
 const Counter: Scene = ({ f, p }) => {
-  const pic = ph(p, 4);
+  const pic = photoAt(p, NUMBER);
   const s = fitIn(pic, 900, 500);
   const px = (W - s.w) / 2, py = 56;
   const label = p.counter.label.toUpperCase(), unit = p.counter.unit.toUpperCase(), v = p.counter.value.toUpperCase();
@@ -342,12 +331,12 @@ const Counter: Scene = ({ f, p }) => {
 // the frame's edge until its tip meets the photo's side, the wedge's sides on the 30° lines; the word runs up the
 // wedge's rising side. Photos and wedges alternate sides, and the words stay, so all three are read together.
 const Wedges: Scene = ({ f, p }) => {
-  const idx = p.wordPhotos ?? [0, 1, 2];
+  const idx = p.wordPhotos;
   const words = p.words.map((w) => w.toUpperCase());
   const tierH = (H - 100) / 3;
   const M = 14;                                         // the words' margin inside their wedge
   const tiers = [0, 1, 2].map((i) => {
-    const pic = ph(p, idx[i]);
+    const pic = photoAt(p, idx[i]);
     const s = fitIn(pic, 520, tierH - 190);
     const left = i % 2 === 0;
     const px = left ? 34 : W - 34 - s.w;
@@ -403,7 +392,7 @@ const Wedges: Scene = ({ f, p }) => {
 // beat; the circle opens like an aperture on a photograph, whole. The marquee runs on a slogan band
 // beneath it and the stack label on a beam under that.
 const Climax: Scene = ({ f, p }) => {
-  const pic = ph(p, 3);
+  const pic = photoAt(p, CLIMAX);
   const s = fitIn(pic, 940, 640);
   const cx = W / 2, cy = 130 + s.h / 2;
   const px = cx - s.w / 2, py = cy - s.h / 2;
@@ -469,7 +458,7 @@ const Climax: Scene = ({ f, p }) => {
 // a beam, the call on an ink bar, the site, the town, each line sliding in along its own axis. Complete by frame 440,
 // then it holds.
 const Poster: Scene = ({ f, p }) => {
-  const pic = ph(p, 5);
+  const pic = photoAt(p, POSTER);
   const s = fitIn(pic, 860, 520);
   const px = (W - s.w) / 2, py = 56;
   const name = p.business.toUpperCase();
@@ -547,9 +536,9 @@ const Paper: React.FC<{ paper: string }> = ({ paper }) => (
 );
 
 export const Manifesto: React.FC<ReelProps> = (p) => {
+  checkSlots(p, SLOTS, "Manifesto");
   const g = useCurrentFrame();
   useFontsReady();
-  useAspects(p.photos);
   const i = SCENES.reduce((n, s, k) => (g >= s.at ? k : n), 0);
   const { at, S } = SCENES[i];
   return (

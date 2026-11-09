@@ -181,26 +181,66 @@ def stills(style: str, video: Path, *, out_dir: Path, meta: Optional[ImageMeta] 
     return saved
 
 
-def fillers(conn: sqlite3.Connection, *, exclude: Sequence[int] = (), n: int = GRID_PHOTOS, rng=None,
-            most_portraits: Optional[int] = None) -> list[Path]:
-    """Approved photos with a copy on this machine to fill a wall or a grid: in rotation (the least recently shown
-    on any surface first, equals in strength by chance), one per room per shoot (Drive folder), the shoots
-    interleaved so no two neighbours come from one, never the post's own. The pick is recorded as a use on the
-    "grid" surface, so the next reel's wall reaches for other photos: Chris, 2026-10-26, "it keeps posting the same
-    photos again" — the strongest 28 had stood on every reel's wall. `most_portraits`: at most that many portraits
-    (Powers of Ten's mosaic is mostly not portraits, 2026-11-08)."""
+def wall_candidates(conn: sqlite3.Connection) -> list[dict]:
+    """Every approved photo with a copy on this machine a wall or a look's fillers can draw on, strongest first, one file
+    per picture: the photo rows, each with its copy's "path". Drawn from every approved photo: the strongest 600 frames
+    of the whole library held 42 approved photos with a copy here (2026-11-09), so the rest of his approved work never
+    reached a wall, and the rotation is all of them. The slow part of a pick; a draft that asks for several reads it once."""
     from ..core import config
-    from ..library import eligibility, moments, report
+    from ..library import eligibility, report
     from . import design_samples
     cache = config.get_config().data_root / "photos"
-    seen = moments.siblings(conn, exclude)          # never a frame of the post's own moments on its wall (2026-11-02)
-    usable = []
-    for r in report.best(conn, 600, cap=None):
+    out = []
+    for r in report.best(conn, None, cap=None):
+        if r["clearance"] != "cleared":
+            continue                                # a photo he has not used is never cleared: passed over before the rest
         path = Path(r["local_path"]) if r["local_path"] else cache / f"{r['drive_id']}.img"
-        if (r["id"] in seen or not path.is_file()
-                or eligibility.clearance_of(conn, r) != "cleared" or not design_samples.usable(conn, r)):
+        if path.is_file() and eligibility.clearance_of(conn, r) == "cleared" and design_samples.usable(conn, r):
+            out.append({**dict(r), "path": path})
+    return out
+
+
+def wall_picks(conn: sqlite3.Connection, *, exclude: Sequence[int] = (), n: int = GRID_PHOTOS, rng=None,
+               most_portraits: Optional[int] = None, only: Optional[str] = None,
+               candidates: Optional[list[dict]] = None) -> list[dict]:
+    """Approved photos with a copy on this machine to fill a wall or a grid (`candidates`, wall_candidates when not given):
+    in rotation (the least recently shown on any surface first, equals in strength by chance), one per room per shoot
+    (Drive folder), the shoots interleaved so no two neighbours come from one, never the post's own (nor a copy of one of
+    its pictures, nor a frame of its moments): the photo rows, each with its copy's "path". What a reel shows of them is
+    recorded as a use on the "grid" surface (record_wall), so the next reel's wall reaches for other photos: Chris,
+    2026-10-26, "it keeps posting the same photos again" — the strongest 28 had stood on every reel's wall.
+    `most_portraits`: at most that many portraits (Powers of Ten's mosaic is mostly not portraits, 2026-11-08); `only`:
+    that shot type alone (Axis's portraits).
+    A moment needs the camera's clock. Where the post holds a photo with none, nothing of its shoot and shot type fills
+    (a frame of the same sitting could not be told from another), nor does a photo with none from a shoot and shot type
+    the post holds. Nor does a photo another post still to go out holds (storage.OPEN: a draft, approved or scheduled),
+    a copy of it or a frame of its moment: that post would show the picture again (#90's tiles held photos of #80, #85
+    and #86, 2026-11-09)."""
+    from .. import storage
+    from ..core import db
+    from ..library import copies, moments, report
+    own = copies.every_copy(conn, exclude)
+    # never a frame of the post's own moments on its wall (2026-11-02), nor a copy of its pictures filed elsewhere
+    seen = moments.siblings(conn, own)
+    marks = ",".join("?" * len(storage.OPEN))
+    held = [int(p) for r in db.rows(conn, f"SELECT photo_ids FROM content_queue WHERE status IN ({marks})", storage.OPEN)
+            for p in json.loads(r["photo_ids"] or "[]")]
+    seen |= moments.siblings(conn, copies.every_copy(conn, held))
+    own_keys, untimed_keys = set(), set()
+    if own:
+        marks = ",".join("?" * len(own))
+        for r in db.rows(conn, f"SELECT p.folder_id, p.taken_at, c.shot_type FROM photos p LEFT JOIN classifications c "
+                               f"ON c.photo_id = p.id WHERE p.id IN ({marks})", sorted(own)):
+            own_keys.add((r["folder_id"], r["shot_type"]))
+            if moments.taken(r["taken_at"]) is None:
+                untimed_keys.add((r["folder_id"], r["shot_type"]))
+    usable = []
+    for r in wall_candidates(conn) if candidates is None else candidates:
+        key = (r["folder_id"], r["shot_type"])
+        if (r["id"] in seen or (only is not None and r["shot_type"] != only) or key in untimed_keys
+                or (key in own_keys and moments.taken(r["taken_at"]) is None)):
             continue
-        usable.append({**dict(r), "path": path})
+        usable.append(r)
     by_shoot: dict = {}
     for r in report.rotate(conn, usable, rng=rng, alike=lambda r: -report.strength(r)):
         key = (r["folder_id"], r["shot_type"])
@@ -219,6 +259,19 @@ def fillers(conn: sqlite3.Connection, *, exclude: Sequence[int] = (), n: int = G
                         sum(1 for p in picked if p["shot_type"] == "portrait") >= most_portraits:
                     continue
                 picked.append(r)
-    if picked:
-        report.record_use(conn, "grid", [r["id"] for r in picked], ref=f"grid:{report.use_stamp()}")
+    return picked
+
+
+def record_wall(conn: sqlite3.Connection, photo_ids: Sequence[int]) -> None:
+    """These approved photos stood on a reel's wall (or filled a look's slots): a use on the "grid" surface, never one
+    the post's repeat window counts."""
+    from ..library import report
+    if photo_ids:
+        report.record_use(conn, "grid", list(photo_ids), ref=f"grid:{report.use_stamp()}")
+
+
+def fillers(conn: sqlite3.Connection, *, exclude: Sequence[int] = (), n: int = GRID_PHOTOS, rng=None) -> list[Path]:
+    """A 3D reel's wall (wall_picks), recorded as shown: every one of them stands on the wall."""
+    picked = wall_picks(conn, exclude=exclude, n=n, rng=rng)
+    record_wall(conn, [r["id"] for r in picked])
     return [r["path"] for r in picked]

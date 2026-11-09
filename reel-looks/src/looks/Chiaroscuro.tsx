@@ -1,7 +1,8 @@
 import React from "react";
 import { AbsoluteFill, Easing, Img, interpolate, random, staticFile, useCurrentFrame } from "remotion";
 import { noise2D } from "@remotion/noise";
-import { H, Photo, ReelProps, W, clamp, climaxIndex, heldForClimax, ramp } from "../look";
+import { H, Photo, ReelProps, W, clamp, ramp } from "../look";
+import { Slots, checkSlots, fillerAt, photoAt } from "../slots";
 import { GARAMOND } from "../fonts";
 import { Face, fitSize, metrics, textWidth, useFontsReady } from "../measure";
 import { Music } from "../music";
@@ -44,7 +45,13 @@ type RGB = [number, number, number];
 const LAMP: RGB = [255, 214, 160];
 const rgba = (c: RGB, a: number) => `rgba(${c[0]},${c[1]},${c[2]},${Math.max(0, Math.min(1, a)).toFixed(3)})`;
 const ASSET = (f: string) => staticFile(`textures/chiaroscuro/${f}`);
-const ph = (p: ReelProps, i: number): Photo => p.photos[i % p.photos.length];
+// Every picture once (Chris, 2026-11-08, night: no picture twice in a reel). The post's seven photos: the hero (slot 0,
+// the calling), the three under the arches with their words, the climax's, the night watch's and the picture that
+// rises through the hero. The picture far back in the dark under the number, the studies' three paintings and the
+// montage's eight cuts are fillers, more of his approved photos.
+export const SLOTS: Slots = { photos: 7, fillers: 12 };
+const HERO = 0, CLIMAX = 4, WATCHED = 5, RISES = 6;
+const BEHIND_NUMBER = 0, STUDIES = [1, 2, 3], CUT_FILLERS = [4, 5, 6, 7, 8, 9, 10, 11];   // filler slots, in the order seen
 
 const ROMAN: Face = { family: GARAMOND, weight: 500 };
 const ITALIC: Face = { family: GARAMOND, weight: 500, italic: true };
@@ -216,7 +223,7 @@ const TW = 900, TH = 1125, TCX = W / 2, TCY = 1062;
 // 0-1 · the calling. One unbroken pull back over 4 s: from a detail in the beam to the whole tableau, the light widening
 // with it. The hook is set in the dark above at frame 0 (the cover); the answer condenses beneath it; then line 1.
 const Calling: Scene = ({ g, p }) => {
-  const hero = ph(p, 0);
+  const hero = photoAt(p, HERO);
   const t = Math.min(1, g / 118);
   const e = settle(t);
   const s = Math.exp(lerp(Math.log(1.78), Math.log(1), e));
@@ -246,7 +253,7 @@ const Calling: Scene = ({ g, p }) => {
 // 2 · the next picture rises through the last: both in the frame at once for a breath, a double exposure in the dark,
 // the light swinging across to find it.
 const Layers: Scene = ({ f, g, p }) => {
-  const hero = ph(p, 0), next = ph(p, 4);
+  const hero = photoAt(p, HERO), next = photoAt(p, RISES);
   const out = ramp(f, 0, 42, soft);
   const inn = ramp(f, 2, 44, soft);
   const l2 = pair(p.line2[0], p.line2[1]);
@@ -273,14 +280,14 @@ const PANELS = [
 ];
 const PANEL_BASE = 1366;
 const Triptych: Scene = ({ f, g, p }) => {
-  const idx = p.wordPhotos ?? [0, 1, 2];
+  const idx = p.wordPhotos;
   const lean = 1 + 0.035 * ramp(f, 30, 75, Easing.linear);
   const wordS = Math.min(...PANELS.map((pn, i) => fitSize(p.words[i], ITALIC, pn.w + 24, 84)));
   return (
     <AbsoluteFill style={{ background: BIT }}>
       <AbsoluteFill style={{ transform: `scale(${lean})`, transformOrigin: "50% 52%" }}>
         {PANELS.map((pn, i) => {
-          const pic = ph(p, idx[i]);
+          const pic = photoAt(p, idx[i]);
           const at = i * 15;
           const lit = ramp(f, at, at + 11, soft);
           const top = PANEL_BASE - pn.h;
@@ -308,7 +315,7 @@ const Triptych: Scene = ({ f, g, p }) => {
 
 // 4 · the number, carved in light: a sheen crosses it the way light crosses stone, over a picture far back in the dark.
 const Figure: Scene = ({ f, g, p }) => {
-  const back = ph(p, 1);
+  const back = fillerAt(p, BEHIND_NUMBER);
   const v = p.counter.value;
   const numS = fitSize(v, LIGHTF, 820, 760);
   const m = metrics(LIGHTF);
@@ -341,7 +348,7 @@ const stackParts = (s: string) => {
   return comma.length >= 2 ? comma.slice(0, 3) : [];
 };
 const NightWatch: Scene = ({ f, g, p }) => {
-  const pic = ph(p, 0);   // the work itself, examined: the light goes back over the hero, detail by detail
+  const pic = photoAt(p, WATCHED);   // the work itself, examined: the light goes over it, detail by detail
   const parts = stackParts(p.stackLabel);
   const clampP = (v: number) => Math.min(0.82, Math.max(0.18, v));
   const stops = [
@@ -383,7 +390,7 @@ const NightWatch: Scene = ({ f, g, p }) => {
 // way a lamp carried through a gallery finds one picture after another. One constant lateral dolly.
 const STUDY_W = 700, STUDY_H = 875, STUDY_GAP = 790, STUDY_Y = 960;
 const Studies: Scene = ({ f, g, p }) => {
-  const pics = [1, 2, 5].map((i) => (heldForClimax(p, i) ? ph(p, 0) : ph(p, i)));
+  const pics = STUDIES.map((k) => fillerAt(p, k));
   const cam = lerp(-STUDY_GAP, STUDY_GAP, Math.min(1, f / 60));          // the camera walks right at one speed: a painting each half bar
   return (
     <AbsoluteFill style={{ background: BIT }}>
@@ -409,7 +416,6 @@ const Studies: Scene = ({ f, g, p }) => {
 // then black, and one ember (Event Caliber's own colour, the first time it appears): the held breath.
 const CUTS = [0, 15, 30, 38, 45, 49, 53, 56, 60];   // on the grid: two beats, two eighths, then sixteenths
 const Montage: Scene = ({ f, g, p }) => {
-  const order = [1, 2, 4, 5, 0, 2, 1, 4].map((i) => (heldForClimax(p, i) ? 0 : i));
   const n = CUTS.findIndex((c, i) => f >= c && f < (CUTS[i + 1] ?? 999));
   const ember = ramp(f, 62, 72, soft);
   if (n < 0 || n >= CUTS.length - 1) {
@@ -419,7 +425,7 @@ const Montage: Scene = ({ f, g, p }) => {
       </AbsoluteFill>
     );
   }
-  const pic = ph(p, order[n]);
+  const pic = fillerAt(p, CUT_FILLERS[n]);
   const lf = f - CUTS[n], len = CUTS[n + 1] - CUTS[n];
   const jx = (random(`mx${n}`) - 0.5) * 0.24, jy = (random(`my${n}`) - 0.5) * 0.2;
   const z = 1.34 + 0.12 * random(`mz${n}`) + 0.06 * (lf / len);
@@ -435,14 +441,12 @@ const Montage: Scene = ({ f, g, p }) => {
 };
 
 // 6 · the light. On the music's entrance the ember opens into a shaft from straight above (top light) and the chosen
-// picture is seen at last: the photo props.climax names, else the hero. Gilt draws round it; pearls of light
+// picture is seen at last, a photo of its own. Gilt draws round it; pearls of light
 // catch the gilt; the marquee word, and the stack beneath it on a ruled line.
 const PW = 760, PHt = 950, PCX = W / 2, PCY = 820;
 const Light: Scene = ({ f, g, p }) => {
-  // the photo props.climax names is seen in its own colours, the light alone on it (the approved Event Caliber reel,
-  // 2026-11-08); the hero at the climax is graded like every picture before it
-  const own = climaxIndex(p) !== 0;
-  const piece = ph(p, climaxIndex(p));
+  // the climax's picture is seen in its own colours, the light alone on it (the approved Event Caliber reel, 2026-11-08)
+  const piece = photoAt(p, CLIMAX);
   const open = ramp(f, 0, 16, Easing.out(Easing.cubic));
   const bloom = f < 3 ? f / 3 : Math.max(0, 1 - (f - 3) / 10);
   const push = 1 + 0.035 * ramp(f, 0, 90, Easing.linear);
@@ -453,7 +457,7 @@ const Light: Scene = ({ f, g, p }) => {
   return (
     <AbsoluteFill style={{ background: BIT }}>
       <AbsoluteFill style={{ transform: `scale(${push})`, transformOrigin: `50% ${PCY / H * 100}%` }}>
-        <Painting p={piece} cx={PCX} cy={PCY} w={PW} h={PHt} s={1.06 - 0.06 * open} ox={0.5} oy={0.5} pool={{ x: 0.5, y: lerp(0.22, 0.46, open), r: lerp(0.5, 1.05, open), core: lerp(0.12, 0.55, open), aspect: 1.25 }} grade={!own} edge={0} weave={own ? 0.06 : 0.13} />
+        <Painting p={piece} cx={PCX} cy={PCY} w={PW} h={PHt} s={1.06 - 0.06 * open} ox={0.5} oy={0.5} pool={{ x: 0.5, y: lerp(0.22, 0.46, open), r: lerp(0.5, 1.05, open), core: lerp(0.12, 0.55, open), aspect: 1.25 }} grade={false} edge={0} weave={0.06} />
         <svg width={W} height={H} style={{ position: "absolute", left: 0, top: 0 }}>
           <rect x={left - 14} y={top - 14} width={PW + 28} height={PHt + 28} fill="none" stroke={`rgba(${GILT},.75)`} strokeWidth={2} pathLength={1} strokeDasharray="1" strokeDashoffset={1 - frameK} />
           <rect x={left - 24} y={top - 24} width={PW + 48} height={PHt + 48} fill="none" stroke={`rgba(${GILT},.3)`} strokeWidth={1} pathLength={1} strokeDasharray="1" strokeDashoffset={1 - ramp(f, 14, 36, soft)} />
@@ -536,6 +540,7 @@ const Grain: React.FC<{ g: number }> = ({ g }) => {
 };
 
 export const Chiaroscuro: React.FC<ReelProps> = (p) => {
+  checkSlots(p, SLOTS, "Chiaroscuro");
   const g = useCurrentFrame();
   useFontsReady();
   const i = SCENES.reduce((n, s, k) => (g >= s.at ? k : n), 0);

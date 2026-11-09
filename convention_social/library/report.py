@@ -219,9 +219,9 @@ def offered(r, subject: str) -> bool:
             and not (subject == "architecture" and eligibility.building_blocked(r)))
 
 
-def best(conn: sqlite3.Connection, n: int = 30, *, subject: str = "event", cap: int | None = PER_EVENT_CAP) -> list[sqlite3.Row]:
-    """The strongest frames, at most PER_EVENT_CAP per event, one file per picture (the one that stands for it,
-    library/copies.py: a reel's wall and the samples never show a picture twice or its small copy).
+def best(conn: sqlite3.Connection, n: int | None = 30, *, subject: str = "event", cap: int | None = PER_EVENT_CAP) -> list[sqlite3.Row]:
+    """The strongest frames (`n` of them; None: every one), at most PER_EVENT_CAP per event, one file per picture (the one
+    that stands for it, library/copies.py: a reel's wall and the samples never show a picture twice or its small copy).
 
     `subject` is "event" for convention work or "architecture" for Chris's building work. Both are sorted by a model;
     a photo he has not decided on is offered only with no readable personal detail (for buildings that one matters most,
@@ -239,7 +239,7 @@ def best(conn: sqlite3.Connection, n: int = 30, *, subject: str = "event", cap: 
             continue
         per[key] += 1
         picked.append(r)
-        if len(picked) >= n:
+        if n is not None and len(picked) >= n:
             break
     return picked
 

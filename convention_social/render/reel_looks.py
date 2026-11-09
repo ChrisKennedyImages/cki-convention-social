@@ -10,6 +10,15 @@ mp4 (the photos as JPEG with their size, the track, links to the looks' fonts an
 look's composition with props.json, the mp4 is the product and the dir is removed. No Node, no reel: the draft falls
 back to a carousel of the same photos (content.make_renderer), as a 3D reel does.
 
+No picture is shown twice in a reel (Chris, 2026-11-08, night, on the Axis reel: "there are duplicates! The women in red
+at the end you just used is also in the gallery on the left side! The masters wouldt be this sloppy!"; the option he
+took: "each look takes as many different photos as it shows (the design itself unchanged)"). Each look shows SLOTS: its
+photo slots take the post's own photos (TAKES, the photos the picker takes and the post records), each seen once in a
+moment of its own (the cover, its word, its scene); its filler slots (a contact sheet, a gallery, a montage, a mosaic's
+rings) take fillers, more of his approved photos drawn as a 3D reel's wall is (`fillers`). The looks had cycled a few
+photos round many slots; a slot the props do not hold now stops the render (reel-looks/src/slots.ts), and
+`ccs reel-check` (render/reel_check.py) renders a look with a card in each slot to prove no picture comes back.
+
 The photos come through the content agent's picker under the look's rule (`photo_rule`). Chris, 2026-11-08: "it's
 event photography mainly - the gallery in the last one should remain all portraits. It's also fine to have one or two
 portrait other ones": at most two portraits in any look but Axis, and Axis takes portraits only, its last two the
@@ -29,6 +38,7 @@ import json
 import shutil
 import subprocess
 from dataclasses import dataclass
+from functools import cached_property
 from pathlib import Path
 from typing import Callable, Optional, Sequence
 
@@ -63,17 +73,49 @@ STILL_FRAMES = {"powersoften": (60, 120), "manifesto": (295,), "darkroom": (352,
                 "splitscreen": (340,), "weather": (340,), "stillness": (320,), "chiaroscuro": (232,),
                 "axis": (188, 203, 218)}
 GRADED = ("chiaroscuro", "axis")                          # the two looks that grade and light his photos
-CLIMAX_LOOKS = ("chiaroscuro", "axis")                    # the two that show a photo held back until the climax
 PORTRAIT = "portrait"                                     # classifications.shot_type
 PORTRAITS_ONLY = ("axis",)
 MOST_PORTRAITS = 2                                        # in any other look
 ENDING = 2                                                # Axis's closing burst
-TAKES = {look: 7 if look in PORTRAITS_ONLY else 6 for look in LOOKS}     # Axis: five in the corridor and the burst of two
-LEAST = {look: 5 if look in PORTRAITS_ONLY else 4 for look in LOOKS}     # fewer and the look is not made
-TILES = 40                                                # Powers of Ten's mosaic: more approved photos round the reel's
-TILE_PORTRAITS = 8                                        # mostly not portraits
-MIN_TILES = 8                                             # with fewer the move is too short for every word to be read
-#                                                           1.5 s beside its photo (tests/powers_of_ten_windows.mjs)
+
+
+@dataclass(frozen=True)
+class Slots:
+    """The pictures a look shows, each once (its TSX exports the same SLOTS): `photos`, slots for the post's own, the
+    hero or the first word's photo first, then the word photos, then its other moments; `fillers`, every other slot.
+    `fillers_from`: a look whose layout places as many fillers as its photos' shapes allow (Powers of Ten's mosaic)
+    takes from that many to `fillers`, exactly the ones it places (fit_mosaic)."""
+    photos: int
+    fillers: int
+    fillers_from: Optional[int] = None
+
+
+SLOTS = {
+    "powersoften": Slots(6, 40, 8),  # the six nearest the hero; the mosaic's outer rings, as many as it places (with
+    #                                  fewer than 8 the move is too short for every word to hold beside its photo)
+    "manifesto": Slots(7, 2),        # the shout, the three wedges, the climax, the manifesto, the number; the photomontage
+    "darkroom": Slots(6, 7),         # the print (the first word), two more prints on the line, three on the sheet; the sheet
+    "titles": Slots(7, 2),           # the cover, the three bars, the climax, the end title, the number; Psycho bars, symbol
+    "section": Slots(5, 3),          # the three word rooms (the hero's first), the attic, the first floor's other; the plates
+    "splitscreen": Slots(8, 6),      # the resolve (the hero), the triptych, the split, the counterpoint; the sheet
+    "weather": Slots(7, 0),          # the storm, the three words, the clearing, the long lens, the gale
+    "stillness": Slots(7, 0),        # the rise (the hero), the three words, the level line, the pair
+    "chiaroscuro": Slots(7, 12),     # the calling, the three arches, the climax, the night watch, the double exposure;
+    #                                  the picture under the number, the studies and the montage
+    "axis": Slots(8, 13),            # the doorway, the three words, the first and last doors, the burst; the gallery's
+    #                                  eleven walls and the two middle doors (as the hand-fixed Axis sent to Chris, v5)
+}
+# The looks whose first photo carries the first word and is seen on with no other picture between (Powers of Ten's one
+# move, Darkroom's print, Section's room; reel_check lists Darkroom's and Section's for Chris to rule on): their words go
+# on their first three photos. In the others the hero has a moment of its own (the cover; Split Screen's resolve,
+# Stillness's rise) and is seen there only, and the words go on the three photos after it. A picture is never carried on
+# from one moment into another through a wipe or a dissolve: that is two moments, and shown in two places at once.
+FIRST_WORD_LEADS = ("powersoften", "darkroom", "section")
+TAKES = {look: s.photos for look, s in SLOTS.items()}    # the post's own photos a look takes: as many as it shows
+# fewer and the look is not made: its lead and its three word photos (Axis's burst of two besides); a photo slot the post
+# has no photo for takes a filler, the least of the look's moments first (each look numbers its slots so)
+LEAST = {look: 6 if look in PORTRAITS_ONLY else 4 for look in LOOKS}
+MOSAIC_PORTRAITS = 8                                      # Powers of Ten's mosaic: mostly not portraits (2026-11-08)
 DEFAULT_FOCUS = (0.5, 0.42)
 RENDER_TIMEOUT = 30 * 60
 ASSET_WAIT_MS = 120_000                                   # Remotion's wait for fonts and photos (its default is 30 s)
@@ -87,7 +129,8 @@ FIXED_BRIEF_WORDS = ("Its three beat words ({words}) are the photographer's own,
 # (2026-11-08: his approval is final), and nothing named here is a fault. Each look's own elements that a picky eye could
 # take for one are named: the Darkroom reel was turned back three times (drafts 81, 88 and 89) for "an empty white cell
 # in position 1", "duplicate frames" and frames "underexposed to near black" on its contact sheet, which are the roll's
-# fogged leader, a photographer working a room, and his own photos as shot sitting in the film's black.
+# fogged leader, the same pictures twice on the sheet (as the look then drew it; since 2026-11-08, night, every frame is a
+# picture of its own), and his own photos as shot sitting in the film's black.
 ON_PURPOSE = {
     "powersoften": "the camera pulls back without a cut from the hero over one plane of the photographer's photos laid "
                    "edge to edge with small dark gaps, ring after ring, into a night map of the region; each beat word "
@@ -101,18 +144,18 @@ ON_PURPOSE = {
     "darkroom": "a darkroom under a red safelight. The cover is a contact sheet on a light box: a roll of twelve frames "
                 "in black film strips with their edge numbers. The first frame, top left, is the roll's fogged leader, "
                 "white fading to grey and empty on purpose, as the first frame of every roll is. The other eleven are "
-                "small prints of the photographer's own photos exactly as shot, the hero once in the middle of the third "
-                "strip and the other photos repeated, as he works a room; each sits whole in the film's black, so a dark or "
-                "narrow photo makes a dark frame. Then the enlarger, a print developing in from paper white in the tray, "
-                "and prints pegged on lines with a word pencilled on each print's border. The fogged leader, the repeated "
-                "frames, the film's black, the red room around the prints and the white paper borders are the design.",
+                "small prints of the photographer's own photos exactly as shot, eleven different pictures, the hero in the "
+                "middle of the third strip; each sits whole in the film's black, so a dark or narrow photo makes a dark "
+                "frame. Then the enlarger, a print developing in from paper white in the tray, and prints pegged on lines "
+                "with a word pencilled on each print's border. The fogged leader, the film's black, the red room around the "
+                "prints and the white paper borders are the design.",
     "titles": "film opening titles in cut paper: ragged, hand cut bars of cyan and white paper on black, letters cut by "
               "hand and set a little off their neighbours, bars that slide across and split the frame; each photo whole "
               "at its own shape, standing on its bar, its beat word on the bar beneath it. The ragged edges, the uneven "
               "letters, the bars and the black around the photos are the design.",
     "section": "an architect's section drawing: a house cut through on drafting paper, the cut walls, floors and roof "
                "solid black and hatched, every room the shape of its photo, numbered callouts and a legend. A room is "
-               "drawn empty in thin line until its photo is up in it, so empty rooms on the drawing are the design. The "
+               "drawn empty in thin line whenever its photo is not up in it, so empty rooms on the drawing are the design. The "
                "small photos in the drawing's rooms and the legend's numbers, which tie each beat word to its room, are "
                "the design. In the exploded view the photos hang apart below the hero on a dashed axis, skewed flat as "
                "plates in an axonometric drawing, then snap together into the hero straight on: that skew is the design.",
@@ -156,17 +199,70 @@ def photo_rule(look: str) -> Callable[[dict, Sequence[dict]], bool]:
     return rule
 
 
-def fits(look: str, rows: Sequence[dict]) -> bool:
-    """Photos already chosen (Post this on a sample) can make a reel in `look`: enough of them, each allowed in turn."""
+def parts(look: str, items: Sequence) -> tuple[list, list, list]:
+    """The post's photos (or their rooms), in its order, as the look takes them: (its lead, the rest its words are found
+    among, Axis's burst). A FIRST_WORD_LEADS look finds its words among all of them; any other leads with the hero."""
+    burst = list(items[-ENDING:]) if look in PORTRAITS_ONLY else []
+    body = list(items[:-ENDING]) if look in PORTRAITS_ONLY else list(items)
+    lead = [] if look in FIRST_WORD_LEADS else body[:1]
+    return lead, body[len(lead):], burst
+
+
+def words_fit(look: str, rooms: Sequence[Optional[str]]) -> bool:
+    """The post's photos, with these confirmed rooms (in its order), give the look its three words, each on a photo whose
+    room it names (reel_lines.beats)."""
+    _, rest, _ = parts(look, rooms)
+    try:
+        reel_lines.beats(rest, look)
+    except ValueError:                      # reel_lines.TooFewRooms among them
+        return False
+    return True
+
+
+def fillers_needed(look: str, photos: int) -> int:
+    """The fewest fillers a reel in `look` of that many of the post's photos can be made with."""
+    s = SLOTS[look]
+    return (s.fillers if s.fillers_from is None else s.fillers_from) + max(0, s.photos - photos)
+
+
+class Supply:
+    """The approved photos with a copy here a draft's fillers are drawn from (reels3d.wall_candidates, the slow part of a
+    pick), read once however many looks the draft weighs."""
+    def __init__(self, conn):
+        self.conn = conn
+
+    @cached_property
+    def candidates(self) -> list[dict]:
+        from . import reels3d
+        return reels3d.wall_candidates(self.conn)
+
+    def enough(self, look: str, rows: Sequence[dict], photos: int) -> bool:
+        """Fillers enough for a reel in `look` of `photos` of the post's own, these (`rows`) kept off them."""
+        need = fillers_needed(look, photos)
+        return not need or len(fillers(self.conn, look, rows, n=need, candidates=self.candidates)) >= need
+
+
+def fits(look: str, rows: Sequence[dict], *, rooms: Optional[dict] = None, supply: Optional[Supply] = None) -> bool:
+    """These photos, already chosen, can make a reel in `look`: enough of them and no more than it shows, each allowed in
+    turn; with `rooms` ({photo id: the room its final check confirmed}), its three words each on a photo naming them; with
+    `supply`, the fillers it needs are here. A look that cannot be made is not chosen, so no reel falls back to a carousel
+    for a reason the suite could see first."""
     rule = photo_rule(look)
-    return len(rows) >= LEAST[look] and all(rule(r, rows[:k]) for k, r in enumerate(rows))
+    if not (LEAST[look] <= len(rows) <= TAKES[look] and all(rule(r, rows[:k]) for k, r in enumerate(rows))):
+        return False
+    if rooms is not None and not words_fit(look, [rooms.get(r["id"]) for r in rows]):
+        return False
+    return supply is None or supply.enough(look, rows, len(rows))
 
 
-def can_fill(look: str, pool: Sequence[dict]) -> bool:
-    """The pool holds photos enough for the look: Axis its seven portraits, any other look its least."""
+def can_fill(look: str, pool: Sequence[dict], supply: Optional[Supply] = None) -> bool:
+    """The pool holds photos enough for the look (Axis its eight portraits, any other look its least) and, with `supply`,
+    the fillers a full reel in it needs are here (Axis's thirteen portraits, one a shoot)."""
     if look in PORTRAITS_ONLY:
-        return sum(1 for r in pool if r.get("shot_type") == PORTRAIT) >= TAKES[look]
-    return len(pool) >= LEAST[look]
+        enough = sum(1 for r in pool if r.get("shot_type") == PORTRAIT) >= TAKES[look]
+    else:
+        enough = len(pool) >= LEAST[look]
+    return enough and (supply is None or supply.enough(look, [], TAKES[look]))
 
 
 def brief(look: str, *, card: bool = True, stills: Optional[int] = None) -> str:
@@ -195,6 +291,13 @@ class LookPhoto:
 
 
 @dataclass(frozen=True)
+class Filler:
+    """One of his approved photos for a look's other slots: its id, for the rotation's record, and its copy here."""
+    id: int
+    path: Path
+
+
+@dataclass(frozen=True)
 class Plan:
     """What a reel in a look takes besides its photos: its set of lines (reel_lines.SETS) and its track."""
     lines: int
@@ -203,58 +306,64 @@ class Plan:
 
 @dataclass
 class Arranged:
-    photos: list[LookPhoto]
+    photos: list[LookPhoto]             # the look's photo slots: the post's own in the look's order, then fillers for any
+    #                                     slot it had no photo for (Axis's burst stays last)
     beats: reel_lines.Beats             # its photo indexes point into `photos`
-    climax: Optional[int]               # the photo held back until the climax, an index into `photos`
-    ending: list[LookPhoto]             # Axis's closing burst
+    fillers: list[Filler]               # the look's filler slots
 
 
-def arrange(look: str, photos: Sequence[LookPhoto]) -> Arranged:
-    """The reel's photos (in its order) as the look takes them: the three word photos first, in the reel's order, so the
-    first of them leads the reel (Powers of Ten's hero must carry the first word), the rest after. Chiaroscuro and Axis
-    hold the next photo back for the climax. Axis's last two photos are its closing burst, the last of them held: that
-    one is its climax photo too, so all seven are seen once."""
-    if len(photos) < LEAST[look]:
-        raise ValueError(f"the {NAMES[look]} look takes at least {LEAST[look]} photos; {len(photos)} came")
-    body = list(photos[:-ENDING]) if look in PORTRAITS_ONLY else list(photos)
-    ending = list(photos[-ENDING:]) if look in PORTRAITS_ONLY else []
-    found = reel_lines.beats([p.room for p in body], look)
-    ordered = [body[i] for i in found.photos] + [p for i, p in enumerate(body) if i not in found.photos]
-    beats = reel_lines.Beats(photos=(0, 1, 2), words=found.words, stack=found.stack)
-    climax = None
-    if look in CLIMAX_LOOKS:
-        if ending:
-            ordered.insert(3, ending[-1])
-        climax = 3 if len(ordered) > 3 else None
-    return Arranged(ordered, beats, climax, ending)
+def arrange(look: str, photos: Sequence[LookPhoto], fillers: Sequence[Filler]) -> Arranged:
+    """The post's photos (in its order, the hero first) and the fillers as the look shows them, each picture once.
+    FIRST_WORD_LEADS looks lead with the three word photos (the first carries the first word: Powers of Ten's hero); the
+    others lead with the hero, in a moment of its own, and the three word photos come after it. Then the rest of the post's photos;
+    a photo slot the post had no photo for takes the first fillers, the rest fill the look's filler slots. Axis's last
+    two photos are its closing burst, the last of them held. Too few or too many of either stops the reel."""
+    slots = SLOTS[look]
+    if not LEAST[look] <= len(photos) <= slots.photos:
+        raise ValueError(f"the {NAMES[look]} look takes {LEAST[look]} to {slots.photos} of the post's photos; {len(photos)} came")
+    short = slots.photos - len(photos)
+    least = slots.fillers if slots.fillers_from is None else slots.fillers_from
+    if not least + short <= len(fillers) <= slots.fillers + short:
+        wanted = slots.fillers + short if least == slots.fillers else f"{least + short} to {slots.fillers + short}"
+        raise ValueError(f"the {NAMES[look]} look needs {wanted} more approved photos with a copy here "
+                         f"(fillers, never the post's own); {len(fillers)} came")
+    lead, rest, burst = parts(look, photos)
+    found = reel_lines.beats([p.room for p in rest], look)
+    ordered = lead + [rest[i] for i in found.photos] + [p for i, p in enumerate(rest) if i not in found.photos]
+    filled = []
+    for f in fillers[:short]:
+        with Image.open(f.path) as im:
+            filled.append(LookPhoto(im.convert("RGB"), None))
+    beats = reel_lines.Beats(photos=tuple(len(lead) + k for k in range(3)), words=found.words, stack=found.stack)
+    return Arranged(ordered + filled + burst, beats, list(fillers[short:]))
 
 
-def props(look: str, photos: Sequence[LookPhoto], *, plan: Plan, tiles: Sequence[Path], public: Path) -> dict:
-    """The render's props (reel-looks/src/look.ts ReelProps), with every file they name written under `public`."""
-    shaped = arrange(look, photos)
+def props(look: str, photos: Sequence[LookPhoto], *, plan: Plan, fillers: Sequence[Filler], public: Path,
+          placed: Optional[Callable] = None) -> dict:
+    """The render's props (reel-looks/src/look.ts ReelProps), with every file they name written under `public`. A
+    look whose layout places what fits (`fillers_from`) keeps only the fillers it places (fit_mosaic, `placed` its seam)."""
+    shaped = arrange(look, photos, fillers)
     (public / "photos").mkdir(parents=True)
     for name in ("fonts", "textures"):
         (public / name).symlink_to(REEL_LOOKS / "public" / name)
 
-    def placed(p: LookPhoto, name: str) -> dict:
+    def placed_at(p: LookPhoto, name: str) -> dict:
         w, h = copy_photo(p.image, public / "photos" / f"{name}.jpg")
         return {"src": f"photos/{name}.jpg", "fx": round(p.focus[0], 4), "fy": round(p.focus[1], 4), "w": w, "h": h}
 
     out = {**reel_lines.props(plan.lines, shaped.beats),
-           "photos": [placed(p, f"p{k}") for k, p in enumerate(shaped.photos)]}
-    if shaped.climax is not None:
-        out["climax"] = shaped.climax
-    if shaped.ending:
-        out["ending"] = [placed(p, f"e{k}") for k, p in enumerate(shaped.ending)]
-    if look == "powersoften":
-        if len(tiles) < MIN_TILES:
-            raise ValueError(f"Powers of Ten needs {MIN_TILES} more approved photos with a copy here for its mosaic; "
-                             f"{len(tiles)} came")
-        out["tiles"] = []
-        for k, path in enumerate(tiles):
-            with Image.open(path) as im:
-                w, h = copy_photo(im, public / "photos" / f"t{k}.jpg")
-            out["tiles"].append({"src": f"photos/t{k}.jpg", "w": w, "h": h})
+           "photos": [placed_at(p, f"p{k}") for k, p in enumerate(shaped.photos)], "fillers": []}
+    for k, f in enumerate(shaped.fillers):
+        with Image.open(f.path) as im:
+            out["fillers"].append(placed_at(LookPhoto(im, None), f"f{k}"))
+    least = SLOTS[look].fillers_from
+    if least is not None:
+        kept = fit_mosaic(out, placed or mosaic_fillers)
+        for gone in out["fillers"][kept:]:
+            (public / gone["src"]).unlink()
+        out["fillers"] = out["fillers"][:kept]
+        if kept < least:
+            raise ValueError(f"the {NAMES[look]} mosaic places {kept} fillers for these photos; it needs {least}")
     track = public / f"music{plan.track.path.suffix.lower()}"
     shutil.copyfile(plan.track.path, track)
     out["music"] = {"src": track.name, "start": plan.track.start, "rate": plan.track.rate}
@@ -271,11 +380,35 @@ def word_windows(props_list: Sequence[dict]) -> list[list[list[int]]]:
     return json.loads(r.stdout)
 
 
+def mosaic_fillers(props_list: Sequence[dict]) -> list[int]:
+    """Powers of Ten: how many of its fillers the mosaic places, for each of these props, from the layout the look draws
+    with (reel-looks/mosaic-fillers.mjs on powersOfTenLayout.ts, by Node)."""
+    r = subprocess.run([node_tool("node"), "--experimental-strip-types", "--no-warnings", str(REEL_LOOKS / "mosaic-fillers.mjs")],
+                       input=json.dumps(list(props_list)), capture_output=True, text=True, timeout=300)
+    if r.returncode != 0:
+        raise RuntimeError(f"the mosaic could not be laid out: {(r.stderr or r.stdout).strip()[-300:]}")
+    return json.loads(r.stdout)
+
+
+def fit_mosaic(props_: dict, placed: Callable = mosaic_fillers) -> int:
+    """How many of the props' fillers (in order) the mosaic shows every one of. It lays as many rings as cover the frame,
+    so with photos of some shapes it places fewer than it is given (22 to 40 of 40 on photos of every camera shape), and
+    with fewer it may lay a ring less: laid out again on the ones it placed until it places all it is given."""
+    k = len(props_["fillers"])
+    while True:
+        [got] = placed([{**props_, "fillers": props_["fillers"][:k]}])
+        if got >= k:
+            return k
+        k = got
+
+
 @dataclass(frozen=True)
 class Reel:
-    """A rendered reel: its mp4, and the frames the art director sees after the cover (its words with their photos)."""
+    """A rendered reel: its mp4, the frames the art director sees after the cover (its words with their photos), and the
+    fillers it showed (to be recorded on the wall: reels3d.record_wall)."""
     video: Path
     word_frames: tuple[int, ...]
+    fillers: tuple[Filler, ...] = ()
 
 
 def frames_of(look: str, props_: dict, windows: Callable = word_windows) -> tuple[int, ...]:
@@ -290,10 +423,10 @@ def frames_of(look: str, props_: dict, windows: Callable = word_windows) -> tupl
     return tuple(sorted({(a + b) // 2 for a, b in found[:3]}))
 
 
-def render(look: str, photos: Sequence[LookPhoto], *, plan: Optional[Plan], out: Path, tiles: Sequence[Path] = (),
-           run: Callable = run_remotion, windows: Callable = word_windows) -> Reel:
+def render(look: str, photos: Sequence[LookPhoto], *, plan: Optional[Plan], out: Path, fillers: Sequence[Filler] = (),
+           run: Callable = run_remotion, windows: Callable = word_windows, placed: Callable = mosaic_fillers) -> Reel:
     """The reel as an mp4 at `out`: 1080 x 1920, 30 fps, 16 s (Chiaroscuro and Axis 25 s), with its track, and the frames
-    its words are on."""
+    its words are on, and the fillers it showed. `fillers`: the look's (`fillers`)."""
     if look not in LOOKS:
         raise ValueError(f"no reel look {look!r}; one of {', '.join(LOOKS)}")
     if plan is None:
@@ -303,7 +436,8 @@ def render(look: str, photos: Sequence[LookPhoto], *, plan: Optional[Plan], out:
     public = out.with_name(f"{out.stem}-public")
     shutil.rmtree(public, ignore_errors=True)
     try:
-        p = props(look, photos, plan=plan, tiles=tiles, public=public)
+        p = props(look, photos, plan=plan, fillers=fillers, public=public, placed=placed)
+        shown = tuple(fillers[:SLOTS[look].photos - len(photos) + len(p["fillers"])])
         word_frames = frames_of(look, p, windows)
         (public / "props.json").write_text(json.dumps(p))
         cmd = [node_tool("npx"), "remotion", "render", "src/index.ts", COMPOSITION[look], str(out),
@@ -317,7 +451,7 @@ def render(look: str, photos: Sequence[LookPhoto], *, plan: Optional[Plan], out:
             raise RuntimeError("remotion finished but left no video")
     finally:
         shutil.rmtree(public, ignore_errors=True)
-    return Reel(out, word_frames)
+    return Reel(out, word_frames, shown)
 
 
 def take_video(video: Path, out: Path) -> Path:
@@ -340,9 +474,25 @@ def stills(look: str, video: Path, *, out_dir: Path, meta: Optional[ImageMeta] =
             for f in (COVER_FRAME[look], *(frames or STILL_FRAMES[look]))]
 
 
-def tiles(conn, *, exclude: Sequence[int]) -> list[Path]:
-    """Powers of Ten's mosaic: about TILES more approved photos with a copy on this machine, by the rule a 3D reel's wall
-    is filled by (reels3d.fillers: in rotation, one per room per shoot, never a frame of the post's own moments), at
-    most TILE_PORTRAITS of them portraits."""
+def fillers(conn, look: str, rows: Sequence[dict], *, n: Optional[int] = None,
+            candidates: Optional[list[dict]] = None) -> list[Filler]:
+    """The fillers a reel in `look` of these photos of the post's own (`rows`) needs: its filler slots, and a photo slot
+    for each photo the post has fewer than the look shows. More approved photos with a copy on this machine, by the rule
+    Powers of Ten's mosaic and a 3D reel's wall are filled by (reels3d.wall_picks: in rotation, one per room per shoot,
+    never a copy of the post's pictures, a frame of its moments, or a sitting the camera's clock cannot tell apart; the
+    ones a reel shows are recorded as a use on the wall so the next reel reaches for others, never counted against the
+    post's repeat window). Axis's are portraits, one a shoot; the mosaic's at most MOSAIC_PORTRAITS portraits; any other
+    look's no more than keep the reel at MOST_PORTRAITS. Fewer than it needs and the reel is not made (`arrange`). `n`: that many at most instead; `candidates`:
+    reels3d.wall_candidates read once for the draft (Supply)."""
     from . import reels3d
-    return reels3d.fillers(conn, exclude=exclude, n=TILES, most_portraits=TILE_PORTRAITS)
+    need = SLOTS[look].fillers + max(0, TAKES[look] - len(rows)) if n is None else n
+    if not need:
+        return []
+    ids = [r["id"] for r in rows]
+    if look in PORTRAITS_ONLY:
+        picked = reels3d.wall_picks(conn, exclude=ids, n=need, only=PORTRAIT, candidates=candidates)
+    else:
+        portraits = sum(1 for r in rows if r["shot_type"] == PORTRAIT)
+        most = MOSAIC_PORTRAITS if look == "powersoften" else max(0, MOST_PORTRAITS - portraits)
+        picked = reels3d.wall_picks(conn, exclude=ids, n=need, most_portraits=most, candidates=candidates)
+    return [Filler(r["id"], r["path"]) for r in picked]

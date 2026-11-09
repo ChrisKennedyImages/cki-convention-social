@@ -25,7 +25,7 @@ export const FRAMES: Record<string, number> = { Chiaroscuro: CHIAROSCURO_FRAMES,
 const DEFAULTS: ReelProps = {
   business: "Event Caliber", kicker: "event & conference photography", town: "DC · MD · VA", phone: "eventcaliber.com",
   cta: "Request a quote", accent: "#00E1FF", accent2: "#F3F3F1",
-  photos: [], open: ["Every", "room."], openSub: "every moment.", line1: ["Step", "back."], line2: ["Then", "the room."],
+  photos: [], fillers: [], wordPhotos: [0, 1, 2], open: ["Every", "room."], openSub: "every moment.", line1: ["Step", "back."], line2: ["Then", "the room."],
   stackLabel: "Main stage · portraits · reception", marquee: "Seen", counter: { label: "Every moment", value: "1", unit: "take" },
   words: ["Main stage.", "Portraits.", "Reception."],
 };
