@@ -6,7 +6,7 @@ The crew's work in one place, ordered by what only Chris can do:
                 outreach drafts, anything broken that an agent cannot fix (a
                 dead Drive sign-in, a disconnected channel), and the Art
                 director's turned-back drafts. The scout's finds are not a line
-                of their own (Chris, 2026-11-01): each one three months or more
+                of their own (Chris, 2026-11-01): each one two months or more
                 out becomes an outreach draft by itself.
   Done          what was posted, replies sent, photos sorted, what the
                 learner changed.

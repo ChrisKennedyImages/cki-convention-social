@@ -14,8 +14,8 @@ Never invent (vet()):
     a seen page on the website's host, or a citation from that site that
     quotes the address; otherwise it is blanked
   * dates that are not real YYYY-MM-DD days are blanked; an event that starts
-    before today, under three months from today (the earliest start; Chris,
-    2026-11-01: "the events need to be at least 3 months out") or after the
+    before today, under two months from today (the earliest start; scout.LEAD_MONTHS,
+    Chris 2026-11-08: "So let's do 2 -12 months out") or after the
     horizon is dropped; an undated one is kept, its dates read off its own
     page later (outreach/dates.py)
 
@@ -177,12 +177,18 @@ def parse_events(text: str) -> Optional[list]:
     return None
 
 
-def prompt(region: str, today: date, earliest: date, horizon: date, known: list[str]) -> str:
+def prompt(region: str, today: date, earliest: date, horizon: date, known: list[str], far_from: date | None = None) -> str:
+    """The ask. `far_from`: half the searches go to events starting from it to the horizon, so the conferences and annual
+    meetings that book their photographer six to twelve months ahead are found, not only the nearest (Chris, 2026-11-08)."""
     known_line = "; ".join(known[:60]) or "none"
+    far = ([f"Spend about half your searches on events starting between {far_from.isoformat()} and {horizon.isoformat()}: "
+            "large conferences and annual meetings publish their dates a year ahead and book their photographer early."]
+           if far_from and earliest < far_from < horizon else [])
     return "\n".join([
         f"Region: {region}",
         f"Today: {today.isoformat()}",
         f"Find events starting between {earliest.isoformat()} and {horizon.isoformat()}.",
+        *far,
         f"Already known (skip these): {known_line}",
         f"Up to {MAX_EVENTS} events, the event's own website first.",
     ])
@@ -194,12 +200,12 @@ def _create(client, model: str, **kw):
 
 
 def research(conn: sqlite3.Connection, client, *, region: str, today: date, earliest: date, horizon: date,
-             known: list[str], agent: str = "scout") -> Research:
+             known: list[str], agent: str = "scout", far_from: date | None = None) -> Research:
     """The research call (with pause_turn resumes), then a structuring call only if the answer cannot be parsed."""
     model = config.getenv("SCOUT_MODEL") or DEFAULT_MODEL
     effort = config.getenv("SCOUT_EFFORT") or "medium"
     res = Research(model=model)
-    ask = prompt(region, today, earliest, horizon, known)
+    ask = prompt(region, today, earliest, horizon, known, far_from)
     system = [{"type": "text", "text": SYSTEM, "cache_control": {"type": "ephemeral"}}]
     messages: list = [{"role": "user", "content": ask}]
     turn: list = []
@@ -270,7 +276,7 @@ def _clip(value, key: str) -> str:
 def vet(res: Research, *, today: date, earliest: date, horizon: date) -> tuple[list[dict], dict[str, int]]:
     """Keep what a seen source backs; blank what it does not; drop what cannot stand. Returns (kept, dropped counts)."""
     kept: list[dict] = []
-    dropped = {"no_name": 0, "no_source": 0, "past": 0, "under_three_months": 0, "beyond_horizon": 0, "never": 0}
+    dropped = {"no_name": 0, "no_source": 0, "past": 0, "too_soon": 0, "beyond_horizon": 0, "never": 0}
     seen_hosts = {urlsplit(u).hostname for u in res.seen}
     for cand in res.candidates:
         name = _clip(cand.get("name"), "name")
@@ -293,7 +299,7 @@ def vet(res: Research, *, today: date, earliest: date, horizon: date) -> tuple[l
             dropped["past"] += 1
             continue
         if (start and start < earliest.isoformat()) or (not start and end and end < earliest.isoformat()):
-            dropped["under_three_months"] += 1
+            dropped["too_soon"] += 1
             continue
         if start and start > horizon.isoformat():
             dropped["beyond_horizon"] += 1

@@ -10,12 +10,12 @@
    follows its event: a person's address found on a second look, dates found
    (follow_events).
 3. Draft up to OUTREACH_DAILY_DRAFTS (default 5) a day, no asking (Chris,
-   2026-11-01: "I would rather them all just be converted to drafts and the
-   events need to be at least 3 months out"): prospects Chris added by hand
-   first, then every scout event dated three calendar months or more out
-   (scout.earliest_start) with an organizer email that is not on
+   2026-11-01: "I would rather them all just be converted to drafts"; two
+   months out since 2026-11-08: "So let's do 2 -12 months out"): prospects
+   Chris added by hand first, then every scout event dated two calendar
+   months or more out (scout.earliest_start) with an organizer email that is not on
    do-not-contact, one note per address per event (outreach/draft.py). A
-   draft whose event is now under three months away, or whose dates were not
+   draft whose event is now under two months away, or whose dates were not
    found, is taken out of the drafts with a note. CPAC, the ACU and their
    affiliates are never drafted for, never sent to and never added by hand
    (outreach/compliance.never_contact; Chris, 2026-10-13).
@@ -24,7 +24,7 @@
    postal address in the footer, opt-out link and reply STOP line,
    List-Unsubscribe headers, do-not-contact checked again, the one follow-up
    only 7 days or more after the first). A first note whose event is now
-   under three months away is not sent, and never goes. Dry run writes the
+   under two months away is not sent, and never goes. Dry run writes the
    complete email to DATA_ROOT/outbox-dry (status would_send) and never sends.
    Paced (Chris, 2026-11-02): one note at a time, 20 to 40 minutes apart,
    9:00 to 4:30 on weekdays. This run sends the first that is due; the inbox
@@ -72,7 +72,7 @@ def _tz(cfg: config.Config):
 
 
 def now_utc() -> datetime:
-    """The clock the weekday gate and the three-month rule read; tests pin it to a known day."""
+    """The clock the weekday gate and the lead-time rule read; tests pin it to a known day."""
     return datetime.now(timezone.utc)
 
 
@@ -124,21 +124,21 @@ def start_of_today(cfg: config.Config, now: datetime | None = None) -> str:
     return midnight.astimezone(timezone.utc).replace(microsecond=0).isoformat()
 
 
-# ---------------------------------------------------------------------- the three-month rule
-THREE_MONTHS = "Organizer notes go only for events three months or more away (Chris, 2026-11-01)."
+# ---------------------------------------------------------------------- the lead-time rule (scout.LEAD_MONTHS)
+LEAD_RULE = f"Organizer notes go only for events {scout.LEAD_WORDS} or more away (Chris, 2026-11-08)."
 
 
 def earliest_start(cfg: config.Config, now: datetime | None = None) -> date:
-    """Three calendar months after today in the founder's zone, on this agent's clock (scout.earliest_start)."""
+    """LEAD_MONTHS calendar months after today in the founder's zone, on this agent's clock (scout.earliest_start)."""
     return scout.earliest_start(scout.local_today(cfg, now or now_utc()))
 
 
 def too_soon(row, earliest: date) -> Optional[str]:
-    """Why the three-month rule stops this first note, or None. An event that starts before `earliest` never gets one; an
+    """Why the lead-time rule stops this first note, or None. An event that starts before `earliest` never gets one; an
     event the scout found needs its dates known; a prospect Chris added by hand may be undated (his own call)."""
     start = keys.iso_day(row["start_date"])
     if start and start < earliest.isoformat():
-        return f"the event starts {keys.in_words(start)}, under three months away"
+        return f"the event starts {keys.in_words(start)}, under {scout.LEAD_WORDS} away"
     if not start and row["scout_event_id"]:
         return "the event's dates were not found on its site"
     return None
@@ -195,8 +195,8 @@ def retemplate_unapproved(conn) -> int:
 def follow_events(ctx: runner.Context, earliest: date) -> dict:
     """2026-11-01: a first note waiting for Chris follows its event. Dates found on the event's site go on the note (an
     untouched note is written again in his template, so its first line names them; one he edited keeps his words); a
-    person's address found on a second look takes the place of the shared inbox; and a note the three-month rule now
-    stops (dated under three months away, or a scouted event whose dates were not found) is taken out of the drafts with
+    person's address found on a second look takes the place of the shared inbox; and a note the lead-time rule now
+    stops (dated under two months away, or a scouted event whose dates were not found) is taken out of the drafts with
     the reason. A scouted event whose dates are still to be read (the cap or the API stopped the read) keeps its note
     waiting, and the send step would refuse it undated. An approved note is never touched here: the send step checks it."""
     stats = {"moved": 0, "redated": 0, "withdrawn": 0, "waiting": 0}
@@ -218,12 +218,12 @@ def follow_events(ctx: runner.Context, earliest: date) -> dict:
         if why and not facts["start_date"] and row["ev_site"] and not row["ev_dates_checked"]:
             ctx.conn.execute(f"UPDATE outreach SET notes=?, {stamp} WHERE id=?",
                              (f"Waiting for the event's dates to be read off its site ({row['ev_dates_note'] or 'not read yet'}). "
-                              f"{THREE_MONTHS}", now, now, row["id"]))
+                              f"{LEAD_RULE}", now, now, row["id"]))
             stats["waiting"] += 1
             continue
         if why:
             ctx.conn.execute("UPDATE outreach SET status='rejected', notes=?, updated_at=? WHERE id=?",
-                             (f"Taken out of the drafts: {why}. {THREE_MONTHS}", now, row["id"]))
+                             (f"Taken out of the drafts: {why}. {LEAD_RULE}", now, row["id"]))
             stats["withdrawn"] += 1
             continue
         if (facts["start_date"], facts["end_date"]) != (row["start_date"], row["end_date"]):
@@ -278,7 +278,7 @@ def draft_new(ctx: runner.Context) -> dict:
         why = too_soon(row, earliest)
         if why:
             ctx.conn.execute("UPDATE outreach SET status='rejected', notes=?, updated_at=? WHERE id=?",
-                             (f"Not drafted: {why}. {THREE_MONTHS}", db.utcnow(), row["id"]))
+                             (f"Not drafted: {why}. {LEAD_RULE}", db.utcnow(), row["id"]))
             stats["too_soon"] += 1
             continue
         if room <= 0:
@@ -289,7 +289,7 @@ def draft_new(ctx: runner.Context) -> dict:
         stats["drafted"] += 1
         room -= 1
 
-    # every scout find dated three months or more out with an organizer email: no asking (2026-11-01)
+    # every scout find dated two months or more out with an organizer email: no asking (2026-11-01)
     since = (datetime.now(timezone.utc) - timedelta(days=RECENT_DAYS)).replace(microsecond=0).isoformat()
     for ev in db.rows(ctx.conn, "SELECT * FROM scout_events WHERE status IN ('new','added') AND COALESCE(organizer_email,'') != '' "
                                 "AND start_date IS NOT NULL AND start_date >= ? ORDER BY start_date, id", (earliest.isoformat(),)):
@@ -373,7 +373,7 @@ def _send_in_turn(ctx: runner.Context, stats: dict, clock: datetime, *, opt_outs
         why = too_soon(row, earliest) if row["kind"] == "first" else None
         if why:                                    # approved, but the event is now too near: closed, so it never goes
             ctx.conn.execute("UPDATE outreach SET status='rejected', notes=?, updated_at=? WHERE id=?",
-                             (f"Not sent: {why}. {THREE_MONTHS}", now, row["id"]))
+                             (f"Not sent: {why}. {LEAD_RULE}", now, row["id"]))
             stats["too_soon"] += 1
             continue
         if codes & compliance.REDRAFT_CODES:       # edited into something that may not go: back to Chris
@@ -471,16 +471,16 @@ def run(ctx: runner.Context, api: UnsubscribeAPI | None = None, client=None) -> 
         notify.push(f"{ctx.cfg.brand_name}: organizer notes to approve", f"{n} organizer note{'s' if n != 1 else ''} drafted. Tap to read them; nothing leaves without your Approve.",
                     dry_run=ctx.dry_run, priority="default", click=notify.link("/outreach"), conn=ctx.conn, agent=ctx.agent)
     s = send_approved(ctx, opt_outs_synced=synced)
-    return (f"{'DRY RUN ' if ctx.dry_run else ''}{opt}; events three months or more out from {earliest.isoformat()}; "
+    return (f"{'DRY RUN ' if ctx.dry_run else ''}{opt}; events {scout.LEAD_WORDS} or more out from {earliest.isoformat()}; "
             f"sites walked={looked['looked']} addresses found={looked['found']} people={looked['people']} "
             f"second looks={looked['second_looks']} refused={looked['refused']}; dates read={looked['dates_read']} "
             f"found={looked['dated']}{'' if reader else f' ({no_dates})'}; drafts moved to a person={followed['moved']} "
             f"given dates={followed['redated']} taken out={followed['withdrawn']} waiting for dates={followed['waiting']}; "
             f"drafted={d['drafted']} (rewritten in the template={d['rewritten']}, "
             f"left for tomorrow={d['left_for_tomorrow']}, on do-not-contact={d['skipped_blocked']}, never contacted={d['skipped_never']}, "
-            f"under three months={d['too_soon']}); "
+            f"too soon={d['too_soon']}); "
             f"sent={s['sent']} would_send={s['would_send']} failed={s['failed']} held={s['held']} back to draft={s['redrafted']} "
-            f"opted out={s['opted_out']} never={s['never']} under three months={s['too_soon']} over the daily cap={s['over_cap']} "
+            f"opted out={s['opted_out']} never={s['never']} too soon={s['too_soon']} over the daily cap={s['over_cap']} "
             f"held for Monday={s['weekend']} waiting their turn={s['paced']} held until 9:00={s['after_hours']}")
 
 

@@ -1,6 +1,6 @@
 """An event's dates, read off its own page, kept only when the page says them word for word.
 
-Chris, 2026-11-01, on events the scout found without dates (the three-month rule cannot be checked, the note's first line
+Chris, 2026-11-01, on events the scout found without dates (the lead-time rule cannot be checked, the note's first line
 names the dates, and the scout never searches a known event again), chose "Look up their dates": "When the agent reads
 an event's site for an email, it also reads the dates (a small Claude read, well under a cent each, through the AI
 budget). A draft comes only once dates are found and are 3+ months out."

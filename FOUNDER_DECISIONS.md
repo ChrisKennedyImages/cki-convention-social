@@ -2783,3 +2783,21 @@ can use those as posts. The images were fine".
 - **His finished previews as posts**: `bin/ccs queue-reel MP4 LOOK --photos ... --day ... --track ...` queues a reel
   rendered before as the post for a day on the daily draft's road (the photos checked, the art director, the repeat
   window), refusing a day that already has its post.
+
+## 2026-11-08: the scout looks two to twelve months out
+
+Chris, reading the scout's finds (36 events, bunched three to five months out): "We have a misunderstanding here.
+You're only looking for events that are 3 months out which is the earliest I wanted look at. People book photographers
+up until a year before so that's the time frame. Not just three months for all of them! Before we do anything about
+it, please research this." The research: most corporate conferences book their photographer two to three months
+ahead; large conferences, annual meetings and galas six to twelve months ahead, and peak seasons (spring and autumn)
+fill first. Then: "So let's do 2 -12 months out". Replaces 2026-11-01's three months (and the nine-month horizon).
+
+- **The window** (`agents/scout.py`): an event starting two calendar months or more from today in his zone
+  (LEAD_MONTHS, earliest_start) up to twelve (SCOUT_MONTHS, default 12; .env.example and the Keys page say 12).
+- **The far half**: the research prompt asks for about half its searches on events six months or more out
+  (FAR_FROM_MONTHS), since the big annual meetings publish a year ahead and book early; without it the finds bunch
+  at the near end.
+- **The same rule everywhere** (one constant, its words in LEAD_WORDS): the organizer drafts, a draft whose event is
+  now under two months away is taken out, an approved note under two months away is not sent, and the scout and
+  outreach pages, the agent list and the morning brief say "two months".

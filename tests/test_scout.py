@@ -132,23 +132,24 @@ class Gates(ScoutCase):
         self.assertEqual(fake.calls, [])
 
     def test_horizon_and_months(self):
-        os.environ["SCOUT_MONTHS"] = "3"
+        os.environ["SCOUT_MONTHS"] = "2"
         config.reset()
-        self.assertEqual(scout.months(), 3)
+        self.assertEqual(scout.months(), 2)
         self.assertEqual(scout.horizon(scout.date(2026, 11, 30), 3).isoformat(), "2027-02-28")
         fake = FakeClaude()
         line = scout.run(self.ctx(), client=fake)
-        self.assertIn("nothing searched", line, "a horizon three months out leaves nothing to search")
+        self.assertIn("nothing searched", line, "a horizon two months out leaves nothing to search")
         self.assertEqual(fake.calls, [])
         os.environ["SCOUT_MONTHS"] = "nonsense"
         config.reset()
-        self.assertEqual(scout.months(), 9)
+        self.assertEqual(scout.months(), 12)
 
-    def test_three_calendar_months_out_in_the_founders_zone(self):
-        """Chris, 2026-11-01: "the events need to be at least 3 months out". One day for the scout, the drafts and the send."""
-        self.assertEqual(scout.LEAD_MONTHS, 3)
-        for today, first in (("2026-11-01", "2027-02-01"), ("2026-11-30", "2027-02-28"), ("2026-12-31", "2027-03-31"),
-                             ("2027-05-31", "2027-08-31"), ("2027-11-30", "2028-02-29")):
+    def test_two_to_twelve_calendar_months_out_in_the_founders_zone(self):
+        """Chris, 2026-11-08, after the research on when companies book their photographer: "So let's do 2 -12 months
+        out". One day for the scout, the drafts and the send."""
+        self.assertEqual((scout.LEAD_MONTHS, scout.DEFAULT_MONTHS, scout.LEAD_WORDS), (2, 12, "two months"))
+        for today, first in (("2026-11-01", "2027-01-01"), ("2026-11-30", "2027-01-30"), ("2026-12-31", "2027-02-28"),
+                             ("2027-05-31", "2027-07-31"), ("2027-12-31", "2028-02-29")):
             self.assertEqual(scout.earliest_start(scout.date.fromisoformat(today)).isoformat(), first, today)
         from datetime import datetime, timezone
         late_sunday = datetime(2026, 11, 2, 3, 30, tzinfo=timezone.utc)       # 22:30 on Sunday 1 November in Washington
@@ -168,7 +169,7 @@ class Research(ScoutCase):
             ev("Other Site Email Con", self.day(160), website="https://othercon.example", organizer_email="boss@gmail.example",
                email_source_url="https://listings.example/events/other", sources=[self.LISTING]),     # email not from own site
             ev("Already Over Con", self.day(-5), sources=[self.LISTING]),                                # past: dropped
-            ev("Too Soon Con", self.day(40), sources=[self.LISTING]),                                    # under three months: dropped
+            ev("Too Soon Con", self.day(40), sources=[self.LISTING]),                                    # under two months: dropped
             ev("Far Future Con", self.day(400), sources=[self.LISTING]),                                 # beyond horizon: dropped
             ev("Fuzzy Date Summit", "sometime in May", kind="business", sources=[self.LISTING]),         # kept, no date
             ev("Sample Con 2027", self.day(140), sources=[self.SITE]),                                    # duplicate
@@ -189,6 +190,12 @@ class Research(ScoutCase):
         self.assertEqual(kw["fallbacks"], "default")
         self.assertEqual(kw["thinking"], {"type": "adaptive"})
         self.assertEqual(kw["output_config"], {"effort": "medium"})
+        ask = kw["messages"][0]["content"]
+        today = scout.local_today(config.get_config())
+        self.assertIn(f"Find events starting between {scout.earliest_start(today).isoformat()} and "
+                      f"{scout.horizon(today, 12).isoformat()}.", ask, "two to twelve months out (Chris, 2026-11-08)")
+        self.assertIn(f"Spend about half your searches on events starting between {scout.horizon(today, 6).isoformat()} and "
+                      f"{scout.horizon(today, 12).isoformat()}", ask, "the far half is searched, not only the nearest")
         self.assertEqual(kw["tools"], [{"type": "web_search_20260209", "name": "web_search", "max_uses": 8}])
         self.assertIn("Region: Washington DC\n", kw["messages"][0]["content"])
         # 2026-11-01: the search starts three calendar months out and ends at the horizon
@@ -221,7 +228,7 @@ class Research(ScoutCase):
         self.assertIsNone(rows["Fuzzy Date Summit"]["start_date"])                 # not a date: left empty
         self.assertEqual(rows["Fuzzy Date Summit"]["kind"], "business")
         self.assertIsNone(rows["Invented Site Con"]["website"])                    # a site no search returned
-        for word in ("no source 1", "past 1", "under three months 1", "beyond horizon 1", "no name 1"):
+        for word in ("no source 1", "past 1", "too soon 1", "beyond horizon 1", "no name 1"):
             self.assertIn(word, line)
         self.assertIn("1 with an organizer email", line)
         # a web search error is recorded, not swallowed
@@ -428,10 +435,10 @@ class ScoutPages(ScoutCase):
         """Chris, 2026-11-01: "I would rather them all just be converted to drafts and the events need to be at least 3
         months out." The page says so, and each card says where its event stands."""
         page = self.c.get("/scout").text
-        self.assertIn("starting 3 to 9 months from now", page)
-        self.assertIn("Every event three months or more out becomes an organizer note on its own", page)
-        self.assertIn("Under three months away: no organizer note.", page, "Sample Con is forty days out")
-        self.assertNotIn("in the next 9 months", page)
+        self.assertIn("starting 2 to 12 months from now", page)
+        self.assertIn("Every event two months or more out becomes an organizer note on its own", page)
+        self.assertIn("Under two months away: no organizer note.", page, "Sample Con is forty days out")
+        self.assertNotIn("in the next 12 months", page)
         started = self.c.get("/scout?msg=started").text
         self.assertIn("becomes a draft on its own", started)
         self.assertNotIn("your phone gets a ping", started)
@@ -441,7 +448,7 @@ class ScoutPages(ScoutCase):
                           dates_note="no dates on https://latercon.example", sources=json.dumps(["https://latercon.example"]),
                           status="new", found_at=now, updated_at=now)
         page = self.c.get("/scout").text
-        self.assertIn("No dates yet: no dates on https://latercon.example. A note is drafted once dates three months or more out are found.", page)
+        self.assertIn("No dates yet: no dates on https://latercon.example. A note is drafted once dates two months or more out are found.", page)
         oid = db.insert(self.conn, "outreach", kind="first", scout_event_id=later, event_key="later con|", event_name="Later Con",
                         email="jane.doe@latercon.example", status="draft", token="b" * 32, created_at=now, updated_at=now)
         self.assertIn(f'<a href="/outreach/{oid}">Organizer note to jane.doe@latercon.example: draft</a>', self.c.get("/scout").text)

@@ -236,16 +236,16 @@ class Agent(OutreachCase):
         self.assertIn("Hand Con", r["body"])
 
 
-# ---------------------------------------------------------------------- three months out, everywhere
-class ThreeMonths(OutreachCase):
-    """Chris, 2026-11-01: "I would rather them all just be converted to drafts and the events need to be at least 3 months
-    out." One day for the scout, the drafts and the send: three calendar months after today in his zone."""
+# ---------------------------------------------------------------------- two months out, everywhere
+class TwoMonths(OutreachCase):
+    """Chris, 2026-11-01: "I would rather them all just be converted to drafts", and 2026-11-08: "So let's do 2 -12
+    months out". One day for the scout, the drafts and the send: two calendar months after today in his zone."""
 
     def edge(self):
         """Days from the pinned Monday to the first day that still gets a note."""
         return (scout.earliest_start(self.today) - self.today).days
 
-    def test_every_event_dated_three_months_out_is_drafted_and_no_other(self):
+    def test_every_event_dated_two_months_out_is_drafted_and_no_other(self):
         self.assertEqual(outreach.earliest_start(config.get_config()), scout.earliest_start(self.today))
         on_the_day = self.scout_event(name="On The Day Con", email="press@ontheday.example", start=self.edge())
         later = self.scout_event(name="Later Con", email="press@later.example", start=self.edge() + 60)
@@ -255,9 +255,9 @@ class ThreeMonths(OutreachCase):
         line = outreach.run(self.ctx(), api=self.api())
         drafted = {r["scout_event_id"] for r in db.rows(self.conn, "SELECT scout_event_id FROM outreach WHERE status='draft'")}
         self.assertEqual(drafted, {on_the_day, later}, line)
-        self.assertIn(f"events three months or more out from {scout.earliest_start(self.today).isoformat()}", line)
+        self.assertIn(f"events two months or more out from {scout.earliest_start(self.today).isoformat()}", line)
 
-    def test_a_prospect_added_by_hand_for_an_event_under_three_months_away_is_not_drafted(self):
+    def test_a_prospect_added_by_hand_for_an_event_under_two_months_away_is_not_drafted(self):
         now = db.utcnow()
         soon = db.insert(self.conn, "outreach", event_key=keys.event_key("Hand Con", self.day(20)), event_name="Hand Con",
                          start_date=self.day(20), email="a@hand.example", status="queued", token=keys.new_token(), created_at=now, updated_at=now)
@@ -267,19 +267,19 @@ class ThreeMonths(OutreachCase):
         r = db.one(self.conn, "SELECT * FROM outreach WHERE id=?", (soon,))
         self.assertEqual(r["status"], "rejected", line)
         self.assertIn("Not drafted: the event starts", r["notes"])
-        self.assertIn("under three months away", r["notes"])
+        self.assertIn("under two months away", r["notes"])
         self.assertEqual(self.status(undated), "draft", "an undated prospect Chris added himself is his own call")
 
     def test_an_approved_note_whose_event_is_now_too_near_is_not_sent_and_never_goes(self):
         oid = self.row()                                                 # approved, for an event on 2027-03-05
-        five_weeks_on = MONDAY + timedelta(days=35)                      # Monday 7 December: three months out is 7 March
-        with mock.patch.object(outreach, "now_utc", lambda: five_weeks_on):
+        ten_weeks_on = MONDAY + timedelta(days=70)                       # Monday 11 January: two months out is 11 March
+        with mock.patch.object(outreach, "now_utc", lambda: ten_weeks_on):
             stats = outreach.send_approved(self.ctx(), opt_outs_synced=True)
             self.assertEqual((stats["too_soon"], stats["would_send"]), (1, 0))
             r = db.one(self.conn, "SELECT * FROM outreach WHERE id=?", (oid,))
             self.assertEqual(r["status"], "rejected")
-            self.assertEqual(r["notes"], "Not sent: the event starts March 5, 2027, under three months away. "
-                                         "Organizer notes go only for events three months or more away (Chris, 2026-11-01).")
+            self.assertEqual(r["notes"], "Not sent: the event starts March 5, 2027, under two months away. "
+                                         "Organizer notes go only for events two months or more away (Chris, 2026-11-08).")
             self.assertEqual(outreach.send_approved(self.ctx(), opt_outs_synced=True)["would_send"], 0, "and it never goes")
         self.assertEqual(self.outbox(), [])
         self.assertEqual(self.status(oid), "rejected")
@@ -311,7 +311,7 @@ class ThreeMonths(OutreachCase):
         self.conn.execute("UPDATE scout_events SET dates_checked_at=?, dates_note='no dates on https://read.example' WHERE id=?", (now, undated_read))
         a, b, c, d = (waiting_draft(undated_read, "info@read.example"), waiting_draft(soon, "info@soon.example"),
                       waiting_draft(unread, "info@unread.example"), waiting_draft(found, "info@found.example"))
-        # the lookup found Found Con's dates on its site: well past three months
+        # the lookup found Found Con's dates on its site: well past two months
         self.conn.execute("UPDATE scout_events SET start_date=?, end_date=?, dates_checked_at=?, dates_note=? WHERE id=?",
                           (self.day(150), self.day(152), now, 'read off https://found.example: "..."', found))
         stats = outreach.follow_events(self.ctx(), scout.earliest_start(self.today))
@@ -319,8 +319,8 @@ class ThreeMonths(OutreachCase):
         ra, rb = (db.one(self.conn, "SELECT * FROM outreach WHERE id=?", (i,)) for i in (a, b))
         self.assertEqual((ra["status"], rb["status"]), ("rejected", "rejected"))
         self.assertEqual(ra["notes"], "Taken out of the drafts: the event's dates were not found on its site. "
-                                      "Organizer notes go only for events three months or more away (Chris, 2026-11-01).")
-        self.assertIn("under three months away", rb["notes"])
+                                      "Organizer notes go only for events two months or more away (Chris, 2026-11-08).")
+        self.assertIn("under two months away", rb["notes"])
         rc = db.one(self.conn, "SELECT * FROM outreach WHERE id=?", (c,))
         self.assertEqual(rc["status"], "draft", "its dates are still to be read (the cap, or the API): it waits")
         self.assertIn("Waiting for the event's dates", rc["notes"])
