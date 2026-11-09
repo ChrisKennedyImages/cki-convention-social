@@ -248,21 +248,21 @@ class TheCheck(IsolatedCase):
 
     def test_each_slot_is_rendered_white_at_each_place_the_look_asks_for_it(self):
         frames = reel_looks.FRAMES["section"]
-        names = [("photos", k) for k in range(5)] + [("fillers", k) for k in range(3)]
+        names = [("photos", k) for k in range(6)] + [("fillers", k) for k in range(3)]     # Section takes 6 and 3
         places = {name: ["10:5<3:1"] for name in names}
-        places[("photos", 0)] = ["10:5<3:1", "22:9<7:2"]          # the hero's room, and the exploded view's top plate
+        places[("photos", 0)] = ["10:5<3:1", "22:9<7:2"]          # the hero at two places, one straight after the other
 
         def lit(kind, k, site):
             n = names.index((kind, k)) * 2 + (site == "22:9<7:2")
-            return range(frames * n // 16, frames * (n + 1) // 16)
+            return range(frames * n // 18, frames * (n + 1) // 18)
         fake, asked = self.renders("section", places, lit)
         [report] = reel_check.run_checks(["section"], work=self.root / "check", run=fake, log=lambda line: None)
         self.assertTrue(report.ok, reel_check.table([report]))
         self.assertEqual(asked[:2], [{"probe": True}, None], "the probe, then the black look")
         self.assertEqual([a["light"]["site"] for a in asked[2:4]], ["10:5<3:1", "22:9<7:2"], "the hero at each of its places")
-        self.assertEqual(len(asked), 2 + 9)
+        self.assertEqual(len(asked), 2 + 10)
         self.assertEqual(report.as_dict()["places"]["photo 0"], 2)
-        self.assertEqual(report.slots[0].stretches, [(0, frames * 2 // 16 - 1)], "its two places one straight after the other: one pass")
+        self.assertEqual(report.slots[0].stretches, [(0, frames * 2 // 18 - 1)], "its two places one straight after the other: one pass")
 
     def test_a_slot_the_probe_never_heard_is_never_shown_and_a_silent_probe_fails(self):
         names = [("photos", k) for k in range(7)]

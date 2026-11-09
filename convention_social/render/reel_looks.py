@@ -94,9 +94,11 @@ SLOTS = {
     "powersoften": Slots(6, 40, 8),  # the six nearest the hero; the mosaic's outer rings, as many as it places (with
     #                                  fewer than 8 the move is too short for every word to hold beside its photo)
     "manifesto": Slots(7, 2),        # the shout, the three wedges, the climax, the manifesto, the number; the photomontage
-    "darkroom": Slots(6, 7),         # the print (the first word), two more prints on the line, three on the sheet; the sheet
+    "darkroom": Slots(8, 8),         # the hero (the first print on the line), two more prints on the line, the tray's
+    #                                  print, the enlarger's, the frame cut from the sheet, two more on the sheet; the sheet
     "titles": Slots(7, 2),           # the cover, the three bars, the climax, the end title, the number; Psycho bars, symbol
-    "section": Slots(5, 3),          # the three word rooms (the hero's first), the attic, the first floor's other; the plates
+    "section": Slots(6, 3),          # the hero (the exploded view), the three word rooms (A seen on its stop), the attic,
+    #                                  the first floor's other; the plates
     "splitscreen": Slots(8, 6),      # the resolve (the hero), the triptych, the split, the counterpoint; the sheet
     "weather": Slots(7, 0),          # the storm, the three words, the clearing, the long lens, the gale
     "stillness": Slots(7, 0),        # the rise (the hero), the three words, the level line, the pair
@@ -105,12 +107,12 @@ SLOTS = {
     "axis": Slots(8, 13),            # the doorway, the three words, the first and last doors, the burst; the gallery's
     #                                  eleven walls and the two middle doors (as the hand-fixed Axis sent to Chris, v5)
 }
-# The looks whose first photo carries the first word and is seen on with no other picture between (Powers of Ten's one
-# move, Darkroom's print, Section's room; reel_check lists Darkroom's and Section's for Chris to rule on): their words go
-# on their first three photos. In the others the hero has a moment of its own (the cover; Split Screen's resolve,
-# Stillness's rise) and is seen there only, and the words go on the three photos after it. A picture is never carried on
-# from one moment into another through a wipe or a dissolve: that is two moments, and shown in two places at once.
-FIRST_WORD_LEADS = ("powersoften", "darkroom", "section")
+# The looks whose first photo carries the first word and is seen on in one pass (Powers of Ten's one move; Darkroom's hero,
+# first seen on the line): their words go on their first three photos. In the others the hero has a moment of its own
+# (the cover; Split Screen's resolve, Stillness's rise, Section's exploded view) and is seen there only, and the words go
+# on the three photos after it. A picture is never carried on from one moment into another through a wipe or a dissolve:
+# that is two moments, and shown in two places at once.
+FIRST_WORD_LEADS = ("powersoften", "darkroom")
 TAKES = {look: s.photos for look, s in SLOTS.items()}    # the post's own photos a look takes: as many as it shows
 # fewer and the look is not made: its lead and its three word photos (Axis's burst of two besides); a photo slot the post
 # has no photo for takes a filler, the least of the look's moments first (each look numbers its slots so)
@@ -144,11 +146,12 @@ ON_PURPOSE = {
     "darkroom": "a darkroom under a red safelight. The cover is a contact sheet on a light box: a roll of twelve frames "
                 "in black film strips with their edge numbers. The first frame, top left, is the roll's fogged leader, "
                 "white fading to grey and empty on purpose, as the first frame of every roll is. The other eleven are "
-                "small prints of the photographer's own photos exactly as shot, eleven different pictures, the hero in the "
-                "middle of the third strip; each sits whole in the film's black, so a dark or narrow photo makes a dark "
-                "frame. Then the enlarger, a print developing in from paper white in the tray, and prints pegged on lines "
-                "with a word pencilled on each print's border. The fogged leader, the film's black, the red room around the "
-                "prints and the white paper borders are the design.",
+                "small prints of the photographer's own photos exactly as shot, eleven different pictures; each sits whole "
+                "in the film's black, so a dark or narrow photo makes a dark frame. Then one frame is cut from the sheet, "
+                "the enlarger lays a picture on the easel and a print develops in from paper white in the tray: three "
+                "different photos on purpose, since no picture is shown twice in the reel. Then prints pegged on lines "
+                "with a word pencilled on each print's border, the hero first. The fogged leader, the film's black, the "
+                "red room around the prints and the white paper borders are the design.",
     "titles": "film opening titles in cut paper: ragged, hand cut bars of cyan and white paper on black, letters cut by "
               "hand and set a little off their neighbours, bars that slide across and split the frame; each photo whole "
               "at its own shape, standing on its bar, its beat word on the bar beneath it. The ragged edges, the uneven "
@@ -157,7 +160,8 @@ ON_PURPOSE = {
                "solid black and hatched, every room the shape of its photo, numbered callouts and a legend. A room is "
                "drawn empty in thin line whenever its photo is not up in it, so empty rooms on the drawing are the design. The "
                "small photos in the drawing's rooms and the legend's numbers, which tie each beat word to its room, are "
-               "the design. In the exploded view the photos hang apart below the hero on a dashed axis, skewed flat as "
+               "the design. When the legend comes up, the first word's room stays drawn empty on purpose: its photo was up "
+               "in it on the camera's earlier stop and is not shown twice; its word names that photo. In the exploded view the photos hang apart below the hero on a dashed axis, skewed flat as "
                "plates in an axonometric drawing, then snap together into the hero straight on: that skew is the design.",
     "splitscreen": "split screen: the frame divided into panels on a fine gutter, the photos whole in their panels, the "
                    "words on solid cyan, paper or black fields beside them; each beat word on the field beside its own "

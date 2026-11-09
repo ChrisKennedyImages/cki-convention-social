@@ -3006,3 +3006,24 @@ re-judge waits until 2026-11-19 for budget reasons, and nothing is judged or sor
   dark backdrop), on the home page as Portraits, would read Event photography after the next build.
 - The brief's Portraits line ("a posed group off the stage with no award in hand") stays as it is; it changes with the
   re-judge.
+
+## 2026-11-09: the hero once, in Darkroom and Section
+
+Chris chose on 2026-11-09 "the hero not back-to-back". No picture twice in a reel holds for the hero even with nothing
+between: Darkroom's hero had come back after the contact sheet, the enlarger, the tray and the zone scale (at 4.40 s,
+6.47 s and 10.00 s), and Section's after its room's stop and again after its word (at 9.50 s and 12.27 s). These were
+the card check's "back with nothing between", listed for him on 2026-11-08, night; it now records none for either look.
+
+- **Darkroom takes eight of the post's photos**: the hero, first seen on the drying line (carrying the first word), then
+  the climax and the end card, one pass; the two other word prints on the line; the print developing in the tray; the
+  picture the enlarger lays on the easel; the decisive frame cut from the contact sheet and slid into the carrier; and
+  two more on the sheet. The sheet's eight other frames are fillers. The cut frame, the enlarged picture and the tray
+  print are three different photos: a photographer will see that the frame cut from the sheet is not the one the
+  enlarger lays down, nor the one that comes up in the tray. Motion, timing and words are as approved.
+- **Section takes six**: the hero is seen in the exploded view and the end card only. Room A on the ground floor has a
+  photo of its own, seen on the camera's stop there; when the legend comes up it stays drawn empty beside its number and
+  its word, which names the photo seen in it on its stop. The words go on rooms A, B and C (Section no longer leads with
+  the hero's word, `reel_looks.FIRST_WORD_LEADS`). Every room seen on its stop stays drawn empty on the whole sheet.
+- The look picker (`reel_looks.SLOTS`, `TAKES`) and what the art director is told of each look (`reel_looks.ON_PURPOSE`)
+  say the same. Pinned by `tests/test_hero_once.py`; both card checks re-recorded with no picture back with nothing
+  between.

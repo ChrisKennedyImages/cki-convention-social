@@ -208,14 +208,15 @@ class Headshots(IsolatedCase):
 class Darkroom(IsolatedCase):
     def test_the_art_director_is_told_the_white_first_cell_is_the_fogged_leader(self):
         told = reel_looks.brief("darkroom")
-        for words in ("The first frame, top left, is the roll's fogged leader", "empty on purpose",
-                      "eleven different pictures, the hero in the middle of the third strip",
-                      "a dark or narrow photo makes a dark frame", "The fogged leader, the film's black"):
+        for words in ("The first frame, top left, is the roll's fogged leader", "empty on purpose", "eleven different pictures",
+                      "a dark or narrow photo makes a dark frame", "The fogged leader, the film's black",
+                      "three different photos on purpose, since no picture is shown twice in the reel"):
             self.assertIn(words, told, words)
         self.assertNotIn("repeated", told, "no picture twice on the sheet (2026-11-08, night)")
 
     def test_every_look_names_what_it_puts_on_the_frame_on_purpose(self):
-        named = {"section": ("drawn empty", "skewed flat as plates in an axonometric drawing"),
+        named = {"section": ("drawn empty", "skewed flat as plates in an axonometric drawing",
+                             "the first word's room stays drawn empty on purpose", "its word names that photo"),
                  "titles": ("ragged, hand cut bars",), "weather": ("rain streaks crossing them",),
                  "chiaroscuro": ("darkness", "warm grade", "close detail of the hero"),
                  "axis": ("black and white until the climax",), "stillness": ("with no photo",)}

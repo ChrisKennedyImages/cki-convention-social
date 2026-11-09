@@ -26,13 +26,15 @@ import { Music } from "../music";
 // 16 s, 480 frames, on the 120 BPM grid (15-frame beats, 60-frame bars). One camera move over two sheets on a table:
 //    bar 0  the roof and the attic (its room up), the hook above the roof (the cover); the last lines draw; crane down
 //    bar 1  the first floor: its room comes up, callout 1 on the cut floor, its leader to a note: line 1
-//    bar 2  crane down and track along the ground floor to the hero's room: callout 2, line 2
+//    bar 2  crane down and track along the ground floor to room A: callout 2, line 2
 //    bar 3  pull back to the whole sheet, its rooms drawn empty: a dimension line draws itself across the roof, the stack
 //           label its figure
 //    bar 4  the number, sectioned (outline and hatching) in a cartouche, label and unit
-//    bar 5  the three word rooms come up on the beats (the hero's room first), numbered in the margins, the words as the
-//           legend; a whip along the table. The attic and the first floor's other room, seen on their stops, stay
-//           drawn empty: no picture is shown twice in a reel (Chris, 2026-11-08, night)
+//    bar 5  the three words come up on the beats, each word's room numbered in the margin, the words as the legend: rooms
+//           B and C come up, room A stays drawn empty beside its number (its word names the photo seen in it on its
+//           stop); a whip along the table. Every room seen on its stop stays drawn empty: no picture is shown twice in a
+//           reel (Chris, 2026-11-08, night), and the hero is seen once, from the exploded view to the end (2026-11-09:
+//           it had come back after its room's stop and its word with no other picture between)
 //    bar 6  the exploded view: three frames (fillers) apart on dashed assembly lines, callouts 1 to 4, then together on
 //           the hit into the hero, straight on and whole; the marquee as the drawing's title
 //    bar 7  the title block grows from the sheet's corner to fill the card under the hero: name, kicker, the call, site,
@@ -42,11 +44,11 @@ import { Music } from "../music";
 
 const INK = "#16161A";
 const TABLE = "#0A0A0B";
-// The post's five photos are the rooms: the hero's (slot 0, A on the ground floor, carrying the first word), the two
-// other word rooms (B beside it, C on the first floor), E (the attic, the cover) and D (the first floor's other room).
-// The exploded view's three lower plates are fillers, more of his approved photos; its top plate is the hero.
-export const SLOTS: Slots = { photos: 5, fillers: 3 };
-const HERO = 0, ATTIC = 3, FIRST_FLOOR_OTHER = 4;
+// The post's six photos: the hero (slot 0), the exploded view's top plate and the end card's, seen there only; the three
+// word rooms (A on the ground floor, seen on its stop, B beside it, C on the first floor); E (the attic, the cover) and D
+// (the first floor's other room). The exploded view's three lower plates are fillers, more of his approved photos.
+export const SLOTS: Slots = { photos: 6, fillers: 3 };
+const HERO = 0, ROOM_A = 1, ROOM_B = 2, ROOM_C = 3, ATTIC = 4, FIRST_FLOOR_OTHER = 5;
 const lum = (hex: string) => { const n = parseInt(hex.replace("#", "").slice(0, 6), 16); return (0.2126 * ((n >> 16) & 255) + 0.7152 * ((n >> 8) & 255) + 0.0722 * (n & 255)) / 255; };
 /** The sheet's paper: Event Caliber's second colour when it is a paper colour; otherwise warm drafting paper. The cut line
  *  takes whichever of the two colours is not the paper. */
@@ -93,7 +95,7 @@ const buildGeo = (p: ReelProps, aspect: (pic: Photo) => number): Geo => {
   const a = (i: number) => aspect(photoAt(p, i));
   let FH = 560, AH = 480;
   const wOf = (i: number, h: number) => Math.min(1000, h * a(i));
-  const span = () => Math.max(wOf(0, FH) + wOf(1, FH) + IT, wOf(2, FH) + wOf(FIRST_FLOOR_OTHER, FH) + IT, wOf(ATTIC, AH) + 320, 1100);
+  const span = () => Math.max(wOf(ROOM_A, FH) + wOf(ROOM_B, FH) + IT, wOf(ROOM_C, FH) + wOf(FIRST_FLOOR_OTHER, FH) + IT, wOf(ATTIC, AH) + 320, 1100);
   const k = Math.min(1, 1640 / span());
   FH *= k; AH *= k;
   const BI = span();
@@ -112,8 +114,8 @@ const buildGeo = (p: ReelProps, aspect: (pic: Photo) => number): Geo => {
       halls.push({ x0: IL + wl + IT, x1: IR - wr - IT, y0, y1 });
     }
   };
-  floor(0, 1, F0);
-  floor(2, FIRST_FLOOR_OTHER, F1);
+  floor(ROOM_A, ROOM_B, F0);
+  floor(ROOM_C, FIRST_FLOOR_OTHER, F1);
   const wE = wOf(ATTIC, AH);
   rooms.push({ photo: ATTIC, col: "C", x0: SW / 2 - wE / 2, x1: SW / 2 + wE / 2, y0: AF - AH, y1: AF });
   // the gable: eaves past the walls; the ridge high enough that the roof's underside clears the attic room by 40
@@ -143,7 +145,7 @@ const keysOf = (geo: Geo): Key[] => {
     [68, dx, dy, 1, dolly],                    // crane down to the first floor
     [124, dx, dy, 1, Easing.linear],
     [134, bx, ay, 1, dolly],                   // down a floor...
-    [146, ax, ay, 1, dolly],                   // ...and along the ground floor to the hero's room
+    [146, ax, ay, 1, dolly],                   // ...and along the ground floor to room A
     [200, ax, ay, 1, Easing.linear],
     [220, SW / 2, SH / 2, 0.5, dolly],         // pull back to the whole sheet
     [354, SW / 2, SH / 2, 0.47, Easing.linear],
@@ -404,7 +406,9 @@ const Cartouche: React.FC<{ g: number; p: ReelProps; geo: Geo; paper: string }> 
   );
 };
 
-const WORD_AT = [285, 300, 315];          // the beats the three rooms come up on
+const WORD_AT = [285, 300, 315];          // the beats the three words come up on
+// the camera's stops on sheet 1, each with its room up (by its place in geo.rooms: A, B, C, D, E) and the frames it is up
+const STOPS: [number, number, number][] = [[4, 0, 44], [3, 70, 120], [0, 148, 196]];
 
 /** 5 · the legend in the sky: each word's number and the word, in on its beat; and each word's room numbered in the
  *  margin beside it, its leader stopping at the wall. */
@@ -681,18 +685,15 @@ export const Section: React.FC<ReelProps> = (p) => {
   const keys = keysOf(geo);
   const cam = camAt(keys, g);
   const paper = paperOf(p), cut = cutOf(p);
-  // which rooms are up: each on its stop while the camera is still on it, then on the whole sheet the word rooms on
-  // their beats; all down before the whip. The rooms seen on their stops that carry no word stay drawn empty on the
-  // whole sheet, so no picture comes back (the hero's room, seen on its stop, carries the first word with nothing between)
+  // which rooms are up: each on its stop while the camera is still on it (the attic E for the cover, D, then A), then on
+  // the whole sheet the word rooms on their beats; all down before the whip. A room seen on its stop stays drawn empty on
+  // the whole sheet, so no picture comes back: room A carries the first word drawn empty
   const idx = p.wordPhotos;
   const wordRoom = idx.map((i) => geo.rooms.indexOf(roomOfPhoto(geo, i)));
   const lit = (r: number) => {
-    const n = wordRoom.indexOf(r);
-    if (g >= 222 && g < 346) return n >= 0 && g >= WORD_AT[n];
-    if (r === 4) return g < 44;
-    if (r === 3) return g >= 70 && g < 120;
-    if (r === 0) return g >= 148 && g < 196;
-    return false;
+    const stop = STOPS.find(([room]) => room === r);
+    if (g >= 222 && g < 346) return !stop && wordRoom.includes(r) && g >= WORD_AT[wordRoom.indexOf(r)];
+    return stop !== undefined && g >= stop[1] && g < stop[2];
   };
   const speed = Math.abs(camAt(keys, g + 0.5).x - camAt(keys, g - 0.5).x) * cam.s;
   const blur = Math.min(28, Math.max(0, (speed - 12) * 0.4));
