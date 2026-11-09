@@ -10,10 +10,10 @@
    follows its event: a person's address found on a second look, dates found
    (follow_events).
 3. Draft up to OUTREACH_DAILY_DRAFTS (default 5) a day, no asking (Chris,
-   2026-11-01: "I would rather them all just be converted to drafts and the
-   events need to be at least 3 months out"): prospects Chris added by hand
-   first, then every scout event dated three calendar months or more out
-   (scout.earliest_start) with an organizer email that is not on
+   2026-11-01: "I would rather them all just be converted to drafts"; two
+   months out since 2026-11-08: "So let's do 2 -12 months out"): prospects
+   Chris added by hand first, then every scout event dated two calendar
+   months or more out (scout.earliest_start) with an organizer email that is not on
    do-not-contact, one note per address per event (outreach/draft.py). A
    draft whose event is now under two months away, or whose dates were not
    found, is taken out of the drafts with a note. CPAC, the ACU and their
