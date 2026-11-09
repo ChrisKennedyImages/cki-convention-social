@@ -1,6 +1,6 @@
 """Dashboard pages for the scout and outreach. app.py calls `register(app, require_user, conn_dep, render)`.
 
-Scout: what the weekly scout found. Every event three months or more out
+Scout: what the weekly scout found. Every event two months or more out
 becomes an organizer note by itself once its address and dates are read off
 its own site (Chris, 2026-11-01); each card says where it stands. "Add to
 calendar" puts an event on the calendar with attending and official unticked
@@ -52,7 +52,7 @@ def register(app, require_user, conn_dep, render) -> None:
         counts = {r["status"]: r["n"] for r in db.rows(conn, "SELECT status, COUNT(*) n FROM scout_events GROUP BY status")}
         last = db.one(conn, "SELECT * FROM agent_runs WHERE agent='scout' ORDER BY id DESC LIMIT 1")
         return render(request, "scout_list.html", items=items, show=show, counts=counts, msg=msg,
-                      region=scout_agent.region(), months=scout_agent.months(), last=dict(last) if last else None)
+                      region=scout_agent.region(), lead=scout_agent.LEAD_MONTHS, months=scout_agent.months(), last=dict(last) if last else None)
 
     @app.post("/scout/run")
     def scout_run_now(user: str = Depends(require_user)):

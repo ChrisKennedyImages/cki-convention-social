@@ -2132,7 +2132,7 @@ def create_app() -> FastAPI:
             {"title": "Scout and outreach", "note": "Where the scout looks for events, in plain words; how far ahead; the daily caps on "
                                                     "organizer drafts and approved sends. Notes still leave only on your Approve.",
              "fields": [f("SCOUT_REGION", "Region to search (for example Washington DC, Maryland and Virginia)"),
-                        f("SCOUT_MONTHS", "Months ahead (default 9)"), f("OUTREACH_DAILY_DRAFTS", "Organizer drafts a day (default 5)"),
+                        f("SCOUT_MONTHS", "Months ahead (default 12)"), f("OUTREACH_DAILY_DRAFTS", "Organizer drafts a day (default 5)"),
                         f("OUTREACH_DAILY_SENDS", "Approved sends a day (default 10)")]},
             {"title": "Image hosting", "note": "Where Buffer fetches post images from.",
              "fields": [f("MEDIA_BASE_URL", "Image address"), f("MEDIA_UPLOAD_TOKEN", "Upload token", secret=True)]},

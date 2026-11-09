@@ -1,22 +1,23 @@
 """Scout agent (Sunday and Wednesday 07:00; Chris, 2026-11-05: "we could search 2x a week"): upcoming conventions and conferences, each one a note to its organizer.
 
 1. Reads the region from SCOUT_REGION (free text, set on the Keys page) and
-   the horizon from SCOUT_MONTHS (default 9). Blank means the default region.
+   the horizon from SCOUT_MONTHS (default 12). Blank means the default region.
 2. Live only: one Claude research call with web search (outreach/research.py)
    for each place the region names, under the monthly AI cap (Chris,
    2026-11-05: "we're not just in dc"; one call for all three spent its
    searches on DC). Research has no outward effect but it costs
    money, so a dry run makes no call and only says what it would search.
-3. Searches only events that start three calendar months or more from today
-   (earliest_start; Chris, 2026-11-01: "the events need to be at least 3
-   months out"), up to the horizon.
+3. Searches only events that start two calendar months or more from today
+   (earliest_start; LEAD_MONTHS), up to the horizon (SCOUT_MONTHS, 12), half
+   the searches on events six months or more out so the far ones are found
+   (Chris, 2026-11-08: "So let's do 2 -12 months out").
 4. Keeps only what a source backs (research.vet: no source URL, no row; an
    organizer email only when printed on the event's own site; dates only
    when real) and stores each event once in scout_events (status new),
    de-duplicated by normalized name and start date, and skipping anything
    already on the calendar. CPAC, the ACU and their affiliates are never
    stored (outreach/compliance.never_contact; Chris, 2026-10-13).
-No ping: every event three months or more out becomes a draft by itself once
+No ping: every event two months or more out becomes a draft by itself once
 the outreach agent has read a person's address and the dates off its own site
 (agents/outreach.py), and the outreach ping says so. Nothing reaches the
 calendar until Chris presses "Add to calendar" on the Scout page, and then
@@ -33,9 +34,14 @@ from ..ai import spend
 from ..core import config, db, runner, secrets
 from ..outreach import compliance, keys, research
 
-DEFAULT_MONTHS = 9
-# Chris, 2026-11-01: "I would rather them all just be converted to drafts and the events need to be at least 3 months out."
-LEAD_MONTHS = 3
+# Chris, 2026-11-08: "People book photographers up until a year before so that's the time frame. Not just three months
+# for all of them!" and, after the research on when companies book their photographer (most conferences two to three
+# months ahead, large and annual ones six to twelve), "So let's do 2 -12 months out". Was 3 to 9 (2026-11-01: "the
+# events need to be at least 3 months out").
+DEFAULT_MONTHS = 12
+LEAD_MONTHS = 2
+LEAD_WORDS = "two months"            # the rule in words, wherever the suite says it
+FAR_FROM_MONTHS = 6                  # the research spends half its searches from here to the horizon (research.prompt)
 
 
 DEFAULT_REGION = "Washington DC, Maryland and Virginia"      # Chris, 2026-10-13: the scout armed, around Washington DC
@@ -82,8 +88,8 @@ def horizon(today: date, n_months: int) -> date:
 
 
 def earliest_start(today: date) -> date:
-    """The first day an event may start and still get a note: three calendar months after today in the founder's zone
-    (1 November -> 1 February; 30 November -> 28 February). The scout searches from it, drafting takes only events
+    """The first day an event may start and still get a note: LEAD_MONTHS (two) calendar months after today in the
+    founder's zone (1 November -> 1 January; 31 December -> 28 February). The scout searches from it, drafting takes only events
     dated on or after it, and an approved note whose event is now nearer is not sent (agents/outreach.py)."""
     return horizon(today, LEAD_MONTHS)
 
@@ -133,7 +139,7 @@ def run(ctx: runner.Context, client=None) -> str:
     today = local_today(ctx.cfg)
     earliest, until = earliest_start(today), horizon(today, months())
     if until <= earliest:
-        return (f"SCOUT_MONTHS={months()} ends on {until.isoformat()}, before {earliest.isoformat()}, three months out: "
+        return (f"SCOUT_MONTHS={months()} ends on {until.isoformat()}, before {earliest.isoformat()}, {LEAD_WORDS} out: "
                 f"nothing searched. Set it to more than {LEAD_MONTHS} on the Keys page.")
     plan = f"{where}, events starting {earliest.isoformat()} to {until.isoformat()}"
     if ctx.dry_run:
@@ -160,7 +166,7 @@ def search_area(ctx: runner.Context, client, area: str, today: date, earliest: d
     """One research call for one place; what it found is stored before the next place is searched, so the next one
     skips it."""
     res = research.research(ctx.conn, client, region=area, today=today, earliest=earliest, horizon=until,
-                            known=known_names(ctx.conn), agent=ctx.agent)
+                            known=known_names(ctx.conn), agent=ctx.agent, far_from=horizon(today, FAR_FROM_MONTHS))
     if res.search_errors:
         runner.record_error(ctx.conn, ctx.agent, "web_search",
                             f"web search for {area} returned errors: " + ", ".join(res.search_errors[:5]))
