@@ -104,6 +104,19 @@ def picker_word(key: str) -> str:
     return f"{WORDS[key]}, {SIDES[key]}" if key in SIDES else WORDS[key]
 
 
+# Chris, 2026-11-09, after draft #90 printed "Portraits." over a posed group of eight women (photo 52831): "Portraits"
+# prints only over a photo with exactly one person in it, by the sorter's head count (classifications.people_count; a
+# count not known is not one), and "There can't be a 'none' label." Which of his other labels a posed pair or group
+# takes waits for the re-judge (2026-11-19). Until then the drafters never take one for a post (content.Picker) and
+# nothing prints Portraits over one (content.checked_rooms, design_samples.pick, site/build.site_label).
+ONE_PERSON = ("portrait",)
+
+
+def may_name(key: Optional[str], people_count: Optional[int]) -> bool:
+    """Whether this label may be printed over a photo with this many people in it: Portraits only over exactly one."""
+    return key not in ONE_PERSON or people_count == 1
+
+
 def _labels() -> str:
     def keys(label: Label) -> str:
         return " or ".join(label.keys)

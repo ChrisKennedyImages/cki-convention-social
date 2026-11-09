@@ -41,7 +41,8 @@ class FinalClient:
 
 def event_photo(conn, drive_id, *, kind="unknown", quality=5, sharp=1, light=4, moment=4, width=3000, height=2000, folder="fe",
                 final=None):
-    """A cleared, sorted event photo; `final`: None for no final check, any other value for one (its kind of occasion is a
+    """A cleared, sorted event photo of one person, as the sorter counts them (a portrait of any other count is never
+    drafted, 2026-11-09); `final`: None for no final check, any other value for one (its kind of occasion is a
     label kept in classifications, `kind`, since 2026-11-08). Cleared by his own Use on it: a folder never approves
     (2026-11-02)."""
     now = db.utcnow()
@@ -52,7 +53,7 @@ def event_photo(conn, drive_id, *, kind="unknown", quality=5, sharp=1, light=4, 
     db.insert(conn, "classifications", photo_id=pid, method="ollama", subject="event", convention_name="Liberty Summit",
               event_kind=kind, is_convention=0 if kind in classify.NOT_OFFERED_KINDS else 1, quality=quality, possible_minor=0,
               personal_details="[]", space="exterior", residential=0, empty_room=0, sharp=sharp, light=light, moment=moment,
-              shot_type="stage_panel", classified_at=now)
+              shot_type="stage_panel", people_count=1, classified_at=now)
     if final is not None:
         db.insert(conn, "final_checks", photo_id=pid, possible_minor=0, model="m", checked_at=now,
                   shot_type="stage_panel")

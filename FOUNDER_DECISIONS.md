@@ -2982,3 +2982,27 @@ shows twice, and each look takes as many different photos as it shows (the desig
   Mini, once for a look and not for each reel: `--record` writes a passing look's sources' hash to
   `reel-looks/card-checks.json`, and CI (`tests/test_reel_slots.py`) fails for a look added or changed without one.
 - Supersedes nothing of his: the cycling was the build's.
+
+## 2026-11-09: Portraits only over one person
+
+Draft #90 printed "Portraits." over a posed group of eight women (photo 52831). Chris ruled that the word Portraits
+prints only over a photo with exactly one person in it, and that a code test must fail if it ever prints over more; and:
+"There can't be a 'none' label." Which of his other nine labels a posed pair or group takes is decided later: the AI
+re-judge waits until 2026-11-19 for budget reasons, and nothing is judged or sorted again before then.
+
+- **One person, by the sorter's head count** (`classifications.people_count`; a count not known is not one;
+  `house_brief.may_name`). On 2026-11-09, 921 photos labelled portrait had one person and 2,160 another count (2,044
+  more than one, 116 none); 79 and 68 of them among the event photos he tapped Use on.
+- **Never drafted until it has its label**: neither drafter takes a photo labelled portrait with another count for a
+  post, by the sorter's label before the final check (it is not read and nothing is spent on it) or by the check's
+  after it (`content.Picker`). The design samples leave it out too (`design_samples.pick`). It may still fill a 3D wall
+  or a mosaic, where no word is printed.
+- **Portraits is printed nowhere over it**: a post's title and a reel's beat words and stack label name the room the
+  final check confirmed only when that label may name the photo (`content.checked_rooms`), so such a photo is never a
+  word photo; the site's caption under it says Event photography (`site/build.site_label`). Pinned by
+  `tests/test_house_brief.py` (`test_portraits_prints_only_over_one_person`) and `tests/test_content.py`
+  (`test_live_a_portrait_is_drafted_only_with_one_person_in_it`).
+- **For him to rule on**: the site's caption until the re-judge. His own Site gallery pick 20426 (two women posed on a
+  dark backdrop), on the home page as Portraits, would read Event photography after the next build.
+- The brief's Portraits line ("a posed group off the stage with no award in hand") stays as it is; it changes with the
+  re-judge.

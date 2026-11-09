@@ -195,7 +195,8 @@ class Photos(IsolatedCase):
         self.assertFalse(reel_looks.can_fill("axis", [p] * 7 + [s] * 9), "Axis needs its eight portraits in the pool")
 
     def test_the_picker_keeps_a_looks_rule_and_takes_its_count(self):
-        rows = [{"id": k, "folder_id": f"f{k}", "taken_at": None, "shot_type": "portrait" if k % 2 else "candid"} for k in range(20)]
+        rows = [{"id": k, "folder_id": f"f{k}", "taken_at": None, "shot_type": "portrait" if k % 2 else "candid", "people_count": 1}
+                for k in range(20)]
         picker = content.Picker(rows, "reel", style="darkroom")
         for r in picker.candidates():
             picker.take(r)
@@ -712,7 +713,7 @@ class LookCase(IsolatedCase):
                             clearance="cleared", clearance_at=now, first_seen_at=now, last_seen_at=now)
             db.insert(self.conn, "classifications", photo_id=pid, method="ollama", subject="event", convention_name="Liberty Summit",
                       is_convention=1, quality=5 - k % 3, possible_minor=0, personal_details="[]", space="exterior", residential=0,
-                      empty_room=0, sharp=1, light=4, moment=4, shot_type=shot, classified_at=now)
+                      empty_room=0, sharp=1, light=4, moment=4, shot_type=shot, people_count=1, classified_at=now)
             db.insert(self.conn, "final_checks", photo_id=pid, possible_minor=0, summary="ok", model="t",
                       checked_at=now, shot_type=shot, room=room)
             self.ids[did] = pid

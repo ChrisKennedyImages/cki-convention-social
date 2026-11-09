@@ -500,13 +500,13 @@ SATURDAY = datetime(2026, 10, 17, 10, 0, tzinfo=timezone.utc)       # tomorrow i
 class NewDesigns(Content):
     """Chris, 2026-10-11: "Switch to new designs and it's ok to use 1 photo too sometimes." """
 
-    def add_event_photo(self, did, event, q=3):
+    def add_event_photo(self, did, event, q=3, people=1):
         now = db.utcnow()
         pid = db.insert(self.conn, "photos", drive_id=did, name=f"{did}.jpg", folder_id="fe", width=3000, height=2000,
                         clearance="cleared", clearance_at=now, first_seen_at=now, last_seen_at=now)
         db.insert(self.conn, "classifications", photo_id=pid, method="ollama", subject="event", convention_name=event, is_convention=1,
                   quality=q, possible_minor=0, personal_details="[]", space="exterior", residential=0, empty_room=0, sharp=1,
-                  light=4, moment=4, shot_type="portrait", classified_at=now)
+                  light=4, moment=4, shot_type="portrait", people_count=people, classified_at=now)
         self.ids[did] = pid
 
     def last(self):
@@ -593,6 +593,50 @@ class NewDesigns(Content):
         from convention_social.library import eligibility
         self.assertTrue(all(eligibility.is_eligible(self.conn, i)[0] for i in ids))
         self.assertEqual((art.calls, meta_["art"]["verdict"]), (1, "pass"))  # several photos: no crop to redo
+
+    def test_live_a_portrait_is_drafted_only_with_one_person_in_it(self):
+        """Chris, 2026-11-09, after draft #90 printed "Portraits." over a posed group of eight women: the word prints only
+        over a photo with exactly one person in it. A photo labelled portrait with any other head count is never taken
+        for a post: by the sorter's label it is never even read or checked (nothing is spent on it); by the final
+        check's, it is checked and left out."""
+        os.environ["AI_MONTHLY_CAP_USD"] = "5"
+        os.environ["AI_MODEL"] = "template"
+        config.reset()
+        self.add_event_photo("group", "Gala", q=5, people=8)          # the strongest photos are the sorter's group portraits
+        self.add_event_photo("pair", "Summit", q=5, people=2)
+        self.add_event_photo("one", "Expo", people=1)
+        self.conn.execute("UPDATE classifications SET shot_type='candid', people_count=3 WHERE photo_id=?", (self.ids["e3"],))
+        client = PortraitCheck({"e3", "one"})                          # the final check calls these two portraits
+        orig = self.fetch
+
+        def fetch(row):
+            client.current = row["drive_id"]
+            return orig(row)
+        content.draft_one(self.ctx(dry=False), fetch, now=SUNDAY, check_client=client, art_client=ArtClientAny([say("pass")]))
+        _, meta_, _, ids = self.last()
+        self.assertEqual(meta_["design"], "spotlight")
+        self.assertEqual(sorted(ids), sorted([self.ids["e1"], self.ids["e2"], self.ids["one"]]), "the one-person portrait only")
+        self.assertNotIn("group", self.fetched)
+        self.assertNotIn("pair", self.fetched)
+        checked = {r["photo_id"] for r in db.rows(self.conn, "SELECT photo_id FROM final_checks")}
+        self.assertFalse({self.ids["group"], self.ids["pair"]} & checked, "never checked: nothing spent on them")
+        self.assertIn(self.ids["e3"], checked, "the photo the final check called a portrait of three was read and left out")
+
+
+class PortraitCheck(FinalClient):
+    """Claude's final check calling these photos (drive ids) portraits, by shot type and room; the rest as FinalClient."""
+    def __init__(self, portraits):
+        super().__init__({})
+        self.portraits = set(portraits)
+
+    def create(self, **kw):
+        if self.current not in self.portraits:
+            return super().create(**kw)
+        self.calls += 1
+        t = types.SimpleNamespace(type="text", text=json.dumps({"personal_details": [], "summary": "ok", "shot_type": "portrait",
+                                                                "event_kind": "business", "room": "portrait"}))
+        return types.SimpleNamespace(content=[t], stop_reason="end_turn", model=kw["model"],
+                                     usage=types.SimpleNamespace(input_tokens=1500, output_tokens=100))
 
 
 class ArtClientAny(ArtClient):

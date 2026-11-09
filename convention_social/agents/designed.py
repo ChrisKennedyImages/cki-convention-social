@@ -327,7 +327,7 @@ def _draft(ctx: runner.Context, fetch: Callable[[dict], bytes], *, now: Optional
         if verdict.get("event_kind") in classify.KINDS and verdict["event_kind"] != "unknown":
             row["event_kind"] = verdict["event_kind"]
         if not picker.fits(row):
-            continue                                         # the full look made it a portrait the look has no room for
+            continue                                         # the full look made it a portrait the look has no room for, or not of one person
         picker.take(row)
         chosen.append((row, data))
     if len(chosen) < content.NEEDS[design]:

@@ -294,7 +294,7 @@ class HisLabels(IsolatedCase):
         self.assertEqual({w.split(",")[0] for _, w in dash.SHOT_CHOICES}, words)
         from convention_social.site import build
         for key in house_brief.KEYS:
-            self.assertIn(build.site_label({"subject": "event", "shot_type": key}), words)
+            self.assertIn(build.site_label({"subject": "event", "shot_type": key, "people_count": 1}), words)
         self.assertEqual(build.site_label({"subject": "architecture", "shot_type": "building_interior"}), "Event building")
         root = (REPO / "reel-looks" / "src" / "Root.tsx").read_text()
         for printed in re.findall(r'words: \[([^\]]*)\]', root)[0].split(","):
@@ -302,6 +302,38 @@ class HisLabels(IsolatedCase):
         old = re.compile(r'"(?:Stage|Panel|Session|Portrait)\."|"STAGE PANEL"|"THE VENUE"|"ON THE FLOOR"|Portraits · headshots')
         hits = [f"{p.relative_to(REPO)}" for p in sorted((REPO / "convention_social").rglob("*.py")) if old.search(p.read_text())]
         self.assertEqual(hits, [], "an old room word still prints")
+
+    def test_portraits_prints_only_over_one_person(self):
+        """Chris, 2026-11-09, after draft #90 printed "Portraits." over a posed group of eight women (photo 52831): the word
+        prints only over a photo with exactly one person in it, and "There can't be a 'none' label." Which of his other
+        labels a pair or a group takes waits for the re-judge, so until then nothing prints Portraits over one: a post's
+        title, a reel's beat words (it is never a word photo) and its stack label, the design samples, the site's caption."""
+        from convention_social.site import build
+        conn = db.connect()
+        self.addCleanup(conn.close)
+        ids = {}
+        for did, people in (("one", 1), ("pair", 2), ("eight", 8), ("nobody", 0), ("uncounted", None)):
+            ids[did] = event_photo(conn, did, kind="business")
+            conn.execute("UPDATE classifications SET shot_type='portrait', people_count=? WHERE photo_id=?", (people, ids[did]))
+            conn.execute("UPDATE photos SET thumbnail_link='t' WHERE id=?", (ids[did],))
+            db.insert(conn, "final_checks", photo_id=ids[did], possible_minor=0, model="m", checked_at=db.utcnow(),
+                      shot_type="portrait", room="portrait")
+        everyone = list(ids.values())
+        rooms, words = content.checked_rooms(conn, everyone), content.confirmed_rooms(conn, everyone)
+        self.assertEqual({d: rooms[p] for d, p in ids.items()},
+                         {"one": "portrait", "pair": None, "eight": None, "nobody": None, "uncounted": None})
+        self.assertEqual([d for d, p in ids.items() if words[p][0] == "PORTRAITS"], ["one"], "a post's title")
+        reel = [rooms[ids[d]] for d in ("eight", "pair", "one", "nobody", "uncounted")] + ["main_stage", "reception"]
+        beats = reel_lines.beats(reel)
+        self.assertEqual((beats.photos, beats.words), ((2, 5, 6), ("Portraits.", "Main stage.", "Reception.")),
+                         "the word Portraits on the one-person portrait; a group is never a word photo")
+        self.assertEqual(reel_lines.beats(reel[:2] + reel[3:5] + ["main_stage"], "axis").stack, "Main stage",
+                         "Axis's stack label names no group")
+        self.assertEqual([r["id"] for r in design_samples.pick(conn, 400)], [ids["one"]], "the design samples")
+        labels = {r["id"]: build.words_for(conn, r)[3] for r in build.page_pool(conn)}
+        self.assertEqual({d: labels[p] for d, p in ids.items()},
+                         {"one": "Portraits", "pair": "Event photography", "eight": "Event photography",
+                          "nobody": "Event photography", "uncounted": "Event photography"}, "the site's caption")
 
     def test_the_learner_starts_the_new_labels_at_one(self):
         from convention_social.agents import learner
