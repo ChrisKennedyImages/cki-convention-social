@@ -3006,3 +3006,16 @@ re-judge waits until 2026-11-19 for budget reasons, and nothing is judged or sor
   dark backdrop), on the home page as Portraits, would read Event photography after the next build.
 - The brief's Portraits line ("a posed group off the stage with no award in hand") stays as it is; it changes with the
   re-judge.
+
+## 2026-11-09: Axis's gallery wall says Portraits
+
+Axis's gallery wall, the far wall the corridor runs to, read "Portraits · headshots" on post #92. Headshots is not one
+of his labels, and Chris chose on 2026-11-09 to make it Portraits. His word on Axis stands (2026-11-08, night): "I like
+these portraits in axis now… Do not change anything else".
+
+- **Axis's wall label is Portraits and nothing else** (`reel_lines.FIXED_STACK`), whatever rooms the final check
+  confirmed for its photos. Axis takes portraits of one person only (`reel_looks.photo_rule`, `house_brief.may_name`), so
+  the label is true of every picture in it, and the wall itself carries no picture. A look with words of its own no
+  longer needs a confirmed room among its photos, since its words and its label name none. Nothing else in Axis changes.
+- Pinned by `tests/test_reel_looks.py` (an Axis of portraits, a backstage and a green room photo among them, still says
+  Portraits) and `tests/test_house_brief.py` (Axis takes no group, so its Portraits names none).

@@ -159,12 +159,10 @@ class Words(IsolatedCase):
         would all be "Portraits."."""
         b = reel_lines.beats(["portrait", None, "portrait", "portrait", "portrait"], "axis")
         self.assertEqual((b.photos, b.words, b.stack), ((0, 1, 2), ("Poise.", "Light.", "Presence."), "Portraits"))
-        b = reel_lines.beats(["portrait", "main_stage", None, "reception"], "axis")
-        self.assertEqual((b.words, b.stack), (("Poise.", "Light.", "Presence."), "Portraits · main stage"),
-                         "the stack label is still the rooms of its three photos, a photo with none adding nothing")
-        self.assertEqual(reel_lines.beats([None, None, None, "portrait", None], "axis").stack, "Portraits", "else the rest's")
-        with self.assertRaises(reel_lines.TooFewRooms):
-            reel_lines.beats([None] * 5, "axis")            # nothing confirmed: the label says nothing it does not know
+        for rooms in (["portrait", "main_stage", None, "reception"], [None, None, None, "portrait", None], [None] * 5):
+            b = reel_lines.beats(rooms, "axis")
+            self.assertEqual((b.words, b.stack), (("Poise.", "Light.", "Presence."), "Portraits"),
+                             "Chris, 2026-11-09: its gallery wall says Portraits and nothing else (it had said headshots too)")
         self.assertEqual(reel_lines.beats(["portrait"] * 3).words, ("Portraits.",) * 3, "every other look keeps the room words")
         from convention_social import house_brief
         self.assertEqual(set(reel_lines.BEAT_WORDS), set(house_brief.KEYS))
@@ -290,7 +288,8 @@ class Props(IsolatedCase):
         self.assertEqual(len(p["fillers"]), reel_looks.SLOTS["chiaroscuro"].fillers, "the studies and the montage")
 
     def test_axis_is_eight_portraits_its_last_two_the_burst_and_thirteen_fillers(self):
-        shots = [reel_looks.LookPhoto(Image.new("RGB", (2000, 3000) if k % 2 else (3000, 2000), (30 * k, 0, 0)), "portrait")
+        rooms = ["portrait", "portrait", "backstage", None, "portrait", "green_room", "portrait", "portrait"]
+        shots = [reel_looks.LookPhoto(Image.new("RGB", (2000, 3000) if k % 2 else (3000, 2000), (30 * k, 0, 0)), rooms[k])
                  for k in range(8)]
         p, public = self.props("axis", shots)
 
@@ -301,7 +300,8 @@ class Props(IsolatedCase):
                          "the hero in the doorway, the words on the next three, the first and last doors, the burst of two")
         self.assertEqual(p["wordPhotos"], [1, 2, 3], "Poise, Light and Presence on three portraits besides the hero")
         self.assertEqual(p["words"], ["Poise.", "Light.", "Presence."], "Chris's own three for every Axis reel")
-        self.assertEqual(p["stackLabel"], "Portraits")
+        self.assertEqual(p["stackLabel"], "Portraits", "his label on the gallery's far wall and nothing else, whatever "
+                         "rooms the final check confirmed (Chris, 2026-11-09; it had read Portraits · headshots)")
         self.assertEqual(len(p["fillers"]), 13, "the gallery's eleven walls and the two middle doors")
         self.assertEqual((p["photos"][7]["w"], p["photos"][7]["h"]), (933, 1400))
 
