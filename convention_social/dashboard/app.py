@@ -305,7 +305,10 @@ def shot_type_of(conn, photo_id: int) -> str:
 start_agent = runner.start_agent      # one run now, exactly as its schedule would start it (core/runner.py)
 
 
-def set_aside(conn, row, *, by: str, why: str) -> None:
+EDITABLE = ("draft", "approved", "failed", "would_publish")     # a post Buffer holds or has sent is not edited here
+
+
+def set_aside(conn, row, *, by: str, why: str) -> bool:
     """A post out of the running, with who set it aside in its record (`rule_report.rejected_by`): the content
     agent counts its photo as used (agents/content.recent_use) and drafts the day again; the Queue shows why."""
     try:
@@ -315,8 +318,9 @@ def set_aside(conn, row, *, by: str, why: str) -> None:
     meta = meta if isinstance(meta, dict) else {}
     now = db.utcnow()
     meta.update(rejected_by=by, rejected_at=now)
-    conn.execute("UPDATE content_queue SET status='rejected', rule_report=?, last_error=?, updated_at=? WHERE id=?",
-                 (json.dumps(meta), why, now, row["id"]))
+    # only from the state the caller saw: a post the publisher handed to Buffer meanwhile is not marked set aside
+    return conn.execute("UPDATE content_queue SET status='rejected', rule_report=?, last_error=?, updated_at=? "
+                        "WHERE id=? AND status=?", (json.dumps(meta), why, now, row["id"], row["status"])).rowcount == 1
 
 
 # Chris, 2026-10-13: posts and replies he approved in dry run go out when the lane is switched live. What the
@@ -952,7 +956,9 @@ def create_app() -> FastAPI:
         (agents/content.recent_use leaves a skipped post out; its use stays on the rotation's record, so the photos
         come round again after the others). A skipped daily post is drafted again at once. What happened, in words."""
         from ..agents import content
-        set_aside(conn, row, by=content.SKIPPED, why="Skipped by you. Its photos go back into the rotation.")
+        if not set_aside(conn, row, by=content.SKIPPED, why="Skipped by you. Its photos go back into the rotation."):
+            return (f"Post {row['id']} was handed to Buffer a moment ago, so it was not skipped. "
+                    "Open it and use Pull back from Buffer.")
         said = f"Skipped post {row['id']}. Its photos go back into the rotation."
         if today_view.meta_of(row).get("source") is None:
             start_agent("content")
@@ -971,9 +977,19 @@ def create_app() -> FastAPI:
     async def queue_save(qid: int, request: Request, user: str = Depends(require_user), conn=Depends(conn_dep)):
         """Save, or save and choose (2026-10-13: one form; an edit without Save used to be lost; 2026-10-15: Post now
         and Follow the pace are this form's buttons, so an edit is never lost on either)."""
-        load_queue_row(conn, qid)
+        row = load_queue_row(conn, qid)
+        if row["status"] not in EDITABLE:
+            # 2026-11-09 audit: Save changed the caption and networks of a post Buffer already held, and told Buffer nothing
+            return RedirectResponse(f"/queue/{qid}?msg=not_editable", status_code=303)
         form = await request.form()
-        captions = {n: (form.get(f"caption_{n}") or "").strip() for n in NETWORKS}
+        try:
+            kept = json.loads(row["caption"] or "{}")
+        except ValueError:
+            kept = {}
+        kept = kept if isinstance(kept, dict) else {}
+        # a held network's box is not on the page: its caption stays as it was (it had been saved as nothing)
+        captions = {n: (form.get(f"caption_{n}") or "").strip() if f"caption_{n}" in form else (kept.get(n) or "")
+                    for n in NETWORKS}
         targets = [n for n in NETWORKS if form.get(f"target_{n}")]
         scheduled = (form.get("scheduled_for") or "").strip() or None
         conn.execute("UPDATE content_queue SET caption=?, targets=?, scheduled_for=?, updated_at=? WHERE id=?",
@@ -1129,8 +1145,9 @@ def create_app() -> FastAPI:
         row = load_queue_row(conn, qid)
         if row["status"] != "approved":
             return RedirectResponse(f"/queue/{qid}", status_code=303)
-        conn.execute("UPDATE content_queue SET status='draft', approved_at=NULL, updated_at=? WHERE id=?", (db.utcnow(), qid))
-        return RedirectResponse(f"/queue/{qid}?msg=unapproved", status_code=303)
+        took = conn.execute("UPDATE content_queue SET status='draft', approved_at=NULL, updated_at=? WHERE id=? AND status='approved'",
+                            (db.utcnow(), qid)).rowcount
+        return RedirectResponse(f"/queue/{qid}?msg={'unapproved' if took else 'too_late'}", status_code=303)
 
     # ------------------------------------------------------------------ media
     @app.get("/media/render/{qid}/{aspect}/{index}")

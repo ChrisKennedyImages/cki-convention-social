@@ -355,6 +355,10 @@ def jpeg_block(data: bytes, edge: int = THUMB_EDGE) -> dict:
 
 
 # ------------------------------------------------------------------------ sorters
+class CapReached(RuntimeError):
+    """The monthly AI cap would be passed: the paid sorter did not call Claude."""
+
+
 class ClaudeSorter:
     method = "vision"
 
@@ -371,14 +375,23 @@ class ClaudeSorter:
         return True
 
     def classify(self, thumb: bytes, hint: str) -> Optional[dict]:
-        response = self.client.messages.create(
-            model=self.model,
-            max_tokens=2000,
-            output_config={"effort": "low", "format": {"type": "json_schema", "schema": SCHEMA}},
-            system=house_brief.system(SYSTEM, cache=True),
-            messages=[{"role": "user", "content": [jpeg_block(thumb), {"type": "text", "text": hint}]}],
-        )
-        spend.record_response(self.conn, self.agent, response, self.model, "classify")
+        # the cap is held here, inside the one paid call, so no caller can reach Claude past it (2026-11-09 audit: the
+        # phone agent called this with no cap check at all, and the scanner checked the cap but held nothing)
+        held = spend.reserve(self.conn, self.agent, self.model)
+        if held is None:
+            raise CapReached(CAP_MESSAGE)
+        try:
+            response = self.client.messages.create(
+                model=self.model,
+                max_tokens=2000,
+                output_config={"effort": "low", "format": {"type": "json_schema", "schema": SCHEMA}},
+                system=house_brief.system(SYSTEM, cache=True),
+                messages=[{"role": "user", "content": [jpeg_block(thumb), {"type": "text", "text": hint}]}],
+            )
+        except Exception:
+            spend.release(self.conn, held)
+            raise
+        spend.record_response(self.conn, self.agent, response, self.model, "classify", reservation=held)
         if response.stop_reason == "refusal":
             return None
         text = next((b.text for b in response.content if b.type == "text"), None)

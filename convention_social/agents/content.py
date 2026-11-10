@@ -455,19 +455,31 @@ def write_captions(drafter, facts: claude.PostFacts, photo: Path, known_names, *
                                                   for b in copy_rules.check(t, names=known_names, social=True, linkedin=n == "linkedin").blocks]
         if "linkedin" in caps and linkedin.pronouns_in(caps["linkedin"]):
             misses += linkedin.pronoun_problems(caps["linkedin"], main_subject())
+        # which networks' captions missed: only those take the template (2026-11-09 audit: one network's miss had thrown
+        # away all four captions, so 13 of 30 posts carried the template somewhere)
+        missed_on = {n for n, t in caps.items()
+                     if seo_plan.problems({n: t}, plan, facts.linkedin_style)
+                     or copy_rules.check(t, names=known_names, social=True, linkedin=n == "linkedin").blocks
+                     or (n == "linkedin" and linkedin.pronouns_in(t) and linkedin.pronoun_problems(t, main_subject()))}
         tries.append({"by": draft.model, "missed": misses})
         if not misses or draft.model == "template":
             break
         notes = misses
     writer = draft.model if draft is not None else "template"
+    by_template: list[str] = []
     if misses:
-        caps, writer = seo_plan.template_captions(plan, link, facts.brand_name, facts.linkedin_style), "template"
+        template = seo_plan.template_captions(plan, link, facts.brand_name, facts.linkedin_style)
+        if draft is None or caps is None or not missed_on or missed_on >= set(caps):
+            caps, writer, by_template = template, "template", sorted(template)
+        else:
+            by_template = sorted(missed_on)
+            caps = {**template, **{n: t for n, t in caps.items() if n not in missed_on}}
     from ..seo.photo_text import SHOT_WORDS
     alt = draft.alt_text if draft is not None else ""
     if not alt or len(alt) > 125 or not copy_rules.check(alt, names=known_names, social=True).ok:
         alt = seo_plan.alt_text(plan, SHOT_WORDS.get(facts.shot_type, ""), facts.brand_name)
     record = {"primary": plan.primary, "related": list(plan.related), "hashtags": list(plan.hashtags), "area": plan.area,
-              "tries": tries, "fell_back": bool(misses), **({"subject_check": looked[0]} if looked else {})}
+              "tries": tries, "fell_back": bool(misses), "by_template": by_template, **({"subject_check": looked[0]} if looked else {})}
     if writer_error:
         record["writer_error"] = writer_error
     return caps, alt, record, writer
@@ -1106,31 +1118,38 @@ def make_draft(ctx: runner.Context, day: date, chosen: list[tuple[dict, bytes]],
     began = not ctx.conn.in_transaction
     if began:
         ctx.conn.execute("BEGIN IMMEDIATE")
-    # the window counts per network (Chris, 2026-11-02): the networks where a photo of this post, or a person on it, was on
-    # another post inside the window drop off, with the reason on the draft page; held on every network that is on
-    # (POST_NETWORKS), the photos are refused, since a post for switched-off networks alone goes nowhere
-    held = held_on(ctx.conn, photo_ids, config.repeat_window(ctx.cfg), people, ctx.cfg.variety_days)
-    going = [n for n in targets if n in payloads.posting_networks()] or targets
-    targets = [n for n in targets if n not in held]
-    if all(n in held for n in going):
+    try:
+        # the window counts per network (Chris, 2026-11-02): the networks where a photo of this post, or a person on it, was on
+        # another post inside the window drop off, with the reason on the draft page; held on every network that is on
+        # (POST_NETWORKS), the photos are refused, since a post for switched-off networks alone goes nowhere
+        held = held_on(ctx.conn, photo_ids, config.repeat_window(ctx.cfg), people, ctx.cfg.variety_days)
+        going = [n for n in targets if n in payloads.posting_networks()] or targets
+        targets = [n for n in targets if n not in held]
+        if all(n in held for n in going):
+            if began:
+                ctx.conn.execute("ROLLBACK")
+            first = next(iter(held.values()))
+            raise PhotosTaken(first["photo"] or photo_ids[0], first["post"], f"{first['why']} (on every network this post was for)")
+        if held:
+            captions = {n: t for n, t in captions.items() if n in targets}
+            meta["rules"] = {n: r for n, r in meta["rules"].items() if n in targets}
+            meta["skipped"] = {**(meta.get("skipped") or {}), **{n: h["why"] for n, h in held.items()}}
+        qid = db.insert(ctx.conn, "content_queue", kind="photo", photo_ids=json.dumps(photo_ids), targets=json.dumps(targets),
+                        caption=json.dumps(captions), render_paths=json.dumps(render_paths), rule_report=json.dumps(meta),
+                        created_at=now_s, updated_at=now_s)
+        # the rotation's memory: every photo on this draft was used now (a dry-run draft too: approved in dry run, it goes
+        # out when the lane is switched live), so the site, the samples and later drafts reach for the others first. The
+        # moment is record_use's, to the microsecond like every surface's: the queue row's whole second sorted before a
+        # site use made in the same second, and the fresh photo came round again (CI, 2026-10-25)
+        report.record_use(ctx.conn, "post", photo_ids, ref=f"post:{qid}")
         if began:
+            ctx.conn.execute("COMMIT")
+    except BaseException:
+        # 2026-11-09 audit: an error in here left the write transaction open, so the run's own error row and its
+        # finish were lost when the connection closed and the run read as still going
+        if began and ctx.conn.in_transaction:
             ctx.conn.execute("ROLLBACK")
-        first = next(iter(held.values()))
-        raise PhotosTaken(first["photo"] or photo_ids[0], first["post"], f"{first['why']} (on every network this post was for)")
-    if held:
-        captions = {n: t for n, t in captions.items() if n in targets}
-        meta["rules"] = {n: r for n, r in meta["rules"].items() if n in targets}
-        meta["skipped"] = {**(meta.get("skipped") or {}), **{n: h["why"] for n, h in held.items()}}
-    qid = db.insert(ctx.conn, "content_queue", kind="photo", photo_ids=json.dumps(photo_ids), targets=json.dumps(targets),
-                    caption=json.dumps(captions), render_paths=json.dumps(render_paths), rule_report=json.dumps(meta),
-                    created_at=now_s, updated_at=now_s)
-    # the rotation's memory: every photo on this draft was used now (a dry-run draft too: approved in dry run, it goes
-    # out when the lane is switched live), so the site, the samples and later drafts reach for the others first. The
-    # moment is record_use's, to the microsecond like every surface's: the queue row's whole second sorted before a
-    # site use made in the same second, and the fresh photo came round again (CI, 2026-10-25)
-    report.record_use(ctx.conn, "post", photo_ids, ref=f"post:{qid}")
-    if began:
-        ctx.conn.execute("COMMIT")
+        raise
     # the ping that opens the draft (Chris, 2026-10-11: "I haven't received any ntfy"); 2026-10-13: it carries the
     # card, and an Approve button when the art director passed the draft (core/approve_token: signed, single use)
     title, message = ping or ping_words(ctx.cfg.brand_name, design, len(photo_ids), f"{day:%A}", designed=False)
