@@ -109,6 +109,22 @@ class BuildWithoutPhotos(IsolatedCase):
         self.assertIn("Building without photos", out)
         self.assertIn("built without photos", out)
 
+    def test_a_site_that_shows_photos_is_never_rebuilt_without_them(self):
+        """2026-11-09 audit: with the Drive sign-in dead the build made the site with no photos and the deploy published
+        it as a pass. A live site that shows photos keeps them: the build fails aloud and builds nothing."""
+        from convention_social.core import db, settings
+        from convention_social.drive import oauth
+        from convention_social.site import build
+        conn = db.connect()
+        settings.set(conn, build.SHOWN_KEY, "[11, 12, 13]")
+        conn.commit()
+        conn.close()
+        with mock.patch.object(oauth, "access_token", side_effect=oauth.DriveAuthError("Google Drive is not signed in yet.")), \
+             mock.patch.object(build, "build", side_effect=AssertionError("nothing is built")):
+            code, out = run(["site", "build"])
+        self.assertEqual(code, 1)
+        self.assertIn("not rebuilt without them", out)
+
     def test_the_menu_links_only_to_sections_that_exist(self):
         """2026-10-14: the menu is words (Coverage, About, Contact; `<nav class="mono" aria-label="Pages">`; Availability
         left it on 2026-10-31), and Coverage is its own page, so no link points at a /#coverage section any more. Work is in the menu only

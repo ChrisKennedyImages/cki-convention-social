@@ -103,6 +103,16 @@ class Content(IsolatedCase):
         self.assertFalse(content.draft_now_asked(self.conn), "the press is taken once")
         self.assertIsNone(settings.get(self.conn, content.LAST_ATTEMPT_KEY), "the morning run's record is not touched")
 
+    def test_an_error_while_the_draft_is_saved_leaves_no_transaction_open(self):
+        """2026-11-09 audit: an error between the save's BEGIN and COMMIT left the write transaction open, so the run's
+        own error row and finish were lost and the run read as still going (content run 18029 held the watchdog off)."""
+        with mock.patch.object(content, "held_on", side_effect=RuntimeError("boom")):
+            with self.assertRaises(RuntimeError):
+                content.draft_one(self.ctx(), self.fetch, now=MONDAY_6AM)
+        self.assertFalse(self.conn.in_transaction)
+        self.assertEqual(self.queue(), [])
+        self.assertIn("drafted post", content.draft_one(self.ctx(), self.fetch, now=MONDAY_6AM), "the next run drafts as usual")
+
     def every_network_on(self):
         """The tests that pin every card: since 2026-11-02 a draft carries a card only for the networks it goes to."""
         os.environ["POST_NETWORKS"] = "instagram,facebook,pinterest,linkedin"
