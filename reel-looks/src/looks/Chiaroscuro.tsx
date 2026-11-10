@@ -2,7 +2,7 @@ import React from "react";
 import { AbsoluteFill, Easing, Img, interpolate, random, staticFile, useCurrentFrame } from "remotion";
 import { noise2D } from "@remotion/noise";
 import { H, Photo, ReelProps, W, clamp, ramp } from "../look";
-import { Slots, checkSlots, fillerAt, photoAt } from "../slots";
+import { Slots, checkSlots, fillerAt, photoAt, shapeOf } from "../slots";
 import { GARAMOND } from "../fonts";
 import { Face, fitSize, metrics, textWidth, useFontsReady } from "../measure";
 import { Music } from "../music";
@@ -414,12 +414,16 @@ const Montage: Scene = ({ f, g, p }) => {
   }
   const pic = fillerAt(p, CUT_FILLERS[n]);
   const lf = f - CUTS[n], len = CUTS[n + 1] - CUTS[n];
-  const jx = (random(`mx${n}`) - 0.5) * 0.24, jy = (random(`my${n}`) - 0.5) * 0.2;
-  const z = 1.34 + 0.12 * random(`mz${n}`) + 0.06 * (lf / len);
+  // Each picture whole, in its own shape, in the dark (Chris, 2026-11-10, of a face cut off at the frame's edge at 16 s:
+  // "it's a bad render"; a face is never cut by a crop). It had filled the frame at 1.34 to 1.52 times, off centre, so
+  // a wide photo showed a quarter of its width. Now it is as wide as the frame allows, never cropped, with a slow push.
+  const ar = shapeOf(pic);
+  const bw = Math.min(W - 80, (H - 520) * ar), bh = bw / ar;
+  const z = 1 + 0.04 * (lf / len);
   return (
     <AbsoluteFill style={{ background: BIT }}>
-      <Painting p={pic} cx={W / 2} cy={H / 2} w={W} h={H} s={z} ox={Math.min(0.85, Math.max(0.15, pic.fx + jx))} oy={Math.min(0.85, Math.max(0.15, pic.fy + jy))}
-        pool={{ x: Math.min(0.8, Math.max(0.2, pic.fx + jx)), y: Math.min(0.8, Math.max(0.2, pic.fy + jy)), r: 0.62, core: 0.18 }} edge={0} />
+      <Painting p={pic} cx={W / 2} cy={H / 2} w={bw} h={bh} s={z} ox={0.5} oy={0.5}
+        pool={{ x: 0.5, y: 0.45, r: 0.72, core: 0.24 }} edge={0} />
       <Shaft g={g} sx={n % 2 ? 1300 : -220} sy={-640} tx={W / 2} ty={H * 0.55} spread={18} k={0.8} seed={10 + n} />
       {/* each cut lands with a breath of light */}
       <AbsoluteFill style={{ background: rgba(LAMP, 1), mixBlendMode: "screen", opacity: 0.18 * Math.max(0, 1 - lf / 3) }} />
