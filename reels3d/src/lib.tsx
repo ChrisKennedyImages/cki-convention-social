@@ -3,15 +3,17 @@
 import React, {useEffect, useMemo, useState} from 'react';
 import {continueRender, delayRender, staticFile, useCurrentFrame, useVideoConfig} from 'remotion';
 import * as THREE from 'three';
+import {Check, Slot, drawnFrom, lit} from './slots';
 
 export const W = 1080, H = 1920, FPS = 30, TOTAL = 450, END = 72;
 export const K = '#0a0a0b', PAPER = '#f3f3f1', CYAN = '#00e1ff';
 
 export type Photo = {src: string; room: string; line: string; w: number; h: number};
-export type Tile = {src: string; w: number; h: number};                 // a photo that only fills a wall or a grid
-// What a reel is made of: the post's photos (named), the beats they turn on, other approved photos to fill a wall or a
-// grid around them (Wall, Loop, Ring), and the track; every path is under the public dir the render is given.
-export type Props = {photos: Photo[]; cuts: number[]; grid: Tile[]; music: string};
+export type Tile = {src: string; w: number; h: number};                 // a filler: a photo that only fills a slot
+// What a reel is made of: the post's photos (named), the beats they turn on, more of Chris's approved photos for the
+// style's other slots (Wall's tiles, Loop's cells, Ring's cards: each a picture of its own, exactly as many as the style
+// shows), and the track; every path is under the public dir the render is given. `check`: the card check's (slots.ts).
+export type Props = {photos: Photo[]; cuts: number[]; fillers: Tile[]; music: string; check?: Check};
 
 export const FONTS: Record<string, string> = {
   display: 'Unbounded-ExtraBold.ttf', mono: 'JetBrainsMono-Medium.ttf', condensed: 'Archivo-XCondBlack.ttf',
@@ -33,7 +35,7 @@ export const useFonts = () => {
 };
 
 // The photos as textures, loaded before the first frame.
-export const useTextures = (srcs: string[]) => {
+const useTextures = (srcs: string[]) => {
   const [handle] = useState(() => delayRender('textures'));
   const [tex, setTex] = useState<THREE.Texture[] | null>(null);
   useEffect(() => {
@@ -44,6 +46,76 @@ export const useTextures = (srcs: string[]) => {
   }, [handle, srcs.join('|')]);
   return tex;
 };
+
+// Every picture of the reel as a texture, by its slot: the post's photo i, filler k (a slot the props do not hold stops
+// the render). Each place a style draws a slot asks here, so the card check sees every place (slots.ts drawnFrom).
+export type Pictures = {photo: (i: number) => THREE.Texture; filler: (k: number) => THREE.Texture};
+export const usePictures = (p: Props): Pictures | null => {
+  const srcs = useMemo(() => {
+    const own = [...p.photos, ...p.fillers].map((x) => x.src);
+    return p.check?.codes ? [...own, ...own.map(lit)] : own;
+  }, [p]);
+  const tex = useTextures(srcs);
+  return useMemo(() => {
+    if (!tex) return null;
+    const bySrc = new Map(srcs.map((s, n) => [s, tex[n]]));
+    return {photo: (i: number) => bySrc.get(drawnFrom(p, 'photos', i))!, filler: (k: number) => bySrc.get(drawnFrom(p, 'fillers', k))!};
+  }, [tex]);
+};
+
+// How much of the frame a flat quad covers from this camera, in pixels: its corners projected, clipped to the frame.
+// A style that lays more than the camera ever sees draws only what comes into the frame (Wall's tiles, Loop's cells).
+export const pixelsOnScreen = (corners: THREE.Vector3[], camera: THREE.Camera): number => {
+  let poly = corners.map((c) => { const v = c.clone().project(camera); return [v.x, v.y]; });
+  for (const [axis, sign] of [[0, 1], [0, -1], [1, 1], [1, -1]] as const) {          // Sutherland-Hodgman, edge x/y = +-1
+    const inside = (q: number[]) => sign * q[axis] <= 1;
+    const cut = (a: number[], b: number[]) => { const t = (sign - a[axis]) / (b[axis] - a[axis]); return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]; };
+    const kept: number[][] = [];
+    poly.forEach((q, n) => {
+      const prev = poly[(n + poly.length - 1) % poly.length];
+      if (inside(q)) { if (!inside(prev)) kept.push(cut(prev, q)); kept.push(q); }
+      else if (inside(prev)) kept.push(cut(prev, q));
+    });
+    poly = kept;
+    if (!poly.length) return 0;
+  }
+  let twice = 0;
+  poly.forEach((q, n) => { const r = poly[(n + 1) % poly.length]; twice += q[0] * r[1] - r[0] * q[1]; });
+  return Math.abs(twice) / 2 * (W / 2) * (H / 2);
+};
+// A slot is drawn where it shows at least this much of the frame at some moment (0.1 %: a sliver at the frame's edge
+// smaller than this is never a picture anyone sees, and the card check could not tell it from nothing).
+export const SHOWN_PX = 0.001 * W * H;
+
+// A style whose cards come round into the frame again (Orbit's ring, Gallery's room) shows a picture on one of a card's
+// passes through the frame only (Chris, 2026-11-08, night: no picture twice in a reel). A pass is a run of the render's
+// frames (60 a second: f in 30ths, every half) in which `seen(f)` says, for each card, how much of the frame its face
+// fills facing the camera; it holds a picture only if it fills SHOWN_PX at some moment on a frame of the 30-a-second
+// timeline (the card check's). Each frame of a card then shows the picture of the pass it is in, or, between passes and out
+// of sight, of the pass to come: a face changes only where no one sees it.
+export type Pass = {from: number; to: number; most: number};     // frames as f * 2; the most pixels the face filled
+export const passesOf = (cards: number, seen: (f: number) => number[]): Pass[][] => {
+  const passes: Pass[][] = Array.from({length: cards}, () => []);
+  for (let s = 0; s < TOTAL * 2; s++) {
+    seen(s / 2).forEach((px, k) => {
+      if (px <= 0) return;
+      const p = passes[k], last = p[p.length - 1];
+      const most = s % 2 === 0 ? px : 0;
+      if (last && last.to === s - 1) { last.to = s; last.most = Math.max(last.most, most); } else p.push({from: s, to: s, most});
+    });
+  }
+  return passes;
+};
+export const holdsPicture = (p: Pass) => p.most >= SHOWN_PX;
+export const facesOf = (passes: Pass[][], pictureOf: (k: number, pass: number) => Slot | null): (Slot | null)[][] =>
+  passes.map((ps, k) => {
+    const given = ps.map((_, n) => pictureOf(k, n));
+    return Array.from({length: TOTAL * 2}, (_, s) => { const n = ps.findIndex((p) => s <= p.to); return n < 0 ? null : given[n]; });
+  });
+export const faceAt = (faces: (Slot | null)[][], k: number, f: number) => faces[k][Math.min(TOTAL * 2 - 1, Math.max(0, Math.round(f * 2)))];
+// the frame a card's own photo holds at: the middle of its beat
+export const holdOf = (cuts: number[], k: number) => (cuts[k] + (k + 1 < cuts.length ? cuts[k + 1] : TOTAL - END)) / 2;
+export const passAt = (ps: Pass[], f: number) => ps.findIndex((p) => p.from <= f * 2 && f * 2 <= p.to);
 
 // Which photo is on at frame f, and how far into its time we are (0 to 1).
 export const segmentAt = (cuts: number[], f: number) => {

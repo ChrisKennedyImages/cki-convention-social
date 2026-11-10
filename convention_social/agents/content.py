@@ -762,8 +762,11 @@ def make_renderer(conn: sqlite3.Connection, agent: str, *, design: str, rows: li
                         video, word_frames = made.video, made.word_frames
                     stills = reel_looks.stills(reel_style, video, out_dir=out_dir / f"{tag}-stills", meta=seo, frames=word_frames)
                 else:
-                    grid = reels3d.fillers(conn, exclude=[r["id"] for r in rows])
-                    video = reels3d.render(reel_style, shots, out=video_at, audio=track, grid=grid)
+                    # every picture a slot of its own: the style's other slots take fillers, as many as it shows (2026-11-09)
+                    made = reels3d.render(reel_style, shots, out=video_at, audio=track,
+                                          fillers=reels3d.fillers(conn, reel_style, len(shots), exclude=[r["id"] for r in rows]))
+                    reels3d.record_wall(conn, [f.id for f in made.fillers])     # the ones it showed rotate on
+                    video = made.video
                     stills = reels3d.stills(reel_style, video, out_dir=out_dir / f"{tag}-stills", meta=seo)
             except Exception as e:  # noqa: BLE001  a reel that cannot be made leaves a carousel of the same photos, said why
                 reel_failed.append(f"{type(e).__name__}: {e}")

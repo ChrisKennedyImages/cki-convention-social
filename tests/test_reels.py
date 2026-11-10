@@ -343,13 +343,13 @@ class Saturday(IsolatedCase):
             self.addCleanup(fake.stop)
 
     def fake_reel(self, fail=False):
-        def job(style, shots_, *, out, audio=None, grid=()):
+        def job(style, shots_, *, out, audio=None, fillers=()):
             self.reels.append((style, [s.room for s in shots_], audio))
             if fail:
                 raise RuntimeError("remotion stopped with code 1: no reel made")
             out.parent.mkdir(parents=True, exist_ok=True)
             out.write_bytes(b"mp4")
-            return out
+            return reels3d.Reel(out, tuple(fillers))
         return job
 
     def fake_stills(self, style, video, *, out_dir, meta=None):      # the cover first, named by its offset, as the real one

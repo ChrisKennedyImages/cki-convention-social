@@ -165,11 +165,11 @@ class ThePress(Case):
         self.assertEqual(self.queued(), [])
         track = self.root / "track.mp3"
         track.write_bytes(b"ID3")
-        def reel(style, shots, *, out, audio=None, grid=()):    # the reel itself is pinned in test_reels3d; here the track it gets
+        def reel(style, shots, *, out, audio=None, fillers=()):    # the reel itself is pinned in test_reels3d; here the track it gets
             heard.append(audio)
             out.parent.mkdir(parents=True, exist_ok=True)
             out.write_bytes(b"mp4")
-            return out
+            return reels3d.Reel(out, tuple(fillers))
 
         def stills(style, video, *, out_dir, meta=None):
             out_dir.mkdir(parents=True, exist_ok=True)

@@ -49,7 +49,7 @@ from ..core import config
 from ..core.config import REPO_ROOT
 from ..music import LookTrack
 from .meta import ImageMeta, save_jpeg
-from .reels3d import copy_photo, frame_at, node_tool, run_remotion
+from .reels3d import Filler, copy_photo, frame_at, node_tool, run_remotion
 
 SWITCH = "REEL_LOOKS"                                     # .env: "on" adds the ten looks to the reel rotation
 LOOKS = ("powersoften", "manifesto", "darkroom", "titles", "section", "splitscreen", "weather", "stillness",
@@ -288,13 +288,6 @@ class LookPhoto:
     image: Image.Image
     room: Optional[str]
     focus: tuple[float, float] = DEFAULT_FOCUS
-
-
-@dataclass(frozen=True)
-class Filler:
-    """One of his approved photos for a look's other slots: its id, for the rotation's record, and its copy here."""
-    id: int
-    path: Path
 
 
 @dataclass(frozen=True)
