@@ -243,7 +243,8 @@ class Fillers(IsolatedCase):
         second = {f.path.name for f in reels3d.fillers(self.conn, "ring", 4, exclude=[])}
         self.assertEqual(len(second), 4)
         self.assertFalse(first & second, "the next wall shows the four the first did not")
-        self.assertIn("reel wall", report.use_line(report.use_of(self.conn, ids[:1]).get(ids[0]) or report.use_of(self.conn, ids[1:2]).get(ids[1])))
+        shown = picked[0].id                                           # one the wall did show: the pick is a rotation, not ids[0]
+        self.assertIn("reel wall", report.use_line(report.use_of(self.conn, [shown]).get(shown)))
 
     def test_every_approved_photo_reaches_the_wall_not_only_the_strongest_600_frames_of_the_library(self):
         """2026-11-09: the wall read the strongest 600 frames of the whole library and kept the approved among them, 42 of
