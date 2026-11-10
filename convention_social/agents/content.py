@@ -456,19 +456,31 @@ def write_captions(drafter, facts: claude.PostFacts, photo: Path, known_names, *
                                                   for b in copy_rules.check(t, names=known_names, social=True, linkedin=n == "linkedin").blocks]
         if "linkedin" in caps and linkedin.pronouns_in(caps["linkedin"]):
             misses += linkedin.pronoun_problems(caps["linkedin"], main_subject())
+        # which networks' captions missed: only those take the template (2026-11-09 audit: one network's miss had thrown
+        # away all four captions, so 13 of 30 posts carried the template somewhere)
+        missed_on = {n for n, t in caps.items()
+                     if seo_plan.problems({n: t}, plan, facts.linkedin_style)
+                     or copy_rules.check(t, names=known_names, social=True, linkedin=n == "linkedin").blocks
+                     or (n == "linkedin" and linkedin.pronouns_in(t) and linkedin.pronoun_problems(t, main_subject()))}
         tries.append({"by": draft.model, "missed": misses})
         if not misses or draft.model == "template":
             break
         notes = misses
     writer = draft.model if draft is not None else "template"
+    by_template: list[str] = []
     if misses:
-        caps, writer = seo_plan.template_captions(plan, link, facts.brand_name, facts.linkedin_style), "template"
+        template = seo_plan.template_captions(plan, link, facts.brand_name, facts.linkedin_style)
+        if draft is None or caps is None or not missed_on or missed_on >= set(caps):
+            caps, writer, by_template = template, "template", sorted(template)
+        else:
+            by_template = sorted(missed_on)
+            caps = {**template, **{n: t for n, t in caps.items() if n not in missed_on}}
     from ..seo.photo_text import SHOT_WORDS
     alt = draft.alt_text if draft is not None else ""
     if not alt or len(alt) > 125 or not copy_rules.check(alt, names=known_names, social=True).ok:
         alt = seo_plan.alt_text(plan, SHOT_WORDS.get(facts.shot_type, ""), facts.brand_name)
     record = {"primary": plan.primary, "related": list(plan.related), "hashtags": list(plan.hashtags), "area": plan.area,
-              "tries": tries, "fell_back": bool(misses), **({"subject_check": looked[0]} if looked else {})}
+              "tries": tries, "fell_back": bool(misses), "by_template": by_template, **({"subject_check": looked[0]} if looked else {})}
     if writer_error:
         record["writer_error"] = writer_error
     return caps, alt, record, writer
