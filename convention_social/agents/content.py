@@ -1115,31 +1115,38 @@ def make_draft(ctx: runner.Context, day: date, chosen: list[tuple[dict, bytes]],
     began = not ctx.conn.in_transaction
     if began:
         ctx.conn.execute("BEGIN IMMEDIATE")
-    # the window counts per network (Chris, 2026-11-02): the networks where a photo of this post, or a person on it, was on
-    # another post inside the window drop off, with the reason on the draft page; held on every network that is on
-    # (POST_NETWORKS), the photos are refused, since a post for switched-off networks alone goes nowhere
-    held = held_on(ctx.conn, photo_ids, config.repeat_window(ctx.cfg), people, ctx.cfg.variety_days)
-    going = [n for n in targets if n in payloads.posting_networks()] or targets
-    targets = [n for n in targets if n not in held]
-    if all(n in held for n in going):
+    try:
+        # the window counts per network (Chris, 2026-11-02): the networks where a photo of this post, or a person on it, was on
+        # another post inside the window drop off, with the reason on the draft page; held on every network that is on
+        # (POST_NETWORKS), the photos are refused, since a post for switched-off networks alone goes nowhere
+        held = held_on(ctx.conn, photo_ids, config.repeat_window(ctx.cfg), people, ctx.cfg.variety_days)
+        going = [n for n in targets if n in payloads.posting_networks()] or targets
+        targets = [n for n in targets if n not in held]
+        if all(n in held for n in going):
+            if began:
+                ctx.conn.execute("ROLLBACK")
+            first = next(iter(held.values()))
+            raise PhotosTaken(first["photo"] or photo_ids[0], first["post"], f"{first['why']} (on every network this post was for)")
+        if held:
+            captions = {n: t for n, t in captions.items() if n in targets}
+            meta["rules"] = {n: r for n, r in meta["rules"].items() if n in targets}
+            meta["skipped"] = {**(meta.get("skipped") or {}), **{n: h["why"] for n, h in held.items()}}
+        qid = db.insert(ctx.conn, "content_queue", kind="photo", photo_ids=json.dumps(photo_ids), targets=json.dumps(targets),
+                        caption=json.dumps(captions), render_paths=json.dumps(render_paths), rule_report=json.dumps(meta),
+                        created_at=now_s, updated_at=now_s)
+        # the rotation's memory: every photo on this draft was used now (a dry-run draft too: approved in dry run, it goes
+        # out when the lane is switched live), so the site, the samples and later drafts reach for the others first. The
+        # moment is record_use's, to the microsecond like every surface's: the queue row's whole second sorted before a
+        # site use made in the same second, and the fresh photo came round again (CI, 2026-10-25)
+        report.record_use(ctx.conn, "post", photo_ids, ref=f"post:{qid}")
         if began:
+            ctx.conn.execute("COMMIT")
+    except BaseException:
+        # 2026-11-09 audit: an error in here left the write transaction open, so the run's own error row and its
+        # finish were lost when the connection closed and the run read as still going
+        if began and ctx.conn.in_transaction:
             ctx.conn.execute("ROLLBACK")
-        first = next(iter(held.values()))
-        raise PhotosTaken(first["photo"] or photo_ids[0], first["post"], f"{first['why']} (on every network this post was for)")
-    if held:
-        captions = {n: t for n, t in captions.items() if n in targets}
-        meta["rules"] = {n: r for n, r in meta["rules"].items() if n in targets}
-        meta["skipped"] = {**(meta.get("skipped") or {}), **{n: h["why"] for n, h in held.items()}}
-    qid = db.insert(ctx.conn, "content_queue", kind="photo", photo_ids=json.dumps(photo_ids), targets=json.dumps(targets),
-                    caption=json.dumps(captions), render_paths=json.dumps(render_paths), rule_report=json.dumps(meta),
-                    created_at=now_s, updated_at=now_s)
-    # the rotation's memory: every photo on this draft was used now (a dry-run draft too: approved in dry run, it goes
-    # out when the lane is switched live), so the site, the samples and later drafts reach for the others first. The
-    # moment is record_use's, to the microsecond like every surface's: the queue row's whole second sorted before a
-    # site use made in the same second, and the fresh photo came round again (CI, 2026-10-25)
-    report.record_use(ctx.conn, "post", photo_ids, ref=f"post:{qid}")
-    if began:
-        ctx.conn.execute("COMMIT")
+        raise
     # the ping that opens the draft (Chris, 2026-10-11: "I haven't received any ntfy"); 2026-10-13: it carries the
     # card, and an Approve button when the art director passed the draft (core/approve_token: signed, single use)
     title, message = ping or ping_words(ctx.cfg.brand_name, design, len(photo_ids), f"{day:%A}", designed=False)

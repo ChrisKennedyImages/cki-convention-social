@@ -28,8 +28,9 @@ RESERVED = "reserved"              # the detail prefix of an in-flight row
 RATES = {
     # Longest matching prefix wins, so a family prefix covers every dated member of it:
     # "claude-haiku-4" prices claude-haiku-4-5, "claude-opus-4" prices 4.6, 4.7 and 4.8.
-    # Only models that exist are listed. An unknown model costs 0, which the watchdog
-    # flags: better a loud zero than a quiet guess at the wrong price.
+    # Only models that exist are listed. A model not listed here is counted at the dearest rate in this table
+    # (UNKNOWN_RATE) and the watchdog flags it: the till errs high, never low. (Until 2026-11-09 it counted as $0, so
+    # a new model name, or a fallback's, would have spent real money the cap never saw.)
     "claude-fable-5": (10.00, 50.00),
     "claude-mythos-5": (10.00, 50.00),
     "claude-opus-5-5": (4.00, 20.00),
@@ -60,11 +61,14 @@ def rate_for(model: str) -> tuple[float, float] | None:
     return _longest(RATES, model)
 
 
+def unknown_rate() -> tuple[float, float]:
+    """What a model with no line in RATES is counted at: the dearest input and the dearest output rate listed."""
+    return max(r[0] for r in RATES.values()), max(r[1] for r in RATES.values())
+
+
 def cost_usd(model: str, input_tokens: int, output_tokens: int, cache_read: int = 0, cache_write_5m: int = 0,
              cache_write_1h: int = 0) -> float:
-    rate = rate_for(model)
-    if not rate:
-        return 0.0
+    rate = rate_for(model) or unknown_rate()
     prompt = (input_tokens + cache_read * _longest(CACHE_READ, model) + cache_write_5m * CACHE_WRITE["5m"]
               + cache_write_1h * CACHE_WRITE["1h"])
     return round(prompt / 1e6 * rate[0] + output_tokens / 1e6 * rate[1], 6)

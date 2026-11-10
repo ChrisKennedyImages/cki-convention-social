@@ -195,6 +195,8 @@ class BufferClient:
             raise BufferUnknownOutcome(f"Buffer answered HTTP {resp.status} to createPost; it may have taken the post")
         if resp.status >= 400:
             raise BufferError(f"Buffer HTTP {resp.status}: {json.dumps(resp.body)[:300]}")
+        if op == "CreatePost" and not resp.body:
+            raise BufferUnknownOutcome("Buffer answered createPost with nothing readable; it may have taken the post")
         if resp.body.get("errors"):
             raise BufferError(f"Buffer GraphQL: {json.dumps(resp.body['errors'])[:400]}")
         return resp.body.get("data") or {}

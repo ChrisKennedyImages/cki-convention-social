@@ -380,6 +380,17 @@ def cmd_site(args) -> int:
     conn = db.connect()
     fetch, why = build.library_fetch(conn, "cli")        # a phone photo's own file, else the cache, else Drive (read only)
     if fetch is None:
+        from .core import settings as _settings
+        try:
+            shown = json.loads(_settings.get(conn, build.SHOWN_KEY) or "[]")
+        except ValueError:
+            shown = []
+        if shown and not args.preview:
+            # 2026-11-09 audit: a dead Drive sign-in built the site with no photos and the deploy published it as a pass.
+            # The site that is live keeps its photos; the build fails aloud instead (fail closed).
+            print(f"{why} The live site shows {len(shown)} photos, so it is not rebuilt without them. Nothing was built.")
+            conn.close()
+            return 1
         print(f"{why} Building without photos.")
 
     def recheck(row, image):
