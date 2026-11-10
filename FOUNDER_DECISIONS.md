@@ -3006,3 +3006,105 @@ re-judge waits until 2026-11-19 for budget reasons, and nothing is judged or sor
   dark backdrop), on the home page as Portraits, would read Event photography after the next build.
 - The brief's Portraits line ("a posed group off the stage with no award in hand") stays as it is; it changes with the
   re-judge.
+
+## 2026-11-09: a word over or beside a photo is true of that photo
+
+Chris chose on 2026-11-09 to take the reel's room list off the photos it does not describe. The room list (the stack
+label, "Main stage · reception · candid": the rooms of the reel's three word photos) was printed beside pictures it does
+not name in eight of the ten looks, and Split Screen's cover set "Same moment. every angle." between two photos of two
+moments. The rule he chose, as the coordinator put it to the build: a word or a line printed over or beside a photo must
+be true of that photo.
+
+- **The room list prints only where no picture it does not name is in view**: Section's roof, lettered while the
+  drawing's rooms are empty, and Axis's far wall. Each room is still named beside its own photo by the beat words.
+  Weather's cloth now blows bare over the gale's one photo; Split Screen's cyan field over the contact sheet of fillers is
+  empty; Chiaroscuro's night watch has no captions at the spot's stops and no ruled line under the picture; Manifesto's
+  climax keeps the marquee band and loses the beam under it; Titles' paper foot under the symbol is bare; Darkroom's tray
+  print keeps its margin bare; Stillness's pair has no gallery label; Powers of Ten's title strip is bare between line 2
+  and the number. Everything else in each look is as approved.
+- **Set 6 never goes on Split Screen** (`reel_lines.NOT_ON`, `reel_lines.fits`): "Same moment. every angle." and "Stage
+  and floor." sit between Split Screen's photos, which the suite never takes from one moment (2026-11-02) and whose angle
+  or room it does not know. Every other look may still take set 6; a Split Screen drawn again with set 6 takes the next
+  set (`content.look_parts`). The other nine sets claim nothing about the photos under them.
+- Pinned by `tests/test_room_list.py`, one test over all ten looks: a look prints the stack label only where
+  `ROOM_LIST_OVER_NO_PHOTO` says it sits over no picture, so a new look cannot print it beside other pictures unseen.
+- Already scheduled posts are not touched here: #94 (Manifesto) shows "INSIDE ▸ MAIN STAGE · RECEPTION" under one
+  main-stage photo at 12.0-13.5 s, and #95 (Split Screen), #96 (Weather) and #97 (Chiaroscuro) were made before this.
+## 2026-11-09: Axis's gallery wall says Portraits
+
+Axis's gallery wall, the far wall the corridor runs to, read "Portraits · headshots" on post #92. Headshots is not one
+of his labels, and Chris chose on 2026-11-09 to make it Portraits. His word on Axis stands (2026-11-08, night): "I like
+these portraits in axis now… Do not change anything else".
+
+- **Axis's wall label is Portraits and nothing else** (`reel_lines.FIXED_STACK`), whatever rooms the final check
+  confirmed for its photos. Axis takes portraits of one person only (`reel_looks.photo_rule`, `house_brief.may_name`), so
+  the label is true of every picture in it, and the wall itself carries no picture. A look with words of its own no
+  longer needs a confirmed room among its photos, since its words and its label name none. Nothing else in Axis changes.
+- Pinned by `tests/test_reel_looks.py` (an Axis of portraits, a backstage and a green room photo among them, still says
+  Portraits) and `tests/test_house_brief.py` (Axis takes no group, so its Portraits names none).
+## 2026-11-09: no picture twice in a 3D reel
+
+Chris chose on 2026-11-09 to fix the five 3D styles too. While the ten looks are off, every daily reel draft is one of
+them, and they showed pictures again: the wall cycled 28 photos over its 93 other tiles, the loop laid about 30 over 77
+cells, and the ring's cascade took cards round from the bottom of its column to the top (#76 showed one panel photo at
+8.7 s and again at 12.7 s; it was pulled from Buffer). His words of 2026-11-08, night, hold here as in the looks: "I need
+the agents to know this shit!"
+
+- **Each style shows every picture once, and takes exactly as many fillers as it shows** (`render/reels3d.fillers`,
+  `fillers_wanted`; each style refuses props of another count, so a reel short of a picture is never made by showing one
+  again, and the render refuses it first):
+  - Wall: every tile that comes into the frame is a picture of its own, 63 in all (the post's photos on the hero tiles,
+    57 to 59 fillers); a tile never in the frame is not drawn. A tile that drifts out and comes back into view when the
+    camera backs away for the close stays dark under the end card.
+  - Ring: 30 cards, the post's photos then fillers. The cascade falls once: no card is taken round, and each column
+    starts its fall with its highest card inside the frame, so no card rises out of the top and falls back in (the hero
+    among them: it is on screen from the ring to its rest).
+  - Loop: the grid lays only the cards that come into the frame (`reels3d/src/loopGrid.ts`): each visited card on its spot
+    (the fourth as near its spot as the cards between allow), each row reaching out card by card while a card there
+    would come into the frame; every card a picture of its own, the fifth and sixth photo among them; 12 to 26 fillers,
+    as the photos' shapes make (`reels3d/loop-fillers.mjs`). Motion, timing, the loupe and the four visits are as
+    approved.
+  - Orbit: the hook's spin turns every card past the front once or twice before its beat; each of those flashes shows a
+    filler of its own (6, 8 or 9 for 4, 5 or 6 photos), a card shows its photo on its pass at its beat only, and a pass
+    after it nothing (the face dark), so the close's turn brings back no picture. Motion as approved.
+  - Gallery: a print hangs dark (its frame, no picture) until the camera swoops to it, and dark again once passed; the
+    close shows the room's frames dark but the last print. Motion as approved.
+- **Fillers** are drawn by the wall's rule (`reels3d.wall_picks`: in rotation, one per room per shoot, never the post's
+  own, a copy of one, a frame of its moments, a photo another open post holds, nor a portrait of other than one person),
+  and recorded on the wall's record only once the reel is made, the ones it showed.
+- **The 3D card check** (`ccs reel-check STYLE`, `render/reel_check.check_style`), numbered cards in the literal sense:
+  each slot at each place a style draws it gets a number (`reels3d/src/slots.ts`), and each render shows the white card of
+  every place whose number has one bit set, then the same bit cleared, so 2 x bits renders see every place. A card hidden
+  behind a nearer card while it stays in the frame is one pass, by the style's own geometry (the ring's next card sliding
+  over it, the wall's tiles behind the lifted photo); a card that leaves the frame and comes back is two (the old ring's
+  wrap fails it). Passing styles are recorded in `reels3d/card-checks.json`, and CI (`tests/test_reels3d.py`) fails a style
+  changed without a pass.
+- **Loop's grid is one still plane** (the coordinator's ruling, 2026-11-09, pending Chris): the camera passing back over
+  a card's cell, unchanged on the grid, is one picture in one place, not a second use; a picture in two cells fails the
+  check, and no visited photo is also on the grid elsewhere. The alternative, named for him: each pass of a cell through
+  the frame a picture of its own (about 7 more fillers; cells would change picture while off screen).
+- **For him to rule on, Loop's frame map** (the card check's cards, six photos): 7 of its 28 cards scroll out of the
+  frame and back in as the grid slides between the visits. The first visited photo is on screen 0.00-6.57 s and its
+  edge again 8.80-10.13 s; the fourth visited photo at the frame's edge 0.00-1.20 s and again from 8.63 s for its visit;
+  the sixth photo, in the grid, 0.00-3.77 s and from 5.87 s; four fillers likewise (0.00-1.23 and 3.03-3.83 s, 3.30-3.50
+  s and from 6.03 s, 0.00-3.10 s and from 8.80 s, 6.60-7.20 and 8.53-9.50 s).
+## 2026-11-09: the hero once, in Darkroom and Section
+
+Chris chose on 2026-11-09 "the hero not back-to-back". No picture twice in a reel holds for the hero even with nothing
+between: Darkroom's hero had come back after the contact sheet, the enlarger, the tray and the zone scale (at 4.40 s,
+6.47 s and 10.00 s), and Section's after its room's stop and again after its word (at 9.50 s and 12.27 s). These were
+the card check's "back with nothing between", listed for him on 2026-11-08, night; it now records none for either look.
+
+- **Darkroom takes eight of the post's photos**: the hero, first seen on the drying line (carrying the first word), then
+  the climax and the end card, one pass; the two other word prints on the line; the print developing in the tray; the
+  picture the enlarger lays on the easel; the decisive frame cut from the contact sheet and slid into the carrier; and
+  two more on the sheet. The sheet's eight other frames are fillers. The cut frame, the enlarged picture and the tray
+  print are three different photos: a photographer will see that the frame cut from the sheet is not the one the
+  enlarger lays down, nor the one that comes up in the tray. Motion, timing and words are as approved.
+- **Section takes six**: the hero is seen in the exploded view and the end card only. Room A on the ground floor has a
+  photo of its own, seen on the camera's stop there; when the legend comes up it stays drawn empty beside its number and
+  its word, which names the photo seen in it on its stop. The words go on rooms A, B and C (Section no longer leads with
+  the hero's word, `reel_looks.FIRST_WORD_LEADS`). Every room seen on its stop stays drawn empty on the whole sheet.
+- The look picker (`reel_looks.SLOTS`, `TAKES`) and what the art director is told of each look (`reel_looks.ON_PURPOSE`)
+  say the same. Pinned by `tests/test_hero_once.py`; both card checks re-recorded with no picture back with nothing
+  between.

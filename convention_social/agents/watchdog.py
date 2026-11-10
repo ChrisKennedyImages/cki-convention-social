@@ -203,7 +203,11 @@ def check_content_window(ctx: runner.Context, f: Findings, now: datetime, start=
         f.alert(f"no_post_day:{day.isoformat()}", f"Tomorrow ({day:%A}) has no post drafted and the day's window is over. "
                                                  "The Agents page says why.", loud=True, daily=True)
         return
-    if db.one(ctx.conn, "SELECT 1 FROM agent_runs WHERE agent='content' AND finished_at IS NULL AND ok IS NULL"):
+    # a run that began in the last two hours: one that died without finishing (2026-11-09, run 18029) had read as
+    # "running now" for good, and the day was never drafted again by itself
+    lately = (now.astimezone(timezone.utc) - timedelta(hours=2)).isoformat()
+    if db.one(ctx.conn, "SELECT 1 FROM agent_runs WHERE agent='content' AND finished_at IS NULL AND ok IS NULL "
+                        "AND started_at >= ?", (lately,)):
         f.note(f"content is running now for {day}.")
         return
     midnight = datetime.combine(local.date(), time(0, 0), tzinfo=local.tzinfo).astimezone(timezone.utc).isoformat()

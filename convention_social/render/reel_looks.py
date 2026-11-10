@@ -49,7 +49,7 @@ from ..core import config
 from ..core.config import REPO_ROOT
 from ..music import LookTrack
 from .meta import ImageMeta, save_jpeg
-from .reels3d import copy_photo, frame_at, node_tool, run_remotion
+from .reels3d import Filler, copy_photo, frame_at, node_tool, run_remotion
 
 SWITCH = "REEL_LOOKS"                                     # .env: "on" adds the ten looks to the reel rotation
 LOOKS = ("powersoften", "manifesto", "darkroom", "titles", "section", "splitscreen", "weather", "stillness",
@@ -57,6 +57,15 @@ LOOKS = ("powersoften", "manifesto", "darkroom", "titles", "section", "splitscre
 NAMES = {"powersoften": "Powers of Ten", "manifesto": "Manifesto", "darkroom": "Darkroom", "titles": "Titles",
          "section": "Section", "splitscreen": "Split Screen", "weather": "Weather", "stillness": "Stillness",
          "chiaroscuro": "Chiaroscuro", "axis": "Axis"}
+# The name a look carries in its files, as it is said (Chris, 2026-11-09: "Is it powersoft or powers of ten? ... name the
+# reels the same thing you call them"): 16895-reel-powers-of-ten.mp4, split-screen-000.jpg.
+FILE_NAME = {"powersoften": "powers-of-ten", "splitscreen": "split-screen"}
+
+
+def file_name(look: str) -> str:
+    return FILE_NAME.get(look, look)
+
+
 COMPOSITION = {"powersoften": "PowersOfTen", "manifesto": "Manifesto", "darkroom": "Darkroom", "titles": "Titles",
                "section": "Section", "splitscreen": "SplitScreen", "weather": "Weather", "stillness": "Stillness",
                "chiaroscuro": "Chiaroscuro", "axis": "Axis"}          # the Remotion composition ids (reel-looks/src/Root.tsx)
@@ -75,6 +84,8 @@ STILL_FRAMES = {"powersoften": (60, 120), "manifesto": (295,), "darkroom": (352,
 GRADED = ("chiaroscuro", "axis")                          # the two looks that grade and light his photos
 PORTRAIT = "portrait"                                     # classifications.shot_type
 PORTRAITS_ONLY = ("axis",)
+LABELLED_FILLER = {"titles": 1}                             # the filler whose own label the look prints beside it (the symbol's foot)
+LABELLED_SPARE = 8                                        # how many more of the rotation are looked through for one with a label
 MOST_PORTRAITS = 2                                        # in any other look
 ENDING = 2                                                # Axis's closing burst
 
@@ -94,9 +105,11 @@ SLOTS = {
     "powersoften": Slots(6, 40, 8),  # the six nearest the hero; the mosaic's outer rings, as many as it places (with
     #                                  fewer than 8 the move is too short for every word to hold beside its photo)
     "manifesto": Slots(7, 2),        # the shout, the three wedges, the climax, the manifesto, the number; the photomontage
-    "darkroom": Slots(6, 7),         # the print (the first word), two more prints on the line, three on the sheet; the sheet
+    "darkroom": Slots(8, 9),         # the hero (the first print on the line), two more prints on the line, the tray's
+    #                                  print, the enlarger's, the frame cut from the sheet, two more on the sheet; the sheet
     "titles": Slots(7, 2),           # the cover, the three bars, the climax, the end title, the number; Psycho bars, symbol
-    "section": Slots(5, 3),          # the three word rooms (the hero's first), the attic, the first floor's other; the plates
+    "section": Slots(6, 3),          # the hero (the exploded view), the three word rooms (A seen on its stop), the attic,
+    #                                  the first floor's other; the plates
     "splitscreen": Slots(8, 6),      # the resolve (the hero), the triptych, the split, the counterpoint; the sheet
     "weather": Slots(7, 0),          # the storm, the three words, the clearing, the long lens, the gale
     "stillness": Slots(7, 0),        # the rise (the hero), the three words, the level line, the pair
@@ -105,12 +118,12 @@ SLOTS = {
     "axis": Slots(8, 13),            # the doorway, the three words, the first and last doors, the burst; the gallery's
     #                                  eleven walls and the two middle doors (as the hand-fixed Axis sent to Chris, v5)
 }
-# The looks whose first photo carries the first word and is seen on with no other picture between (Powers of Ten's one
-# move, Darkroom's print, Section's room; reel_check lists Darkroom's and Section's for Chris to rule on): their words go
-# on their first three photos. In the others the hero has a moment of its own (the cover; Split Screen's resolve,
-# Stillness's rise) and is seen there only, and the words go on the three photos after it. A picture is never carried on
-# from one moment into another through a wipe or a dissolve: that is two moments, and shown in two places at once.
-FIRST_WORD_LEADS = ("powersoften", "darkroom", "section")
+# The looks whose first photo carries the first word and is seen on in one pass (Powers of Ten's one move; Darkroom's hero,
+# first seen on the line): their words go on their first three photos. In the others the hero has a moment of its own
+# (the cover; Split Screen's resolve, Stillness's rise, Section's exploded view) and is seen there only, and the words go
+# on the three photos after it. A picture is never carried on from one moment into another through a wipe or a dissolve:
+# that is two moments, and shown in two places at once.
+FIRST_WORD_LEADS = ("powersoften", "darkroom")
 TAKES = {look: s.photos for look, s in SLOTS.items()}    # the post's own photos a look takes: as many as it shows
 # fewer and the look is not made: its lead and its three word photos (Axis's burst of two besides); a photo slot the post
 # has no photo for takes a filler, the least of the look's moments first (each look numbers its slots so)
@@ -144,11 +157,12 @@ ON_PURPOSE = {
     "darkroom": "a darkroom under a red safelight. The cover is a contact sheet on a light box: a roll of twelve frames "
                 "in black film strips with their edge numbers. The first frame, top left, is the roll's fogged leader, "
                 "white fading to grey and empty on purpose, as the first frame of every roll is. The other eleven are "
-                "small prints of the photographer's own photos exactly as shot, eleven different pictures, the hero in the "
-                "middle of the third strip; each sits whole in the film's black, so a dark or narrow photo makes a dark "
-                "frame. Then the enlarger, a print developing in from paper white in the tray, and prints pegged on lines "
-                "with a word pencilled on each print's border. The fogged leader, the film's black, the red room around the "
-                "prints and the white paper borders are the design.",
+                "small prints of the photographer's own photos exactly as shot, eleven different pictures; each sits whole "
+                "in the film's black, so a dark or narrow photo makes a dark frame. Then one frame is cut from the sheet, "
+                "the enlarger lays a picture on the easel and a print develops in from paper white in the tray: three "
+                "different photos on purpose, since no picture is shown twice in the reel. Then prints pegged on lines "
+                "with a word pencilled on each print's border, the hero first. The fogged leader, the film's black, the "
+                "red room around the prints and the white paper borders are the design.",
     "titles": "film opening titles in cut paper: ragged, hand cut bars of cyan and white paper on black, letters cut by "
               "hand and set a little off their neighbours, bars that slide across and split the frame; each photo whole "
               "at its own shape, standing on its bar, its beat word on the bar beneath it. The ragged edges, the uneven "
@@ -157,7 +171,8 @@ ON_PURPOSE = {
                "solid black and hatched, every room the shape of its photo, numbered callouts and a legend. A room is "
                "drawn empty in thin line whenever its photo is not up in it, so empty rooms on the drawing are the design. The "
                "small photos in the drawing's rooms and the legend's numbers, which tie each beat word to its room, are "
-               "the design. In the exploded view the photos hang apart below the hero on a dashed axis, skewed flat as "
+               "the design. When the legend comes up, the first word's room stays drawn empty on purpose: its photo was up "
+               "in it on the camera's earlier stop and is not shown twice; its word names that photo. In the exploded view the photos hang apart below the hero on a dashed axis, skewed flat as "
                "plates in an axonometric drawing, then snap together into the hero straight on: that skew is the design.",
     "splitscreen": "split screen: the frame divided into panels on a fine gutter, the photos whole in their panels, the "
                    "words on solid cyan, paper or black fields beside them; each beat word on the field beside its own "
@@ -194,7 +209,9 @@ def photo_rule(look: str) -> Callable[[dict, Sequence[dict]], bool]:
     def rule(row: dict, taken: Sequence[dict]) -> bool:
         portrait = row.get("shot_type") == PORTRAIT
         if look in PORTRAITS_ONLY:
-            return portrait
+            # one person only: its wall says Portraits, and that word prints only over one person (Chris, 2026-11-09)
+            from .. import house_brief
+            return portrait and house_brief.may_name(PORTRAIT, row.get("people_count"))
         return not portrait or sum(1 for r in taken if r.get("shot_type") == PORTRAIT) < MOST_PORTRAITS
     return rule
 
@@ -291,13 +308,6 @@ class LookPhoto:
 
 
 @dataclass(frozen=True)
-class Filler:
-    """One of his approved photos for a look's other slots: its id, for the rotation's record, and its copy here."""
-    id: int
-    path: Path
-
-
-@dataclass(frozen=True)
 class Plan:
     """What a reel in a look takes besides its photos: its set of lines (reel_lines.SETS) and its track."""
     lines: int
@@ -333,7 +343,7 @@ def arrange(look: str, photos: Sequence[LookPhoto], fillers: Sequence[Filler]) -
     filled = []
     for f in fillers[:short]:
         with Image.open(f.path) as im:
-            filled.append(LookPhoto(im.convert("RGB"), None))
+            filled.append(LookPhoto(im.convert("RGB"), f.label))
     beats = reel_lines.Beats(photos=tuple(len(lead) + k for k in range(3)), words=found.words, stack=found.stack)
     return Arranged(ordered + filled + burst, beats, list(fillers[short:]))
 
@@ -348,14 +358,18 @@ def props(look: str, photos: Sequence[LookPhoto], *, plan: Plan, fillers: Sequen
         (public / name).symlink_to(REEL_LOOKS / "public" / name)
 
     def placed_at(p: LookPhoto, name: str) -> dict:
+        from .. import house_brief
         w, h = copy_photo(p.image, public / "photos" / f"{name}.jpg")
-        return {"src": f"photos/{name}.jpg", "fx": round(p.focus[0], 4), "fy": round(p.focus[1], 4), "w": w, "h": h}
+        # label: the picture's own label in his words ("Main stage"), "" when it has none that may be printed; a look
+        # prints it only on a bar beside that one picture (Chris, 2026-11-10)
+        return {"src": f"photos/{name}.jpg", "fx": round(p.focus[0], 4), "fy": round(p.focus[1], 4), "w": w, "h": h,
+                "label": house_brief.WORDS.get(p.room, "") if p.room else ""}
 
     out = {**reel_lines.props(plan.lines, shaped.beats),
            "photos": [placed_at(p, f"p{k}") for k, p in enumerate(shaped.photos)], "fillers": []}
     for k, f in enumerate(shaped.fillers):
         with Image.open(f.path) as im:
-            out["fillers"].append(placed_at(LookPhoto(im, None), f"f{k}"))
+            out["fillers"].append(placed_at(LookPhoto(im, f.label), f"f{k}"))
     least = SLOTS[look].fillers_from
     if least is not None:
         kept = fit_mosaic(out, placed or mosaic_fillers)
@@ -470,7 +484,7 @@ def stills(look: str, video: Path, *, out_dir: Path, meta: Optional[ImageMeta] =
     """The reel's cover (first) and the frames where its beat words are on screen (`frames`, from its render; else the
     look's STILL_FRAMES), cut from the reel itself and saved as JPEGs with the company's metadata."""
     out_dir = Path(out_dir)
-    return [save_jpeg(frame_at(video, f / FPS), out_dir / f"{look}-{f:03d}.jpg", meta, quality=92)
+    return [save_jpeg(frame_at(video, f / FPS), out_dir / f"{file_name(look)}-{f:03d}.jpg", meta, quality=92)
             for f in (COVER_FRAME[look], *(frames or STILL_FRAMES[look]))]
 
 
@@ -495,4 +509,24 @@ def fillers(conn, look: str, rows: Sequence[dict], *, n: Optional[int] = None,
         portraits = sum(1 for r in rows if r["shot_type"] == PORTRAIT)
         most = MOSAIC_PORTRAITS if look == "powersoften" else max(0, MOST_PORTRAITS - portraits)
         picked = reels3d.wall_picks(conn, exclude=ids, n=need, most_portraits=most, candidates=candidates)
-    return [Filler(r["id"], r["path"]) for r in picked]
+    got = [Filler(r["id"], r["path"], printable_label(r)) for r in picked]
+    bar = LABELLED_FILLER.get(look)
+    if bar is not None and n is None and len(got) > bar and not got[bar].label:
+        # the look prints this filler's own label on the bar beside it (Chris, 2026-11-10): one that has a label goes
+        # there, drawn from a few more of the same rotation when the ones picked have none (else the bar would be bare)
+        more = reels3d.wall_picks(conn, exclude=ids, n=need + LABELLED_SPARE, most_portraits=most, candidates=candidates)
+        with_label = next((f for f in (Filler(r["id"], r["path"], printable_label(r)) for r in more) if f.label), None)
+        if with_label is not None:
+            rest = [f for f in got if f.id != with_label.id][:need - 1]
+            got = rest[:bar] + [with_label] + rest[bar:]
+    return got
+
+
+def printable_label(row) -> Optional[str]:
+    """A filler's own sorted label, when it is one of his labels and may be printed over this photo (Portraits only over
+    one person: house_brief.may_name); else None, and nothing is printed for it. Chris, 2026-11-10: "Any photo title
+    should just carry its sorted, but CORRECT name"."""
+    from .. import house_brief
+    key = row["shot_type"] if "shot_type" in row.keys() else None
+    count = row["people_count"] if "people_count" in row.keys() else None
+    return key if key in house_brief.WORDS and house_brief.may_name(key, count) else None

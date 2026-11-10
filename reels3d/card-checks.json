@@ -1,0 +1,47 @@
+{
+ "gallery": {
+  "source": "85a583ea36fb02038dad8fc43256876dae44ed7ba58e224ec981a5bbe24f7d73",
+  "checked": "2026-11-09",
+  "slots": 6,
+  "repeats": 0,
+  "twice_at_once": 0,
+  "never_shown": 0,
+  "back_with_nothing_between": []
+ },
+ "loop": {
+  "source": "2e133a0c97e4d23913cc2a6858ffa04d4e03a6eb3cefbb5c233586a266ee858c",
+  "checked": "2026-11-10",
+  "slots": 28,
+  "repeats": 0,
+  "twice_at_once": 0,
+  "never_shown": 0,
+  "back_with_nothing_between": []
+ },
+ "orbit": {
+  "source": "5d199d041e427980b570a40239d579af3d9ac18286265d683e2296c6d8255242",
+  "checked": "2026-11-09",
+  "slots": 15,
+  "repeats": 0,
+  "twice_at_once": 0,
+  "never_shown": 0,
+  "back_with_nothing_between": []
+ },
+ "ring": {
+  "source": "5807f567a09d9fe290b5b286a72711134e2eaa790b1d12f34e59974c0c8adce7",
+  "checked": "2026-11-09",
+  "slots": 30,
+  "repeats": 0,
+  "twice_at_once": 0,
+  "never_shown": 0,
+  "back_with_nothing_between": []
+ },
+ "wall": {
+  "source": "ac03f2444ba6097e45f050846714d32598ce6af5e93b72e8921e70d1c689c5ee",
+  "checked": "2026-11-09",
+  "slots": 63,
+  "repeats": 0,
+  "twice_at_once": 0,
+  "never_shown": 0,
+  "back_with_nothing_between": []
+ }
+}

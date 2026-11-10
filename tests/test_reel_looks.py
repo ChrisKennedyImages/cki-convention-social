@@ -11,6 +11,7 @@ import random
 import re
 import subprocess
 import types
+import unittest
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from unittest import mock
@@ -159,12 +160,10 @@ class Words(IsolatedCase):
         would all be "Portraits."."""
         b = reel_lines.beats(["portrait", None, "portrait", "portrait", "portrait"], "axis")
         self.assertEqual((b.photos, b.words, b.stack), ((0, 1, 2), ("Poise.", "Light.", "Presence."), "Portraits"))
-        b = reel_lines.beats(["portrait", "main_stage", None, "reception"], "axis")
-        self.assertEqual((b.words, b.stack), (("Poise.", "Light.", "Presence."), "Portraits · main stage"),
-                         "the stack label is still the rooms of its three photos, a photo with none adding nothing")
-        self.assertEqual(reel_lines.beats([None, None, None, "portrait", None], "axis").stack, "Portraits", "else the rest's")
-        with self.assertRaises(reel_lines.TooFewRooms):
-            reel_lines.beats([None] * 5, "axis")            # nothing confirmed: the label says nothing it does not know
+        for rooms in (["portrait", "main_stage", None, "reception"], [None, None, None, "portrait", None], [None] * 5):
+            b = reel_lines.beats(rooms, "axis")
+            self.assertEqual((b.words, b.stack), (("Poise.", "Light.", "Presence."), "Portraits"),
+                             "Chris, 2026-11-09: its gallery wall says Portraits and nothing else (it had said headshots too)")
         self.assertEqual(reel_lines.beats(["portrait"] * 3).words, ("Portraits.",) * 3, "every other look keeps the room words")
         from convention_social import house_brief
         self.assertEqual(set(reel_lines.BEAT_WORDS), set(house_brief.KEYS))
@@ -174,11 +173,15 @@ class Photos(IsolatedCase):
     """Chris, 2026-11-08: "it's event photography mainly - the gallery in the last one should remain all portraits. It's
     also fine to have one or two portrait other ones"."""
     def test_two_portraits_at_most_in_any_look_but_axis_which_takes_portraits_only(self):
-        p, s = {"shot_type": "portrait"}, {"shot_type": "main_stage"}
+        p, s = {"shot_type": "portrait", "people_count": 1}, {"shot_type": "main_stage"}
         for look in reel_looks.LOOKS:
             rule = reel_looks.photo_rule(look)
             if look == "axis":
                 self.assertTrue(rule(p, [p] * 6))
+                # its wall says Portraits, which prints only over one person (Chris, 2026-11-09): a pair or a group
+                # posts elsewhere (2026-11-10) and never in Axis
+                self.assertFalse(rule({"shot_type": "portrait", "people_count": 3}, []))
+                self.assertFalse(rule({"shot_type": "portrait"}, []), "a count not known is not one")
                 self.assertFalse(rule(s, []))
             else:
                 self.assertTrue(rule(p, [s, p]))
@@ -187,7 +190,8 @@ class Photos(IsolatedCase):
         self.assertTrue(reel_looks.fits("darkroom", [s, p, s, p]))
         self.assertFalse(reel_looks.fits("darkroom", [p, s, p, p]))
         self.assertFalse(reel_looks.fits("darkroom", [s, s, s]), "fewer than the look's least")
-        self.assertFalse(reel_looks.fits("darkroom", [s] * 7), "more than the look shows: a photo it would never show")
+        self.assertTrue(reel_looks.fits("darkroom", [s] * 8))
+        self.assertFalse(reel_looks.fits("darkroom", [s] * 9), "more than the look shows: a photo it would never show")
         self.assertTrue(reel_looks.fits("axis", [p] * 6))
         self.assertFalse(reel_looks.fits("axis", [p] * 5), "the doorway, three words and the burst of two at least")
         self.assertFalse(reel_looks.fits("axis", [p] * 5 + [s]))
@@ -234,13 +238,15 @@ class Props(IsolatedCase):
         return reel_looks.props(look, photos, plan=self.plan, fillers=fillers, public=public), public
 
     def test_too_few_or_too_many_photos_or_fillers_stop_the_reel(self):
-        shots = [photo(r) for r in ("main_stage", "candid", "reception", None, "breakout", "backstage")]
+        shots = [photo(r) for r in ("main_stage", "candid", "reception", None, "breakout", "backstage", "candid")]
         with self.assertRaises(ValueError, msg="a filler short"):
             self.props("darkroom", shots, filler_files(self.root, reel_looks.SLOTS["darkroom"].fillers - 1))
         with self.assertRaises(ValueError, msg="a filler over"):
             self.props("weather", shots, filler_files(self.root, 2))
         with self.assertRaises(ValueError, msg="more of the post's photos than the look shows"):
             self.props("section", shots)
+        with self.assertRaises(ValueError, msg="more of the post's photos than the look shows"):
+            self.props("darkroom", shots + shots[:2])
         with self.assertRaises(ValueError, msg="fewer than its least"):
             self.props("manifesto", shots[:3])
 
@@ -249,7 +255,7 @@ class Props(IsolatedCase):
         p, public = self.props("darkroom", [photo(r, focus=(0.3, 0.2) if k == 0 else reel_looks.DEFAULT_FOCUS)
                                             for k, r in enumerate(rooms)])
         self.assertEqual(p["words"], ["Main stage.", "Portraits.", "Reception."])
-        self.assertEqual(p["wordPhotos"], [0, 1, 2], "in Darkroom the first word's photo is the print: the word photos lead")
+        self.assertEqual(p["wordPhotos"], [0, 1, 2], "in Darkroom the first word's photo is the hero, first seen on the line")
         self.assertEqual([(x["fx"], x["fy"]) for x in p["photos"]][3], (0.3, 0.2),
                          "the post's hero, with no confirmed room, follows them with the art director's focus")
         self.assertEqual({(x["fx"], x["fy"]) for x in p["photos"][:3]}, {reel_looks.DEFAULT_FOCUS})
@@ -290,7 +296,8 @@ class Props(IsolatedCase):
         self.assertEqual(len(p["fillers"]), reel_looks.SLOTS["chiaroscuro"].fillers, "the studies and the montage")
 
     def test_axis_is_eight_portraits_its_last_two_the_burst_and_thirteen_fillers(self):
-        shots = [reel_looks.LookPhoto(Image.new("RGB", (2000, 3000) if k % 2 else (3000, 2000), (30 * k, 0, 0)), "portrait")
+        rooms = ["portrait", "portrait", "backstage", None, "portrait", "green_room", "portrait", "portrait"]
+        shots = [reel_looks.LookPhoto(Image.new("RGB", (2000, 3000) if k % 2 else (3000, 2000), (30 * k, 0, 0)), rooms[k])
                  for k in range(8)]
         p, public = self.props("axis", shots)
 
@@ -301,7 +308,8 @@ class Props(IsolatedCase):
                          "the hero in the doorway, the words on the next three, the first and last doors, the burst of two")
         self.assertEqual(p["wordPhotos"], [1, 2, 3], "Poise, Light and Presence on three portraits besides the hero")
         self.assertEqual(p["words"], ["Poise.", "Light.", "Presence."], "Chris's own three for every Axis reel")
-        self.assertEqual(p["stackLabel"], "Portraits")
+        self.assertEqual(p["stackLabel"], "Portraits", "his label on the gallery's far wall and nothing else, whatever "
+                         "rooms the final check confirmed (Chris, 2026-11-09; it had read Portraits · headshots)")
         self.assertEqual(len(p["fillers"]), 13, "the gallery's eleven walls and the two middle doors")
         self.assertEqual((p["photos"][7]["w"], p["photos"][7]["h"]), (933, 1400))
 
@@ -952,3 +960,28 @@ class Designed(LookCase):
         _, meta_, _, ids = self.last()
         self.assertEqual((meta_["source"], meta_["reel"], meta_["music"]), ("designed", "axis", self.tracks["axis"]))
         self.assertEqual(self.shot_types(ids), ["portrait"] * 8, "Axis takes portraits only")
+
+
+class FilesNamedAsTheLooksAreSaid(unittest.TestCase):
+    def test_a_looks_files_carry_its_name_in_words(self):
+        """Chris, 2026-11-09: "Is it powersoft or powers of ten? ... name the reels the same thing you call them"."""
+        self.assertEqual(reel_looks.file_name("powersoften"), "powers-of-ten")
+        self.assertEqual(reel_looks.file_name("splitscreen"), "split-screen")
+        for look in reel_looks.LOOKS:
+            self.assertEqual(reel_looks.file_name(look).replace("-", ""), reel_looks.NAMES[look].lower().replace(" ", ""), look)
+
+
+class EachPictureCarriesItsOwnLabel(unittest.TestCase):
+    """Chris, 2026-11-10: "Any photo title should just carry its sorted, but CORRECT name"."""
+    def test_a_fillers_label_is_its_own_and_only_one_that_may_be_printed_over_it(self):
+        self.assertEqual(reel_looks.printable_label({"shot_type": "main_stage", "people_count": 4}), "main_stage")
+        self.assertEqual(reel_looks.printable_label({"shot_type": "portrait", "people_count": 1}), "portrait")
+        self.assertIsNone(reel_looks.printable_label({"shot_type": "portrait", "people_count": 2}), "Portraits only over one person")
+        self.assertIsNone(reel_looks.printable_label({"shot_type": None, "people_count": 1}))
+        self.assertIsNone(reel_looks.printable_label({"shot_type": "not_a_label", "people_count": 1}))
+
+    def test_darkrooms_sheet_is_twelve_pictures(self):
+        """A fogged leader in the first frame had read as an empty frame; the art director turned three drafts back."""
+        self.assertEqual(reel_looks.SLOTS["darkroom"], reel_looks.Slots(8, 9))
+        source = (reel_looks.REEL_LOOKS / "src" / "looks" / "Darkroom.tsx").read_text()
+        self.assertIn("return [f(8), a, f(0), f(1), b, f(2), f(3), own(p, ar, CHOSEN), f(4), f(5), f(6), f(7)];", source)

@@ -30,14 +30,18 @@ import { Music } from "../music";
 //
 // 16 s (480 frames) on the 120 BPM grid (a beat is 15 frames, a bar 60), one idea a bar:
 //   0  the hook above the contact sheet on the light box: a roll of twelve, each frame whole   (frame 0 is the cover)
-//      and each a picture of its own: the hero, the post's photos that carry no word, and fillers (Chris, 2026-11-08,
-//      night: no picture twice in a reel); the three word photos are first seen on the line, so none is seen twice
+//      and each a picture of its own: the post's photos that carry no word and fillers (Chris, 2026-11-08, night: no
+//      picture twice in a reel); the three word photos, the hero first, are first seen on the line
 //   1  the choice: the decisive frame is cut from the sheet and lifted away by hand; the light box shows through where
 //      it was                                                                                   (bars 0-1 are one shot)
-//   2  the enlarger: the chosen frame slides into the carrier, the lamp clicks on and the beam lays the picture on the
+//   2  the enlarger: the chosen frame slides into the carrier, the lamp clicks on and the beam lays a picture on the
 //      easel, positive and in its own colours, the lamp's light warm on it; the timer's hand jumps on every beat; line 1
-//   3  the paper slides into the tray and the picture comes up out of paper white, shadows first, then mid-tones,
-//      highlights last, ending exactly as shot; line 2 above it, the stack label pencilled in its margin
+//   3  the paper slides into the tray and a picture comes up out of paper white, shadows first, then mid-tones,
+//      highlights last, ending exactly as shot; line 2 above it, its margin left bare (the reel's room list pencilled
+//      there named rooms this print does not show; Chris, 2026-11-09: a word over or beside a photo is true of it)
+//      The chosen frame, the picture the enlarger lays and the print in the tray are three different photos, and the hero
+//      is seen once, from the line to the end (Chris, 2026-11-09: the hero not back to back; it had come back after the
+//      sheet, the enlarger, the tray and the zone scale with no other picture between).
 //   4  the zone scale: eleven steps from Zone 0 to Zone X develop across the frame; the number set large above it
 //   5  three prints pegged up one a beat, each on its own line, swinging still; each word pencilled on its border; the
 //      safelight clicks off on the last beat and the room goes dark round them
@@ -106,11 +110,12 @@ const useAspects = (photos: Photo[]): number[] => {
 };
 /** The largest box of a photo's own shape inside (maxW, maxH). */
 const fitBox = (ar: number, maxW: number, maxH: number) => (maxW / maxH > ar ? { w: maxH * ar, h: maxH } : { w: maxW, h: maxW / ar });
-// The post's six photos: the hero (slot 0), which carries the first word and is the decisive frame, the print, the
-// climax and the end card all in one; the two other word photos; and three more, each on the contact sheet once. The
-// sheet's seven other frames are fillers, more of his approved photos.
-export const SLOTS: Slots = { photos: 6, fillers: 7 };
-const HERO = 0, ON_SHEET = [3, 4, 5];
+// The post's eight photos: the hero (slot 0), which carries the first word, first seen on the line and then the climax
+// and the end card; the two other word photos, on the line; the print in the tray; the picture the enlarger lays; the
+// decisive frame cut from the sheet; and two more, each on the contact sheet once. The sheet's eight other frames are
+// fillers, more of his approved photos.
+export const SLOTS: Slots = { photos: 8, fillers: 9 };
+const HERO = 0, TRAY = 3, ENLARGED = 4, CHOSEN = 5, ON_SHEET = [6, 7];
 type Shaped = { pic: Photo; ar: number };
 /** The post's photo in slot i, and its shape (`ar` is read in everyPicture's order: the photos, then the fillers). */
 const own = (p: ReelProps, ar: number[], i: number): Shaped => ({ pic: photoAt(p, i), ar: ar[i] });
@@ -171,15 +176,16 @@ const SHEET_W = STRIP_W + 2 * SM;
 const SHEET_H = 4 * STRIP_H + 3 * SGAP + 2 * SM;
 const SHEET_TOP = 620, SHEET_ROT = -0.8;
 const frameXY = (n: number) => ({ x: SM + FGAP + (n % 3) * (FW + FGAP), y: SM + Math.floor(n / 3) * (STRIP_H + SGAP) + REB });
-const HERO_N = 7;                                   // the decisive frame: the third strip, the middle one
-const HERO_MID: Pt = [frameXY(HERO_N).x + FW / 2, frameXY(HERO_N).y + FH / 2];
+const CHOSEN_N = 7;                                 // the decisive frame: the third strip, the middle one
+const CHOSEN_MID: Pt = [frameXY(CHOSEN_N).x + FW / 2, frameXY(CHOSEN_N).y + FH / 2];
 
-/** The roll: the leader fogged (null), then eleven pictures, each once: the hero in the middle of the third strip, the
- *  post's photos that carry no word spread among the fillers. */
+/** The roll: twelve pictures, each once (Chris, 2026-11-10: a picture in the first frame, where a fogged leader had
+ *  read as an empty frame): the decisive frame in the middle of the third strip, the post's two other photos for the
+ *  sheet spread among the fillers. */
 const roll = (p: ReelProps, ar: number[]): (Shaped | null)[] => {
-  const [a, b, c] = ON_SHEET.map((i) => own(p, ar, i));
+  const [a, b] = ON_SHEET.map((i) => own(p, ar, i));
   const f = (k: number) => filler(p, ar, k);
-  return [null, a, f(0), f(1), b, f(2), f(3), own(p, ar, HERO), f(4), c, f(5), f(6)];
+  return [f(8), a, f(0), f(1), b, f(2), f(3), own(p, ar, CHOSEN), f(4), f(5), f(6), f(7)];
 };
 
 /** One frame of the roll, whole, upright and as shot, in the film's black. */
@@ -199,7 +205,7 @@ const Frame: React.FC<{ pic: Photo; ar: number }> = ({ pic, ar }) => {
 const Sheet: React.FC<{ p: ReelProps; ar: number[]; cut: boolean }> = ({ p, ar, cut }) => {
   const r = roll(p, ar);
   const holes = Array.from({ length: 24 }, (_, k) => FGAP / 2 + k * ((STRIP_W - FGAP) / 24) + 9);
-  const h = frameXY(HERO_N);
+  const h = frameXY(CHOSEN_N);
   return (
     <div style={{ position: "absolute", left: 0, top: 0, width: SHEET_W, height: SHEET_H, background: PRINT }}>
       {[0, 1, 2, 3].map((row) => (
@@ -225,7 +231,7 @@ const Sheet: React.FC<{ p: ReelProps; ar: number[]; cut: boolean }> = ({ p, ar, 
         </div>
       ))}
       {r.map((s, n) => {
-        if (n === HERO_N) return null;       // the chosen frame is drawn on its own, so it can be lifted away
+        if (n === CHOSEN_N) return null;       // the chosen frame is drawn on its own, so it can be lifted away
         const { x, y } = frameXY(n);
         return (
           <div key={n} style={{ position: "absolute", left: x, top: y, width: FW, height: FH }}>
@@ -250,14 +256,14 @@ const Contact: Scene = ({ g, p, ar }) => {
   };
   // the choice: once the hook has gone, the chosen frame is cut from the sheet and lifted away by hand
   const lift = soft(clamp01((g - 72) / 30));
-  const at = lerpPt(toScreen(HERO_MID), [W / 2, 404], lift);
+  const at = lerpPt(toScreen(CHOSEN_MID), [W / 2, 404], lift);
   const arc = Math.sin(Math.PI * lift) * 26;                         // a hand's path: up, over, and down
   const tilt = lerp(SHEET_ROT, 0, lift) + Math.sin(Math.PI * lift) * 2.4;
   // its shadow falls on the dark above the sheet, never across the other frames
   const top0 = toScreen([0, 0]), top1 = toScreen([SHEET_W, 0]);
   const slope = (top1[1] - top0[1]) / (top1[0] - top0[0]);
   const above = `polygon(0px 0px, ${W}px 0px, ${W}px ${(top0[1] + slope * (W - top0[0])).toFixed(1)}px, 0px ${(top0[1] - slope * top0[0]).toFixed(1)}px)`;
-  const hero = own(p, ar, HERO);
+  const chosen = own(p, ar, CHOSEN);
   // the hook: set at frame 0, held two seconds, gone before the choice
   const open = pair(p.open[0], p.open[1]);
   const openS = Math.min(208, 960 / runsEm(open));
@@ -277,7 +283,7 @@ const Contact: Scene = ({ g, p, ar }) => {
         </AbsoluteFill>
       )}
       <div style={{ position: "absolute", left: at[0] - FW / 2, top: at[1] - arc - FH / 2, width: FW, height: FH, transform: `rotate(${tilt.toFixed(3)}deg)` }}>
-        <Frame pic={hero.pic} ar={hero.ar} />
+        <Frame pic={chosen.pic} ar={chosen.ar} />
       </div>
       <Develop runs={open} size={openS} top={150} gone={gone} />
       <Develop runs={[{ text: p.openSub, face: ITALIC }]} size={subS} top={150 + openS * 1.04} gone={gone} />
@@ -349,14 +355,14 @@ const Timer: React.FC<{ cx: number; cy: number; r: number; f: number; hand: stri
 };
 
 const Enlarger: Scene = ({ f, g, p, ar }) => {
-  const hero = own(p, ar, HERO);
+  const chosen = own(p, ar, CHOSEN), laid = own(p, ar, ENLARGED);
   // the chosen frame slides into the carrier, then the lamp clicks on
   const into = soft(clamp01(f / 10));
-  const fb = fitBox(hero.ar, FW * 0.62, FH * 0.62);
+  const fb = fitBox(chosen.ar, FW * 0.62, FH * 0.62);
   const lamp = f < 11 ? 0 : f === 11 ? 0.3 : f === 12 ? 1 : f === 13 ? 0.72 : 1;
   // the opening between the easel's blades, set to the picture's shape: paper waiting in the safelight until the lamp
   // lays the picture on it, positive and in its own colours, the lamp's warmth on it while it burns
-  const box = fitBox(hero.ar, EZ.w - 120, EZ.h - 110);
+  const box = fitBox(laid.ar, EZ.w - 120, EZ.h - 110);
   const OPEN = { x: (EZ.w - box.w) / 2, y: (EZ.h - box.h) / 2, w: box.w, h: box.h };
   const shown = ramp(f, 11, 15, Easing.out(Easing.quad));
   const cone = [onEasel(OPEN.x, OPEN.y), onEasel(OPEN.x + OPEN.w, OPEN.y), onEasel(OPEN.x + OPEN.w, OPEN.y + OPEN.h), onEasel(OPEN.x, OPEN.y + OPEN.h)];
@@ -376,7 +382,7 @@ const Enlarger: Scene = ({ f, g, p, ar }) => {
       {/* the chosen frame, as shot, carried in from the left at the carrier's height and slid in behind the head */}
       {into < 0.999 && (
         <div style={{ position: "absolute", left: lerp(-fb.w - 40, 540 - fb.w / 2, into), top: CARRIER_Y - fb.h / 2, width: fb.w, height: fb.h }}>
-          <Shot pic={hero.pic} w={fb.w} h={fb.h} />
+          <Shot pic={chosen.pic} w={fb.w} h={fb.h} />
         </div>
       )}
       <Head lamp={lamp} />
@@ -386,10 +392,10 @@ const Enlarger: Scene = ({ f, g, p, ar }) => {
           <div style={{ position: "absolute", inset: 0, borderRadius: 6, background: `radial-gradient(ellipse 60% 70% at 50% 50%, ${rgb(LAMP, 0.38 * lamp)}, ${rgb(LAMP, 0.06 * lamp)} 80%)` }} />
           <div style={{ position: "absolute", left: OPEN.x, top: OPEN.y, width: OPEN.w, height: OPEN.h, overflow: "hidden", background: rgb(safe(0.62)) }}>
             <div style={{ position: "absolute", inset: 0, opacity: shown }}>
-              <Shot pic={hero.pic} w={OPEN.w} h={OPEN.h} />
+              <Shot pic={laid.pic} w={OPEN.w} h={OPEN.h} />
             </div>
-            {/* the beam's own light on it, warmest under the lens, while the lamp is on */}
-            <div style={{ position: "absolute", inset: 0, mixBlendMode: "screen", opacity: 0.2 * lamp, background: `radial-gradient(ellipse 70% 75% at 50% 42%, ${rgb(LAMP)}, ${rgb(LAMP, 0)} 100%)` }} />
+            {/* no light is laid over the picture: only Chiaroscuro and Axis light a photo, and nothing overlays a whole
+                photo (Chris, 2026-11-08). The lamp's warmth is on the easel round it and in the beam above it. */}
           </div>
         </div>
       </AbsoluteFill>
@@ -414,16 +420,15 @@ const Enlarger: Scene = ({ f, g, p, ar }) => {
 // ··· bar 3 · the tray: the paper goes in and the picture comes up out of paper white, shadows first, highlights last
 
 const Tray: Scene = ({ f, p, ar }) => {
-  const hero = own(p, ar, HERO);
-  const box = fitBox(hero.ar, 780, 700);
-  const B = 28, BB = 118;                                  // the print's borders, the bottom one wide for pencil
+  const print = own(p, ar, TRAY);
+  const box = fitBox(print.ar, 780, 700);
+  const B = 28, BB = 118;                                  // the print's borders, the bottom one wide
   const pw = box.w + 2 * B, phh = box.h + B + BB;
   const tw = pw + 116, th = phh + 116, cy = 1110;         // the tray round it
   const sp = spring({ frame: f, fps: FPS, config: { damping: 15, stiffness: 105, mass: 0.9 } });
   const slide = (1 - sp) * -1500;
   const t = 1 - Math.pow(1 - clamp01((f - 10) / 40), 1.6);
   const rock = Math.sin(f * 0.11);
-  const stackS = fitSize(p.stackLabel, PENCIL, box.w - 40, 66);
   const l2 = pair(p.line2[0], p.line2[1]);
   const l2S = Math.min(150, 940 / runsEm(l2));
   const trayTop = cy - th / 2;
@@ -455,9 +460,8 @@ const Tray: Scene = ({ f, p, ar }) => {
       <div style={{ position: "absolute", left: W / 2 - pw / 2, top: cy - phh / 2 + slide, width: pw, height: phh, transform: `rotate(${lerp(-6, 0.8, sp).toFixed(3)}deg)` }}>
         <div style={{ position: "absolute", inset: 0, background: PRINT, boxShadow: `0 8px 22px rgba(${D},.55)` }} />
         <div style={{ position: "absolute", left: B, top: B, width: box.w, height: box.h }}>
-          <Shot pic={hero.pic} w={box.w} h={box.h} filter={t < 1 ? "url(#dr-dev)" : undefined} />
+          <Shot pic={print.pic} w={box.w} h={box.h} filter={t < 1 ? "url(#dr-dev)" : undefined} />
         </div>
-        <Pencil text={p.stackLabel} size={stackS} cx={pw / 2} top={B + box.h + (BB - stackS * 1.12) / 2 + 4} k={ramp(f, 30, 44, Easing.linear)} rot={-1.2} />
         {/* the wave the paper makes going in: one band of the safelight on the developer, crossing the print once */}
         {f >= 8 && f <= 22 && <div style={{ position: "absolute", left: -20, right: -20, top: lerp(-140, phh + 20, (f - 8) / 14), height: 120, mixBlendMode: "screen", opacity: 0.3 * Math.sin(Math.PI * (f - 8) / 14), background: `linear-gradient(180deg, transparent, ${rgb(safe(0.95))}, transparent)` }} />}
       </div>

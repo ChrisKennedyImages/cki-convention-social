@@ -23,7 +23,7 @@ picture and back, as in Chiaroscuro's montage, is two). Then:
     for two;
   - never shown: a slot the look takes and never puts on screen (a photo taken and recorded as used, never seen);
   - back with nothing between, listed and not failed: a picture off screen and back with no other picture shown in the
-    gap, only cards, black or drawing (Section's and Darkroom's heroes), for Chris to rule on.
+    gap, only cards, black or drawing (Axis's hero, the cover then the doorway), for Chris to rule on.
 A repeat, twice at once, never shown, or a look that will not render fails the check: exit 1 (fail closed). One line
 of code that draws one slot twice is one place, so that it does not catch; tests/test_reel_slots.py keeps the looks from
 taking a slot round again.
@@ -32,6 +32,24 @@ It runs where Remotion runs, on the Mini; CI cannot render, so tests/test_reel_s
 sources (no look cycles its photos, each look's slots are the suite's, a slot it is not given stops its render). It runs
 once for a look, not for each reel: `--record` writes a passing look's sources' hash to reel-looks/card-checks.json
 (REGISTRY), and that test fails for a look added or changed without a passing check recorded on its sources.
+
+The five 3D styles (reels3d/, Chris's word of 2026-11-09 for the fix) are checked the same way, with numbered cards in
+the literal sense: a style's slots are its textures (reels3d/src/slots.ts drawnFrom), the probe hears every place a
+slot is drawn, every slot at every place gets a number, and each render shows the white card of every place whose
+number has a given bit set, then the same with the bit cleared (its inverse). Where a pixel is brighter in one render
+of a pair than in the other by more than CHANGED_3D, that bit of the number of the place on it is read; a pixel read in
+every pair names its place; a pixel two places share half and half reads in neither and names none. So 2 x BITS renders
+see every place, where one a place would take a hundred for the wall, and the passes, repeats and the rest are found as
+for a look. The styles' thresholds are lower (ON_3D, CHANGED_3D): the loop's grid dims to an eighth while the loupe
+holds a card, and a wall's tile can come in at the frame's edge as small as the 0.1 % a style draws (lib.tsx SHOWN_PX).
+In 3D a card can be hidden behind another card in front of it without leaving the frame: the ring's next card slides
+over it to its place, the wall's tiles go behind the lifted photo. So the probe also says, from the style's own geometry,
+the frames each slot's card is inside the frame whatever covers it (slots.ts reportPresence), and a gap in which it never
+left the frame is one pass, as STILL_THERE is for a look; a card that leaves the frame and comes back is two. The loop's
+grid is one still plane: the probe says each card's cell on it (reportCells), the camera passing back over a cell whose
+place is unchanged is one picture in one place (the coordinator's ruling, 2026-11-09, pending Chris; the alternative, a
+new picture for each pass of a cell, is named in FOUNDER_DECISIONS), and a picture in two cells fails the check.
+Their registry is reels3d/card-checks.json (REGISTRY_3D, tests/test_reels3d.py).
 """
 from __future__ import annotations
 
@@ -48,7 +66,7 @@ from typing import Callable, Optional, Sequence
 from PIL import Image, ImageChops
 
 from .. import music
-from . import reel_looks
+from . import motion, reel_looks, reels3d
 from .reels3d import node_tool, run_remotion
 
 SCALE = 0.2                     # a fifth of 1080 x 1920: 216 x 384, ample to see a card
@@ -62,15 +80,32 @@ UPRIGHT = ((1000, 1500), (1200, 1500))                  # Axis's portraits
 ROOMS = ("main_stage", "breakout", "reception", "candid", "backstage", "stage_panel")
 RENDER_TIMEOUT = 30 * 60
 PROBED = re.compile(r"REELCHECK (photos|fillers) (\d+) (\S+)")
+PRESENT = re.compile(r"REELIN (photos|fillers) (\d+) ([01]+)")         # a 3D slot's frames inside the frame
+CELLS = re.compile(r"REELCELL (photos|fillers) (\d+) (\S+)")          # a card's cell on a still grid
 REGISTRY = reel_looks.REEL_LOOKS / "card-checks.json"     # each look's last passing check, on the hash of its sources
+REGISTRY_3D = reels3d.REELS3D / "card-checks.json"      # and each 3D style's
+PHOTOS_3D = 6                   # a 3D reel's photos at the most (agents/content TAKES "reel"): every slot a reel can hold
+CHANGED_3D = 16                 # the loop's dimmed grid is an eighth of white: 32 grey
+ON_3D = 0.0005                  # a 3D slot is on screen when it shows half the 0.1 % a style draws at the least
+STILL_THERE_3D = ON_3D / 4
 
 
 def sources(look: str) -> list[Path]:
     """The files that make what a look shows: its own TSX, the props it reads (look.ts), its slots (slots.ts), and Powers
-    of Ten's mosaic layout."""
+    of Ten's mosaic layout. A 3D style's: its own TSX, the shared pieces and props (lib.tsx), its slots (slots.ts), the
+    compositions (Root.tsx), and the loop's grid."""
+    if look in reels3d.STYLES:
+        src = reels3d.REELS3D / "src"
+        own = [src / f"{reels3d.COMPOSITION[look]}.tsx", src / "lib.tsx", src / "slots.ts", src / "Root.tsx"]
+        return own + ([src / "loopGrid.ts"] if look == "loop" else [])
     src = reel_looks.REEL_LOOKS / "src"
     own = [src / "looks" / f"{reel_looks.COMPOSITION[look]}.tsx", src / "look.ts", src / "slots.ts"]
     return own + ([src / "looks" / "powersOfTenLayout.ts"] if look == "powersoften" else [])
+
+
+def registry_of(look: str) -> Path:
+    """Where a look's passing check is recorded: the looks' registry, or the 3D styles'."""
+    return REGISTRY_3D if look in reels3d.STYLES else REGISTRY
 
 
 def source_hash(look: str) -> str:
@@ -80,12 +115,13 @@ def source_hash(look: str) -> str:
     return h.hexdigest()
 
 
-def record(found: dict, source: str, *, registry: Path = REGISTRY, on: Optional[str] = None) -> bool:
+def record(found: dict, source: str, *, registry: Optional[Path] = None, on: Optional[str] = None) -> bool:
     """A passing check (`found`, Report.as_dict) of the look's sources as they were (`source`, their hash then) written
     to the registry; a failed one, or sources changed since, writes nothing. True when written."""
     look = found["look"]
     if not found["ok"] or source != source_hash(look):
         return False
+    registry = registry or registry_of(look)
     book = json.loads(registry.read_text()) if registry.exists() else {}
     book[look] = {"source": source, "checked": on or date.today().isoformat(), "slots": found["slots"],
                   "repeats": 0, "twice_at_once": 0, "never_shown": 0,
@@ -116,6 +152,8 @@ class Slot:
     back_at: list[int] = field(default_factory=list)            # back after another picture was shown: a repeat
     back_alone: list[int] = field(default_factory=list)         # back with no other picture between: listed for Chris
     twice: list[tuple[int, int]] = field(default_factory=list)  # on screen from two places at once
+    present: Optional[list[bool]] = None                        # 3D: each frame its card is inside the frame, covered or not
+    cells: set[str] = field(default_factory=set)                # 3D on a still grid: the cells its card has
 
     @property
     def on(self) -> list[bool]:
@@ -146,8 +184,13 @@ class Report:
         return [(s.name, f) for s in self.slots for f in s.back_alone]
 
     @property
+    def in_two_cells(self) -> list[str]:
+        return [s.name for s in self.slots if len(s.cells) > 1]
+
+    @property
     def ok(self) -> bool:
-        return not self.error and bool(self.slots) and not self.repeats and not self.twice and not self.never_shown
+        return (not self.error and bool(self.slots) and not self.repeats and not self.twice and not self.never_shown
+                and not self.in_two_cells)
 
     def as_dict(self) -> dict:
         fps = reel_looks.FPS
@@ -159,6 +202,7 @@ class Report:
                 "repeats": [f"{n} back at {at(f)}" for n, f in self.repeats],
                 "twice_at_once": [f"{n} in two places from {at(a)} to {at(b)}" for n, (a, b) in self.twice],
                 "never_shown": self.never_shown,
+                "in_two_cells": self.in_two_cells,
                 "back_with_nothing_between": [f"{n} back at {at(f)}" for n, f in self.back_alone],
                 "places": {s.name: len(s.places) for s in self.slots},
                 "stretches": {s.name: [[round(a / fps, 2), round(b / fps, 2)] for a, b in s.stretches] for s in self.slots},
@@ -168,7 +212,7 @@ class Report:
                            for s in self.slots}}           # how much of each frame each place showed, in 1/10000
 
 
-def find_repeats(slots: Sequence[Slot], flicker: int = FLICKER) -> None:
+def find_repeats(slots: Sequence[Slot], flicker: int = FLICKER, still_there: float = STILL_THERE) -> None:
     """Each slot's passes on screen, the frames it came back on (after another picture: a repeat; after none: listed),
     and the frames it was on screen from two places at once."""
     ons = {id(s): s.on for s in slots}
@@ -184,8 +228,11 @@ def find_repeats(slots: Sequence[Slot], flicker: int = FLICKER) -> None:
         seen = list(s.seen.values())
 
         def stayed(a: int, b: int) -> bool:
-            """The slot never left the screen in frames a to b: from some place it showed more than STILL_THERE."""
-            return bool(seen) and all(any(v[f] > STILL_THERE for v in seen) for f in range(a, b + 1))
+            """The slot never left the screen in frames a to b: from some place it showed more than STILL_THERE, or (3D)
+            its card stayed inside the frame, covered by another, or it is the one card of one still cell."""
+            if len(s.cells) == 1 or (s.present is not None and all(s.present[a:b + 1])):
+                return True
+            return bool(seen) and all(any(v[f] > still_there for v in seen) for f in range(a, b + 1))
         merged: list[tuple[int, int]] = []
         for a, b in runs_of([f for f, v in enumerate(ons[id(s)]) if v]):
             end = merged[-1][1] if merged else -1
@@ -250,11 +297,26 @@ def places_of(said: str) -> dict[tuple[str, int], set[str]]:
     return out
 
 
+def presence_of(said: str) -> dict[tuple[str, int], list[bool]]:
+    """{(kind, slot): each frame its card is inside the frame}, from a 3D style's probe (the same from every tab)."""
+    return {(kind, int(k)): [c == "1" for c in bits] for kind, k, bits in PRESENT.findall(said)}
+
+
+def cells_of(said: str) -> dict[tuple[str, int], set[str]]:
+    """{(kind, slot): the cells its card has on a still grid}, from a 3D style's probe."""
+    out: dict[tuple[str, int], set[str]] = {}
+    for kind, k, at in CELLS.findall(said):
+        out.setdefault((kind, int(k)), set()).add(at)
+    return out
+
+
 def check(look: str, *, work: Path, run: Callable = run_remotion, log: Callable[[str], None] = print,
           keep: bool = False) -> Report:
     """Render `look` with a card in every slot and report each slot's passes, its repeats, any slot shown in two places at
     once or never shown, and the slots back with nothing between. `work` holds the renders; a look that will not render
     is a failed report, said why. `keep`: leave each render's frames in `work`, for a frame map."""
+    if look in reels3d.STYLES:
+        return check_style(look, work=work, run=run, log=log, keep=keep)
     if look not in reel_looks.LOOKS:
         raise ValueError(f"no reel look {look!r}; one of {', '.join(reel_looks.LOOKS)}")
     work = Path(work) / look
@@ -323,6 +385,113 @@ def check(look: str, *, work: Path, run: Callable = run_remotion, log: Callable[
     return Report(look, slots)
 
 
+def style_cards(style: str, work: Path) -> tuple[list[motion.Shot], list[reels3d.Filler]]:
+    """A 3D style's slots as black cards: the post's photos (as many as a reel takes at the most, in the shapes his
+    photos come in) and the fillers the style shows with them (the loop is offered LOOP_OFFER; its grid keeps the ones
+    it lays)."""
+    shots = [motion.Shot(Image.new("RGB", SHAPES[k % len(SHAPES)], "black"), ROOMS[k % len(ROOMS)].upper(), "A line.")
+             for k in range(PHOTOS_3D)]
+    wanted = reels3d.fillers_wanted(style, len(shots))
+    folder = work / "filler-cards"
+    folder.mkdir(parents=True)
+    fillers = []
+    for k in range(reels3d.LOOP_OFFER if wanted is None else wanted):
+        path = folder / f"f{k}.jpg"
+        Image.new("RGB", SHAPES[(k * 5 + 1) % len(SHAPES)], "black").save(path, "JPEG")
+        fillers.append(reels3d.Filler(k, path))
+    return shots, fillers
+
+
+def bit_planes(lit: Sequence[Image.Image], inverse: Sequence[Image.Image], bit: int,
+               codes: list[Image.Image], valid: list[Image.Image]) -> None:
+    """One bit of every pixel's number, from a render and its inverse (grey frames), added into `codes` and `valid` (one
+    of each a frame): a pixel brighter in the render by more than CHANGED_3D reads 1, darker 0; one that reads neither (no
+    card, or two cards half and half) is no longer valid."""
+    if len(lit) != len(inverse) or len(lit) != len(codes):
+        raise RuntimeError(f"the renders differ in length ({len(lit)}, {len(inverse)} and {len(codes)} frames)")
+    for f, (a, b) in enumerate(zip(lit, inverse)):
+        one = ImageChops.subtract(a, b).point(lambda v: 255 if v > CHANGED_3D else 0)
+        zero = ImageChops.subtract(b, a).point(lambda v: 255 if v > CHANGED_3D else 0)
+        codes[f] = ImageChops.add(codes[f], one.point(lambda v, w=1 << bit: w if v else 0))
+        valid[f] = ImageChops.multiply(valid[f], ImageChops.lighter(one, zero))
+
+
+def check_style(style: str, *, work: Path, run: Callable = run_remotion, log: Callable[[str], None] = print,
+                keep: bool = False) -> Report:
+    """`check` for a 3D style: its slots numbered, every place found from 2 x bits renders (the module's note)."""
+    work = Path(work) / style
+    shutil.rmtree(work, ignore_errors=True)
+    work.mkdir(parents=True)
+    shots, fillers = style_cards(style, work)
+    public = work / "public"
+    try:
+        props, fillers = reels3d.staged(style, shots, fillers=fillers, music=silence(work / "silence.wav"), public=public)
+    except Exception as e:  # noqa: BLE001  the suite's own props refused the style: the check fails, said why
+        return Report(style, [], f"the props could not be made: {type(e).__name__}: {e}")
+    for x in props["photos"] + props["fillers"]:          # each slot's white card, beside its black one
+        with Image.open(public / x["src"]) as im:
+            Image.new("RGB", im.size, "white").save(public / x["src"].replace(".jpg", "-lit.jpg"), "JPEG")
+
+    def render(name: str, check_: dict, *, scale: float = SCALE, verbose: bool = False):
+        given = public / f"props-{name}.json"
+        given.write_text(json.dumps({**props, "check": check_}))
+        out = work / name
+        cmd = [node_tool("npx"), "remotion", "render", "src/Root.tsx", reels3d.COMPOSITION[style], str(out),
+               f"--props={given}", f"--public-dir={public}", "--sequence", "--image-format=png", f"--scale={scale}",
+               "--gl=angle", f"--concurrency={reel_looks.CONCURRENCY}", f"--log={'verbose' if verbose else 'error'}",
+               f"--timeout={reels3d.ASSET_WAIT_MS}"]
+        r = run(cmd, cwd=str(reels3d.REELS3D), timeout=RENDER_TIMEOUT)
+        if r.returncode != 0:
+            said = (r.stderr or r.stdout or "").strip().splitlines()
+            raise RuntimeError(f"remotion stopped with code {r.returncode}: {' '.join(said[-3:])[:400]}")
+        if verbose:
+            shutil.rmtree(out, ignore_errors=True)
+            return (r.stdout or "") + (r.stderr or "")
+        got = frames_of(out)
+        if not keep:
+            shutil.rmtree(out, ignore_errors=True)
+        if len(got) != reels3d.TOTAL:
+            raise RuntimeError(f"the render left {len(got)} frames; the style runs {reels3d.TOTAL}")
+        return got
+
+    try:
+        log(f"{style}: {len(props['photos'])} photos and {len(props['fillers'])} fillers; the probe")
+        said = render("probe", {"probe": True}, scale=PROBE_SCALE, verbose=True)
+        asked, present, cells = places_of(said), presence_of(said), cells_of(said)
+        if not asked:
+            raise RuntimeError("the probe heard from no slot: the style's console did not reach the check")
+        places = sorted((kind, k, site) for (kind, k), sites in asked.items() for site in sites)
+        if len(places) > 255:
+            raise RuntimeError(f"{len(places)} places: more than a frame's grey can number")
+        numbers = {f"{kind} {k} {site}": n for n, (kind, k, site) in enumerate(places)}
+        bits = max(1, (len(places) - 1).bit_length())
+        codes: list[Image.Image] = []
+        valid: list[Image.Image] = []
+        for bit in range(bits):
+            log(f"{style}: {len(places)} places, bit {bit + 1} of {bits}")
+            lit = render(f"bit{bit}", {"codes": numbers, "bit": bit})
+            inverse = render(f"bit{bit}-inverse", {"codes": numbers, "bit": bit, "inverse": True})
+            if not codes:
+                codes = [Image.new("L", im.size, 0) for im in lit]
+                valid = [Image.new("L", im.size, 255) for im in lit]
+            bit_planes(lit, inverse, bit, codes, valid)
+    except Exception as e:  # noqa: BLE001  a style that will not render fails the check, said why
+        return Report(style, [], f"{type(e).__name__}: {e}")
+    area = codes[0].width * codes[0].height
+    counts = [c.histogram(mask=v) for c, v in zip(codes, valid)]
+    slots: list[Slot] = []
+    for kind, k in sorted({(kind, k) for kind, k, _ in places}, key=lambda x: (x[0] != "photos", x[1])):
+        seen = {site: [n[numbers[f"{kind} {k} {site}"]] / area for n in counts] for kind_, k_, site in places
+                if (kind_, k_) == (kind, k)}
+        slots.append(Slot(f"{'photo' if kind == 'photos' else 'filler'} {k}", {site: [v > ON_3D for v in on] for site, on in seen.items()},
+                          seen, present=present.get((kind, k)), cells=cells.get((kind, k), set())))
+    shown = {(kind, k) for kind, k, _ in places}
+    slots += [Slot(f"{'photo' if kind == 'photos' else 'filler'} {k}", {}) for kind, n in (("photos", len(props["photos"])), ("fillers", len(fillers)))
+              for k in range(n) if (kind, k) not in shown]          # a slot the probe never heard: never shown
+    find_repeats(slots, still_there=STILL_THERE_3D)
+    return Report(style, slots)
+
+
 def table(reports: Sequence[Report]) -> str:
     """One line a look: its slots, how often pictures came on screen, its repeats, the pictures it showed twice at once
     and the slots it never showed; under it each failure, and the pictures back with nothing between (for Chris)."""
@@ -331,7 +500,7 @@ def table(reports: Sequence[Report]) -> str:
         d = r.as_dict()
         lines.append(f"{r.look:<12} {d['slots']:>5} {d['appearances']:>5} {len(r.repeats):>7} {len(r.twice):>5}  "
                      f"{', '.join(r.never_shown) or '-':<11}  {'pass' if r.ok else 'FAIL'}")
-        for text in d["repeats"] + d["twice_at_once"]:
+        for text in d["repeats"] + d["twice_at_once"] + [f"{n} in two cells of the grid" for n in d["in_two_cells"]]:
             lines.append(f"{'':<12} {text}")
         for text in d["back_with_nothing_between"]:
             lines.append(f"{'':<12} for Chris: {text}, no other picture between")
@@ -341,17 +510,18 @@ def table(reports: Sequence[Report]) -> str:
 
 
 def run_checks(looks: Sequence[str], *, work: Path, keep: bool = False, run: Callable = run_remotion,
-               log: Callable[[str], None] = print, record_to: Optional[Path] = None) -> list[Report]:
-    """Check each look in turn; the reports, also written to `work`/reel-check.json. The renders are removed unless kept.
-    `record_to`: each passing look recorded there (REGISTRY) on the hash its sources had when its check began."""
+               log: Callable[[str], None] = print, recording: bool = False) -> list[Report]:
+    """Check each look (or 3D style) in turn; the reports, also written to `work`/reel-check.json. The renders are removed
+    unless kept. `recording`: each one that passes recorded in its registry (registry_of) on the hash its sources had
+    when its check began."""
     work = Path(work)
     work.mkdir(parents=True, exist_ok=True)
     reports = []
     for look in looks:
         source = source_hash(look)
         reports.append(check(look, work=work, run=run, log=log, keep=keep))
-        if record_to is not None and record(reports[-1].as_dict(), source, registry=record_to):
-            log(f"{look}: recorded in {record_to.name}")
+        if recording and record(reports[-1].as_dict(), source):
+            log(f"{look}: recorded in {registry_of(look).relative_to(reel_looks.REEL_LOOKS.parent)}")
         (work / "reel-check.json").write_text(json.dumps([r.as_dict() for r in reports], indent=1))
         if not keep:
             shutil.rmtree(work / look, ignore_errors=True)
@@ -359,10 +529,11 @@ def run_checks(looks: Sequence[str], *, work: Path, keep: bool = False, run: Cal
 
 
 def looks_named(names: Optional[Sequence[str]]) -> list[str]:
-    """The looks asked for, every look when none is named; an unknown name is an error."""
+    """The looks and 3D styles asked for, every one of them when none is named; an unknown name is an error."""
+    every = [*reel_looks.LOOKS, *reels3d.STYLES]
     if not names:
-        return list(reel_looks.LOOKS)
-    unknown = [n for n in names if n not in reel_looks.LOOKS]
+        return every
+    unknown = [n for n in names if n not in every]
     if unknown:
-        raise ValueError(f"no reel look {', '.join(unknown)}; one of {', '.join(reel_looks.LOOKS)}")
+        raise ValueError(f"no reel look or 3D style {', '.join(unknown)}; one of {', '.join(every)}")
     return list(names)

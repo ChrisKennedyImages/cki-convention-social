@@ -35,8 +35,7 @@ import { Music } from "../music";
 //            label and unit on beams
 //   240-315  three wedges, one an eighth, each driving in to its word's photo, the word along it; all three stay
 //   315-420  the climax (Lissitzky): the ground splits on the 60° line, the wedge drives into the white circle on the
-//            beat and the circle opens like an aperture on a photograph; the marquee on a slogan band, the stack
-//            label on a beam
+//            beat and the circle opens like an aperture on a photograph; the marquee on a slogan band
 //   420-480  the manifesto: a photo, the name huge on the diagonal, the kicker on a beam, the call on an ink bar, the
 //            site, the town (all in by frame 440, then it holds)
 
@@ -115,9 +114,9 @@ const capOf = (face: Face, size: number) => metrics(face).cap * size;
 const Turn: React.FC<{ x: number; y: number; deg: number; s?: number; children: React.ReactNode }> = ({ x, y, deg, s = 1, children }) => (
   <div style={{ position: "absolute", left: x, top: y, width: 0, height: 0, transform: `rotate(${deg}deg)${s !== 1 ? ` scale(${s.toFixed(5)})` : ""}`, transformOrigin: "0 0" }}>{children}</div>
 );
-/** A beam in a Turn's frame: from u0 to u1 along its axis, centred on v, `h` deep, drawn out from one end (k). */
-const Beam: React.FC<{ u0: number; u1: number; v?: number; h: number; color: string; k?: number; from?: "start" | "end" }> = ({ u0, u1, v = 0, h, color, k = 1, from = "start" }) => (
-  k <= 0.001 ? null : <div style={{ position: "absolute", left: u0, top: v - h / 2, width: u1 - u0, height: h, background: color, transform: k < 1 ? `scaleX(${k})` : undefined, transformOrigin: from === "start" ? "0 50%" : "100% 50%" }} />
+/** A beam in a Turn's frame: from u0 to u1 along its axis, centred on v, `h` deep, drawn out from its start (k). */
+const Beam: React.FC<{ u0: number; u1: number; v?: number; h: number; color: string; k?: number }> = ({ u0, u1, v = 0, h, color, k = 1 }) => (
+  k <= 0.001 ? null : <div style={{ position: "absolute", left: u0, top: v - h / 2, width: u1 - u0, height: h, background: color, transform: k < 1 ? `scaleX(${k})` : undefined, transformOrigin: "0 50%" }} />
 );
 const pts2 = (pts: [number, number][]) => pts.map(([a, b]) => `${a.toFixed(1)},${b.toFixed(1)}`).join(" ");
 /** A flat shape (points in the parent's frame; overflow visible, so the frame is unbounded). */
@@ -389,8 +388,9 @@ const Wedges: Scene = ({ f, p }) => {
 
 // 315-420 · the climax (El Lissitzky): the ground splits on a 60° line, paper on the left and ink on the right; the
 // white circle stands on the ink; the wedge drives up out of the paper into it, faster and faster, and hits on the
-// beat; the circle opens like an aperture on a photograph, whole. The marquee runs on a slogan band
-// beneath it and the stack label on a beam under that.
+// beat; the circle opens like an aperture on a photograph, whole. The marquee runs on a slogan band beneath it. No room
+// list here: under this one photo it named rooms the photo does not show (Chris, 2026-11-09: a word over or beside a
+// photo is true of that photo); each room is named on the wedge pointing at its own photo.
 const Climax: Scene = ({ f, p }) => {
   const pic = photoAt(p, CLIMAX);
   const s = fitIn(pic, 940, 640);
@@ -409,23 +409,17 @@ const Climax: Scene = ({ f, p }) => {
   const circleIn = 0.4 + 0.6 * pop(f, 0, 13, 200);
   const open = ramp(f, hit + 1, hit + 15, expoOut);
   const clipR = interpolate(open, [0, 1], [R, Math.hypot(s.w, s.h) / 2 + 2]);
-  // under the photo: the slogan band and the stack beam, parallel, as big as the room under the photo allows
+  // under the photo: the slogan band, as big as the room under the photo allows
   const word = p.marquee.toUpperCase();
-  const stack = p.stackLabel.toUpperCase();
   const yTop = py + s.h + 40, yBot = H - 40;
   const bandL = 860;
-  const sFace = beamFace(stack, 820, 50);
-  let mS = fitSize(word, SHOUT, 560, 230, 0.02), sS = fitSize(stack, sFace, 820, 70, 0.03);
-  const T = () => capOf(SHOUT, mS) * 1.5 + 22 + capOf(sFace, sS) * 2.2;
-  const sL = () => textWidth(stack, sFace, sS, 0.03) + 90;
-  while (mS > 60 && 0.5 * Math.max(bandL, sL()) + T() / COS30 > yBot - yTop) { mS -= 2; sS *= 0.99; }
-  const bandH = capOf(SHOUT, mS) * 1.5, sH = capOf(sFace, sS) * 2.2;
+  let mS = fitSize(word, SHOUT, 560, 230, 0.02);
+  while (mS > 60 && 0.5 * bandL + (capOf(SHOUT, mS) * 1.5) / COS30 > yBot - yTop) mS -= 2;
+  const bandH = capOf(SHOUT, mS) * 1.5;
   const bcy = (yTop + yBot) / 2;
-  const vBand = -T() / 2 + bandH / 2, vStack = T() / 2 - sH / 2;
-  const uBand = -TAN30 * vBand, uStack = -TAN30 * vStack;
   const run = `${word}  ·  `;
   const runW = textWidth(run, SHOUT, mS, 0.02);
-  const bandK = ramp(f, 30, 40, expoOut), stackK = ramp(f, 37, 47, expoOut);
+  const bandK = ramp(f, 30, 40, expoOut);
   const drift = 0.8 * Math.max(0, f - 30);
   return (
     <AbsoluteFill>
@@ -434,9 +428,9 @@ const Climax: Scene = ({ f, p }) => {
         <polygon points={pts2(wedge)} fill={p.accent} />
       </svg>
       <Turn x={W / 2} y={bcy} deg={UP}>
-        <Beam u0={uBand - bandL / 2} u1={uBand + bandL / 2} v={vBand} h={bandH} color={p.accent} k={bandK} />
+        <Beam u0={-bandL / 2} u1={bandL / 2} v={0} h={bandH} color={p.accent} k={bandK} />
         {bandK > 0.6 && (
-          <div style={{ position: "absolute", left: uBand - bandL / 2, top: vBand - bandH / 2, width: bandL, height: bandH, overflow: "hidden" }}>
+          <div style={{ position: "absolute", left: -bandL / 2, top: -bandH / 2, width: bandL, height: bandH, overflow: "hidden" }}>
             {[-2, -1, 0, 1, 2].map((i) => (
               <React.Fragment key={i}>
                 <Say text={word} face={SHOUT} size={mS} x={bandL / 2 + i * runW - drift} y={bandH / 2} align="center" color={inkOn(p.accent)} track={0.02} />
@@ -445,8 +439,6 @@ const Climax: Scene = ({ f, p }) => {
             ))}
           </div>
         )}
-        <Beam u0={uStack - sL() / 2} u1={uStack + sL() / 2} v={vStack} h={sH} color={p.accent2} k={stackK} from="end" />
-        <Say text={stack} face={sFace} size={sS} x={uStack + 900 * (1 - stackK)} y={vStack} align="center" color={inkOn(p.accent2)} track={0.03} opacity={stackK > 0.05 ? 1 : 0} />
       </Turn>
       {open < 0.999 && <div style={{ position: "absolute", left: cx - R, top: cy - R, width: R * 2, height: R * 2, borderRadius: "50%", background: p.accent2, transform: `scale(${circleIn.toFixed(4)})` }} />}
       {f > hit && <Shot pic={pic} x={px} y={py} w={s.w} h={s.h} clip={open < 0.999 ? `circle(${clipR.toFixed(1)}px at ${(cx - px).toFixed(1)}px ${(cy - py).toFixed(1)}px)` : undefined} />}

@@ -28,9 +28,10 @@
                               queue a reel rendered before in one of the ten looks as the post for a day, on the daily
                               draft's road (photos checked, art director, repeat window); --quiet sends no ping
   ccs reel-check [LOOK ...] [--out DIR] [--keep] [--record]
-                              render each look (all ten when none is named) with a card in every slot and fail (exit 1)
-                              if any picture comes back or a slot is never shown; on the Mini, never in CI; --record
-                              writes each look that passes to reel-looks/card-checks.json, which CI requires
+                              render each look or 3D style (all ten and all five when none is named) with a card in
+                              every slot and fail (exit 1) if any picture comes back or a slot is never shown; on the
+                              Mini, never in CI; --record writes each one that passes to reel-looks/card-checks.json or
+                              reels3d/card-checks.json, which CI requires
 """
 from __future__ import annotations
 
@@ -495,7 +496,7 @@ def cmd_reel_check(args) -> int:
         return 2
     work = Path(args.out).expanduser() if args.out else Path(tempfile.mkdtemp(prefix="reel-check-"))
     reports = reel_check.run_checks(looks, work=work, keep=args.keep, log=lambda line: print(line, flush=True),
-                                    record_to=reel_check.REGISTRY if args.record else None)
+                                    recording=args.record)
     print(reel_check.table(reports))
     print(f"report: {work / 'reel-check.json'}")
     return 0 if all(r.ok for r in reports) else 1
@@ -627,11 +628,11 @@ def build_parser() -> argparse.ArgumentParser:
     qr.add_argument("--track", required=True, help="its music: a file name from the Music page (music_tracks.file)")
     qr.add_argument("--quiet", action="store_true", help="no ping")
     qr.set_defaults(fn=cmd_queue_reel)
-    rc = sub.add_parser("reel-check", help="render each look with a card in every slot; fail if any picture comes back")
-    rc.add_argument("looks", nargs="*", help="the looks to check (all ten when none is named)")
+    rc = sub.add_parser("reel-check", help="render each look or 3D style with a card in every slot; fail if any picture comes back")
+    rc.add_argument("looks", nargs="*", help="the looks and 3D styles to check (all of them when none is named)")
     rc.add_argument("--out", help="the folder the renders and reel-check.json go in (a fresh temporary one if not named)")
     rc.add_argument("--keep", action="store_true", help="keep each look's renders")
-    rc.add_argument("--record", action="store_true", help="record each look that passes in reel-looks/card-checks.json")
+    rc.add_argument("--record", action="store_true", help="record each one that passes in its card-checks.json")
     rc.set_defaults(fn=cmd_reel_check)
     return p
 

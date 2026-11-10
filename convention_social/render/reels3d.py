@@ -2,10 +2,16 @@
 
 Chris, 2026-10-23: "There should be 5 different style reels (all very different)", used at random and never the
 same one twice in a row, on random, varied photos. The styles: wall, loop, ring, gallery, orbit. A reel is the
-post's photos (named by room), the beats they turn on, other approved photos to fill a wall or a grid around them
-(wall, loop, ring), and the track. Everything a render needs goes into a public dir beside the mp4 and Remotion is
-given that dir; the mp4 is the product and the dir is removed. No Node, no reel: `node_tool()` fails closed with the
-reason, and the daily draft falls back to a carousel of the same photos (content.make_renderer).
+post's photos (named by room), the beats they turn on, more of his approved photos for the style's other slots
+(fillers: the wall's tiles, the loop's grid, the ring's cards), and the track. Everything a render needs goes into a
+public dir beside the mp4 and Remotion is given that dir; the mp4 is the product and the dir is removed. No Node, no
+reel: `node_tool()` fails closed with the reason, and the daily draft falls back to a carousel of the same photos
+(content.make_renderer).
+
+No picture twice in a reel (Chris, 2026-11-08, night): every picture a style shows is a slot of its own, and a style
+takes exactly as many fillers as it shows (`fillers`): the wall a tile each that comes into the frame, the ring a card
+each, the loop's grid a card each in the camera's reach (as many as the photos' shapes make), gallery and orbit none.
+The card check proves it on a render (render/reel_check.py, `ccs reel-check STYLE`).
 
 The cover is a frame of the reel itself (Instagram shows the frame at thumbnailOffset, 2026-10-16): COVER_S says
 where, per style, and `stills` cuts the same frame for the dashboard and the art director. Before the art director
@@ -25,6 +31,7 @@ import sqlite3
 import subprocess
 import tempfile
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Optional, Sequence
 
@@ -47,7 +54,15 @@ TEXTURE_PX = 1400                                             # a photo's long e
 RENDER_TIMEOUT = 20 * 60
 ASSET_WAIT_MS = 120_000                                      # Remotion's wait for fonts and textures (default 30 s): thirty photos
 #                                                              on a busy Mini took longer on the first render (2026-10-24)
-GRID_PHOTOS = 28                                              # approved photos around the post's, one per room per shoot
+# Every picture the wall and the ring show: the post's photos, then a filler for each other tile in the frame and each
+# other card on the ring (reels3d/src/Wall.tsx and Ring.tsx PICTURES). The loop's grid lays as many as its reach and the
+# photos' shapes make (loop-fillers.mjs), at most LOOP_OFFER. Orbit's spin turns its cards past the front before their
+# beats, each pass a filler of its own (Orbit.tsx plan): as many as the spin makes for that many cards, the same whatever
+# the photos' shapes (60 mixes of shapes for each count, 2026-11-09); the style counts them itself and refuses props of
+# another count. Gallery shows only the post's photos, its prints dark but on their own pass.
+PICTURES = {"wall": 63, "ring": 30}
+LOOP_OFFER = 40
+ORBIT_FLASHES = {4: 6, 5: 8, 6: 9}
 # What each style puts on the frame on purpose, for the art director: it judges the photos, not the design. Post 33
 # (2026-10-24, a Loop reel) was turned back for "a large dark circular artifact over the faces": the loop's own glass,
 # which Chris approved as the style (2026-10-23), and the turn-back cost the designed lane one of its retries.
@@ -64,11 +79,13 @@ ON_PURPOSE = {
             "the ring opens and the cards cascade past the camera at their full shape to rest on one photo. The square "
             "crop in the ring and the soft shadow behind each card are the design.",
     "gallery": "the photos hang like prints at different depths in a dark room with a glossy floor; on every beat the "
-               "camera swoops to the next print and pushes in slowly while it holds. The dark room and the floor's "
-               "reflection are the design.",
+               "camera swoops to the next print and pushes in slowly while it holds. A print hangs dark, its frame with no "
+               "picture, until the camera reaches it and once it has passed, on purpose: no picture is shown twice. The "
+               "dark room, the dark prints and the floor's reflection are the design.",
     "orbit": "thick cards on a tilted ring spin in; on every beat the ring turns the next card to the front and it "
-             "slides forward to fill the frame, the others glowing at their edges behind it. The glowing edges are "
-             "the design.",
+             "slides forward to fill the frame, the others glowing at their edges behind it. A card the ring brings "
+             "round again after its own beat shows a dark face, on purpose: no picture is shown twice. The glowing "
+             "edges and the dark faces are the design.",
 }
 
 
@@ -105,7 +122,16 @@ def copy_photo(img: Image.Image, to: Path) -> tuple[int, int]:
     return im.width, im.height
 
 
-def props(shots: Sequence[Shot], *, music: Path, grid: Sequence[Path], public: Path) -> dict:
+@dataclass(frozen=True)
+class Filler:
+    """One of his approved photos for a slot that is not one of the post's own: its id, for the rotation's record, and its
+    copy here. The 3D styles and the ten looks (render/reel_looks.py) draw them alike."""
+    id: int
+    path: Path
+    label: Optional[str] = None      # its sorted label (a key of house_brief.WORDS) when that label may be printed over it
+
+
+def props(shots: Sequence[Shot], *, music: Path, fillers: Sequence[Path], public: Path) -> dict:
     """The render's props, with every file it names written under `public`."""
     (public / "photos").mkdir(parents=True)
     (public / "fonts").symlink_to(REELS3D / "public" / "fonts")
@@ -114,13 +140,35 @@ def props(shots: Sequence[Shot], *, music: Path, grid: Sequence[Path], public: P
         w, h = copy_photo(sh.photo, public / "photos" / f"p{k}.jpg")
         photos.append({"src": f"photos/p{k}.jpg", "room": sh.room, "line": sh.line, "w": w, "h": h})
     tiles = []
-    for k, path in enumerate(grid):
+    for k, path in enumerate(fillers):
         with Image.open(path) as im:
-            w, h = copy_photo(im, public / "photos" / f"g{k}.jpg")
-        tiles.append({"src": f"photos/g{k}.jpg", "w": w, "h": h})
+            w, h = copy_photo(im, public / "photos" / f"f{k}.jpg")
+        tiles.append({"src": f"photos/f{k}.jpg", "w": w, "h": h})
     track = public / f"music{Path(music).suffix.lower()}"
     shutil.copyfile(music, track)
-    return {"photos": photos, "cuts": cuts_for(len(shots)), "grid": tiles, "music": track.name}
+    return {"photos": photos, "cuts": cuts_for(len(shots)), "fillers": tiles, "music": track.name}
+
+
+def fillers_wanted(style: str, photos: int) -> Optional[int]:
+    """How many fillers a reel in `style` of that many of the post's photos shows; None for the loop, whose grid lays as
+    many as the photos' shapes make (loop_fillers)."""
+    if style == "loop":
+        return None
+    if style == "orbit":
+        if photos not in ORBIT_FLASHES:
+            raise ValueError(f"an orbit reel takes {min(ORBIT_FLASHES)} to {max(ORBIT_FLASHES)} photos; {photos} came")
+        return ORBIT_FLASHES[photos]
+    return PICTURES[style] - photos if style in PICTURES else 0
+
+
+def loop_fillers(props_list: Sequence[dict]) -> list[Optional[int]]:
+    """Loop: how many of its fillers the grid lays, for each of these props (None: more than they hold), from the layout
+    the style draws with (reels3d/loop-fillers.mjs on src/loopGrid.ts, by Node)."""
+    r = subprocess.run([node_tool("node"), "--experimental-strip-types", "--no-warnings", str(REELS3D / "loop-fillers.mjs")],
+                       input=json.dumps(list(props_list)), capture_output=True, text=True, timeout=300)
+    if r.returncode != 0:
+        raise RuntimeError(f"the loop's grid could not be laid out: {(r.stderr or r.stdout).strip()[-300:]}")
+    return json.loads(r.stdout)
 
 
 TURN_WAIT = 30 * 60          # how long a render waits for another render's turn to end before it goes anyway
@@ -198,9 +246,38 @@ def run_remotion(cmd: Sequence[str], *, cwd: str, timeout: float) -> subprocess.
         shutil.rmtree(scratch, ignore_errors=True)
 
 
-def render(style: str, shots: Sequence[Shot], *, out: Path, audio: Optional[Path], grid: Sequence[Path] = (),
-           run: Callable = run_remotion) -> Path:
-    """The reel as an mp4 at `out`: 1080 x 1920, 60 fps, 15 s, with its track."""
+@dataclass(frozen=True)
+class Reel:
+    """A rendered 3D reel: its mp4, and the fillers it showed (to be recorded on the wall: record_wall)."""
+    video: Path
+    fillers: tuple[Filler, ...] = ()
+
+
+def staged(style: str, shots: Sequence[Shot], *, fillers: Sequence[Filler], music: Path, public: Path,
+           laid: Callable = loop_fillers) -> tuple[dict, list[Filler]]:
+    """A render's props, every file they name written under `public`, and the fillers the reel shows: exactly the ones
+    the style shows, the loop's grid keeping the ones it lays on the photos as written (`laid`, its seam). Short of a
+    picture, refused: a reel is never made by showing one twice."""
+    wanted = fillers_wanted(style, len(shots))
+    if wanted is not None and len(fillers) != wanted:
+        raise ValueError(f"a {style} reel of {len(shots)} photos shows {wanted} fillers; {len(fillers)} came "
+                         "(more approved photos with a copy here are needed)")
+    p = props(shots, music=music, fillers=[f.path for f in fillers], public=public)
+    if wanted is not None:
+        return p, list(fillers)
+    [kept] = laid([p])
+    if kept is None:
+        raise ValueError(f"the loop's grid for these photos lays more cards than {len(fillers)} fillers "
+                         "(more approved photos with a copy here are needed)")
+    for gone in p["fillers"][kept:]:
+        (public / gone["src"]).unlink()
+    p["fillers"] = p["fillers"][:kept]
+    return p, list(fillers[:kept])
+
+
+def render(style: str, shots: Sequence[Shot], *, out: Path, audio: Optional[Path], fillers: Sequence[Filler] = (),
+           run: Callable = run_remotion, laid: Callable = loop_fillers) -> Reel:
+    """The reel as an mp4 at `out`: 1080 x 1920, 60 fps, 15 s, with its track, and the fillers it showed (`staged`)."""
     if style not in STYLES:
         raise ValueError(f"no reel style {style!r}; one of {', '.join(STYLES)}")
     if audio is None:
@@ -210,7 +287,7 @@ def render(style: str, shots: Sequence[Shot], *, out: Path, audio: Optional[Path
     public = out.with_name(f"{out.stem}-public")
     shutil.rmtree(public, ignore_errors=True)
     try:
-        p = props(shots, music=Path(audio), grid=grid, public=public)
+        p, fillers = staged(style, shots, fillers=fillers, music=Path(audio), public=public, laid=laid)
         (public / "props.json").write_text(json.dumps(p))
         cmd = [node_tool("npx"), "remotion", "render", "src/Root.tsx", COMPOSITION[style], str(out),
                f"--props={public / 'props.json'}", f"--public-dir={public}", "--gl=angle", f"--timeout={ASSET_WAIT_MS}", "--log=error"]
@@ -222,7 +299,7 @@ def render(style: str, shots: Sequence[Shot], *, out: Path, audio: Optional[Path
             raise RuntimeError("remotion finished but left no video")
     finally:
         shutil.rmtree(public, ignore_errors=True)
-    return out
+    return Reel(out, tuple(fillers))
 
 
 def frame_at(video: Path, seconds: float) -> Image.Image:
@@ -263,7 +340,7 @@ def wall_candidates(conn: sqlite3.Connection) -> list[dict]:
     return out
 
 
-def wall_picks(conn: sqlite3.Connection, *, exclude: Sequence[int] = (), n: int = GRID_PHOTOS, rng=None,
+def wall_picks(conn: sqlite3.Connection, *, exclude: Sequence[int], n: int, rng=None,
                most_portraits: Optional[int] = None, only: Optional[str] = None,
                candidates: Optional[list[dict]] = None) -> list[dict]:
     """Approved photos with a copy on this machine to fill a wall or a grid (`candidates`, wall_candidates when not given):
@@ -303,7 +380,7 @@ def wall_picks(conn: sqlite3.Connection, *, exclude: Sequence[int] = (), n: int 
         key = (r["folder_id"], r["shot_type"])
         if (r["id"] in seen or (only is not None and r["shot_type"] != only) or key in untimed_keys
                 or (key in own_keys and moments.taken(r["taken_at"]) is None)
-                or not house_brief.may_name(r["shot_type"], r["people_count"])):
+                or (only is not None and not house_brief.may_name(r["shot_type"], r["people_count"]))):
             continue
         usable.append(r)
     by_shoot: dict = {}
@@ -335,8 +412,13 @@ def record_wall(conn: sqlite3.Connection, photo_ids: Sequence[int]) -> None:
         report.record_use(conn, "grid", list(photo_ids), ref=f"grid:{report.use_stamp()}")
 
 
-def fillers(conn: sqlite3.Connection, *, exclude: Sequence[int] = (), n: int = GRID_PHOTOS, rng=None) -> list[Path]:
-    """A 3D reel's wall (wall_picks), recorded as shown: every one of them stands on the wall."""
-    picked = wall_picks(conn, exclude=exclude, n=n, rng=rng)
-    record_wall(conn, [r["id"] for r in picked])
-    return [r["path"] for r in picked]
+def fillers(conn: sqlite3.Connection, style: str, photos: int, *, exclude: Sequence[int], rng=None) -> list[Filler]:
+    """The fillers a reel in `style` of that many of the post's photos (their ids `exclude`) shows, each once (wall_picks:
+    in rotation, one per room per shoot, never the post's own nor a picture another open post holds); for the loop,
+    LOOP_OFFER, of which its grid keeps the ones it lays (render). Fewer than the style shows when the Mini holds too few:
+    the render then refuses the reel. Recorded as shown on the wall's record (record_wall) once the reel is made."""
+    wanted = fillers_wanted(style, photos)
+    if wanted == 0:
+        return []
+    picked = wall_picks(conn, exclude=exclude, n=LOOP_OFFER if wanted is None else wanted, rng=rng)
+    return [Filler(r["id"], r["path"]) for r in picked]

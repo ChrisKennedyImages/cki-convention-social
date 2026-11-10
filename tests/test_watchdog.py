@@ -359,6 +359,14 @@ class TheDraftWindow(WatchCase):
         self.run_at(NINE_NY, start=start)
         start.assert_not_called()
 
+    def test_a_run_that_died_a_day_ago_without_finishing_does_not_hold_the_day_back(self):
+        """2026-11-09: content run 18029 died without finishing; it read as "running now" for good, and the watchdog
+        would never have drafted a missing day again by itself."""
+        start = mock.Mock()
+        db.insert(self.conn, "agent_runs", agent="content", started_at=(NINE_NY - timedelta(hours=30)).isoformat(), dry_run=0)
+        self.run_at(NINE_NY, start=start)
+        start.assert_called_once_with("content")
+
     def test_after_eight_in_the_evening_a_missing_post_is_said_loudly_once(self):
         start = mock.Mock()
         with mock.patch.object(watchdog.notify, "push", return_value=False) as push:

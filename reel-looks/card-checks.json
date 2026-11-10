@@ -11,7 +11,7 @@
   ]
  },
  "chiaroscuro": {
-  "source": "e5238f350c42eb46bdbd6fa477bbcc4b3bed2a002ad156ce08eb533853e87b1d",
+  "source": "103cca4c8bd37fdae693750a5ed83588324edfdd44f446ba2980422ae8050bd0",
   "checked": "2026-11-09",
   "slots": 19,
   "repeats": 0,
@@ -20,20 +20,16 @@
   "back_with_nothing_between": []
  },
  "darkroom": {
-  "source": "20071b2a6becffdfd5559e06108ff422abe5b6d1c8cf6eedc271e08d1b189fcf",
-  "checked": "2026-11-09",
-  "slots": 13,
+  "source": "951f90f089d5155c5dac6d13e54e2f278bf5d7e5462ed9a856cc0b6dee7126df",
+  "checked": "2026-11-10",
+  "slots": 17,
   "repeats": 0,
   "twice_at_once": 0,
   "never_shown": 0,
-  "back_with_nothing_between": [
-   "photo 0 back at 4.40 s",
-   "photo 0 back at 6.47 s",
-   "photo 0 back at 10.00 s"
-  ]
+  "back_with_nothing_between": []
  },
  "manifesto": {
-  "source": "e7028418709acd26c1a7c94ac332db42ddcb42defa78ce537e1647bdc1358a38",
+  "source": "7091d7f9cc93b49005f63aa8f7b234444137d7a5383a858c183a261070a14735",
   "checked": "2026-11-09",
   "slots": 9,
   "repeats": 0,
@@ -42,7 +38,7 @@
   "back_with_nothing_between": []
  },
  "powersoften": {
-  "source": "f65ca0caa263a447fa4e17e873691ef212f685f3fde093ec3ed5825da57209fd",
+  "source": "efb57f0cfac0af5404f62751cd9d2ee2fdcb10f37435a2f223316c9443471d01",
   "checked": "2026-11-09",
   "slots": 46,
   "repeats": 0,
@@ -51,20 +47,17 @@
   "back_with_nothing_between": []
  },
  "section": {
-  "source": "0c420462c878f011682528789230fe730a3255dfa93bf17209871d2bb02c110a",
+  "source": "5f1d5bb73ae8b20ce6fc60a326bbbff332a8658a841ca13637fbc03782c917fd",
   "checked": "2026-11-09",
-  "slots": 8,
+  "slots": 9,
   "repeats": 0,
   "twice_at_once": 0,
   "never_shown": 0,
-  "back_with_nothing_between": [
-   "photo 0 back at 9.50 s",
-   "photo 0 back at 12.27 s"
-  ]
+  "back_with_nothing_between": []
  },
  "splitscreen": {
-  "source": "6457c342370c0917da392cbb14c05f329ddd1ffdc5697077c39a373e518c8d1b",
-  "checked": "2026-11-09",
+  "source": "3f7f5ba74a82a37a60781594608713618d3e3fdc2d2d4d281e5a4084f5642044",
+  "checked": "2026-11-10",
   "slots": 14,
   "repeats": 0,
   "twice_at_once": 0,
@@ -72,7 +65,7 @@
   "back_with_nothing_between": []
  },
  "stillness": {
-  "source": "e1c023c41c71b302cc8362cf68b07790b01c38565b5770a5aee5fe93c77865ab",
+  "source": "4bd33818b3636d0e37ae95b48d91dc874194b153845df6eeff4b9d31333f996f",
   "checked": "2026-11-09",
   "slots": 7,
   "repeats": 0,
@@ -81,8 +74,8 @@
   "back_with_nothing_between": []
  },
  "titles": {
-  "source": "2bd2a03e0e97a3bbd52e2ff2ce8c0ef5d0c616fd02354947db4186756803c4aa",
-  "checked": "2026-11-09",
+  "source": "d99e63471b8f2c87b018f3327b0d268596d3c53faf4a1eb0cdebf26eed6fc94f",
+  "checked": "2026-11-10",
   "slots": 9,
   "repeats": 0,
   "twice_at_once": 0,
@@ -90,8 +83,8 @@
   "back_with_nothing_between": []
  },
  "weather": {
-  "source": "e75260a546d27c368738e994a5f721f6e450b19ceb48b3a813c1585287c3bcb7",
-  "checked": "2026-11-09",
+  "source": "fd20b9b224bf90c6b02b31673f31366dc8f65044b5682587d354f2a339b35faa",
+  "checked": "2026-11-10",
   "slots": 7,
   "repeats": 0,
   "twice_at_once": 0,

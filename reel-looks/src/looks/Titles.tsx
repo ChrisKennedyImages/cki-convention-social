@@ -34,8 +34,7 @@ import { Music } from "../music";
 //     0-75   the cover: the hook on bars of paper; the hero whole below, standing on a bar; a bar slides across each beat
 //    75-150  the Psycho bars: the picture slides in in three bars from alternate sides on the sixteenths; then the two
 //            lines, each cut in strips that slide in from alternate sides and lock on the beat
-//   150-225  the symbol: a paper foot is placed, the stack label set by hand on it; above it a picture assembles from
-//            five jagged pieces
+//   150-225  the symbol: a paper foot is placed, bare; above it a picture assembles from five jagged pieces
 //   225-285  the number as giant cut paper, three pieces sliding in on the sixteenths; a picture above on the label's
 //            bar; the unit on a bar
 //   285-345  three pictures on three bars; on each eighth one opens from the line of the faces, its word set on its bar
@@ -271,9 +270,11 @@ const Psycho: Scene = ({ f, p }) => {
   );
 };
 
-// 150-225 · the symbol: a photograph standing on its paper foot. The foot is placed on the black and the stack label is
-// set by hand along it; above it, on the black, a picture assembles from five jagged pieces cut from a point below the
-// faces (Anatomy of a Murder), each sliding in from its own side on the sixteenths.
+// 150-225 · the symbol: a photograph standing on its paper foot. The foot is placed on the black; above it, on the black,
+// a picture assembles from five jagged pieces cut from a point below the faces (Anatomy of a Murder), each sliding in
+// from its own side on the sixteenths. The foot is bare: the reel's room list set on it named rooms this picture (a
+// filler) does not show (Chris, 2026-11-09: a word over or beside a photo is true of that photo); each room is named on
+// the bar beneath its own photo.
 const Emblem: Scene = ({ f, p }) => {
   const pic = fillerAt(p, 1);
   const foot = 190;
@@ -314,14 +315,15 @@ const Emblem: Scene = ({ f, p }) => {
   const arrive = [10, 13, 16, 19, 22];
   const order = [0, 2, 1, 3, 4];                        // the top piece (the faces) lands last
   const whole = f >= arrive[arrive.length - 1];
-  const label = p.stackLabel.toUpperCase();
   const footW = b.w + 80;
-  const ls = fitCut(label, CUT, footW - 80, 104, 0.03);
+  // the foot carries the label of the picture standing on it, and only that (Chris, 2026-11-10); none known, it is bare
+  const own = ((pic as { label?: string }).label ?? "").toUpperCase();
+  const ownS = own ? fitCut(own, CUT, footW - 80, 104, 0.03) : 0;
   return (
     <AbsoluteFill style={{ background: BLACK }}>
       <div style={{ position: "absolute", left: 0, top: 0, width: W, height: H, transform: `translateY(${dy.toFixed(1)}px)` }}>
         <Sheet pts={ragged(rect(W / 2 - footW / 2, b.y + b.h, footW, foot), "sym-foot", 4.5)} fill={p.accent} />
-        <Cut text={label} size={ls} x={W / 2} y={b.y + b.h + foot / 2} align="center" color={inkOn(p.accent)} seed="sym-l" track={0.03} enter={byHand(f, 6, 0.6)} />
+        {own && <Cut text={own} size={ownS} x={W / 2} y={b.y + b.h + foot / 2} align="center" color={inkOn(p.accent)} seed="sym-l" track={0.03} enter={byHand(f, 6, 0.6)} />}
         {whole ? <Shot pic={pic} b={b} /> : pieces.map((pc, i) => {
           const at = arrive[order.indexOf(i)];
           if (f < at - 9) return null;

@@ -387,8 +387,9 @@ class Picker:
         self.cap = moments.cap_for(self.need, sizes.values())
 
     def fits(self, row: dict) -> bool:
-        if not house_brief.may_name(row.get("shot_type"), row.get("people_count")):
-            return False
+        # A portrait of other than one person is drafted like any photo he approved (Chris, 2026-11-10: "Let them post,
+        # without the word"; his approval is final). The word Portraits still prints only over one person: such a photo
+        # is never a word photo (checked_rooms) and never in Axis, whose wall says Portraits (reel_looks.photo_rule).
         if any(r["id"] == row["id"] for r in self.taken) or any(moments.same_moment(row, r) for r in self.taken):
             return False
         if self.rule is not None and not self.rule(row, self.taken):
@@ -730,6 +731,11 @@ def make_renderer(conn: sqlite3.Connection, agent: str, *, design: str, rows: li
         # line EVENT CALIBER (2026-10-15; "CONFERENCE PHOTOGRAPHY" over "EVENT PHOTOGRAPHY" was a near repeat)
         kicker = "EVENT CALIBER"
     copy = motion.MotionCopy(kicker=kicker)
+    if design == "reel":
+        # a reel prints a title over a photo only when it is that photo's own confirmed label; one with none carries no
+        # title, never a stand-in (Chris, 2026-11-10: "Any photo title should just carry its sorted, but CORRECT name";
+        # Gallery and Loop had printed EVENT PHOTOGRAPHY over such photos)
+        words = {i: (("", "") if w == design_samples.UNCONFIRMED else w) for i, w in words.items()}
     tag = f"{hero['id']}-{design}"
     reel_failed: list[str] = []
     bare: dict = {}
@@ -760,7 +766,7 @@ def make_renderer(conn: sqlite3.Connection, agent: str, *, design: str, rows: li
             # Instagram and Facebook get the reel (render_paths "9:16"), with its cover; Pinterest the
             # hero as a 2:3 card and LinkedIn the hero as shot; the art director looks at the cover and the stills, never the mp4
             try:
-                video_at = out_dir / f"{tag}-{reel_style}.mp4"
+                video_at = out_dir / f"{tag}-{reel_looks.file_name(reel_style)}.mp4"
                 if reel_style in reel_looks.LOOKS:
                     if reel_video is not None:
                         video, word_frames = reel_looks.take_video(reel_video, video_at), None
@@ -774,8 +780,11 @@ def make_renderer(conn: sqlite3.Connection, agent: str, *, design: str, rows: li
                         video, word_frames = made.video, made.word_frames
                     stills = reel_looks.stills(reel_style, video, out_dir=out_dir / f"{tag}-stills", meta=seo, frames=word_frames)
                 else:
-                    grid = reels3d.fillers(conn, exclude=[r["id"] for r in rows])
-                    video = reels3d.render(reel_style, shots, out=video_at, audio=track, grid=grid)
+                    # every picture a slot of its own: the style's other slots take fillers, as many as it shows (2026-11-09)
+                    made = reels3d.render(reel_style, shots, out=video_at, audio=track,
+                                          fillers=reels3d.fillers(conn, reel_style, len(shots), exclude=[r["id"] for r in rows]))
+                    reels3d.record_wall(conn, [f.id for f in made.fillers])     # the ones it showed rotate on
+                    video = made.video
                     stills = reels3d.stills(reel_style, video, out_dir=out_dir / f"{tag}-stills", meta=seo)
             except Exception as e:  # noqa: BLE001  a reel that cannot be made leaves a carousel of the same photos, said why
                 reel_failed.append(f"{type(e).__name__}: {e}")
@@ -885,8 +894,8 @@ def redraw(conn: sqlite3.Connection, row, meta: dict, *, agent: str = "content",
 def look_parts(conn: sqlite3.Connection, row, meta: dict, look: str) -> tuple:
     """(plan, reel_video, track) a reel in one of the ten looks is drawn again with. A reel queued ready-made
     (`reel_given`, ccs queue-reel) is taken again as it is: its copy beside the post, else the file it was queued from.
-    Any other is rendered again with its own lines and track (the track it was made with while that is here, else the
-    look's next one)."""
+    Any other is rendered again with its own lines (another set when its own may not go on the look: reel_lines.fits)
+    and track (the track it was made with while that is here, else the look's next one)."""
     from .. import reel_lines
     from ..render import reel_looks
     if meta.get("reel_given"):
@@ -894,7 +903,7 @@ def look_parts(conn: sqlite3.Connection, row, meta: dict, look: str) -> tuple:
         given = made[0] if made else Path(meta["reel_given"])
         return None, given, (music.folder() / meta["music"]) if meta.get("music") else None
     played = music.played_as(conn, meta.get("music")) or music.for_look(conn, look, lambda f: learner.track_weight(conn, f))
-    lines = meta["lines"] if meta.get("lines") in reel_lines.SETS else reel_lines.choose(conn)
+    lines = meta["lines"] if reel_lines.fits(meta.get("lines"), look) else reel_lines.choose(conn, look)
     return (reel_looks.Plan(lines, played) if played else None), None, (played.path if played else None)
 
 
@@ -1073,7 +1082,7 @@ def make_draft(ctx: runner.Context, day: date, chosen: list[tuple[dict, bytes]],
             # a look takes a track that suits it and a set of lines, each the one the reels used least lately
             played = music.for_look(ctx.conn, style, lambda f: learner.track_weight(ctx.conn, f))
             if played is not None:
-                look_plan, track = reel_looks.Plan(reel_lines.choose(ctx.conn), played), played.path
+                look_plan, track = reel_looks.Plan(reel_lines.choose(ctx.conn, style), played), played.path
     else:
         style = None
     photo_ids = [r["id"] for r, _ in chosen]
