@@ -202,7 +202,8 @@ class Spend(IsolatedCase):
         self.assertEqual(spend.rate_for("claude-sonnet-4-6"), (3.00, 15.00))
         # an unknown family is never silently priced; cost 0 is what the watchdog flags
         self.assertIsNone(spend.rate_for("claude-mirage-7"))
-        self.assertEqual(spend.cost_usd("claude-mirage-7", 1_000_000, 1_000_000), 0.0)
+        self.assertEqual(spend.cost_usd("claude-mirage-7", 1_000_000, 1_000_000), sum(spend.unknown_rate()),
+                         "a model with no price counts at the dearest rate, never $0 (2026-11-09)")
         conn = db.connect()
         self.assertFalse(spend.cap_reached(conn))
         spend.record(conn, "t", "claude-opus-5", 1_000_000, 1_000_000)
