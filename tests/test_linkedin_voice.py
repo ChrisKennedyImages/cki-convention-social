@@ -215,7 +215,9 @@ class PronounGate(AgentCase):
         line = "He walks right up to the edge of the stage, the front row's hanging on every word, we got it."
         caption, record, by, writer = self.write(line, judge := Judge("woman"))
         self.assertEqual(caption, linkedin.FALLBACK["moment"] + TAIL, "two misses: the fallback, which names no one")
-        self.assertEqual((by, writer.calls, judge.calls), ("template", 2, 1), "one look serves both tries")
+        self.assertEqual((writer.calls, judge.calls), (2, 1), "one look serves both tries")
+        # only LinkedIn missed, so only LinkedIn takes the fallback; the other networks keep what was written (2026-11-09)
+        self.assertEqual((by, record["by_template"]), ("fake", ["linkedin"]))
         self.assertIn("says he and the photo check says woman", " | ".join(record["tries"][0]["missed"]))
         self.assertTrue(record["fell_back"])
 
@@ -238,7 +240,8 @@ class PronounGate(AgentCase):
         caption, record, by, writer = self.write(line, judge := Judge("unclear"))
         self.assertEqual(caption, linkedin.FALLBACK["moment"] + TAIL)
         self.assertIn("explains the shot ('sun')", " | ".join(record["tries"][0]["missed"]))
-        self.assertEqual((by, writer.calls, judge.calls), ("template", 2, 0), "no pronoun, so no look; two misses, the fallback")
+        self.assertEqual((writer.calls, judge.calls), (2, 0), "no pronoun, so no look; two misses, the fallback")
+        self.assertEqual((by, record["by_template"]), ("fake", ["linkedin"]), "the other networks keep what was written")
 
     def test_a_caption_with_no_pronoun_needs_no_look(self):
         line = "Doors open, the room fills up, the speaker steps up, we got the shot."

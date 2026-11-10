@@ -76,3 +76,18 @@ class CopyRules(unittest.TestCase):
         out = tidy("Backstage — before the panel -- calm")
         self.assertTrue(copy_rules.check(out).ok, out)
         self.assertNotIn("—", out)
+
+
+class RulesThatBlockedOrdinarySentences(unittest.TestCase):
+    def test_a_number_somewhere_after_a_photo_or_a_day_is_not_a_price(self):
+        """2026-11-09 audit: "a photo ... 3 speakers" read as a price and sent the caption to the template."""
+        for text in ("A photo from the main stage, with 3 speakers.", "A day at the conference in 2026."):
+            self.assertTrue(copy_rules.check(text, social=True).ok, text)
+        for text in ("150 an hour", "200/session", "per photo: 5", "Rates start at 200 per hour", "$90"):
+            self.assertIn("price", [b.rule for b in copy_rules.check(text).blocks], text)
+
+    def test_we_do_and_we_also_are_ordinary_speech_and_an_offer_is_still_an_offer(self):
+        for text in ("We do love a full room.", "We also caught the keynote."):
+            self.assertTrue(copy_rules.check(text, social=True).ok, text)
+        for text in ("We offer event photography.", "We cover conferences.", "Our services are here."):
+            self.assertIn("offer", [b.rule for b in copy_rules.check(text, social=True).blocks], text)

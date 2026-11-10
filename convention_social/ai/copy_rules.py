@@ -43,7 +43,11 @@ from dataclasses import dataclass, field
 PRICE = re.compile(
     r"(?:[$£€]\s?\d)"                              # $150, £90, €200
     r"|(?:\b\d[\d,.]*\s?(?:usd|dollars?|bucks)\b)"
-    r"|(?:\b(?:per|an|a)\s+(?:hour|hr|day|session|image|photo)\b.*\b\d)"
+    # a rate: a number beside the rate word ("150 an hour", "200/session", "per photo: 5"). Until 2026-11-09 this read
+    # "a photo" or "a day" followed anywhere later by any digit as a price, so "a photo ... 3 speakers" or "a day at
+    # the 2026 conference" sent a good caption to the template.
+    r"|(?:\b\d[\d,.]*\s*(?:/|per|an|a)\s*(?:hour|hr|day|session|image|photo)\b)"
+    r"|(?:\b(?:per|an|a)\s+(?:hour|hr|day|session|image|photo)\b\W{0,3}\d)"
     r"|(?:\b\d+\s?%\s?off\b)|(?:\bdiscount|\bcoupon|\bpromo code|\bsale price|\bstarting at\b|\bstarts at\b|\bonly\s+\$)",
     re.IGNORECASE,
 )
@@ -65,7 +69,9 @@ _SPEED_CLAIMS = (r"\bturnaround\b", r"\b(?:same|next)[- ]day\b",
                  r"\bin\s+(?:a\s+few\s+|just\s+|under\s+)?minutes\b")
 CLAIMS = re.compile("|".join(_CLAIMS + _SPEED_CLAIMS), re.IGNORECASE)
 CLAIMS_LINKEDIN = re.compile("|".join(_CLAIMS), re.IGNORECASE)
-_OFFER = (r"\bwe\s+(?:offer|cover|deliver|provide|shoot|photograph|also|do|bring|make)\b", r"\boffer(?:s|ed|ing|ings)?\b",
+# 2026-11-09: "we do", "we also" and "we make" came out of the list: ordinary speech ("we do love a full room"), and each
+# hit threw the caption away. The offer words themselves (offer, cover, deliver, provide, service, coverage) stay.
+_OFFER = (r"\bwe\s+(?:offer|cover|deliver|provide|shoot|photograph|bring)\b", r"\boffer(?:s|ed|ing|ings)?\b",
           r"\bour\s+services?\b", r"\bservices?\b", r"\bcoverage\b", r"\bcovered\b", r"\bprovid(?:e|es|ed|ing)\b",
           r"\bface\s+match\b", r"\bselfies?\b",
           r"\byour\s+(?:vendors|exhibitors|guests|staff|team|attendees|speakers|sponsors)\b", r"\bevery\s+(?:room|guest|attendee)\b")
