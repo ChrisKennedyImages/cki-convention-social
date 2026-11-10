@@ -124,11 +124,9 @@ export const Loop: React.FC<Props> = (props) => {
     coverTex(c.slot.kind === 'photos' ? pics.photo(c.slot.index) : pics.filler(c.slot.index), c.p.w / c.p.h, c.w / c.h)) : []), [pics, cards]);
   const at = gridAt(visit, p, f);
   const card = visit[at.k], photo = card.p as Photo;
-  // while the loop crosses a card the rest of the grid falls back into the dark, and the label is up
+  // while the loop crosses a card its label is up. The rest of the grid stays as it is: nothing round the picture
+  // goes dark at a stop (Chris, 2026-11-10: "not darken everything around it at each stop on pic")
   const since = f - p.entries[at.k], until = p.exits[at.k] - f;
-  const held = at.resting && !closing ? easeIO(Math.min(1, (since + 4) / 14, (until + 4) / 14)) : 0;
-  const grey = Math.round(255 - (255 - 32) * held);
-  const dimmed = `rgb(${grey},${grey},${grey})`;
   const labelOn = at.resting && !closing ? Math.min(1, since / 10, until / 8) : 0;
   const px = (W / (Z * VIEW_W)) * at.scale;                    // screen pixels per grid unit, as the grid stands now
   const loop = loopAt(p, f);                                   // in grid units; drawn where the grid puts that spot
@@ -148,7 +146,7 @@ export const Loop: React.FC<Props> = (props) => {
               <mesh key={s} position={[c.x, c.y, 0]}>
                 <planeGeometry args={[c.w, c.h]} />
                 <meshBasicMaterial map={cardTex[s]} alphaMap={roundedMask()} alphaTest={0.5} toneMapped={false}
-                                   color={c === card ? '#ffffff' : dimmed} />
+                                   color="#ffffff" />
               </mesh>
             ))}
           </group>
