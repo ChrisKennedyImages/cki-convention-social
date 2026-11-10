@@ -23,7 +23,7 @@ picture and back, as in Chiaroscuro's montage, is two). Then:
     for two;
   - never shown: a slot the look takes and never puts on screen (a photo taken and recorded as used, never seen);
   - back with nothing between, listed and not failed: a picture off screen and back with no other picture shown in the
-    gap, only cards, black or drawing (Section's and Darkroom's heroes), for Chris to rule on.
+    gap, only cards, black or drawing (Axis's hero, the cover then the doorway), for Chris to rule on.
 A repeat, twice at once, never shown, or a look that will not render fails the check: exit 1 (fail closed). One line
 of code that draws one slot twice is one place, so that it does not catch; tests/test_reel_slots.py keeps the looks from
 taking a slot round again.

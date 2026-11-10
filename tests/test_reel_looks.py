@@ -185,7 +185,8 @@ class Photos(IsolatedCase):
         self.assertTrue(reel_looks.fits("darkroom", [s, p, s, p]))
         self.assertFalse(reel_looks.fits("darkroom", [p, s, p, p]))
         self.assertFalse(reel_looks.fits("darkroom", [s, s, s]), "fewer than the look's least")
-        self.assertFalse(reel_looks.fits("darkroom", [s] * 7), "more than the look shows: a photo it would never show")
+        self.assertTrue(reel_looks.fits("darkroom", [s] * 8))
+        self.assertFalse(reel_looks.fits("darkroom", [s] * 9), "more than the look shows: a photo it would never show")
         self.assertTrue(reel_looks.fits("axis", [p] * 6))
         self.assertFalse(reel_looks.fits("axis", [p] * 5), "the doorway, three words and the burst of two at least")
         self.assertFalse(reel_looks.fits("axis", [p] * 5 + [s]))
@@ -232,13 +233,15 @@ class Props(IsolatedCase):
         return reel_looks.props(look, photos, plan=self.plan, fillers=fillers, public=public), public
 
     def test_too_few_or_too_many_photos_or_fillers_stop_the_reel(self):
-        shots = [photo(r) for r in ("main_stage", "candid", "reception", None, "breakout", "backstage")]
+        shots = [photo(r) for r in ("main_stage", "candid", "reception", None, "breakout", "backstage", "candid")]
         with self.assertRaises(ValueError, msg="a filler short"):
             self.props("darkroom", shots, filler_files(self.root, reel_looks.SLOTS["darkroom"].fillers - 1))
         with self.assertRaises(ValueError, msg="a filler over"):
             self.props("weather", shots, filler_files(self.root, 2))
         with self.assertRaises(ValueError, msg="more of the post's photos than the look shows"):
             self.props("section", shots)
+        with self.assertRaises(ValueError, msg="more of the post's photos than the look shows"):
+            self.props("darkroom", shots + shots[:2])
         with self.assertRaises(ValueError, msg="fewer than its least"):
             self.props("manifesto", shots[:3])
 
@@ -247,7 +250,7 @@ class Props(IsolatedCase):
         p, public = self.props("darkroom", [photo(r, focus=(0.3, 0.2) if k == 0 else reel_looks.DEFAULT_FOCUS)
                                             for k, r in enumerate(rooms)])
         self.assertEqual(p["words"], ["Main stage.", "Portraits.", "Reception."])
-        self.assertEqual(p["wordPhotos"], [0, 1, 2], "in Darkroom the first word's photo is the print: the word photos lead")
+        self.assertEqual(p["wordPhotos"], [0, 1, 2], "in Darkroom the first word's photo is the hero, first seen on the line")
         self.assertEqual([(x["fx"], x["fy"]) for x in p["photos"]][3], (0.3, 0.2),
                          "the post's hero, with no confirmed room, follows them with the art director's focus")
         self.assertEqual({(x["fx"], x["fy"]) for x in p["photos"][:3]}, {reel_looks.DEFAULT_FOCUS})

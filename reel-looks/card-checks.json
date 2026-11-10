@@ -20,17 +20,13 @@
   "back_with_nothing_between": []
  },
  "darkroom": {
-  "source": "9e3c703bedc010873cfb01a65c3633b330dfe19c5581aac99c939d66aa3216c3",
+  "source": "986c4bc9a65d5f3ad76fb0783e567bc4c7f66c71194d66bb7382b595b0c30aa7",
   "checked": "2026-11-09",
-  "slots": 13,
+  "slots": 16,
   "repeats": 0,
   "twice_at_once": 0,
   "never_shown": 0,
-  "back_with_nothing_between": [
-   "photo 0 back at 4.40 s",
-   "photo 0 back at 6.47 s",
-   "photo 0 back at 10.00 s"
-  ]
+  "back_with_nothing_between": []
  },
  "manifesto": {
   "source": "7091d7f9cc93b49005f63aa8f7b234444137d7a5383a858c183a261070a14735",
@@ -51,16 +47,13 @@
   "back_with_nothing_between": []
  },
  "section": {
-  "source": "0c420462c878f011682528789230fe730a3255dfa93bf17209871d2bb02c110a",
+  "source": "5f1d5bb73ae8b20ce6fc60a326bbbff332a8658a841ca13637fbc03782c917fd",
   "checked": "2026-11-09",
-  "slots": 8,
+  "slots": 9,
   "repeats": 0,
   "twice_at_once": 0,
   "never_shown": 0,
-  "back_with_nothing_between": [
-   "photo 0 back at 9.50 s",
-   "photo 0 back at 12.27 s"
-  ]
+  "back_with_nothing_between": []
  },
  "splitscreen": {
   "source": "1f049f3037fd8d1a0bdcbcba2f6cce438c13713b98812c504d96575d76367601",
