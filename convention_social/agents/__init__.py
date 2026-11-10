@@ -33,7 +33,7 @@ AGENTS: dict[str, dict] = {
                   "job": "SQLite online backup to DATA_ROOT/backups (14 kept), a copy off the machine"},
     "doctor":    {"schedule": "every 5 min",           "module": "convention_social.agents.doctor",
                   "job": "fixes the known failures by itself (an agent run again, the backup and the sweep, the dashboard restarted, a post retried, a reel remade), checks each fix and says it; an error in the code becomes a GitHub issue"},
-    "updater":   {"schedule": "every 10 min",          "module": "convention_social.agents.updater",
+    "updater":   {"schedule": "every 2 min",          "module": "convention_social.agents.updater",
                   "job": "keep the Mini on the latest main: test a new commit first, then switch and restart the dashboard"},
     "phone":     {"schedule": "when a photo is sent (Send a photo page); every minute for the share sheet", "module": "convention_social.agents.phone",
                   "job": "a photo sent from Chris's phone while he shoots: sorted, checked, drafted as today's post, pinged with Post now, "

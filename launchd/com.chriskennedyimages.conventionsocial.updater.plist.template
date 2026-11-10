@@ -19,7 +19,7 @@
     <key>CCS_DATA_ROOT</key><string>__DATA__</string>
     <key>PYTHONUNBUFFERED</key><string>1</string>
   </dict>
-  <key>StartInterval</key><integer>600</integer>
+  <key>StartInterval</key><integer>120</integer>
   <key>RunAtLoad</key><true/>
   <key>StandardOutPath</key><string>__DATA__/logs/updater.launchd.log</string>
   <key>StandardErrorPath</key><string>__DATA__/logs/updater.launchd.log</string>
