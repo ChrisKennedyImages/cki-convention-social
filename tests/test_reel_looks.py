@@ -11,6 +11,7 @@ import random
 import re
 import subprocess
 import types
+import unittest
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from unittest import mock
@@ -955,3 +956,12 @@ class Designed(LookCase):
         _, meta_, _, ids = self.last()
         self.assertEqual((meta_["source"], meta_["reel"], meta_["music"]), ("designed", "axis", self.tracks["axis"]))
         self.assertEqual(self.shot_types(ids), ["portrait"] * 8, "Axis takes portraits only")
+
+
+class FilesNamedAsTheLooksAreSaid(unittest.TestCase):
+    def test_a_looks_files_carry_its_name_in_words(self):
+        """Chris, 2026-11-09: "Is it powersoft or powers of ten? ... name the reels the same thing you call them"."""
+        self.assertEqual(reel_looks.file_name("powersoften"), "powers-of-ten")
+        self.assertEqual(reel_looks.file_name("splitscreen"), "split-screen")
+        for look in reel_looks.LOOKS:
+            self.assertEqual(reel_looks.file_name(look).replace("-", ""), reel_looks.NAMES[look].lower().replace(" ", ""), look)

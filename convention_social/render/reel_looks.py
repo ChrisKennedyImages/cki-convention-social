@@ -57,6 +57,15 @@ LOOKS = ("powersoften", "manifesto", "darkroom", "titles", "section", "splitscre
 NAMES = {"powersoften": "Powers of Ten", "manifesto": "Manifesto", "darkroom": "Darkroom", "titles": "Titles",
          "section": "Section", "splitscreen": "Split Screen", "weather": "Weather", "stillness": "Stillness",
          "chiaroscuro": "Chiaroscuro", "axis": "Axis"}
+# The name a look carries in its files, as it is said (Chris, 2026-11-09: "Is it powersoft or powers of ten? ... name the
+# reels the same thing you call them"): 16895-reel-powers-of-ten.mp4, split-screen-000.jpg.
+FILE_NAME = {"powersoften": "powers-of-ten", "splitscreen": "split-screen"}
+
+
+def file_name(look: str) -> str:
+    return FILE_NAME.get(look, look)
+
+
 COMPOSITION = {"powersoften": "PowersOfTen", "manifesto": "Manifesto", "darkroom": "Darkroom", "titles": "Titles",
                "section": "Section", "splitscreen": "SplitScreen", "weather": "Weather", "stillness": "Stillness",
                "chiaroscuro": "Chiaroscuro", "axis": "Axis"}          # the Remotion composition ids (reel-looks/src/Root.tsx)
@@ -467,7 +476,7 @@ def stills(look: str, video: Path, *, out_dir: Path, meta: Optional[ImageMeta] =
     """The reel's cover (first) and the frames where its beat words are on screen (`frames`, from its render; else the
     look's STILL_FRAMES), cut from the reel itself and saved as JPEGs with the company's metadata."""
     out_dir = Path(out_dir)
-    return [save_jpeg(frame_at(video, f / FPS), out_dir / f"{look}-{f:03d}.jpg", meta, quality=92)
+    return [save_jpeg(frame_at(video, f / FPS), out_dir / f"{file_name(look)}-{f:03d}.jpg", meta, quality=92)
             for f in (COVER_FRAME[look], *(frames or STILL_FRAMES[look]))]
 
 

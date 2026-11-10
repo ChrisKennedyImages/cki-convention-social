@@ -748,7 +748,7 @@ def make_renderer(conn: sqlite3.Connection, agent: str, *, design: str, rows: li
             # Instagram and Facebook get the reel (render_paths "9:16"), with its cover; Pinterest the
             # hero as a 2:3 card and LinkedIn the hero as shot; the art director looks at the cover and the stills, never the mp4
             try:
-                video_at = out_dir / f"{tag}-{reel_style}.mp4"
+                video_at = out_dir / f"{tag}-{reel_looks.file_name(reel_style)}.mp4"
                 if reel_style in reel_looks.LOOKS:
                     if reel_video is not None:
                         video, word_frames = reel_looks.take_video(reel_video, video_at), None
