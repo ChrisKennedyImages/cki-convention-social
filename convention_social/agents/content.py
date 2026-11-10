@@ -387,8 +387,9 @@ class Picker:
         self.cap = moments.cap_for(self.need, sizes.values())
 
     def fits(self, row: dict) -> bool:
-        if not house_brief.may_name(row.get("shot_type"), row.get("people_count")):
-            return False
+        # A portrait of other than one person is drafted like any photo he approved (Chris, 2026-11-10: "Let them post,
+        # without the word"; his approval is final). The word Portraits still prints only over one person: such a photo
+        # is never a word photo (checked_rooms) and never in Axis, whose wall says Portraits (reel_looks.photo_rule).
         if any(r["id"] == row["id"] for r in self.taken) or any(moments.same_moment(row, r) for r in self.taken):
             return False
         if self.rule is not None and not self.rule(row, self.taken):
@@ -718,6 +719,11 @@ def make_renderer(conn: sqlite3.Connection, agent: str, *, design: str, rows: li
         # line EVENT CALIBER (2026-10-15; "CONFERENCE PHOTOGRAPHY" over "EVENT PHOTOGRAPHY" was a near repeat)
         kicker = "EVENT CALIBER"
     copy = motion.MotionCopy(kicker=kicker)
+    if design == "reel":
+        # a reel prints a title over a photo only when it is that photo's own confirmed label; one with none carries no
+        # title, never a stand-in (Chris, 2026-11-10: "Any photo title should just carry its sorted, but CORRECT name";
+        # Gallery and Loop had printed EVENT PHOTOGRAPHY over such photos)
+        words = {i: (("", "") if w == design_samples.UNCONFIRMED else w) for i, w in words.items()}
     tag = f"{hero['id']}-{design}"
     reel_failed: list[str] = []
     bare: dict = {}

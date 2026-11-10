@@ -173,11 +173,15 @@ class Photos(IsolatedCase):
     """Chris, 2026-11-08: "it's event photography mainly - the gallery in the last one should remain all portraits. It's
     also fine to have one or two portrait other ones"."""
     def test_two_portraits_at_most_in_any_look_but_axis_which_takes_portraits_only(self):
-        p, s = {"shot_type": "portrait"}, {"shot_type": "main_stage"}
+        p, s = {"shot_type": "portrait", "people_count": 1}, {"shot_type": "main_stage"}
         for look in reel_looks.LOOKS:
             rule = reel_looks.photo_rule(look)
             if look == "axis":
                 self.assertTrue(rule(p, [p] * 6))
+                # its wall says Portraits, which prints only over one person (Chris, 2026-11-09): a pair or a group
+                # posts elsewhere (2026-11-10) and never in Axis
+                self.assertFalse(rule({"shot_type": "portrait", "people_count": 3}, []))
+                self.assertFalse(rule({"shot_type": "portrait"}, []), "a count not known is not one")
                 self.assertFalse(rule(s, []))
             else:
                 self.assertTrue(rule(p, [s, p]))
@@ -965,3 +969,19 @@ class FilesNamedAsTheLooksAreSaid(unittest.TestCase):
         self.assertEqual(reel_looks.file_name("splitscreen"), "split-screen")
         for look in reel_looks.LOOKS:
             self.assertEqual(reel_looks.file_name(look).replace("-", ""), reel_looks.NAMES[look].lower().replace(" ", ""), look)
+
+
+class EachPictureCarriesItsOwnLabel(unittest.TestCase):
+    """Chris, 2026-11-10: "Any photo title should just carry its sorted, but CORRECT name"."""
+    def test_a_fillers_label_is_its_own_and_only_one_that_may_be_printed_over_it(self):
+        self.assertEqual(reel_looks.printable_label({"shot_type": "main_stage", "people_count": 4}), "main_stage")
+        self.assertEqual(reel_looks.printable_label({"shot_type": "portrait", "people_count": 1}), "portrait")
+        self.assertIsNone(reel_looks.printable_label({"shot_type": "portrait", "people_count": 2}), "Portraits only over one person")
+        self.assertIsNone(reel_looks.printable_label({"shot_type": None, "people_count": 1}))
+        self.assertIsNone(reel_looks.printable_label({"shot_type": "not_a_label", "people_count": 1}))
+
+    def test_darkrooms_sheet_is_twelve_pictures(self):
+        """A fogged leader in the first frame had read as an empty frame; the art director turned three drafts back."""
+        self.assertEqual(reel_looks.SLOTS["darkroom"], reel_looks.Slots(8, 9))
+        source = (reel_looks.REEL_LOOKS / "src" / "looks" / "Darkroom.tsx").read_text()
+        self.assertIn("return [f(8), a, f(0), f(1), b, f(2), f(3), own(p, ar, CHOSEN), f(4), f(5), f(6), f(7)];", source)

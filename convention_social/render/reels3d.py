@@ -124,6 +124,7 @@ class Filler:
     copy here. The 3D styles and the ten looks (render/reel_looks.py) draw them alike."""
     id: int
     path: Path
+    label: Optional[str] = None      # its sorted label (a key of house_brief.WORDS) when that label may be printed over it
 
 
 def props(shots: Sequence[Shot], *, music: Path, fillers: Sequence[Path], public: Path) -> dict:
@@ -316,7 +317,7 @@ def wall_picks(conn: sqlite3.Connection, *, exclude: Sequence[int], n: int, rng=
         key = (r["folder_id"], r["shot_type"])
         if (r["id"] in seen or (only is not None and r["shot_type"] != only) or key in untimed_keys
                 or (key in own_keys and moments.taken(r["taken_at"]) is None)
-                or not house_brief.may_name(r["shot_type"], r["people_count"])):
+                or (only is not None and not house_brief.may_name(r["shot_type"], r["people_count"]))):
             continue
         usable.append(r)
     by_shoot: dict = {}

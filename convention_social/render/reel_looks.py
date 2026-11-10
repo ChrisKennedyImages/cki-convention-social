@@ -84,6 +84,8 @@ STILL_FRAMES = {"powersoften": (60, 120), "manifesto": (295,), "darkroom": (352,
 GRADED = ("chiaroscuro", "axis")                          # the two looks that grade and light his photos
 PORTRAIT = "portrait"                                     # classifications.shot_type
 PORTRAITS_ONLY = ("axis",)
+LABELLED_FILLER = {"titles": 1}                             # the filler whose own label the look prints beside it (the symbol's foot)
+LABELLED_SPARE = 8                                        # how many more of the rotation are looked through for one with a label
 MOST_PORTRAITS = 2                                        # in any other look
 ENDING = 2                                                # Axis's closing burst
 
@@ -103,7 +105,7 @@ SLOTS = {
     "powersoften": Slots(6, 40, 8),  # the six nearest the hero; the mosaic's outer rings, as many as it places (with
     #                                  fewer than 8 the move is too short for every word to hold beside its photo)
     "manifesto": Slots(7, 2),        # the shout, the three wedges, the climax, the manifesto, the number; the photomontage
-    "darkroom": Slots(8, 8),         # the hero (the first print on the line), two more prints on the line, the tray's
+    "darkroom": Slots(8, 9),         # the hero (the first print on the line), two more prints on the line, the tray's
     #                                  print, the enlarger's, the frame cut from the sheet, two more on the sheet; the sheet
     "titles": Slots(7, 2),           # the cover, the three bars, the climax, the end title, the number; Psycho bars, symbol
     "section": Slots(6, 3),          # the hero (the exploded view), the three word rooms (A seen on its stop), the attic,
@@ -207,7 +209,9 @@ def photo_rule(look: str) -> Callable[[dict, Sequence[dict]], bool]:
     def rule(row: dict, taken: Sequence[dict]) -> bool:
         portrait = row.get("shot_type") == PORTRAIT
         if look in PORTRAITS_ONLY:
-            return portrait
+            # one person only: its wall says Portraits, and that word prints only over one person (Chris, 2026-11-09)
+            from .. import house_brief
+            return portrait and house_brief.may_name(PORTRAIT, row.get("people_count"))
         return not portrait or sum(1 for r in taken if r.get("shot_type") == PORTRAIT) < MOST_PORTRAITS
     return rule
 
@@ -339,7 +343,7 @@ def arrange(look: str, photos: Sequence[LookPhoto], fillers: Sequence[Filler]) -
     filled = []
     for f in fillers[:short]:
         with Image.open(f.path) as im:
-            filled.append(LookPhoto(im.convert("RGB"), None))
+            filled.append(LookPhoto(im.convert("RGB"), f.label))
     beats = reel_lines.Beats(photos=tuple(len(lead) + k for k in range(3)), words=found.words, stack=found.stack)
     return Arranged(ordered + filled + burst, beats, list(fillers[short:]))
 
@@ -354,14 +358,18 @@ def props(look: str, photos: Sequence[LookPhoto], *, plan: Plan, fillers: Sequen
         (public / name).symlink_to(REEL_LOOKS / "public" / name)
 
     def placed_at(p: LookPhoto, name: str) -> dict:
+        from .. import house_brief
         w, h = copy_photo(p.image, public / "photos" / f"{name}.jpg")
-        return {"src": f"photos/{name}.jpg", "fx": round(p.focus[0], 4), "fy": round(p.focus[1], 4), "w": w, "h": h}
+        # label: the picture's own label in his words ("Main stage"), "" when it has none that may be printed; a look
+        # prints it only on a bar beside that one picture (Chris, 2026-11-10)
+        return {"src": f"photos/{name}.jpg", "fx": round(p.focus[0], 4), "fy": round(p.focus[1], 4), "w": w, "h": h,
+                "label": house_brief.WORDS.get(p.room, "") if p.room else ""}
 
     out = {**reel_lines.props(plan.lines, shaped.beats),
            "photos": [placed_at(p, f"p{k}") for k, p in enumerate(shaped.photos)], "fillers": []}
     for k, f in enumerate(shaped.fillers):
         with Image.open(f.path) as im:
-            out["fillers"].append(placed_at(LookPhoto(im, None), f"f{k}"))
+            out["fillers"].append(placed_at(LookPhoto(im, f.label), f"f{k}"))
     least = SLOTS[look].fillers_from
     if least is not None:
         kept = fit_mosaic(out, placed or mosaic_fillers)
@@ -501,4 +509,24 @@ def fillers(conn, look: str, rows: Sequence[dict], *, n: Optional[int] = None,
         portraits = sum(1 for r in rows if r["shot_type"] == PORTRAIT)
         most = MOSAIC_PORTRAITS if look == "powersoften" else max(0, MOST_PORTRAITS - portraits)
         picked = reels3d.wall_picks(conn, exclude=ids, n=need, most_portraits=most, candidates=candidates)
-    return [Filler(r["id"], r["path"]) for r in picked]
+    got = [Filler(r["id"], r["path"], printable_label(r)) for r in picked]
+    bar = LABELLED_FILLER.get(look)
+    if bar is not None and n is None and len(got) > bar and not got[bar].label:
+        # the look prints this filler's own label on the bar beside it (Chris, 2026-11-10): one that has a label goes
+        # there, drawn from a few more of the same rotation when the ones picked have none (else the bar would be bare)
+        more = reels3d.wall_picks(conn, exclude=ids, n=need + LABELLED_SPARE, most_portraits=most, candidates=candidates)
+        with_label = next((f for f in (Filler(r["id"], r["path"], printable_label(r)) for r in more) if f.label), None)
+        if with_label is not None:
+            rest = [f for f in got if f.id != with_label.id][:need - 1]
+            got = rest[:bar] + [with_label] + rest[bar:]
+    return got
+
+
+def printable_label(row) -> Optional[str]:
+    """A filler's own sorted label, when it is one of his labels and may be printed over this photo (Portraits only over
+    one person: house_brief.may_name); else None, and nothing is printed for it. Chris, 2026-11-10: "Any photo title
+    should just carry its sorted, but CORRECT name"."""
+    from .. import house_brief
+    key = row["shot_type"] if "shot_type" in row.keys() else None
+    count = row["people_count"] if "people_count" in row.keys() else None
+    return key if key in house_brief.WORDS and house_brief.may_name(key, count) else None

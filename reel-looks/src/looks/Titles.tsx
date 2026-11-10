@@ -316,10 +316,14 @@ const Emblem: Scene = ({ f, p }) => {
   const order = [0, 2, 1, 3, 4];                        // the top piece (the faces) lands last
   const whole = f >= arrive[arrive.length - 1];
   const footW = b.w + 80;
+  // the foot carries the label of the picture standing on it, and only that (Chris, 2026-11-10); none known, it is bare
+  const own = ((pic as { label?: string }).label ?? "").toUpperCase();
+  const ownS = own ? fitCut(own, CUT, footW - 80, 104, 0.03) : 0;
   return (
     <AbsoluteFill style={{ background: BLACK }}>
       <div style={{ position: "absolute", left: 0, top: 0, width: W, height: H, transform: `translateY(${dy.toFixed(1)}px)` }}>
         <Sheet pts={ragged(rect(W / 2 - footW / 2, b.y + b.h, footW, foot), "sym-foot", 4.5)} fill={p.accent} />
+        {own && <Cut text={own} size={ownS} x={W / 2} y={b.y + b.h + foot / 2} align="center" color={inkOn(p.accent)} seed="sym-l" track={0.03} enter={byHand(f, 6, 0.6)} />}
         {whole ? <Shot pic={pic} b={b} /> : pieces.map((pc, i) => {
           const at = arrive[order.indexOf(i)];
           if (f < at - 9) return null;

@@ -209,10 +209,19 @@ const Sheet: Layout = ({ g, p }) => {
   const base = 64 + capT + 46 + capV;
   const inkP = onColour(p.accent2, p.accent2);
   const { at, out } = SHEET_NUMBER;
+  // the field carries the labels of the six pictures under it, each once, and nothing else (Chris, 2026-11-10)
+  const owns = SHEET.map((s) => (fillerAt(p, s.filler) as { label?: string }).label ?? "").filter((l, i, all) => l && all.indexOf(l) === i);
+  const own = owns.map((l, i) => (i ? l.toLowerCase() : l)).join(" · ");
+  const ownSet = own ? balance(own, HEAVY, 960, 124, 86) : null;
+  const ownCap = ownSet ? capOf(HEAVY, ownSet.size) : 0, ownLead = ownSet ? ownSet.size * 1.0 : 0;
+  const ownTop = ownSet ? ABOVE_F.h / 2 - ((ownSet.lines.length - 1) * ownLead + ownCap) / 2 : 0;
+  const ownInk = onColour(p.accent, p.accent2);
   return (
     <>
       {SHEET.map((s) => <Pic key={`${s.c}${s.r}`} pic={fillerAt(p, s.filler)} box={cellOf(s.c, s.r)} />)}
-      <Field r={ABOVE_F} bg={p.accent} />
+      <Field r={ABOVE_F} bg={p.accent}>
+        {ownSet && ownSet.lines.map((l, i) => <Line key={i} g={g} at={at - 4 + i * 3} out={out} text={l} face={HEAVY} size={ownSet.size} x={ABOVE_F.w / 2} inkTop={ownTop + i * ownLead} align="center" color={ownInk} track={-0.01} />)}
+      </Field>
       <Field r={COUNT_F} bg={p.accent2}>
         <Line g={g} at={at} out={out} text={label} face={TAG} size={tS} x={COUNT_F.w / 2} inkTop={64} align="center" color={inkP} track={0.14} caps />
         <Line g={g} at={at + 2} out={out} text={value} face={FIGURE} size={vS} x={vX} inkTop={base - capV} color={inkP} track={-0.02} />

@@ -114,7 +114,7 @@ const fitBox = (ar: number, maxW: number, maxH: number) => (maxW / maxH > ar ? {
 // and the end card; the two other word photos, on the line; the print in the tray; the picture the enlarger lays; the
 // decisive frame cut from the sheet; and two more, each on the contact sheet once. The sheet's eight other frames are
 // fillers, more of his approved photos.
-export const SLOTS: Slots = { photos: 8, fillers: 8 };
+export const SLOTS: Slots = { photos: 8, fillers: 9 };
 const HERO = 0, TRAY = 3, ENLARGED = 4, CHOSEN = 5, ON_SHEET = [6, 7];
 type Shaped = { pic: Photo; ar: number };
 /** The post's photo in slot i, and its shape (`ar` is read in everyPicture's order: the photos, then the fillers). */
@@ -179,12 +179,13 @@ const frameXY = (n: number) => ({ x: SM + FGAP + (n % 3) * (FW + FGAP), y: SM + 
 const CHOSEN_N = 7;                                 // the decisive frame: the third strip, the middle one
 const CHOSEN_MID: Pt = [frameXY(CHOSEN_N).x + FW / 2, frameXY(CHOSEN_N).y + FH / 2];
 
-/** The roll: the leader fogged (null), then eleven pictures, each once: the decisive frame in the middle of the third
- *  strip, the post's two other photos for the sheet spread among the fillers. */
+/** The roll: twelve pictures, each once (Chris, 2026-11-10: a picture in the first frame, where a fogged leader had
+ *  read as an empty frame): the decisive frame in the middle of the third strip, the post's two other photos for the
+ *  sheet spread among the fillers. */
 const roll = (p: ReelProps, ar: number[]): (Shaped | null)[] => {
   const [a, b] = ON_SHEET.map((i) => own(p, ar, i));
   const f = (k: number) => filler(p, ar, k);
-  return [null, a, f(0), f(1), b, f(2), f(3), own(p, ar, CHOSEN), f(4), f(5), f(6), f(7)];
+  return [f(8), a, f(0), f(1), b, f(2), f(3), own(p, ar, CHOSEN), f(4), f(5), f(6), f(7)];
 };
 
 /** One frame of the roll, whole, upright and as shot, in the film's black. */

@@ -32,7 +32,7 @@ class TheHeroOnce(IsolatedCase):
             self.assertNotIn("HERO)", body, scene)
             self.assertIn(f"own(p, ar, {pic})", body, scene)
         self.assertIn("const HERO = 0, TRAY = 3, ENLARGED = 4, CHOSEN = 5, ON_SHEET = [6, 7];", text)
-        self.assertEqual(reel_looks.SLOTS["darkroom"], reel_looks.Slots(8, 8))
+        self.assertEqual(reel_looks.SLOTS["darkroom"], reel_looks.Slots(8, 9))
         self.assertIn("darkroom", reel_looks.FIRST_WORD_LEADS, "the hero carries the first word, on the line")
 
     def test_section_shows_the_hero_in_the_exploded_view_and_the_end_card_only(self):
@@ -54,9 +54,9 @@ class TheHeroOnce(IsolatedCase):
             self.assertEqual(im.getpixel((5, 5))[0], 0, "the hero leads, for the exploded view")
         rooms = ["main_stage", "candid", "reception", None, "breakout", "backstage", None, "candid"]
         p = reel_looks.props("darkroom", [photo(r, 30 * k) for k, r in enumerate(rooms)], plan=plan,
-                             fillers=[reel_looks.Filler(k, self.filler(k)) for k in range(8)], public=self.root / "darkroom")
+                             fillers=[reel_looks.Filler(k, self.filler(k)) for k in range(9)], public=self.root / "darkroom")
         self.assertEqual((p["wordPhotos"], p["words"]), ([0, 1, 2], ["Main stage.", "Candid.", "Reception."]))
-        self.assertEqual((len(p["photos"]), len(p["fillers"])), (8, 8))
+        self.assertEqual((len(p["photos"]), len(p["fillers"])), (8, 9))
 
     def filler(self, k):
         path = self.root / f"f{k}.jpg"

@@ -378,10 +378,16 @@ const Gale: Scene = ({ f, g, p }) => {
   const phase = g * 0.36 + 2.2 * beats.reduce((s, b) => s + (f >= b ? 1 - Math.exp(-(f - b) / 5) : 0), 0);
   const du = CLOTH_LEN / SLICES;
   const shown = CLOTH_LEN * blow;
+  // the cloth carries the label of the picture under it, and only that (Chris, 2026-11-10); none known, it is bare
+  const own = (pic as { label?: string }).label ?? "";
+  const ownSet = own ? balance(own, HEAVY, 860, 130, 96, true) : null;
+  const ownCap = ownSet ? capOf(HEAVY, ownSet.size) : 0, ownLead = ownSet ? ownCap + ownSet.size * 0.2 : 0;
+  const ownTop = ownSet ? (BH - (ownCap + (ownSet.lines.length - 1) * ownLead)) / 2 : 0;
   const content = (
     <div style={{ position: "absolute", left: 0, top: 0, width: CLOTH_LEN, height: BH, background: `linear-gradient(180deg, rgba(0,0,0,.16), rgba(0,0,0,0) 9%, rgba(0,0,0,0) 88%, rgba(0,0,0,.22)), ${p.accent}` }}>
       <div style={{ position: "absolute", left: 0, right: 0, top: 9, height: 2, background: "rgba(0,0,0,.18)" }} />
       <div style={{ position: "absolute", left: 0, right: 0, bottom: 9, height: 2, background: "rgba(0,0,0,.18)" }} />
+      {ownSet && ownSet.lines.map((l, i) => <T key={i} text={l} face={HEAVY} size={ownSet.size} x={W / 2 - CLOTH_X} inkTop={ownTop + i * ownLead} align="center" color={onColour(p.accent)} track={0.02} caps />)}
     </div>
   );
   /** The cloth at a point u along it: its depth, its slope, and the light on it (from the left, a little in front). */

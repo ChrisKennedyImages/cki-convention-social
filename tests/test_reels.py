@@ -395,10 +395,11 @@ class Saturday(IsolatedCase):
         self.assertEqual(len(self.reels), 1)
         kind, rooms, audio = self.reels[0]
         self.assertEqual((kind, audio), (meta_["reel"], track))
-        self.assertEqual(sorted(rooms[:4]), ["BACKSTAGE", "EVENT PHOTOGRAPHY", "MAIN STAGE", "PORTRAITS"],
-                         "one photo per room first; a room repeats only after every room has had one; a room is named "
-                         "only when the final check confirmed it (2026-10-15), the rest say EVENT PHOTOGRAPHY")
-        self.assertIn(ids[0], (self.ids["e1"],) if rooms[0] == "EVENT PHOTOGRAPHY" else (self.ids["s1"], self.ids["s2"]),
+        self.assertEqual(sorted(rooms[:4]), ["", "BACKSTAGE", "MAIN STAGE", "PORTRAITS"],
+                         "one photo per label first; a label repeats only after every label has had one; a photo carries a "
+                         "title only when the final check confirmed its label (2026-10-15); one with none carries no title, "
+                         "never a stand-in (Chris, 2026-11-10: EVENT PHOTOGRAPHY had been printed over them)")
+        self.assertIn(ids[0], (self.ids["e1"],) if rooms[0] == "" else (self.ids["s1"], self.ids["s2"]),
                       "the hero is a strongest frame; s1 and s2 are equal, so which leads is chance (2026-10-23)")
         self.assertEqual(sorted(renders), ["2:3", "9:16", "cover", "linkedin", "stills"])
         self.assertTrue(renders["9:16"][0].endswith(f"-{kind}.mp4"))
