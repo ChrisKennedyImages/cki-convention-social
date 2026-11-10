@@ -548,6 +548,13 @@ def reel_urls(row, fields: list[dict], *, live: bool, uploader=None) -> str:
 
 # ------------------------------------------------------------------ publishing
 
+def sent_already(conn, row) -> set[str]:
+    """The networks this post is already out on (post_history, written when Buffer said sent). A post approved again
+    after one network failed goes only to the networks that did not get it (2026-11-09 audit: Approve again on a post
+    marked failed for LinkedIn sent it to Instagram a second time)."""
+    return {r["service"] for r in db.rows(conn, "SELECT service FROM post_history WHERE queue_id=?", (row["id"],))}
+
+
 def usable_networks(ctx: runner.Context, row) -> tuple[dict[str, dict], dict[str, str], dict[str, str]]:
     """({network: channel row} that can go, {network: why not} for the rest, {network: why a rule holds it}). A network
     switched off on the Keys page (POST_NETWORKS; Instagram only by default, 2026-10-15) is left out quietly: no channel is
@@ -556,11 +563,14 @@ def usable_networks(ctx: runner.Context, row) -> tuple[dict[str, dict], dict[str
     model says about the photo holds a network (2026-11-08: his approval is final; the LinkedIn logo skip is gone)."""
     active, skipped, held = {}, {}, {}
     on = payloads.posting_networks()
+    went = sent_already(ctx.conn, row)
     for net in targets_of(row):
         if net not in payloads.NETWORKS:
             skipped[net] = "not a network this suite posts to"
             continue
         if net not in on:
+            continue
+        if net in went:                         # already out there: never sent to the same network twice
             continue
         ch = channel_for(ctx.conn, net)
         if not ch:
@@ -786,6 +796,7 @@ def publish_ready(ctx: runner.Context, client: Optional[BufferClient] = None, up
                 break
         post_ids: dict[str, str] = {}
         built: dict[str, dict] = {}
+        sending = False
         asked_since = _since(now)
         try:
             if fmt == "story":
@@ -808,6 +819,13 @@ def publish_ready(ctx: runner.Context, client: Optional[BufferClient] = None, up
                 stats["would_publish"] += 1
                 ctx.log.info("DRY RUN post %s -> %s (not sent)", row["id"], ", ".join(built))
                 continue
+            still = db.one(ctx.conn, "SELECT status FROM content_queue WHERE id=?", (row["id"],))
+            if not still or still["status"] != "approved":
+                # he skipped it or took his Approve back while this run was at work: nothing is sent (2026-11-09 audit)
+                ctx.log.info("post %s is no longer approved (%s): not sent", row["id"], still["status"] if still else "gone")
+                stats["held"] += 1
+                continue
+            sending = True
             for net, inp in built.items():
                 post_ids[net] = client.create_post(inp)
                 ctx.log.info("Buffer accepted post %s for %s: %s", row["id"], net, post_ids[net])
@@ -859,6 +877,30 @@ def publish_ready(ctx: runner.Context, client: Optional[BufferClient] = None, up
             if isinstance(e, (BufferBudgetExceeded, BufferRateLimited)):
                 ctx.log.warning("stopping this run: %s", e)
                 break
+        except Exception as e:  # noqa: BLE001  2026-11-09 audit: an error of any other kind left the row approved, sent or not
+            runner.record_error(ctx.conn, ctx.agent, type(e).__name__, f"post {row['id']}: {e}")
+            if sending:
+                # Buffer may hold the post the error interrupted: marked, and asked about before anything goes again
+                net = next((n for n in built if n not in post_ids), None)
+                meta = _json(row["rule_report"], {})
+                meta = meta if isinstance(meta, dict) else {}
+                why = f"Stopped by an error while sending ({type(e).__name__}: {e})"[:500]
+                if net:
+                    marks = unknown_of(row)
+                    marks[net] = {"at": asked_since, "channel": built.get(net, {}).get("channelId", ""),
+                                  "text": built.get(net, {}).get("text", "")}
+                    meta[UNKNOWN_KEY] = marks
+                    why = (f"Stopped by an error while sending to {net}; Buffer is asked whether it took the post before "
+                           f"anything is sent again ({type(e).__name__}: {e})")[:500]
+                ctx.conn.execute("UPDATE content_queue SET status=?, rule_report=?, payload=?, buffer_post_ids=?, dry_run=0, "
+                                 "last_error=?, updated_at=? WHERE id=?",
+                                 ("scheduled" if post_ids else "approved", json.dumps(meta), json.dumps(built),
+                                  json.dumps(post_ids) if post_ids else None, why, db.utcnow(), row["id"]))
+                stats["held"] += 1
+            else:
+                ctx.conn.execute("UPDATE content_queue SET status='failed', last_error=?, updated_at=? WHERE id=?",
+                                 (f"{type(e).__name__}: {e}"[:500], db.utcnow(), row["id"]))
+                stats["failed"] += 1
     return stats
 
 

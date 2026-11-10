@@ -2,6 +2,8 @@
 {% block body %}
 {% set notes = {'saved': ('Saved.', ''), 'requeued': ('Back in drafts. It waits for your choice again.', ''),
                 'unapproved': ('Back in drafts. It will not go out until you choose Post now or Follow the pace again.', ''),
+                'not_editable': ('Not saved: Buffer already holds this post. Pull it back from Buffer first, then edit it.', 'bad'),
+                'too_late': ('Too late to take back here: it was handed to Buffer a moment ago. Use Pull back from Buffer.', 'bad'),
                 'pulled_back': ('Pulled back from Buffer. It is a draft again and will not go out until you choose again.', ''),
                 'no_buffer': ('Buffer is not set up here (no API key), so nothing could be pulled back.', 'bad'),
                 'pullback_failed': ('Buffer kept it: the pull back did not go through. The Errors page has the reason.', 'bad'),
