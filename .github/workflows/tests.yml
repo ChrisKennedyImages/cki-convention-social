@@ -19,10 +19,5 @@ jobs:
       - name: the eventcaliber.com Worker
         run: node tests/worker_test.mjs
       - name: run the suite against a throwaway home
-        run: |
-          export HOME="$(mktemp -d)"
-          export CCS_DATA_ROOT="$HOME/data"
-          export CCS_ENV_FILE="$HOME/nonexistent.env"
-          python -B -m unittest discover -s tests -t . 2>&1 | tee out.txt
-          test "${PIPESTATUS[0]}" -eq 0
-          ! grep -q -E "skipped=[1-9]" out.txt
+        # several processes, each in a throwaway home of its own; a failure, an error or a skip fails it (bin/test-parallel.py)
+        run: python -B bin/test-parallel.py
