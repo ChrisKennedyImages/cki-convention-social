@@ -393,8 +393,8 @@ const Enlarger: Scene = ({ f, g, p, ar }) => {
             <div style={{ position: "absolute", inset: 0, opacity: shown }}>
               <Shot pic={laid.pic} w={OPEN.w} h={OPEN.h} />
             </div>
-            {/* the beam's own light on it, warmest under the lens, while the lamp is on */}
-            <div style={{ position: "absolute", inset: 0, mixBlendMode: "screen", opacity: 0.2 * lamp, background: `radial-gradient(ellipse 70% 75% at 50% 42%, ${rgb(LAMP)}, ${rgb(LAMP, 0)} 100%)` }} />
+            {/* no light is laid over the picture: only Chiaroscuro and Axis light a photo, and nothing overlays a whole
+                photo (Chris, 2026-11-08). The lamp's warmth is on the easel round it and in the beam above it. */}
           </div>
         </div>
       </AbsoluteFill>
