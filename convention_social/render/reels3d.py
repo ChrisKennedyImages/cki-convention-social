@@ -16,11 +16,15 @@ from __future__ import annotations
 
 import io
 import json
+import contextlib
+import fcntl
 import os
 import shutil
 import signal
 import sqlite3
 import subprocess
+import tempfile
+import time
 from pathlib import Path
 from typing import Callable, Optional, Sequence
 
@@ -119,20 +123,79 @@ def props(shots: Sequence[Shot], *, music: Path, grid: Sequence[Path], public: P
     return {"photos": photos, "cuts": cuts_for(len(shots)), "grid": tiles, "music": track.name}
 
 
+TURN_WAIT = 30 * 60          # how long a render waits for another render's turn to end before it goes anyway
+TURN_FILE = "ccs-render.lock"
+
+
+@contextlib.contextmanager
+def a_turn(wait: float = TURN_WAIT, sleep: Callable = time.sleep):
+    """One Remotion render at a time on this machine, whichever process asks (the daily draft, a redraw, a card check, a
+    session's preview). 2026-11-09: several at once each took most of the cores and a 4 minute check took over an hour. A
+    render waits its turn up to `wait` seconds, then goes anyway: the lock is a courtesy, never a reason to make no reel."""
+    path = Path(tempfile.gettempdir()) / TURN_FILE
+    handle = open(path, "a+")
+    held, waited = False, 0.0
+    try:
+        while True:
+            try:
+                fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                held = True
+                break
+            except OSError:
+                if waited >= wait:
+                    break
+                sleep(2)
+                waited += 2
+        yield held
+    finally:
+        if held:
+            fcntl.flock(handle, fcntl.LOCK_UN)
+        handle.close()
+
+
 def run_remotion(cmd: Sequence[str], *, cwd: str, timeout: float) -> subprocess.CompletedProcess:
     """Remotion in a process group of its own, so a render past its time is stopped together with the browser it
-    started (2026-10-24 audit: subprocess.run's kill reached npx alone and could leave Chrome rendering on)."""
-    proc = subprocess.Popen(cmd, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, start_new_session=True)
+    started (2026-10-24 audit: subprocess.run's kill reached npx alone and could leave Chrome rendering on). The same on
+    any other way out (2026-11-09 audit: an interrupt, or launchd stopping the agent, left npx, node and Chrome running
+    for weeks). It takes its turn (a_turn), and works in a temp folder of its own that goes when it ends: Remotion left
+    a 200 to 350 MB build folder behind for every render, 19 GB by 2026-11-09."""
+    scratch = tempfile.mkdtemp(prefix="ccs-remotion-")
+    env = {**os.environ, "TMPDIR": scratch}
+    proc = None
+
+    def stop_group():
+        if proc is not None and proc.poll() is None:
+            try:
+                os.killpg(proc.pid, signal.SIGKILL)          # the group's id is the leader's pid (start_new_session)
+            except ProcessLookupError:
+                pass
+            proc.communicate()
+
+    def on_term(signum, frame):
+        raise SystemExit(128 + signum)
+
+    before = None
     try:
-        out, err = proc.communicate(timeout=timeout)
-    except subprocess.TimeoutExpired:
-        try:
-            os.killpg(proc.pid, signal.SIGKILL)          # the group's id is the leader's pid (start_new_session)
-        except ProcessLookupError:
-            pass
-        proc.communicate()
-        raise RuntimeError(f"remotion ran past {int(timeout)} s and was stopped, with its browser") from None
-    return subprocess.CompletedProcess(list(cmd), proc.returncode, out, err)
+        before = signal.signal(signal.SIGTERM, on_term)      # only the main thread may; elsewhere the default stands
+    except ValueError:
+        pass
+    try:
+        with a_turn():
+            proc = subprocess.Popen(cmd, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                                    start_new_session=True, env=env)
+            try:
+                out, err = proc.communicate(timeout=timeout)
+            except subprocess.TimeoutExpired:
+                stop_group()
+                raise RuntimeError(f"remotion ran past {int(timeout)} s and was stopped, with its browser") from None
+            except BaseException:
+                stop_group()
+                raise
+        return subprocess.CompletedProcess(list(cmd), proc.returncode, out, err)
+    finally:
+        if before is not None:
+            signal.signal(signal.SIGTERM, before)
+        shutil.rmtree(scratch, ignore_errors=True)
 
 
 def render(style: str, shots: Sequence[Shot], *, out: Path, audio: Optional[Path], grid: Sequence[Path] = (),
