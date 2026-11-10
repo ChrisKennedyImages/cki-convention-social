@@ -23,7 +23,9 @@
   <key>RunAtLoad</key><true/>
   <key>StandardOutPath</key><string>__DATA__/logs/updater.launchd.log</string>
   <key>StandardErrorPath</key><string>__DATA__/logs/updater.launchd.log</string>
-  <key>ProcessType</key><string>Background</string>
-  <key>Nice</key><integer>5</integer>
+  <!-- Standard, not Background (2026-11-09): a Background job is kept to the six slow cores of the Mini, and the
+       suite the updater runs before every deploy took 39 to 48 minutes there against 9 on the fast ones. The other
+       agents stay Background; this suite is the one long piece of work every fix waits on. -->
+  <key>ProcessType</key><string>Standard</string>
 </dict>
 </plist>

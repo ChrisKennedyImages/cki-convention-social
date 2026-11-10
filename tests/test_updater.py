@@ -3,6 +3,8 @@ real git repositories in a temporary folder: it tests the candidate commit befor
 fast-forwards a clean `main`, holds back on red tests, and never touches local work."""
 from __future__ import annotations
 
+import unittest
+
 import io
 import json
 import os
@@ -755,3 +757,14 @@ class OnlyTestedCode(Repos):
                                build=lambda r: self.fail("built untested code"), deploy=lambda r: self.fail("deployed untested code"))
         self.assertEqual(code, 2)
         self.assertIn("not deployed", " ".join(said))
+
+
+class TheUpdaterIsNotABackgroundJob(unittest.TestCase):
+    def test_its_launchd_job_runs_on_the_fast_cores(self):
+        """2026-11-09: as a Background job the updater was kept to the slow cores, and each deploy waited 39 to 48
+        minutes on a suite that takes 9 on the fast ones."""
+        from pathlib import Path
+        plist = (Path(__file__).resolve().parents[1] / "launchd"
+                 / "com.chriskennedyimages.conventionsocial.updater.plist.template").read_text()
+        self.assertIn("<key>ProcessType</key><string>Standard</string>", plist)
+        self.assertNotIn("<key>Nice</key>", plist)
