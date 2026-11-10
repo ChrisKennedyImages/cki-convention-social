@@ -5,6 +5,8 @@ tests/test_seo_captions.py); this module is where the strip keeps political orga
 """
 from __future__ import annotations
 
+import functools
+import hashlib
 import html
 import re
 import shutil
@@ -114,6 +116,7 @@ def trim_logo(im: Image.Image) -> Image.Image:
     return im.crop((max(0, box[0] - pad), max(0, box[1] - pad), min(im.width, box[2] + pad), min(im.height, box[3] + pad)))
 
 
+@functools.lru_cache(maxsize=None)     # a colour's answer never changes: asked once a process, not once a logo a build
 def light_version(rgb: tuple) -> tuple:
     """The colour a logo's ink takes on the black: as it is when it reads clearly (LIFT_TO) or is a brand colour; the
     site's light for black and grey; for a dark colour (a navy, a dark green) the same hue lifted until it reads at
@@ -188,9 +191,22 @@ def relight(im: Image.Image) -> tuple[Image.Image, float]:
     return im, (changed / ink if ink else 0.0)
 
 
+_PREPARED: dict[str, tuple[Image.Image, float]] = {}
+
+
 def prepared(path: Path) -> tuple[Image.Image, float]:
     """The logo as the strip shows it: upright, out of any white box, cut to its ink, LOGO_H tall, relit. (image, share
-    of its ink relit)."""
+    of its ink relit). Worked out once a process for a file's bytes (2026-11-09: relighting the twelve logos pixel by
+    pixel was five sixths of every site build, about 14 s, and the suite builds the site some sixty times); each caller
+    gets a copy of its own."""
+    key = hashlib.sha256(Path(path).read_bytes()).hexdigest()
+    if key not in _PREPARED:
+        _PREPARED[key] = _prepared(path)
+    im, share = _PREPARED[key]
+    return im.copy(), share
+
+
+def _prepared(path: Path) -> tuple[Image.Image, float]:
     with Image.open(path) as src:
         im = ImageOps.exif_transpose(src).convert("RGBA")
     if im.height > 4 * LOGO_H:
