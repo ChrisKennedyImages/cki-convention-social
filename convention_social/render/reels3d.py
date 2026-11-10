@@ -386,9 +386,10 @@ def wall_picks(conn: sqlite3.Connection, *, exclude: Sequence[int], n: int, rng=
     by_shoot: dict = {}
     for r in report.rotate(conn, usable, rng=rng, alike=lambda r: -report.strength(r)):
         key = (r["folder_id"], r["shot_type"])
-        if key in seen:
-            continue
-        seen.add(key)
+        if only is None:                # one per label per shoot; a wall of one label alone (Axis: Portraits) takes several
+            if key in seen:             # from a shoot, never one picture twice (Chris, 2026-11-10: with one a shoot it
+                continue                # could not be made: 29 portraits here came from 9 shoots)
+            seen.add(key)
         by_shoot.setdefault(r["folder_id"], []).append(r)
     picked: list[dict] = []
     while any(by_shoot.values()) and len(picked) < n:
