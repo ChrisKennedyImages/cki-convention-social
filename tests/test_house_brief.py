@@ -273,11 +273,7 @@ class HisLabels(IsolatedCase):
     def test_a_stack_label_says_portraits_only_where_a_photos_room_is_portrait(self):
         # draft 87: an award plaque came out "Portrait." under "PORTRAITS · SESSIONS · STAGE"
         self.assertEqual(reel_lines.beats(["awards", "breakout", "main_stage"]).stack, "Awards · breakouts · main stage")
-        axis = reel_lines.beats(["awards", None, "main_stage", "portrait", None], "axis")
-        self.assertEqual(axis.stack, "Awards · main stage", "a photo with no confirmed room is no portrait")
-        self.assertEqual(reel_lines.beats([None, "portrait", None, None, None], "axis").stack, "Portraits")
-        with self.assertRaises(reel_lines.TooFewRooms):
-            reel_lines.beats([None] * 5, "axis")
+        self.assertEqual(reel_lines.beats(["main_stage", "portrait", "candid"]).stack, "Main stage · portraits · candid")
         for rooms in (["awards", "breakout", "main_stage"], ["main_stage", "candid", "reception", "awards"]):
             self.assertNotIn("portrait", reel_lines.beats(rooms).stack.lower())
 
@@ -327,8 +323,11 @@ class HisLabels(IsolatedCase):
         beats = reel_lines.beats(reel)
         self.assertEqual((beats.photos, beats.words), ((2, 5, 6), ("Portraits.", "Main stage.", "Reception.")),
                          "the word Portraits on the one-person portrait; a group is never a word photo")
-        self.assertEqual(reel_lines.beats(reel[:2] + reel[3:5] + ["main_stage"], "axis").stack, "Main stage",
-                         "Axis's stack label names no group")
+        axis = content.Picker([], "reel", style="axis")
+        row = "SELECT p.*, c.shot_type, c.people_count FROM photos p JOIN classifications c ON c.photo_id = p.id WHERE p.id = ?"
+        self.assertEqual([d for d, p in ids.items() if axis.fits(dict(db.one(conn, row, (p,))))], ["one"],
+                         "Axis takes portraits of one person only, so its gallery wall's Portraits names no group")
+        self.assertEqual(reel_lines.beats(reel[:2] + reel[3:5] + ["main_stage"], "axis").stack, "Portraits")
         self.assertEqual([r["id"] for r in design_samples.pick(conn, 400)], [ids["one"]], "the design samples")
         labels = {r["id"]: build.words_for(conn, r)[3] for r in build.page_pool(conn)}
         self.assertEqual({d: labels[p] for d, p in ids.items()},

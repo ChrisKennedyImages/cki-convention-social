@@ -19,7 +19,9 @@ Event building, and Reception kept."); a photo without a confirmed room carries 
 where the photos allow. Axis takes portraits only, so its room words would all be "Portraits.": Chris chose its three
 himself, the same on every Axis reel (FIXED_WORDS, 2026-11-08: "Poise. Light. Presence."). The stack label names only
 the rooms its photos were confirmed to show: draft 87's said "PORTRAITS · SESSIONS · STAGE" over an award plaque and no
-portrait. The counter never names anything a photo could contradict (COUNTER).
+portrait. Axis's is "Portraits" and nothing else (FIXED_STACK; Chris, 2026-11-09: its gallery wall had read "Portraits ·
+headshots", and headshots is not one of his labels): it takes portraits of one person only.
+The counter never names anything a photo could contradict (COUNTER).
 """
 from __future__ import annotations
 
@@ -66,9 +68,11 @@ COUNTER = {"label": "Every moment", "value": "1", "unit": "take"}
 # A confirmed room as its beat word ("Main stage.") and as the stack label lists it ("main stage"): his labels.
 BEAT_WORDS = {key: house_brief.beat(key) for key in house_brief.KEYS}
 STACK_WORDS = {key: house_brief.stack(key) for key in house_brief.KEYS}
-# A look's own three words, the same on every reel in it (Chris, 2026-11-08), on its first three photos; its stack label
-# still the rooms its photos were confirmed to show.
+# A look's own three words, the same on every reel in it (Chris, 2026-11-08), on its first three photos, and its own
+# stack label: Axis takes portraits of one person only (reel_looks.photo_rule, house_brief.may_name), so its gallery's
+# far wall reads his label for them and nothing else (Chris, 2026-11-09: "Portraits").
 FIXED_WORDS = {"axis": ("Poise.", "Light.", "Presence.")}
+FIXED_STACK = {"axis": house_brief.WORDS["portrait"]}
 
 
 class TooFewRooms(ValueError):
@@ -114,18 +118,14 @@ def stack_label(rooms: Sequence[str]) -> str:
 def beats(rooms: Sequence[Optional[str]], look: Optional[str] = None) -> Beats:
     """The beat words for a reel whose photos (in its order, the hero first) have these confirmed rooms (None: no room
     confirmed). The word photos are the first photos with a confirmed room, one of each room before any room twice, so
-    the three words differ wherever the photos allow; each word is its own photo's room. A look with words of its own
-    (FIXED_WORDS) puts them on its first three photos; its stack label is the rooms those three were confirmed to show,
-    else the rooms the rest were; a photo with no confirmed room adds nothing, so the label never says portraits unless
-    a photo's room is portrait (draft 87, 2026-11-08). None confirmed at all: TooFewRooms."""
+    the three words differ wherever the photos allow; each word is its own photo's room; the stack label is the rooms
+    of the three, so it never says portraits unless a photo's room is portrait (draft 87, 2026-11-08). Fewer than three
+    confirmed: TooFewRooms. A look with words and a label of its own (FIXED_WORDS, FIXED_STACK) puts its words on its
+    first three photos and its label on the reel, whatever their rooms."""
     if look in FIXED_WORDS:
         if len(rooms) < 3:
             raise ValueError(f"the {look} words go on three photos; {len(rooms)} came")
-        named = [r for r in rooms[:3] if r in BEAT_WORDS] or [r for r in rooms if r in BEAT_WORDS]
-        if not named:
-            raise TooFewRooms(f"none of the reel's {len(rooms)} photos has a room the final check confirmed; its stack label "
-                              "names only those")
-        return Beats(photos=(0, 1, 2), words=FIXED_WORDS[look], stack=stack_label(named))
+        return Beats(photos=(0, 1, 2), words=FIXED_WORDS[look], stack=FIXED_STACK[look])
     known = [(i, r) for i, r in enumerate(rooms) if r in BEAT_WORDS]
     if len(known) < 3:
         raise TooFewRooms(f"{len(known)} of the reel's {len(rooms)} photos have a room the final check confirmed; "

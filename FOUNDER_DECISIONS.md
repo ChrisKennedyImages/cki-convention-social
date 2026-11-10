@@ -3030,3 +3030,15 @@ be true of that photo.
   `ROOM_LIST_OVER_NO_PHOTO` says it sits over no picture, so a new look cannot print it beside other pictures unseen.
 - Already scheduled posts are not touched here: #94 (Manifesto) shows "INSIDE ▸ MAIN STAGE · RECEPTION" under one
   main-stage photo at 12.0-13.5 s, and #95 (Split Screen), #96 (Weather) and #97 (Chiaroscuro) were made before this.
+## 2026-11-09: Axis's gallery wall says Portraits
+
+Axis's gallery wall, the far wall the corridor runs to, read "Portraits · headshots" on post #92. Headshots is not one
+of his labels, and Chris chose on 2026-11-09 to make it Portraits. His word on Axis stands (2026-11-08, night): "I like
+these portraits in axis now… Do not change anything else".
+
+- **Axis's wall label is Portraits and nothing else** (`reel_lines.FIXED_STACK`), whatever rooms the final check
+  confirmed for its photos. Axis takes portraits of one person only (`reel_looks.photo_rule`, `house_brief.may_name`), so
+  the label is true of every picture in it, and the wall itself carries no picture. A look with words of its own no
+  longer needs a confirmed room among its photos, since its words and its label name none. Nothing else in Axis changes.
+- Pinned by `tests/test_reel_looks.py` (an Axis of portraits, a backstage and a green room photo among them, still says
+  Portraits) and `tests/test_house_brief.py` (Axis takes no group, so its Portraits names none).
