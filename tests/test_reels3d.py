@@ -445,3 +445,24 @@ console.log(JSON.stringify(out));
             self.assertEqual(book[style]["source"], reel_check.source_hash(style),
                              f"{style}'s code changed since its card check passed: run `ccs reel-check {style} --record` on the Mini")
             self.assertEqual((book[style]["repeats"], book[style]["twice_at_once"], book[style]["never_shown"]), (0, 0, 0))
+
+
+class AWallOfOneLabelTakesSeveralFromAShoot(IsolatedCase):
+    def test_axis_walls_take_more_than_one_portrait_from_a_shoot_and_never_one_twice(self):
+        """Chris, 2026-11-10: with one portrait a shoot Axis could not be made (29 portraits here came from 9 shoots, and
+        it shows 21). A wall of one label alone takes several from a shoot; any other wall stays at one per label per
+        shoot."""
+        from convention_social.core import config
+        conn = db.connect()
+        cache = config.get_config().data_root / "photos"
+        cache.mkdir(parents=True, exist_ok=True)
+        for k in range(6):
+            pid = event_photo(conn, f"h{k}", kind="business", final="business", quality=5, folder="one-shoot")
+            conn.execute("UPDATE classifications SET shot_type=?, people_count=1 WHERE photo_id=?", ("portrait", pid))
+            conn.execute("UPDATE photos SET thumbnail_link=?, taken_at=? WHERE id=?", ("t", f"2026-01-0{k + 1}T10:00:00", pid))
+            Image.new("RGB", (20, 30), (k, k, k)).save(cache / f"h{k}.img", "JPEG")
+        only = reels3d.wall_picks(conn, exclude=[], n=6, only="portrait")
+        self.assertEqual(len(only), 6, "six portraits of one shoot")
+        self.assertEqual(len({r["id"] for r in only}), 6, "each once")
+        self.assertEqual(len(reels3d.wall_picks(conn, exclude=[], n=6)), 1, "any other wall: one per label per shoot")
+        conn.close()
